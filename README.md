@@ -34,7 +34,7 @@ If there is enough desire from folks, I am happy to put more time in, and of cou
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup instructions and guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for development setup instructions and guidelines.
 
 ## Security & Authentication
 
@@ -70,7 +70,7 @@ docker compose down -v && git pull && docker compose up -d
 ```
 
 ### Full Migration Guide
-For development setups or data preservation, see [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for detailed instructions.
+For development setups or data preservation, see [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for detailed instructions.
 
 ## Screenshots
 ![Main Dashboard](https://github.com/Kyrluckechuck/tunestash/assets/7606153/6d32f8d5-fe6b-4884-a5a9-7970aaba284a)

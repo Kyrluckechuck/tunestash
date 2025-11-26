@@ -423,7 +423,7 @@ worker_diagnostics_enabled: true  # Enable for dev/debugging, false for producti
 - Web: 1GB hard limit
 - Beat: 512MB hard limit
 
-For detailed debugging instructions, crash analysis, and troubleshooting guides, see **[DEBUGGING.md](DEBUGGING.md)**.
+For detailed debugging instructions, crash analysis, and troubleshooting guides, see **[DEBUGGING.md](docs/DEBUGGING.md)**.
 
 ## Frontend React Patterns
 
