@@ -392,6 +392,8 @@ jobs:
 
       - name: Cleanup old branch images
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🧹 Cleaning up images for merged/deleted branches..."
 
