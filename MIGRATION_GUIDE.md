@@ -4,80 +4,127 @@
 
 If you're coming from the old `spotify-library-manager` repository, follow these steps.
 
-### For Docker Users (Recommended)
+### For Docker Users
 
-#### Step 1: Rename Your Database
+Your existing data is preserved - you just need to update the configuration.
 
-Your existing data is preserved - you just need to rename the database to match the new default name.
+#### Option A: Keep the old database name (Recommended)
 
-**Find your database credentials** in your `.env` file:
+The easiest migration path - just keep your existing database name. **No database changes required.**
+
+1. **Stop your stack** (via your stack manager or `docker compose down`)
+2. **Update your compose file** to use the new TuneStash images:
+   - `ghcr.io/kyrluckechuck/tunestash:latest` (backend)
+   - `ghcr.io/kyrluckechuck/tunestash-frontend:latest` (frontend)
+3. **Keep your `.env` unchanged** - leave `POSTGRES_DB=spotify_library_manager`
+4. **Start your stack**
+5. **Verify** the web UI loads and your data is intact
+
+That's it! The app works with any database name.
+
+#### Option B: Rename the database to `tunestash`
+
+If you prefer the database name to match the new project name, you'll need to rename it while no application services are connected.
+
+**The challenge**: PostgreSQL cannot rename a database while connections are active. You must ensure only postgres is running (no web, worker, or beat services).
+
+**Step 1: Connect to your PostgreSQL database**
+
+Choose the method that works for your setup:
+
 ```bash
-# Check your current .env file
-cat .env | grep POSTGRES
+# If using docker compose CLI:
+docker compose exec postgres psql -U <POSTGRES_USER> -d postgres
+
+# If using an external PostgreSQL client (pgAdmin, DBeaver, psql):
+# Connect to the 'postgres' database (not your app database)
+psql -h <host> -p 5432 -U <POSTGRES_USER> -d postgres
+
+# If your postgres container is named differently:
+docker exec -it <postgres_container_name> psql -U <POSTGRES_USER> -d postgres
 ```
 
-You'll see something like:
+**Step 2: Check for and terminate active connections**
+
+Once connected to psql, run:
+
+```sql
+-- See active connections to the old database
+SELECT pid, usename, application_name, state
+FROM pg_stat_activity
+WHERE datname = 'spotify_library_manager';
+
+-- Terminate all connections to the old database (if any exist)
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'spotify_library_manager' AND pid <> pg_backend_pid();
+
+-- Rename the database
+ALTER DATABASE spotify_library_manager RENAME TO tunestash;
+
+-- Exit psql
+\q
 ```
-POSTGRES_USER=slm_user
-POSTGRES_PASSWORD=your_password_here
-POSTGRES_DB=spotify_library_manager
-```
 
-**Option A: Rename the database (recommended)**
+> **💡 Tip**: If you're using a stack manager (Dockge, Portainer, etc.), stop only the app services (web, worker, beat) but keep postgres running. Then connect via an external client or the container's terminal.
 
-```bash
-# Connect to PostgreSQL and rename
-docker compose exec postgres psql -U <POSTGRES_USER> -d postgres -c \
-  "ALTER DATABASE spotify_library_manager RENAME TO tunestash;"
+**Step 3: Update your configuration**
 
-# Update your .env file
-sed -i 's/POSTGRES_DB=spotify_library_manager/POSTGRES_DB=tunestash/' .env
-```
-
-Or manually edit `.env` and change:
+Update your `.env` file:
 ```diff
 - POSTGRES_DB=spotify_library_manager
 + POSTGRES_DB=tunestash
 ```
 
-**Option B: Keep the old database name**
+**Step 4: Start your stack**
 
-If you prefer not to rename, just keep `POSTGRES_DB=spotify_library_manager` in your `.env` file. The application will work fine - the database name is configurable.
+Start all services and verify the app connects successfully.
 
-#### Step 2: Update Your Docker Images
+#### Alternative for Stack Managers (Dockge, Portainer, etc.)
 
-```bash
-# Stop existing containers
-docker compose down
+If you're using a GUI stack manager where it's difficult to run only postgres:
 
-# Pull the new images (or rebuild)
-docker compose pull
+1. **Temporarily edit your compose file** - Comment out or remove all services except `postgres`:
+   ```yaml
+   # Comment out these services temporarily:
+   # web:
+   #   ...
+   # worker:
+   #   ...
+   # beat:
+   #   ...
+   # frontend:
+   #   ...
 
-# Start with new configuration
-docker compose up -d
-```
+   # Keep only postgres running
+   postgres:
+     image: postgres:16-alpine
+     # ... rest of postgres config
+   ```
 
-#### Step 3: Verify Everything Works
+2. **Deploy/start the stack** - Only postgres will start
 
-```bash
-# Check services are running
-docker compose ps
+3. **Connect and rename** - Use the psql commands from Option B Step 1 & 2
 
-# Check logs for any errors
-docker compose logs -f web
-```
+4. **Update `.env`** - Change `POSTGRES_DB=tunestash`
+
+5. **Restore your compose file** - Uncomment all services
+
+6. **Redeploy the stack** - All services will connect to the renamed database
 
 ### For Non-Docker Users
 
-If running locally without Docker:
+1. **Stop all application services** (web, worker, beat) that are connected to the database.
 
-1. **Rename your PostgreSQL database:**
+2. **Rename your PostgreSQL database:**
    ```bash
    psql -U <your_username> -d postgres -c \
      "ALTER DATABASE spotify_library_manager RENAME TO tunestash;"
    ```
 
-2. **Update your configuration** in `config/settings.yaml` or environment variables to use the new database name.
+3. **Update your configuration** in `.env` or `config/settings.yaml` to use the new database name.
+
+4. **Restart your services.**
 
 ### What's Preserved
 
@@ -90,7 +137,7 @@ If running locally without Docker:
 
 - 📦 Package name: `spotify-library-manager` → `tunestash`
 - 🐳 Docker images: `ghcr.io/.../spotify-library-manager` → `ghcr.io/.../tunestash`
-- 🗄️ Default database name: `spotify_library_manager` → `tunestash`
+- 🗄️ Default database name: `spotify_library_manager` → `tunestash` (configurable via `POSTGRES_DB`)
 - 📝 Repository URL (GitHub will redirect old URLs automatically)
 
 ---
