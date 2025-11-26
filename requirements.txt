@@ -22,7 +22,7 @@ psutil>=5.9.0  # Process and system monitoring for worker diagnostics
 
 # GraphQL API (updated for Python 3.13 compatibility)
 strawberry-graphql==0.287.0
-strawberry-graphql-django>=0.65.0
+strawberry-graphql-django>=0.67.0
 
 # FastAPI and related (compatible with spotdl 4.4.2 constraints)
 fastapi>=0.103.0,<0.104.0
