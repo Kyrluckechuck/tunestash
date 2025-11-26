@@ -42,16 +42,16 @@ target "backend" {
   dockerfile = "Dockerfile"
   target = "backend-prod"
   platforms = split(",", PLATFORMS)
-  
+
   tags = [
     # Always tag with SHA for traceability
     "${REGISTRY}/${REPO_OWNER}/tunestash:sha-${SHA}",
     # Tag with branch name (main becomes latest)
-    BRANCH == "main" 
+    BRANCH == "main"
       ? "${REGISTRY}/${REPO_OWNER}/tunestash:latest"
       : "${REGISTRY}/${REPO_OWNER}/tunestash:${BRANCH}"
   ]
-  
+
   cache-from = [
     "type=gha,scope=backend-app",
     "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:buildcache"
@@ -61,7 +61,11 @@ target "backend" {
     "type=gha,scope=backend-app,mode=max",
     "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:buildcache,mode=max"
   ]
-  
+
+  # Disable attestations to fix GHCR tag association issues
+  # See: https://github.com/docker/buildx/issues/1509
+  attest = []
+
   labels = {
     "org.opencontainers.image.source" = "https://github.com/${REPO_OWNER}/tunestash"
     "org.opencontainers.image.revision" = "${SHA}"
@@ -75,7 +79,7 @@ target "frontend" {
   dockerfile = "Dockerfile"
   target = "production"
   platforms = split(",", PLATFORMS)
-  
+
   tags = [
     # Always tag with SHA for traceability
     "${REGISTRY}/${REPO_OWNER}/tunestash-frontend:sha-${SHA}",
@@ -84,7 +88,7 @@ target "frontend" {
       ? "${REGISTRY}/${REPO_OWNER}/tunestash-frontend:latest"
       : "${REGISTRY}/${REPO_OWNER}/tunestash-frontend:${BRANCH}"
   ]
-  
+
   cache-from = [
     "type=gha,scope=frontend-app",
     "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:buildcache"
@@ -94,7 +98,11 @@ target "frontend" {
     "type=gha,scope=frontend-app,mode=max",
     "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:buildcache,mode=max"
   ]
-  
+
+  # Disable attestations to fix GHCR tag association issues
+  # See: https://github.com/docker/buildx/issues/1509
+  attest = []
+
   labels = {
     "org.opencontainers.image.source" = "https://github.com/${REPO_OWNER}/tunestash"
     "org.opencontainers.image.revision" = "${SHA}"
