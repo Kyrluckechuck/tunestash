@@ -543,6 +543,8 @@ class SpotdlWrapper:
                         f"Downloaded {track_index}/{len(queue_item)} songs from queue {queue_item_index}/{len(download_queue)}",
                     )
 
+                # Initialize db_song to None so exception handlers can check if it was created
+                db_song = None
                 try:
                     self.logger.info(f'({current_track}) Downloading "{track["name"]}"')
                     primary_artist = track["artists"][0]
@@ -784,13 +786,15 @@ class SpotdlWrapper:
                     )
                     if config.print_exceptions:
                         self.logger.error(traceback.format_exc())
-                    # Increment failed_count for non-401 Spotify errors
-                    db_song.failed_count += 1
-                    db_song.save()
+                    # Increment failed_count for non-401 Spotify errors (if song was created)
+                    if db_song is not None:
+                        db_song.failed_count += 1
+                        db_song.save()
                 except SpotdlDownloadError as spotdl_download_exception:
                     error_count += 1
+                    song_name = db_song.name if db_song is not None else track["name"]
                     self.logger.error(
-                        f'({current_track}) Failed to download "{db_song.name}"'
+                        f'({current_track}) Failed to download "{song_name}"'
                     )
                     self.logger.error(f"Exception: {spotdl_download_exception}")
                     self.logger.error(
@@ -800,16 +804,19 @@ class SpotdlWrapper:
                     if spotdl_download_exception.spotdl_errors:
                         for err in spotdl_download_exception.spotdl_errors:
                             self.logger.debug(f"Spotdl error detail: {err}")
-                    # Don't infinitely retry missing songs
-                    db_song.increment_failed_count()
+                    # Don't infinitely retry missing songs (if song was created)
+                    if db_song is not None:
+                        db_song.increment_failed_count()
                 except Exception as general_exception:
                     error_count += 1
+                    song_name = db_song.name if db_song is not None else track["name"]
                     self.logger.error(
-                        f'({current_track}) Failed to download "{db_song.name}"'
+                        f'({current_track}) Failed to download "{song_name}"'
                     )
                     self.logger.error(f"General Exception: {general_exception}")
-                    db_song.failed_count += 1
-                    db_song.save()
+                    if db_song is not None:
+                        db_song.failed_count += 1
+                        db_song.save()
                     if config.print_exceptions:
                         self.logger.error(traceback.format_exc())
                 finally:
