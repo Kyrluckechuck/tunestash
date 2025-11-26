@@ -6,8 +6,8 @@
 # These are NOT needed in production images.
 
 # Type stubs (for development type checking only)
-django-stubs[compatible-mypy]==5.2.5
-django-stubs-ext==5.2.5
+django-stubs[compatible-mypy]==5.2.7
+django-stubs-ext==5.2.7
 types-requests>=2.32.4
 types-psutil>=5.9.0
 
@@ -24,9 +24,9 @@ faker>=22.0.0
 
 # Linting and formatting tools
 flake8>=6.0.0
-black==25.9.0
+black==25.11.0
 isort>=5.12.0
-pylint==3.3.8
+pylint==3.3.8  # Staying on 3.x - pylint 4.x has breaking changes
 pylint-django>=2.5.0
 bandit>=1.7.0
 mypy==1.18.2
