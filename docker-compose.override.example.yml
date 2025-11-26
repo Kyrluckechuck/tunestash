@@ -13,7 +13,7 @@ services:
   web:
     # Use GHCR image by default, build locally when needed (docker compose build)
     # Set BACKEND_IMAGE_TAG env var to use branch-specific image (e.g., overhual-frontend-tanstack)
-    image: ghcr.io/kyrluckechuck/spotify-library-manager:${BACKEND_IMAGE_TAG:-latest}
+    image: ghcr.io/kyrluckechuck/tunestash:${BACKEND_IMAGE_TAG:-latest}
     build:
       context: .
       target: backend-dev
@@ -41,7 +41,7 @@ services:
       - DJANGO_DEBUG=True
       - INSTALL_DEV_DEPS=true
       # Database configuration
-      - POSTGRES_DB=${POSTGRES_DB:-spotify_library_manager}
+      - POSTGRES_DB=${POSTGRES_DB:-tunestash}
       - POSTGRES_USER=${POSTGRES_USER:-slm_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
       - POSTGRES_HOST=postgres
@@ -92,7 +92,7 @@ services:
   worker:
     # Use GHCR image by default, build locally when needed (docker compose build)
     # Set BACKEND_IMAGE_TAG env var to use branch-specific image (e.g., overhual-frontend-tanstack)
-    image: ghcr.io/kyrluckechuck/spotify-library-manager:${BACKEND_IMAGE_TAG:-latest}
+    image: ghcr.io/kyrluckechuck/tunestash:${BACKEND_IMAGE_TAG:-latest}
     build:
       context: .
       target: backend-dev
@@ -109,7 +109,7 @@ services:
     environment:
       - INSTALL_DEV_DEPS=true
       # Database configuration
-      - POSTGRES_DB=${POSTGRES_DB:-spotify_library_manager}
+      - POSTGRES_DB=${POSTGRES_DB:-tunestash}
       - POSTGRES_USER=${POSTGRES_USER:-slm_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
       - POSTGRES_HOST=postgres
@@ -128,7 +128,7 @@ services:
   beat:
     # Use GHCR image by default, build locally when needed (docker compose build)
     # Set BACKEND_IMAGE_TAG env var to use branch-specific image (e.g., overhual-frontend-tanstack)
-    image: ghcr.io/kyrluckechuck/spotify-library-manager:${BACKEND_IMAGE_TAG:-latest}
+    image: ghcr.io/kyrluckechuck/tunestash:${BACKEND_IMAGE_TAG:-latest}
     build:
       context: .
       target: backend-dev
@@ -143,7 +143,7 @@ services:
     environment:
       - INSTALL_DEV_DEPS=true
       # Database configuration
-      - POSTGRES_DB=${POSTGRES_DB:-spotify_library_manager}
+      - POSTGRES_DB=${POSTGRES_DB:-tunestash}
       - POSTGRES_USER=${POSTGRES_USER:-slm_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
       - POSTGRES_HOST=postgres

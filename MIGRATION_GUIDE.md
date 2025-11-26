@@ -1,3 +1,100 @@
+# Migration Guide
+
+## 🔄 Migrating from spotify-library-manager to TuneStash
+
+If you're coming from the old `spotify-library-manager` repository, follow these steps.
+
+### For Docker Users (Recommended)
+
+#### Step 1: Rename Your Database
+
+Your existing data is preserved - you just need to rename the database to match the new default name.
+
+**Find your database credentials** in your `.env` file:
+```bash
+# Check your current .env file
+cat .env | grep POSTGRES
+```
+
+You'll see something like:
+```
+POSTGRES_USER=slm_user
+POSTGRES_PASSWORD=your_password_here
+POSTGRES_DB=spotify_library_manager
+```
+
+**Option A: Rename the database (recommended)**
+
+```bash
+# Connect to PostgreSQL and rename
+docker compose exec postgres psql -U <POSTGRES_USER> -d postgres -c \
+  "ALTER DATABASE spotify_library_manager RENAME TO tunestash;"
+
+# Update your .env file
+sed -i 's/POSTGRES_DB=spotify_library_manager/POSTGRES_DB=tunestash/' .env
+```
+
+Or manually edit `.env` and change:
+```diff
+- POSTGRES_DB=spotify_library_manager
++ POSTGRES_DB=tunestash
+```
+
+**Option B: Keep the old database name**
+
+If you prefer not to rename, just keep `POSTGRES_DB=spotify_library_manager` in your `.env` file. The application will work fine - the database name is configurable.
+
+#### Step 2: Update Your Docker Images
+
+```bash
+# Stop existing containers
+docker compose down
+
+# Pull the new images (or rebuild)
+docker compose pull
+
+# Start with new configuration
+docker compose up -d
+```
+
+#### Step 3: Verify Everything Works
+
+```bash
+# Check services are running
+docker compose ps
+
+# Check logs for any errors
+docker compose logs -f web
+```
+
+### For Non-Docker Users
+
+If running locally without Docker:
+
+1. **Rename your PostgreSQL database:**
+   ```bash
+   psql -U <your_username> -d postgres -c \
+     "ALTER DATABASE spotify_library_manager RENAME TO tunestash;"
+   ```
+
+2. **Update your configuration** in `config/settings.yaml` or environment variables to use the new database name.
+
+### What's Preserved
+
+- ✅ All your artists, albums, and songs
+- ✅ All your tracked playlists
+- ✅ All your downloaded music files
+- ✅ All your task history
+
+### What's Changed
+
+- 📦 Package name: `spotify-library-manager` → `tunestash`
+- 🐳 Docker images: `ghcr.io/.../spotify-library-manager` → `ghcr.io/.../tunestash`
+- 🗄️ Default database name: `spotify_library_manager` → `tunestash`
+- 📝 Repository URL (GitHub will redirect old URLs automatically)
+
+---
+
 # Migration Guide: Huey to Celery + Infrastructure Overhaul
 
 This guide covers migrating from the previous Huey-based system to the new Celery + PostgreSQL infrastructure.
@@ -81,7 +178,7 @@ cp .env.example .env
 # Key changes from previous version:
 DATABASE:
   ENGINE: postgresql
-  NAME: spotify_library_manager
+  NAME: tunestash
   # ... other DB settings
 
 CELERY:
@@ -94,7 +191,7 @@ CELERY:
 **Edit `.env`** for Docker:
 ```bash
 # Database connection for containers
-POSTGRES_DB=spotify_library_manager
+POSTGRES_DB=tunestash
 POSTGRES_USER=your_user
 POSTGRES_PASSWORD=your_password
 

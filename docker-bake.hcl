@@ -45,25 +45,25 @@ target "backend" {
   
   tags = [
     # Always tag with SHA for traceability
-    "${REGISTRY}/${REPO_OWNER}/spotify-library-manager:sha-${SHA}",
+    "${REGISTRY}/${REPO_OWNER}/tunestash:sha-${SHA}",
     # Tag with branch name (main becomes latest)
     BRANCH == "main" 
-      ? "${REGISTRY}/${REPO_OWNER}/spotify-library-manager:latest"
-      : "${REGISTRY}/${REPO_OWNER}/spotify-library-manager:${BRANCH}"
+      ? "${REGISTRY}/${REPO_OWNER}/tunestash:latest"
+      : "${REGISTRY}/${REPO_OWNER}/tunestash:${BRANCH}"
   ]
   
   cache-from = [
     "type=gha,scope=backend-app",
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/spotify-library-manager:buildcache"
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:buildcache"
   ]
 
   cache-to = [
     "type=gha,scope=backend-app,mode=max",
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/spotify-library-manager:buildcache,mode=max"
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:buildcache,mode=max"
   ]
   
   labels = {
-    "org.opencontainers.image.source" = "https://github.com/${REPO_OWNER}/spotify-library-manager"
+    "org.opencontainers.image.source" = "https://github.com/${REPO_OWNER}/tunestash"
     "org.opencontainers.image.revision" = "${SHA}"
     "org.opencontainers.image.created" = timestamp()
   }
@@ -78,25 +78,25 @@ target "frontend" {
   
   tags = [
     # Always tag with SHA for traceability
-    "${REGISTRY}/${REPO_OWNER}/spotify-library-manager-frontend:sha-${SHA}",
+    "${REGISTRY}/${REPO_OWNER}/tunestash-frontend:sha-${SHA}",
     # Tag with branch name (main becomes latest)
     BRANCH == "main"
-      ? "${REGISTRY}/${REPO_OWNER}/spotify-library-manager-frontend:latest"
-      : "${REGISTRY}/${REPO_OWNER}/spotify-library-manager-frontend:${BRANCH}"
+      ? "${REGISTRY}/${REPO_OWNER}/tunestash-frontend:latest"
+      : "${REGISTRY}/${REPO_OWNER}/tunestash-frontend:${BRANCH}"
   ]
   
   cache-from = [
     "type=gha,scope=frontend-app",
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/spotify-library-manager-frontend:buildcache"
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:buildcache"
   ]
 
   cache-to = [
     "type=gha,scope=frontend-app,mode=max",
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/spotify-library-manager-frontend:buildcache,mode=max"
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:buildcache,mode=max"
   ]
   
   labels = {
-    "org.opencontainers.image.source" = "https://github.com/${REPO_OWNER}/spotify-library-manager"
+    "org.opencontainers.image.source" = "https://github.com/${REPO_OWNER}/tunestash"
     "org.opencontainers.image.revision" = "${SHA}"
     "org.opencontainers.image.created" = timestamp()
   }
