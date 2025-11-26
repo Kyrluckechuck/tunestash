@@ -444,8 +444,6 @@ class SpotdlWrapper:
                 if tracked_playlist.last_synced_at is not None:
                     playlist_needs_update = False
                     # Collect all track GIDs to batch-check which are already downloaded
-                    from library_manager.validators import extract_spotify_id_from_uri
-
                     track_gids = [
                         gid
                         for track in queue_item
@@ -507,10 +505,6 @@ class SpotdlWrapper:
                     )
                     if track_added_at < tracked_playlist.last_synced_at:
                         # Track is older than last sync - check if we already have it downloaded
-                        from library_manager.validators import (
-                            extract_spotify_id_from_uri,
-                        )
-
                         track_gid = extract_spotify_id_from_uri(track["id"])
                         if track_gid:
                             song_exists_downloaded = Song.objects.filter(

@@ -164,9 +164,23 @@ def signal_handler(signum: int, frame: Optional[FrameType]) -> None:
     sys.exit(128 + signum)
 
 
-# Register signal handlers for worker processes
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
+# Register signal handlers only when running in the main thread
+# This prevents errors when celery_app is imported from async contexts (e.g., FastAPI)
+def _register_signal_handlers() -> None:
+    """
+    Register signal handlers for worker processes.
+
+    Only registers if we're in the main thread, since signal.signal()
+    can only be called from the main thread of the main interpreter.
+    """
+    import threading
+
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+
+_register_signal_handlers()
 
 
 # ============================================================================
