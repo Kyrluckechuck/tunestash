@@ -1,0 +1,125 @@
+# Python
+__pycache__
+*.exe
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+# But allow requirements and project config
+!requirements*.txt
+!pyproject.toml
+!setup.py
+!setup.cfg
+!Pipfile
+!Pipfile.lock
+!poetry.lock
+
+# Node.js
+node_modules/
+dist/
+dist-ssr/
+*.local
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+# But allow package configs
+!package.json
+!package-lock.json
+!yarn.lock
+!pnpm-lock.yaml
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# User Configs
+client*.bin
+cookies*.txt
+urls*.txt
+*.pem
+*.wvd
+
+# Project specific
+db/
+Spotify/
+temp/
+# Database files
+*.sqlite3
+*.db
+
+# Static files and build artifacts
+# Coverage reports (generated)
+htmlcov/
+.coverage
+coverage/
+*.coverage
+coverage.xml
+
+# Reports and logs (generated)
+reports/
+api/bandit-report.json
+api/server.log
+
+# Django static files (collected by collectstatic, not committed)
+api/staticfiles/
+api/static/
+
+# Frontend build artifacts (generated)
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/coverage/
+
+# Vite build artifacts
+frontend/*.timestamp-*.mjs
+frontend/*.timestamp-*.js
+
+# Generated files (can be regenerated)
+frontend/src/types/generated/
+frontend/src/graphql/generated/
+# But allow GraphQL schema and type definitions
+!frontend/src/types/generated/graphql.ts
+!frontend/src/graphql/
+!frontend/src/queries/
+!frontend/src/schema/
+!api/src/schema/
+!api/src/graphql_types/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+# But allow example configs
+!.env.example
+!.env.sample
+!*.env.example
+
+# Cache directories
+.cache/
+.parcel-cache/
+.eslintcache
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

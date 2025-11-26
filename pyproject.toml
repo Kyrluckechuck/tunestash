@@ -1,0 +1,205 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["src/tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=src --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+] 
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spotify-library-manager"
+version = "1.0.0"
+description = "Spotify Library Manager"
+requires-python = ">=3.11"
+dependencies = [
+    "django>=4.0",
+    "strawberry-graphql>=0.200",
+    "asgiref>=3.7",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+explicit_package_bases = true
+plugins = [
+  "strawberry.ext.mypy_plugin",
+]
+exclude = [
+  "api/src/tests/",
+  "src/tests/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "django.*",
+    "library_manager.*",
+    "spotdl.*",
+    "spotipy.*",
+    "huey.*",
+    "huey_monitor.*",
+    "base62.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "api.src.tests.*",
+]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "api.tests.*",
+]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+  "api.src.services.artist",
+  "api.src.services.album",
+  "api.src.services.song",
+  "api.src.services.playlist",
+  "api.src.services.history",
+  "api.src.services.task_history",
+]
+disable_error_code = ["attr-defined"]
+
+[[tool.mypy.overrides]]
+module = [
+  "services.*",
+]
+disable_error_code = ["attr-defined"]
+
+# Django model field type annotations are handled by Django's ORM
+[[tool.mypy.overrides]]
+module = [
+    "library_manager.models",
+]
+disable_error_code = ["var-annotated", "attr-defined"]
+
+# Django management commands and signals
+[[tool.mypy.overrides]]
+module = [
+    "api.library_manager.management.commands.*",
+    "api.library_manager.signals",
+]
+disable_error_code = ["no-untyped-def"]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["api", "library_manager", "src"]
+known_django = ["django"]
+sections = ["FUTURE", "STDLIB", "DJANGO", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+skip = ["migrations", "venv", ".venv", "node_modules"]
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503", "W504", "E501"]
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+    ".venv",
+    "venv",
+    "node_modules",
+    "migrations",
+]
+per-file-ignores = [
+    "__init__.py:F401",
+    "migrations/*:E501",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "test", "migrations"]
+skips = ["B101", "B601"]
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114",  # missing-module-docstring
+    "C0115",  # missing-class-docstring
+    "C0116",  # missing-function-docstring
+    "R0903",  # too-few-public-methods
+    "R0913",  # too-many-arguments
+    "R0914",  # too-many-locals
+    "R0915",  # too-many-statements
+    "W0621",  # redefined-outer-name
+    "W0622",  # redefined-builtin
+    "W0703",  # broad-except
+    "W0612",  # unused-variable
+    "W0611",  # unused-import
+    "C0301",  # line-too-long (Black governs formatting)
+    "C0415",  # import-outside-toplevel (allowed for tasks/lazy imports)
+    "C0411",  # wrong-import-order (defer to isort)
+    "R0801",  # duplicate-code (noisy for migrations and schemas)
+    "R0917",  # too-many-positional-arguments (GraphQL resolvers often need this)
+    "W0613",  # unused-argument (GraphQL resolver signatures)
+    "W0511",  # fixme/TODO comments
+    "R0401",  # cyclic-import (management command helpers/tasks reference each other)
+    "W1203",  # logging-fstring-interpolation (acceptable in this project)
+    "W0404",  # reimport (intentional timezone reimports in models)
+]
+
+[tool.pylint.format]
+max-line-length = 88
+
+[tool.pylint.basic]
+good-names = ["i", "j", "k", "ex", "Run", "_", "id", "db"]
+
+[tool.pylint.django]
+load-plugins = ["pylint_django"] 
+
+[tool.pylint.master]
+# Ensure Django is configured and project path is on sys.path during linting
+init-hook = "import os, sys; sys.path.insert(0, os.getcwd()); os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'settings')"
+ignore = [
+  "library_manager/migrations",
+]

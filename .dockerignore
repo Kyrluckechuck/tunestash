@@ -1,0 +1,26 @@
+__pycache__
+*.exe
+.vscode/
+node_modules/
+htmlcov/
+reports/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# User Configs
+client*.bin
+cookies*.txt
+urls*.txt
+*.pem
+*.wvd
+.secrets.yaml
+
+# No executables
+*.exe
+bin/
+
+db/
+Spotify/
+temp/
+*.log

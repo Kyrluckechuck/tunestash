@@ -1,0 +1,182 @@
+query GetArtist($id: String!) {
+  artist(id: $id) {
+    id
+    name
+    gid
+    isTracked
+    addedAt
+    lastSynced
+  }
+}
+
+query GetArtists(
+  $isTracked: Boolean
+  $first: Int = 20
+  $after: String
+  $search: String
+) {
+  artists(
+    isTracked: $isTracked
+    first: $first
+    after: $after
+    search: $search
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    edges {
+      id
+      name
+      gid
+      isTracked
+      addedAt
+      lastSynced
+    }
+  }
+}
+
+query GetAlbums(
+  $artistId: Int
+  $wanted: Boolean
+  $downloaded: Boolean
+  $first: Int = 20
+  $after: String
+  $sortBy: String
+  $sortDirection: String
+  $search: String
+) {
+  albums(
+    artistId: $artistId
+    wanted: $wanted
+    downloaded: $downloaded
+    first: $first
+    after: $after
+    sortBy: $sortBy
+    sortDirection: $sortDirection
+    search: $search
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    edges {
+      id
+      name
+      spotifyGid
+      totalTracks
+      wanted
+      downloaded
+      albumType
+      albumGroup
+      artist
+      artistId
+    }
+  }
+}
+
+query GetPlaylists(
+  $enabled: Boolean
+  $first: Int = 20
+  $after: String
+  $sortBy: String
+  $sortDirection: String
+  $search: String
+) {
+  playlists(
+    enabled: $enabled
+    first: $first
+    after: $after
+    sortBy: $sortBy
+    sortDirection: $sortDirection
+    search: $search
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    edges {
+      id
+      name
+      url
+      enabled
+      autoTrackArtists
+      lastSyncedAt
+    }
+  }
+}
+
+mutation SyncArtist($artistId: String!) {
+  syncArtist(artistId: $artistId) {
+    id
+    name
+    gid
+    isTracked
+    addedAt
+    lastSynced
+  }
+}
+
+mutation SyncPlaylist($playlistId: Int!) {
+  syncPlaylist(playlistId: $playlistId) {
+    success
+    message
+  }
+}
+
+mutation TrackArtist($artistId: Int!) {
+  trackArtist(artistId: $artistId) {
+    success
+    message
+    artist {
+      id
+      name
+      isTracked
+    }
+  }
+}
+
+mutation UntrackArtist($artistId: Int!) {
+  untrackArtist(artistId: $artistId) {
+    success
+    message
+    artist {
+      id
+      name
+      isTracked
+    }
+  }
+}
+
+mutation SetAlbumWanted($albumId: Int!, $wanted: Boolean!) {
+  setAlbumWanted(albumId: $albumId, wanted: $wanted) {
+    success
+    message
+    album {
+      id
+      name
+      wanted
+    }
+  }
+}
+
+mutation TogglePlaylist($playlistId: Int!) {
+  togglePlaylist(playlistId: $playlistId) {
+    success
+    message
+    playlist {
+      id
+      name
+      enabled
+    }
+  }
+}

@@ -1,0 +1,160 @@
+# mypy: disable-error-code=attr-defined
+from typing import Any, List, Optional, Tuple
+
+from django.db.models import Q
+
+from asgiref.sync import sync_to_async
+
+from library_manager.models import Artist as DjangoArtist
+from library_manager.tasks import (
+    download_missing_albums_for_artist,
+    fetch_all_albums_for_artist,
+)
+
+from ..graphql_types.models import Artist, MutationResult
+from .base import BaseService
+
+
+class ArtistService(BaseService[Artist]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.model = DjangoArtist
+
+    async def get_by_id(self, id: str) -> Optional[Artist]:
+        try:
+            django_artist = await self.model.objects.aget(gid=id)
+            return self._to_graphql_type(django_artist)
+        except self.model.DoesNotExist:
+            return None
+
+    async def get_connection(
+        self,
+        first: int = 20,
+        after: Optional[str] = None,
+        **filters: Any,
+    ) -> Tuple[List[Artist], bool, int]:
+        is_tracked: Optional[bool] = filters.get("is_tracked")
+        search: Optional[str] = filters.get("search")
+        queryset = self.model.objects.all()
+
+        # Apply filters
+        if is_tracked is not None:
+            queryset = queryset.filter(tracked=is_tracked)
+
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) | Q(gid__icontains=search)
+            )
+
+        # Apply cursor-based pagination
+        if after:
+            id_after = self.decode_cursor(after)
+            queryset = queryset.filter(id__gt=id_after)
+
+        # Get total count before slicing
+        total_count = await sync_to_async(queryset.count)()
+
+        # Get one extra item to determine if there are more pages
+        def fetch_items() -> List[DjangoArtist]:
+            return list(queryset.order_by("id")[: first + 1])
+
+        items: List[DjangoArtist] = await sync_to_async(fetch_items)()
+
+        has_next_page = len(items) > first
+        items = items[:first]  # Remove the extra item
+
+        return (
+            [self._to_graphql_type(item) for item in items],
+            has_next_page,
+            total_count,
+        )
+
+    async def track_artist(self, artist_id: int) -> MutationResult:
+        try:
+            django_artist = await sync_to_async(self.model.objects.get)(id=artist_id)
+            django_artist.tracked = True
+            await sync_to_async(django_artist.save)()
+
+            # Queue tasks
+            # await sync_to_async(fetch_all_albums_for_artist)(django_artist.id)
+
+            return MutationResult(
+                success=True,
+                message="Artist tracked successfully",
+                artist=self._to_graphql_type(django_artist),
+            )
+        except self.model.DoesNotExist:
+            return MutationResult(
+                success=False, message="Artist not found", artist=None
+            )
+        except Exception as e:
+            return MutationResult(
+                success=False, message=f"Error tracking artist: {str(e)}", artist=None
+            )
+
+    async def untrack_artist(self, artist_id: int) -> MutationResult:
+        try:
+            django_artist = await sync_to_async(self.model.objects.get)(id=artist_id)
+            django_artist.tracked = False
+            await sync_to_async(django_artist.save)()
+
+            return MutationResult(
+                success=True,
+                message="Artist untracked successfully",
+                artist=self._to_graphql_type(django_artist),
+            )
+        except self.model.DoesNotExist:
+            return MutationResult(
+                success=False, message="Artist not found", artist=None
+            )
+        except Exception as e:
+            return MutationResult(
+                success=False, message=f"Error untracking artist: {str(e)}", artist=None
+            )
+
+    async def update_artist(
+        self,
+        artist_id: str,
+        is_tracked: Optional[bool] = None,
+        auto_download: Optional[bool] = None,
+    ) -> Artist:
+        django_artist = await self.model.objects.aget(gid=artist_id)
+
+        if is_tracked is not None:
+            django_artist.tracked = is_tracked
+
+        if auto_download and not django_artist.tracked:
+            django_artist.tracked = True
+
+        await django_artist.asave()
+
+        if auto_download:
+            await sync_to_async(download_missing_albums_for_artist)(django_artist.id)
+
+        return self._to_graphql_type(django_artist)
+
+    async def sync_artist(self, artist_id: str) -> Artist:
+        django_artist = await self.model.objects.aget(gid=artist_id)
+        await sync_to_async(fetch_all_albums_for_artist)(django_artist.id)
+        return self._to_graphql_type(django_artist)
+
+    def _to_graphql_type(self, django_artist: DjangoArtist) -> Artist:
+        # Some unit tests use light mocks without an `id`; be defensive here
+        raw_id = getattr(django_artist, "id", None)
+        safe_id: int = int(raw_id) if isinstance(raw_id, (int, str)) else 0
+        return Artist(
+            id=safe_id,
+            name=django_artist.name,
+            gid=django_artist.gid,
+            is_tracked=django_artist.tracked,
+            last_synced=(
+                django_artist.last_synced_at.isoformat()
+                if django_artist.last_synced_at
+                else None
+            ),
+            added_at=(
+                django_artist.added_at.isoformat()
+                if hasattr(django_artist, "added_at") and django_artist.added_at
+                else None
+            ),
+        )

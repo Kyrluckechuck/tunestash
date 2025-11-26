@@ -1,0 +1,377 @@
+import { createFileRoute } from '@tanstack/react-router';
+import { useMutation, useQuery, useApolloClient } from '@apollo/client';
+import {
+  GetPlaylistsDocument,
+  TogglePlaylistDocument,
+  SyncPlaylistDocument,
+  type GetPlaylistsQuery,
+} from '../types/generated/graphql';
+import type { Playlist } from '../types/generated/graphql';
+import { useState, useMemo, useCallback } from 'react';
+
+import { PlaylistModal } from '../components/ui/PlaylistModal';
+import { DownloadUrlModal } from '../components/ui/DownloadUrlModal';
+
+// Components
+import { PlaylistFilters } from '../components/playlists/PlaylistFilters';
+import { PlaylistsTable } from '../components/playlists/PlaylistsTable';
+import { PageSizeSelector } from '../components/ui/PageSizeSelector';
+import { LoadMoreButton } from '../components/ui/LoadMoreButton';
+import { SearchInput } from '../components/ui/SearchInput';
+import type { PlaylistSortField } from '../components/playlists/PlaylistsTable';
+
+type SortDirection = 'asc' | 'desc';
+
+function Playlists() {
+  const [filter, setFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [pageSize, setPageSize] = useState(50);
+  const [sortField, setSortField] = useState<PlaylistSortField>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Modal states
+  const [showPlaylistModal, setShowPlaylistModal] = useState(false);
+  const [editingPlaylist, setEditingPlaylist] = useState<Playlist | null>(null);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+
+  const client = useApolloClient();
+
+  // Memoize query variables to prevent unnecessary re-renders
+  const queryVariables = useMemo(
+    () => ({
+      enabled: filter === 'all' ? undefined : filter === 'enabled',
+      first: pageSize,
+      sortBy: sortField,
+      sortDirection: sortDirection,
+      search: searchQuery || undefined,
+    }),
+    [filter, pageSize, sortField, sortDirection, searchQuery]
+  );
+
+  const { data, loading, error, fetchMore, networkStatus } = useQuery(
+    GetPlaylistsDocument,
+    {
+      variables: queryVariables,
+      fetchPolicy: 'cache-and-network',
+      nextFetchPolicy: 'cache-first',
+      notifyOnNetworkStatusChange: true,
+      pollInterval: 0,
+      errorPolicy: 'all',
+      // Keep previous data while loading new data
+      returnPartialData: true,
+      onCompleted: data => {
+        // Pre-fetch other filter combinations
+        if (data && networkStatus !== 3) {
+          // Not refetching
+          const baseVariables = {
+            first: pageSize,
+            sortBy: sortField,
+            sortDirection: sortDirection,
+            search: searchQuery || undefined,
+          };
+
+          // Pre-fetch enabled and disabled filters
+          ['enabled', 'disabled'].forEach(enabledFilter => {
+            const variables = {
+              ...baseVariables,
+              enabled: enabledFilter === 'enabled' ? true : false,
+            };
+
+            client
+              .query({
+                query: GetPlaylistsDocument,
+                variables,
+                fetchPolicy: 'cache-first',
+              })
+              .catch(() => {
+                // Ignore pre-fetch errors
+              });
+          });
+        }
+      },
+    }
+  );
+
+  const [togglePlaylist] = useMutation(TogglePlaylistDocument);
+  const [syncPlaylist] = useMutation(SyncPlaylistDocument);
+
+  const handleEnabledFilterChange = (
+    newFilter: 'all' | 'enabled' | 'disabled'
+  ) => {
+    setFilter(newFilter);
+
+    // Pre-fetch data for the new filter
+    const newVariables = {
+      ...queryVariables,
+      enabled: newFilter === 'all' ? undefined : newFilter === 'enabled',
+    };
+
+    // Pre-fetch without blocking the UI
+    client
+      .query({
+        query: GetPlaylistsDocument,
+        variables: newVariables,
+        fetchPolicy: 'cache-first',
+      })
+      .catch(() => {
+        // Ignore pre-fetch errors
+      });
+  };
+
+  const handleSort = (field: PlaylistSortField) => {
+    let newDirection: SortDirection = 'asc';
+
+    if (sortField === field && sortDirection === 'asc') {
+      newDirection = 'desc';
+    }
+
+    setSortField(field);
+    setSortDirection(newDirection);
+
+    // Pre-fetch data for the new sort
+    const newVariables = {
+      ...queryVariables,
+      sortBy: field,
+      sortDirection: newDirection,
+    };
+
+    client
+      .query({
+        query: GetPlaylistsDocument,
+        variables: newVariables,
+        fetchPolicy: 'cache-first',
+      })
+      .catch(() => {
+        // Ignore pre-fetch errors
+      });
+  };
+
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPageSize(newPageSize);
+
+    // Pre-fetch data for the new page size
+    const newVariables = {
+      ...queryVariables,
+      first: newPageSize,
+    };
+
+    client
+      .query({
+        query: GetPlaylistsDocument,
+        variables: newVariables,
+        fetchPolicy: 'cache-first',
+      })
+      .catch(() => {
+        // Ignore pre-fetch errors
+      });
+  };
+
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+  }, []);
+
+  const handleFilterHover = useCallback(
+    (hoverFilter: 'all' | 'enabled' | 'disabled') => {
+      // Pre-fetch data on hover
+      const newVariables = {
+        ...queryVariables,
+        enabled: hoverFilter === 'all' ? undefined : hoverFilter === 'enabled',
+      };
+
+      client
+        .query({
+          query: GetPlaylistsDocument,
+          variables: newVariables,
+          fetchPolicy: 'cache-first',
+        })
+        .catch(() => {
+          // Ignore pre-fetch errors
+        });
+    },
+    [queryVariables, client]
+  );
+
+  const handleTogglePlaylist = async (playlist: Playlist) => {
+    try {
+      await togglePlaylist({ variables: { playlistId: playlist.id } });
+    } catch (error) {
+      console.error('Error toggling playlist:', error);
+    }
+  };
+
+  const handleSyncPlaylist = async (playlistId: number) => {
+    try {
+      await syncPlaylist({ variables: { playlistId } });
+    } catch (error) {
+      console.error('Error syncing playlist:', error);
+    }
+  };
+
+  const handleEditPlaylist = useCallback((playlist: Playlist) => {
+    setEditingPlaylist(playlist);
+    setShowPlaylistModal(true);
+  }, []);
+
+  const handleClosePlaylistModal = useCallback(() => {
+    setShowPlaylistModal(false);
+    setEditingPlaylist(null);
+  }, []);
+
+  const handleLoadMore = () => {
+    if (data?.playlists.pageInfo.hasNextPage) {
+      fetchMore({
+        variables: {
+          after: data.playlists.pageInfo.endCursor,
+        },
+        updateQuery: (
+          prevResult: GetPlaylistsQuery,
+          { fetchMoreResult }: { fetchMoreResult?: GetPlaylistsQuery }
+        ) => {
+          if (!fetchMoreResult) return prevResult;
+
+          return {
+            playlists: {
+              ...fetchMoreResult.playlists,
+              edges: [
+                ...prevResult.playlists.edges,
+                ...fetchMoreResult.playlists.edges,
+              ],
+            },
+          };
+        },
+      });
+    }
+  };
+
+  // Subtle loading indicator for filter changes
+  const isRefetching = networkStatus === 3; // NetworkStatus.refetch
+  const isInitialLoading = networkStatus === 1; // NetworkStatus.loading (initial load)
+
+  // Only show loading state on initial load
+  if (isInitialLoading && !data) {
+    return (
+      <section>
+        <h1 className='text-2xl font-semibold mb-4'>Playlists</h1>
+        <div className='bg-white rounded shadow p-6 min-h-[200px] flex items-center justify-center text-gray-400'>
+          Loading playlists...
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section>
+        <h1 className='text-2xl font-semibold mb-4'>Playlists</h1>
+        <div className='bg-white rounded shadow p-6 min-h-[200px] flex items-center justify-center text-red-500'>
+          Error loading playlists: {error.message}
+        </div>
+      </section>
+    );
+  }
+
+  const playlists = data?.playlists.edges || [];
+  const totalCount = data?.playlists.totalCount || 0;
+  const pageInfo = data?.playlists.pageInfo;
+
+  return (
+    <section>
+      <div className='flex items-center justify-between mb-4'>
+        <div className='flex items-center gap-3'>
+          <h1 className='text-2xl font-semibold'>
+            Playlists ({playlists.length} of {totalCount})
+          </h1>
+          {isRefetching && (
+            <div className='flex items-center gap-2 text-sm text-gray-500'>
+              <div className='w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin' />
+              <span>Updating...</span>
+            </div>
+          )}
+        </div>
+        <div className='flex items-center gap-4'>
+          <button
+            onClick={() => setShowPlaylistModal(true)}
+            className='px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors'
+          >
+            Create Playlist
+          </button>
+          <button
+            onClick={() => setShowDownloadModal(true)}
+            className='px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors'
+          >
+            Download URL
+          </button>
+          <SearchInput
+            placeholder='Search playlists...'
+            onSearch={handleSearch}
+            className='w-64'
+          />
+          <PageSizeSelector
+            pageSize={pageSize}
+            onPageSizeChange={handlePageSizeChange}
+          />
+          {totalCount > playlists.length && (
+            <span className='text-sm text-gray-500'>
+              Showing first {playlists.length} playlists
+            </span>
+          )}
+        </div>
+      </div>
+
+      <PlaylistFilters
+        currentEnabledFilter={filter}
+        onEnabledFilterChange={handleEnabledFilterChange}
+        onFilterHover={handleFilterHover}
+      />
+
+      <div className='relative'>
+        <PlaylistsTable
+          playlists={playlists}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+          onToggleEnabled={handleTogglePlaylist}
+          onSyncPlaylist={handleSyncPlaylist}
+          onEditPlaylist={handleEditPlaylist}
+          loading={loading}
+        />
+        {isRefetching && (
+          <div className='absolute inset-0 bg-white bg-opacity-50 flex items-center justify-center pointer-events-none'>
+            <div className='flex items-center gap-2 text-sm text-gray-600'>
+              <div className='w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin' />
+              <span>Updating...</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <LoadMoreButton
+        hasNextPage={!!pageInfo?.hasNextPage}
+        loading={loading}
+        remainingCount={totalCount - playlists.length}
+        onLoadMore={handleLoadMore}
+      />
+
+      {/* Modals */}
+
+      <PlaylistModal
+        isOpen={showPlaylistModal}
+        onClose={handleClosePlaylistModal}
+        playlist={editingPlaylist}
+        mode={editingPlaylist ? 'edit' : 'create'}
+      />
+
+      <DownloadUrlModal
+        isOpen={showDownloadModal}
+        onClose={() => setShowDownloadModal(false)}
+        onSuccess={() => {
+          // Optionally refresh the playlists data
+        }}
+      />
+    </section>
+  );
+}
+
+export const Route = createFileRoute('/playlists')({
+  component: Playlists,
+});
