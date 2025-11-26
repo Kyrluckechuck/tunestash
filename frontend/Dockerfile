@@ -16,9 +16,14 @@ COPY package.json yarn.lock ./
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
 
-# Use cache mount for yarn
+# Use cache mount for yarn with retry logic for CI reliability
+# Increased network timeout for slow ARM64 QEMU builds
 RUN --mount=type=cache,target=/usr/local/share/.cache/yarn,id=yarn-cache,sharing=locked \
-    yarn install --frozen-lockfile
+    yarn config set network-timeout 600000 && \
+    yarn install --frozen-lockfile || \
+    (echo "Retry 1/3..." && sleep 5 && yarn install --frozen-lockfile) || \
+    (echo "Retry 2/3..." && sleep 10 && yarn install --frozen-lockfile) || \
+    (echo "Retry 3/3..." && sleep 15 && yarn install --frozen-lockfile)
 
 # =============================================================================
 # Stage 3: Source code (rebuilds when source changes)
