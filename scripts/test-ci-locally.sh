@@ -32,12 +32,12 @@ docker compose down -v 2>/dev/null || true
 # Set environment variables like CI does
 export SLM_CONFIG_DIR="$CONFIG_DIR"
 export MUSIC_DIR="$MUSIC_DIR"
-export BACKEND_IMAGE="ghcr.io/kyrluckechuck/spotify-library-manager:latest"
-export FRONTEND_IMAGE="ghcr.io/kyrluckechuck/spotify-library-manager-frontend:latest"
+export BACKEND_IMAGE="ghcr.io/kyrluckechuck/tunestash:latest"
+export FRONTEND_IMAGE="ghcr.io/kyrluckechuck/tunestash-frontend:latest"
 export DJANGO_DEBUG="False"
 export DJANGO_SECRET_KEY="django-insecure-ci-testing-key"
 export AUTH_SECRET_KEY="ci-testing-auth-key"
-export POSTGRES_DB="spotify_library_manager"
+export POSTGRES_DB="tunestash"
 export POSTGRES_USER="slm_user"
 export POSTGRES_PASSWORD="slm_dev_password"
 

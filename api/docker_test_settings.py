@@ -11,9 +11,9 @@ def get_test_database_name():
     """Generate unique test database name for parallel execution."""
     worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
     if worker_id == "master":
-        return "test_spotify_library_manager"
+        return "test_tunestash"
     else:
-        return f"test_spotify_library_manager_{worker_id}"
+        return f"test_tunestash_{worker_id}"
 
 
 # Use PostgreSQL for tests (production parity) inside Docker network

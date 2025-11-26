@@ -80,7 +80,7 @@ settings = dynaconf.DjangoDynaconf(
     DATABASES={
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("POSTGRES_DB", "spotify_library_manager"),
+            "NAME": os.getenv("POSTGRES_DB", "tunestash"),
             "USER": os.getenv("POSTGRES_USER", "slm_user"),
             "PASSWORD": os.getenv("POSTGRES_PASSWORD", "slm_dev_password"),
             "HOST": os.getenv("POSTGRES_HOST", "localhost"),
@@ -97,7 +97,7 @@ settings = dynaconf.DjangoDynaconf(
         f"{os.getenv('POSTGRES_PASSWORD', 'slm_dev_password')}@"
         f"{os.getenv('POSTGRES_HOST', 'localhost')}:"
         f"{os.getenv('POSTGRES_PORT', '5432')}/"
-        f"{os.getenv('POSTGRES_DB', 'spotify_library_manager')}"
+        f"{os.getenv('POSTGRES_DB', 'tunestash')}"
     ),
     CELERY_RESULT_BACKEND="django-db",
     CELERY_ACCEPT_CONTENT=["json"],

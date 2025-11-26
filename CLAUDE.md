@@ -66,7 +66,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is a **full-stack Spotify library management application** with the following key components:
+This is a **full-stack music library sync application** (TuneStash) with the following key components:
 
 ### Backend Architecture
 - **Django/FastAPI Hybrid**: Django ORM for data models, FastAPI for API serving
@@ -118,7 +118,7 @@ This is a **full-stack Spotify library management application** with the followi
 - `docker-compose.override.yml` - Local Docker overrides (auto-created)
 
 ### Testing Configuration
-- Tests use **PostgreSQL** (production parity) with separate `test_spotify_library_manager` database
+- Tests use **PostgreSQL** (production parity) with separate `test_tunestash` database
 - Docker tests: Use `make test-api-docker` and `make test-frontend-docker` (no local setup needed)
 - Local tests: Use `make test-api` (requires local Python) or `make test-frontend` (requires local Node.js)
 - No PYTHONPATH setup needed - pytest handles paths automatically
@@ -397,8 +397,8 @@ The CI workflow (`.github/workflows/ci.yml`) uses **dual-layer caching** for Doc
 - Multi-platform builds (amd64, arm64) share cache across architectures
 
 **Cache scope:**
-- Backend: `backend-app` scope + registry cache at `ghcr.io/.../spotify-library-manager:buildcache`
-- Frontend: `frontend-app` scope + registry cache at `ghcr.io/.../spotify-library-manager-frontend:buildcache`
+- Backend: `backend-app` scope + registry cache at `ghcr.io/.../tunestash:buildcache`
+- Frontend: `frontend-app` scope + registry cache at `ghcr.io/.../tunestash-frontend:buildcache`
 
 **Local development caching:**
 - Local Docker builds also benefit from BuildKit cache mounts

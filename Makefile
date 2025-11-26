@@ -9,7 +9,7 @@ dev:
 dev-container-branch:
 	@BRANCH=$$(git branch --show-current | sed 's/\//-/g'); \
 	echo "🔍 Detected branch: $$BRANCH"; \
-	if docker manifest inspect ghcr.io/kyrluckechuck/spotify-library-manager:$$BRANCH > /dev/null 2>&1; then \
+	if docker manifest inspect ghcr.io/kyrluckechuck/tunestash:$$BRANCH > /dev/null 2>&1; then \
 		echo "✅ Found image for branch '$$BRANCH' on GHCR"; \
 		BACKEND_IMAGE_TAG=$$BRANCH docker compose up -d; \
 	else \
@@ -82,7 +82,7 @@ dev-admin:
 
 # Access PostgreSQL database
 dev-db:
-	PGPASSWORD=slm_dev_password psql -h localhost -p 5432 -U slm_user -d spotify_library_manager
+	PGPASSWORD=slm_dev_password psql -h localhost -p 5432 -U slm_user -d tunestash
 
 # Celery queue management
 clear-celery-queue:
@@ -381,18 +381,18 @@ build-frontend:
 # Docker commands
 docker-build:
 	@echo "🔨 Building production Docker images..."
-	docker build --target backend-prod -t spotify-library-manager:latest .
-	docker build --target production -t spotify-library-manager-frontend:latest ./frontend
+	docker build --target backend-prod -t tunestash:latest .
+	docker build --target production -t tunestash-frontend:latest ./frontend
 
 docker-build-dev:
 	@echo "🔨 Building development Docker images..."
-	docker build --target backend-dev -t spotify-library-manager:dev .
-	docker build --target production -t spotify-library-manager-frontend:dev ./frontend
+	docker build --target backend-dev -t tunestash:dev .
+	docker build --target production -t tunestash-frontend:dev ./frontend
 
 docker-build-test:
 	@echo "🔨 Building test Docker images..."
-	docker build --target backend-test -t spotify-library-manager:test .
-	docker build --target test -t spotify-library-manager-frontend:test ./frontend
+	docker build --target backend-test -t tunestash:test .
+	docker build --target test -t tunestash-frontend:test ./frontend
 
 # Use dev-container and dev-container-down instead
 docker-up:
@@ -404,8 +404,8 @@ docker-down:
 # Build and publish (existing)
 build-and-publish:
 	sudo podman build -t test_build .
-	sudo podman tag test_build ghcr.io/kyrluckechuck/spotify-library-manager:latest
-	sudo podman push ghcr.io/kyrluckechuck/spotify-library-manager:latest
+	sudo podman tag test_build ghcr.io/kyrluckechuck/tunestash:latest
+	sudo podman push ghcr.io/kyrluckechuck/tunestash:latest
 
 # Cleanup
 clean:

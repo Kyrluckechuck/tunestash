@@ -1,5 +1,5 @@
 """
-Celery app configuration for Spotify Library Manager.
+Celery app configuration for TuneStash.
 """
 
 import logging
@@ -25,7 +25,7 @@ django.setup()
 # Configure logger for signal handlers (before Celery app creation)
 logger = logging.getLogger("celery_diagnostics")
 
-app = Celery("spotify_library_manager")
+app = Celery("tunestash")
 
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.

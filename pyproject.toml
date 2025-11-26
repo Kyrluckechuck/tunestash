@@ -23,9 +23,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "spotify-library-manager"
+name = "tunestash"
 version = "1.0.1"
-description = "Spotify Library Manager"
+description = "TuneStash - Music Library Sync Tool"
 requires-python = ">=3.13"
 dependencies = [
     "django>=4.0",

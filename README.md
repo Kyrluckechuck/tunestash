@@ -1,4 +1,7 @@
-# Spotify Library Manager
+# TuneStash
+
+A music library sync tool that tracks your Spotify artists and playlists, then downloads the music locally via YouTube Music.
+
 Originally derived as a fork of [glomatico/spotify-aac-downloader](https://github.com/glomatico/spotify-aac-downloader), this has grown into a completely different behemoth.
 
 This started as a simple want to mass-download songs for specific artists since they were not otherwise available, and snowballed into a full-fledged library management platform including:
@@ -70,8 +73,8 @@ docker compose down -v && git pull && docker compose up -d
 For development setups or data preservation, see [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for detailed instructions.
 
 ## Screenshots
-![Main Dashboard](https://github.com/Kyrluckechuck/spotify-library-manager/assets/7606153/6d32f8d5-fe6b-4884-a5a9-7970aaba284a)
-![Example Artist Page](https://github.com/Kyrluckechuck/spotify-library-manager/assets/7606153/2dcceee2-41e4-4101-b257-2ca754017c20)
+![Main Dashboard](https://github.com/Kyrluckechuck/tunestash/assets/7606153/6d32f8d5-fe6b-4884-a5a9-7970aaba284a)
+![Example Artist Page](https://github.com/Kyrluckechuck/tunestash/assets/7606153/2dcceee2-41e4-4101-b257-2ca754017c20)
 
 
 

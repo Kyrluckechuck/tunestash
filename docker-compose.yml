@@ -6,7 +6,7 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-spotify_library_manager}
+      POSTGRES_DB: ${POSTGRES_DB:-tunestash}
       POSTGRES_USER: ${POSTGRES_USER:-slm_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slm_dev_password}
     volumes:
@@ -17,7 +17,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-slm_user} -d ${POSTGRES_DB:-spotify_library_manager}",
+          "pg_isready -U ${POSTGRES_USER:-slm_user} -d ${POSTGRES_DB:-tunestash}",
         ]
       interval: 10s
       timeout: 5s
@@ -25,14 +25,14 @@ services:
     restart: unless-stopped
 
   web:
-    image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/spotify-library-manager:latest}
+    image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash:latest}
     environment:
       - CI=${CI:-false}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-development-only-key}
       - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
       - HOST=${HOST:-0.0.0.0}
       - PORT=${PORT:-5000}
-      - POSTGRES_DB=${POSTGRES_DB:-spotify_library_manager}
+      - POSTGRES_DB=${POSTGRES_DB:-tunestash}
       - POSTGRES_USER=${POSTGRES_USER:-slm_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
       - POSTGRES_HOST=postgres
@@ -64,7 +64,7 @@ services:
 
   frontend:
     # Nginx frontend service - serves static files and proxies API
-    image: ${FRONTEND_IMAGE:-ghcr.io/kyrluckechuck/spotify-library-manager-frontend:latest}
+    image: ${FRONTEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash-frontend:latest}
     depends_on:
       web:
         condition: service_healthy
@@ -81,9 +81,9 @@ services:
     restart: unless-stopped
 
   worker:
-    image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/spotify-library-manager:latest}
+    image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash:latest}
     environment:
-      - POSTGRES_DB=${POSTGRES_DB:-spotify_library_manager}
+      - POSTGRES_DB=${POSTGRES_DB:-tunestash}
       - POSTGRES_USER=${POSTGRES_USER:-slm_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
       - POSTGRES_HOST=postgres
@@ -109,9 +109,9 @@ services:
           memory: 512M # Soft limit - guaranteed minimum
 
   beat:
-    image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/spotify-library-manager:latest}
+    image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash:latest}
     environment:
-      - POSTGRES_DB=${POSTGRES_DB:-spotify_library_manager}
+      - POSTGRES_DB=${POSTGRES_DB:-tunestash}
       - POSTGRES_USER=${POSTGRES_USER:-slm_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
       - POSTGRES_HOST=postgres

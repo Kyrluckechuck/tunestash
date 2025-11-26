@@ -1,4 +1,4 @@
-# Contributing to Spotify Library Manager
+# Contributing to TuneStash
 
 Thank you for your interest in contributing! This project uses a **Docker-first development approach** for consistency across all development environments.
 
@@ -16,7 +16,7 @@ Thank you for your interest in contributing! This project uses a **Docker-first 
 1. **Clone and configure**
    ```bash
    git clone <repository-url>
-   cd spotify-library-manager
+   cd tunestash
    cp .env.example .env
    mkdir -p ./config && cp api/settings.yaml.example ./config/settings.yaml
    ```
@@ -161,7 +161,7 @@ make dev-container       # Restart
 ```
 
 ### Test Database Issues
-Tests use a separate PostgreSQL database (`test_spotify_library_manager`) which is created automatically.
+Tests use a separate PostgreSQL database (`test_tunestash`) which is created automatically.
 
 ## Getting Help
 
