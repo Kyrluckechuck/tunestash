@@ -13,9 +13,14 @@ RUN apk add --no-cache yarn
 # Copy package files first for better caching
 COPY frontend/package.json frontend/yarn.lock ./
 
-# Install dependencies with cache mount
+# Install dependencies with cache mount and retry logic for CI reliability
+# Increased network timeout for slow ARM64 QEMU builds
 RUN --mount=type=cache,target=/usr/local/share/.cache/yarn,id=yarn-cache,sharing=locked \
-    yarn install --frozen-lockfile --production=false
+    yarn config set network-timeout 600000 && \
+    yarn install --frozen-lockfile --production=false || \
+    (echo "Retry 1/3..." && sleep 5 && yarn install --frozen-lockfile --production=false) || \
+    (echo "Retry 2/3..." && sleep 10 && yarn install --frozen-lockfile --production=false) || \
+    (echo "Retry 3/3..." && sleep 15 && yarn install --frozen-lockfile --production=false)
 
 # Copy source code and build
 COPY frontend/ ./
