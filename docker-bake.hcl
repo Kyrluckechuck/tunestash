@@ -58,8 +58,7 @@ target "backend" {
   ]
 
   cache-to = [
-    "type=gha,scope=backend-app,mode=max",
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:buildcache,mode=max"
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:buildcache,mode=max,oci-mediatypes=true,image-manifest=true"
   ]
 
   # Disable attestations to fix GHCR tag association issues
@@ -95,8 +94,7 @@ target "frontend" {
   ]
 
   cache-to = [
-    "type=gha,scope=frontend-app,mode=max",
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:buildcache,mode=max"
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:buildcache,mode=max,oci-mediatypes=true,image-manifest=true"
   ]
 
   # Disable attestations to fix GHCR tag association issues
