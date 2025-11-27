@@ -6,9 +6,10 @@
 #
 # Caching Strategy:
 #   Both targets use dual-layer caching for optimal CI performance:
-#   1. GitHub Actions cache (type=gha) - Fast in-runner cache, 10GB limit
-#   2. Registry cache (type=registry) - Persistent cache stored in GHCR, no size limits
-#   This significantly speeds up builds by caching yarn/pip package installations
+#   1. GitHub Actions cache (type=gha) - Fast in-runner cache, 10GB limit, per-branch
+#   2. Registry cache (type=registry) - Persistent cache stored in GHCR at :cache tag
+#   Uses zstd compression for smaller cache uploads/downloads.
+#   Both amd64 and arm64 layers are cached together.
 
 # Variables that can be overridden
 variable "REGISTRY" {
@@ -53,12 +54,13 @@ target "backend" {
   ]
 
   cache-from = [
-    "type=gha,scope=backend-app",
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:buildcache"
+    "type=gha,scope=backend",
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:cache"
   ]
 
   cache-to = [
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:buildcache,mode=max,oci-mediatypes=true,image-manifest=true"
+    "type=gha,scope=backend,mode=max",
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash:cache,mode=max,compression=zstd"
   ]
 
   # Disable attestations to fix GHCR tag association issues
@@ -89,12 +91,13 @@ target "frontend" {
   ]
 
   cache-from = [
-    "type=gha,scope=frontend-app",
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:buildcache"
+    "type=gha,scope=frontend",
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:cache"
   ]
 
   cache-to = [
-    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:buildcache,mode=max,oci-mediatypes=true,image-manifest=true"
+    "type=gha,scope=frontend,mode=max",
+    "type=registry,ref=${REGISTRY}/${REPO_OWNER}/tunestash-frontend:cache,mode=max,compression=zstd"
   ]
 
   # Disable attestations to fix GHCR tag association issues
