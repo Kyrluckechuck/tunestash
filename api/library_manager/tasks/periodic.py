@@ -9,6 +9,7 @@ from ..models import (
     ALBUM_GROUPS_TO_IGNORE,
     ALBUM_TYPES_TO_DOWNLOAD,
     Album,
+    PlaylistStatus,
     TrackedPlaylist,
 )
 from .core import logger
@@ -19,9 +20,13 @@ from .download import download_single_album
     bind=True, name="library_manager.tasks.sync_tracked_playlists"
 )  # Scheduled via Celery Beat
 def sync_tracked_playlists(self: Any, task_id: Optional[str] = None) -> None:
-    all_enabled_playlists = TrackedPlaylist.objects.filter(enabled=True).order_by(
-        "last_synced_at", "id"
-    )
+    # Only sync playlists that have an active status
+    # Skip playlists with spotify_api_restricted, not_found, or disabled_by_user status
+    # to avoid hitting rate limits from repeated failed API calls
+    # Note: status=ACTIVE is equivalent to enabled=True (enabled is a computed property)
+    all_enabled_playlists = TrackedPlaylist.objects.filter(
+        status=PlaylistStatus.ACTIVE,
+    ).order_by("last_synced_at", "id")
     helpers.enqueue_playlists(
         list(all_enabled_playlists), priority=None
     )  # task.priority not available

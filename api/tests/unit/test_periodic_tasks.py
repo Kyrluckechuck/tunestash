@@ -11,7 +11,94 @@ from library_manager.models import (
     ALBUM_TYPES_TO_DOWNLOAD,
     Album,
     Artist,
+    PlaylistStatus,
+    TrackedPlaylist,
 )
+
+
+class TestSyncTrackedPlaylists(TestCase):
+    """Test sync_tracked_playlists periodic task."""
+
+    def setUp(self):
+        """Set up test playlists with different statuses."""
+        # Create active playlists (should be synced)
+        self.active_playlist1 = TrackedPlaylist.objects.create(
+            name="Active Playlist 1",
+            url="spotify:playlist:active001",
+            status=PlaylistStatus.ACTIVE,
+        )
+        self.active_playlist2 = TrackedPlaylist.objects.create(
+            name="Active Playlist 2",
+            url="spotify:playlist:active002",
+            status=PlaylistStatus.ACTIVE,
+        )
+
+        # Create restricted playlist (should NOT be synced)
+        self.restricted_playlist = TrackedPlaylist.objects.create(
+            name="Daily Mix - API Restricted",
+            url="spotify:playlist:restricted01",
+            status=PlaylistStatus.SPOTIFY_API_RESTRICTED,
+            status_message="Spotify-generated playlist cannot be accessed via API",
+        )
+
+        # Create not found playlist (should NOT be synced)
+        self.not_found_playlist = TrackedPlaylist.objects.create(
+            name="Deleted Playlist",
+            url="spotify:playlist:notfound001",
+            status=PlaylistStatus.NOT_FOUND,
+            status_message="Playlist not found - deleted or private",
+        )
+
+        # Create disabled by user playlist (should NOT be synced)
+        self.disabled_playlist = TrackedPlaylist.objects.create(
+            name="Disabled Playlist",
+            url="spotify:playlist:disabled001",
+            status=PlaylistStatus.DISABLED_BY_USER,
+        )
+
+    @patch("library_manager.tasks.periodic.helpers")
+    def test_sync_tracked_playlists_only_syncs_active_playlists(self, mock_helpers):
+        """Test that sync_tracked_playlists only queues active playlists."""
+        from library_manager.tasks import sync_tracked_playlists
+
+        # Run the periodic task
+        sync_tracked_playlists()
+
+        # Verify enqueue_playlists was called
+        assert mock_helpers.enqueue_playlists.call_count == 1
+
+        # Get the playlists that were passed to enqueue_playlists
+        call_args = mock_helpers.enqueue_playlists.call_args
+        synced_playlists = call_args[0][0]
+
+        # Should only include active playlists
+        synced_urls = [p.url for p in synced_playlists]
+        assert self.active_playlist1.url in synced_urls
+        assert self.active_playlist2.url in synced_urls
+
+        # Should NOT include restricted, not found, or disabled playlists
+        assert self.restricted_playlist.url not in synced_urls
+        assert self.not_found_playlist.url not in synced_urls
+        assert self.disabled_playlist.url not in synced_urls
+
+    @patch("library_manager.tasks.periodic.helpers")
+    def test_sync_tracked_playlists_handles_no_active_playlists(self, mock_helpers):
+        """Test that task handles case when no active playlists exist."""
+        from library_manager.tasks import sync_tracked_playlists
+
+        # Set all playlists to non-active status
+        TrackedPlaylist.objects.filter(status=PlaylistStatus.ACTIVE).update(
+            status=PlaylistStatus.DISABLED_BY_USER
+        )
+
+        # Run the periodic task
+        sync_tracked_playlists()
+
+        # Should still call enqueue_playlists but with empty list
+        assert mock_helpers.enqueue_playlists.call_count == 1
+        call_args = mock_helpers.enqueue_playlists.call_args
+        synced_playlists = call_args[0][0]
+        assert len(synced_playlists) == 0
 
 
 class TestPeriodicTasks(TestCase):
