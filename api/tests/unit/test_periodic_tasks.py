@@ -94,11 +94,8 @@ class TestSyncTrackedPlaylists(TestCase):
         # Run the periodic task
         sync_tracked_playlists()
 
-        # Should still call enqueue_playlists but with empty list
-        assert mock_helpers.enqueue_playlists.call_count == 1
-        call_args = mock_helpers.enqueue_playlists.call_args
-        synced_playlists = call_args[0][0]
-        assert len(synced_playlists) == 0
+        # Should NOT call enqueue_playlists when no playlists need syncing
+        assert mock_helpers.enqueue_playlists.call_count == 0
 
 
 class TestPeriodicTasks(TestCase):

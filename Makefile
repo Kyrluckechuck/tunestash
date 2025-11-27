@@ -221,7 +221,7 @@ lint-api:
 	rm -f .lint-tmp/*; \
 	echo "=== Running all API linters in parallel ==="; \
 	echo ""; \
-	(cd api && python -m flake8 --extend-ignore=E501,W503 --exclude=.venv,__pycache__,node_modules) > .lint-tmp/flake8.log 2>&1 & \
+	(cd api && python -m flake8) > .lint-tmp/flake8.log 2>&1 & \
 	PID_FLAKE8=$$!; \
 	(cd api && python -m black --check --diff .) > .lint-tmp/black.log 2>&1 & \
 	PID_BLACK=$$!; \
@@ -272,7 +272,7 @@ lint-api:
 # Individual linter targets (for running specific linters manually)
 
 lint-api-flake8:
-	cd api && python -m flake8 --extend-ignore=E501,W503 --exclude=.venv,__pycache__,node_modules
+	cd api && python -m flake8
 
 lint-api-black:
 	cd api && python -m black --check --diff .
@@ -299,7 +299,7 @@ lint-all:
 	rm -f .lint-tmp/*; \
 	echo "=== Running all linters (API + Frontend) in parallel ==="; \
 	echo ""; \
-	(cd api && python -m flake8 --extend-ignore=E501,W503 --exclude=.venv,__pycache__,node_modules) > .lint-tmp/flake8.log 2>&1 & \
+	(cd api && python -m flake8) > .lint-tmp/flake8.log 2>&1 & \
 	PID_FLAKE8=$$!; \
 	(cd api && python -m black --check --diff .) > .lint-tmp/black.log 2>&1 & \
 	PID_BLACK=$$!; \
