@@ -1,6 +1,11 @@
 import type { Playlist } from '../../types/generated/graphql';
 import { SortableTableHeader } from '../ui/SortableTableHeader';
+import { StatusBadge } from '../ui/StatusBadge';
 import { ToggleStatusButton } from '../ui/ToggleStatusButton';
+
+function isRestrictedStatus(status: string): boolean {
+  return status === 'spotify_api_restricted' || status === 'not_found';
+}
 
 export type PlaylistSortField =
   | 'name'
@@ -120,29 +125,51 @@ export function PlaylistsTable({
                   </div>
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap'>
-                  <ToggleStatusButton
-                    variant='switch'
-                    enabled={playlist.enabled}
-                    onToggle={() => onToggleEnabled(playlist)}
-                    mutating={enabledMutatingIds?.has(playlist.id)}
-                    pulse={enabledPulseIds?.has(playlist.id)}
-                    labels={{ on: 'Enabled', off: 'Disabled' }}
-                    ariaLabel={
-                      playlist.enabled ? 'Disable playlist' : 'Enable playlist'
-                    }
-                  />
-                  <ToggleStatusButton
-                    variant='badge'
-                    enabled={playlist.enabled}
-                    onToggle={() => onToggleEnabled(playlist)}
-                    mutating={enabledMutatingIds?.has(playlist.id)}
-                    pulse={enabledPulseIds?.has(playlist.id)}
-                    labels={{ on: 'Enabled', off: 'Disabled' }}
-                    colors={{ on: 'green', off: 'red' }}
-                    ariaLabel={
-                      playlist.enabled ? 'Disable playlist' : 'Enable playlist'
-                    }
-                  />
+                  {isRestrictedStatus(playlist.status) ? (
+                    <StatusBadge
+                      label={
+                        playlist.status === 'spotify_api_restricted'
+                          ? 'Not Supported'
+                          : 'Not Found'
+                      }
+                      color={
+                        playlist.status === 'spotify_api_restricted'
+                          ? 'amber'
+                          : 'red'
+                      }
+                      tooltip={playlist.statusMessage ?? undefined}
+                    />
+                  ) : (
+                    <>
+                      <ToggleStatusButton
+                        variant='switch'
+                        enabled={playlist.enabled}
+                        onToggle={() => onToggleEnabled(playlist)}
+                        mutating={enabledMutatingIds?.has(playlist.id)}
+                        pulse={enabledPulseIds?.has(playlist.id)}
+                        labels={{ on: 'Enabled', off: 'Disabled' }}
+                        ariaLabel={
+                          playlist.enabled
+                            ? 'Disable playlist'
+                            : 'Enable playlist'
+                        }
+                      />
+                      <ToggleStatusButton
+                        variant='badge'
+                        enabled={playlist.enabled}
+                        onToggle={() => onToggleEnabled(playlist)}
+                        mutating={enabledMutatingIds?.has(playlist.id)}
+                        pulse={enabledPulseIds?.has(playlist.id)}
+                        labels={{ on: 'Enabled', off: 'Disabled' }}
+                        colors={{ on: 'green', off: 'red' }}
+                        ariaLabel={
+                          playlist.enabled
+                            ? 'Disable playlist'
+                            : 'Enable playlist'
+                        }
+                      />
+                    </>
+                  )}
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap'>
                   <ToggleStatusButton
@@ -179,50 +206,54 @@ export function PlaylistsTable({
                     : 'Never'}
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2'>
-                  <button
-                    onClick={() => onSyncPlaylist(playlist.id)}
-                    disabled={
-                      syncMutatingIds?.has(playlist.id) ||
-                      forceSyncMutatingIds?.has(playlist.id)
-                    }
-                    className='px-3 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors'
-                  >
-                    {syncMutatingIds?.has(playlist.id) ? (
-                      <span className='inline-flex items-center gap-2'>
-                        <span className='w-3 h-3 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin' />
-                        <span>Syncing…</span>
-                      </span>
-                    ) : (
-                      'Sync Now'
-                    )}
-                  </button>
-                  {onForceSyncPlaylist && (
-                    <button
-                      onClick={() => onForceSyncPlaylist(playlist.id)}
-                      disabled={
-                        syncMutatingIds?.has(playlist.id) ||
-                        forceSyncMutatingIds?.has(playlist.id)
-                      }
-                      className='px-3 py-1 rounded text-xs font-medium bg-orange-100 text-orange-800 hover:bg-orange-200 transition-colors'
-                      title='Force sync will re-download all tracks, ignoring existing ones'
-                    >
-                      {forceSyncMutatingIds?.has(playlist.id) ? (
-                        <span className='inline-flex items-center gap-2'>
-                          <span className='w-3 h-3 border-2 border-gray-300 border-t-orange-500 rounded-full animate-spin' />
-                          <span>Force Syncing…</span>
-                        </span>
-                      ) : (
-                        'Force Sync'
+                  {!isRestrictedStatus(playlist.status) && (
+                    <>
+                      <button
+                        onClick={() => onSyncPlaylist(playlist.id)}
+                        disabled={
+                          syncMutatingIds?.has(playlist.id) ||
+                          forceSyncMutatingIds?.has(playlist.id)
+                        }
+                        className='px-3 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors'
+                      >
+                        {syncMutatingIds?.has(playlist.id) ? (
+                          <span className='inline-flex items-center gap-2'>
+                            <span className='w-3 h-3 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin' />
+                            <span>Syncing…</span>
+                          </span>
+                        ) : (
+                          'Sync Now'
+                        )}
+                      </button>
+                      {onForceSyncPlaylist && (
+                        <button
+                          onClick={() => onForceSyncPlaylist(playlist.id)}
+                          disabled={
+                            syncMutatingIds?.has(playlist.id) ||
+                            forceSyncMutatingIds?.has(playlist.id)
+                          }
+                          className='px-3 py-1 rounded text-xs font-medium bg-orange-100 text-orange-800 hover:bg-orange-200 transition-colors'
+                          title='Force sync will re-download all tracks, ignoring existing ones'
+                        >
+                          {forceSyncMutatingIds?.has(playlist.id) ? (
+                            <span className='inline-flex items-center gap-2'>
+                              <span className='w-3 h-3 border-2 border-gray-300 border-t-orange-500 rounded-full animate-spin' />
+                              <span>Force Syncing…</span>
+                            </span>
+                          ) : (
+                            'Force Sync'
+                          )}
+                        </button>
                       )}
-                    </button>
-                  )}
-                  {onEditPlaylist && (
-                    <button
-                      onClick={() => onEditPlaylist(playlist)}
-                      className='px-3 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition-colors'
-                    >
-                      Edit
-                    </button>
+                      {onEditPlaylist && (
+                        <button
+                          onClick={() => onEditPlaylist(playlist)}
+                          className='px-3 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition-colors'
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </>
                   )}
                   {onDeletePlaylist && (
                     <button

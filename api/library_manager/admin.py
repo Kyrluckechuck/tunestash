@@ -81,8 +81,15 @@ class AlbumAdmin(admin.ModelAdmin):
 
 @admin.register(TrackedPlaylist)
 class TrackedPlaylistAdmin(admin.ModelAdmin):
-    list_display = ("name", "url", "enabled", "auto_track_artists", "last_synced_at")
-    list_filter = ("enabled", "auto_track_artists", "last_synced_at")
+    list_display = (
+        "name",
+        "url",
+        "status",
+        "status_message",
+        "auto_track_artists",
+        "last_synced_at",
+    )
+    list_filter = ("status", "auto_track_artists", "last_synced_at")
     search_fields = ("name", "url")
     ordering = ("name",)
 

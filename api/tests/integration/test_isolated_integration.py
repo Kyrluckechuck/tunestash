@@ -93,13 +93,13 @@ class TestIsolatedIntegration:
     @pytest.mark.asyncio
     async def test_toggle_playlist_isolated(self, transactional_db):
         """Test playlist toggling with isolated database."""
-        from library_manager.models import TrackedPlaylist
+        from library_manager.models import PlaylistStatus, TrackedPlaylist
 
         # Create playlist in isolated transaction
         playlist = await sync_to_async(TrackedPlaylist.objects.create)(
             name="Test Playlist",
             url="https://open.spotify.com/playlist/test123",
-            enabled=False,
+            status=PlaylistStatus.DISABLED_BY_USER,
             auto_track_artists=True,
         )
 

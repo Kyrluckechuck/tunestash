@@ -9,6 +9,7 @@ from library_manager.models import (
     Album,
     Artist,
     DownloadHistory,
+    PlaylistStatus,
     Song,
     TaskHistory,
     TrackedPlaylist,
@@ -70,7 +71,13 @@ class TrackedPlaylistFactory(DjangoModelFactory):
 
     name = Faker("sentence", nb_words=3)
     url = Sequence(lambda n: f"https://open.spotify.com/playlist/playlist_{n}")
-    enabled = Faker("boolean")
+    status = Faker(
+        "random_element",
+        elements=[
+            PlaylistStatus.ACTIVE,
+            PlaylistStatus.DISABLED_BY_USER,
+        ],
+    )
     auto_track_artists = Faker("boolean")
     last_synced_at = Faker("date_time", tzinfo=timezone.utc)
 
@@ -137,16 +144,16 @@ class WantedAlbumFactory(AlbumFactory):
 
 
 class EnabledPlaylistFactory(TrackedPlaylistFactory):
-    """Factory for creating enabled playlists."""
+    """Factory for creating enabled (active) playlists."""
 
-    enabled = True
+    status = PlaylistStatus.ACTIVE
     auto_track_artists = True
 
 
 class DisabledPlaylistFactory(TrackedPlaylistFactory):
     """Factory for creating disabled playlists."""
 
-    enabled = False
+    status = PlaylistStatus.DISABLED_BY_USER
 
 
 class CompletedTaskFactory(TaskHistoryFactory):

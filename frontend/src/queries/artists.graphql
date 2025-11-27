@@ -138,6 +138,8 @@ query GetPlaylists(
       id
       name
       url
+      status
+      statusMessage
       enabled
       autoTrackArtists
       lastSyncedAt
@@ -225,6 +227,8 @@ mutation TogglePlaylist($playlistId: Int!) {
     playlist {
       id
       name
+      status
+      statusMessage
       enabled
     }
   }
@@ -275,6 +279,8 @@ mutation CreatePlaylist(
     id
     name
     url
+    status
+    statusMessage
     enabled
     autoTrackArtists
   }

@@ -4,7 +4,7 @@ from django.test import TransactionTestCase
 
 from asgiref.sync import sync_to_async
 
-from library_manager.models import Album, Artist, TrackedPlaylist
+from library_manager.models import Album, Artist, PlaylistStatus, TrackedPlaylist
 from src.schema import schema
 
 
@@ -171,7 +171,7 @@ class TestPlaylistMutations(TransactionTestCase):
         playlist = await sync_to_async(TrackedPlaylist.objects.create)(
             name="Test Playlist",
             url="https://open.spotify.com/playlist/test123",
-            enabled=False,
+            status=PlaylistStatus.DISABLED_BY_USER,
             auto_track_artists=True,
         )
 
@@ -202,7 +202,7 @@ class TestPlaylistMutations(TransactionTestCase):
         playlist = await sync_to_async(TrackedPlaylist.objects.create)(
             name="Test Playlist",
             url="https://open.spotify.com/playlist/test123",
-            enabled=True,
+            status=PlaylistStatus.ACTIVE,
             auto_track_artists=True,
         )
 

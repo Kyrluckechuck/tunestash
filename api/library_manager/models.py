@@ -592,15 +592,39 @@ class Album(models.Model):
         db_table = "albums"
 
 
+class PlaylistStatus(models.TextChoices):
+    """Status choices for tracked playlists."""
+
+    ACTIVE = "active", "Active"
+    DISABLED_BY_USER = "disabled_by_user", "Disabled by user"
+    SPOTIFY_API_RESTRICTED = (
+        "spotify_api_restricted",
+        "Spotify API restricted (algorithmic playlists)",
+    )
+    NOT_FOUND = "not_found", "Not found (deleted or private)"
+
+
 class TrackedPlaylist(models.Model):
     name: models.CharField = models.CharField(max_length=2048)
     url: models.CharField = models.CharField(max_length=2048, unique=True)
-    enabled: models.BooleanField = models.BooleanField(default=True)
+    status: models.CharField = models.CharField(
+        max_length=30,
+        choices=PlaylistStatus.choices,
+        default=PlaylistStatus.ACTIVE,
+    )
+    status_message: models.CharField = models.CharField(
+        max_length=255, null=True, blank=True
+    )
     auto_track_artists: models.BooleanField = models.BooleanField(default=False)
     last_synced_at: models.DateTimeField = models.DateTimeField(default=None, null=True)
 
+    @property
+    def enabled(self) -> bool:
+        """Backwards-compatible property: playlist is enabled if status is ACTIVE."""
+        return bool(self.status == PlaylistStatus.ACTIVE)
+
     def __str__(self) -> str:
-        return f"name: {self.name} | url: {self.url} | enabled: {self.enabled}"
+        return f"name: {self.name} | url: {self.url} | status: {self.status}"
 
     class Meta(TypedModelMeta):
         app_label = "library_manager"

@@ -24,6 +24,7 @@ function Playlists() {
     error,
     isRefreshing,
     isInitialLoading,
+    issuesCount,
 
     // Filters & sorting
     filter,
@@ -127,6 +128,7 @@ function Playlists() {
         currentEnabledFilter={filter}
         onEnabledFilterChange={handleEnabledFilterChange}
         onFilterHover={handleFilterHover}
+        issuesCount={issuesCount}
       />
 
       <div className='relative'>

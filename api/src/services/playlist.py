@@ -6,7 +6,9 @@ from django.db.models import Q
 
 from asgiref.sync import sync_to_async
 
+from library_manager.models import PlaylistStatus
 from library_manager.models import TrackedPlaylist as DjangoPlaylist
+from library_manager.validators import is_spotify_owned_playlist
 
 from ..graphql_types.models import MutationResult, Playlist
 from .base import BaseService
@@ -94,6 +96,7 @@ class PlaylistService(BaseService[Playlist]):
         **filters: Any,
     ) -> Tuple[List[Playlist], bool, int]:
         enabled: Optional[bool] = filters.get("enabled")
+        status_filter: Optional[str] = filters.get("status")
         search: Optional[str] = filters.get("search")
         sort_by = (
             filters.get("sort_by") if isinstance(filters.get("sort_by"), str) else None
@@ -106,8 +109,14 @@ class PlaylistService(BaseService[Playlist]):
         queryset = self.model.objects.all()
 
         # Apply filters
-        if enabled is not None:
-            queryset = queryset.filter(enabled=enabled)
+        if status_filter is not None:
+            queryset = queryset.filter(status=status_filter)
+        elif enabled is not None:
+            # Backwards compatibility: enabled=True means status=active
+            if enabled:
+                queryset = queryset.filter(status=PlaylistStatus.ACTIVE)
+            else:
+                queryset = queryset.exclude(status=PlaylistStatus.ACTIVE)
 
         if search:
             queryset = queryset.filter(
@@ -117,7 +126,8 @@ class PlaylistService(BaseService[Playlist]):
         # Apply sorting
         sort_field_map: dict[str, str] = {
             "name": "name",
-            "enabled": "enabled",
+            "status": "status",
+            "enabled": "status",  # Backwards compatibility
             "autoTrackArtists": "auto_track_artists",
             "lastSyncedAt": "last_synced_at",
         }
@@ -156,7 +166,8 @@ class PlaylistService(BaseService[Playlist]):
         self, playlist_id: str, auto_track_artists: bool = False
     ) -> Playlist:
         django_playlist = await self.model.objects.aget(url__contains=playlist_id)
-        django_playlist.enabled = True
+        django_playlist.status = PlaylistStatus.ACTIVE
+        django_playlist.status_message = None
         django_playlist.auto_track_artists = auto_track_artists
         await django_playlist.asave()
 
@@ -178,7 +189,18 @@ class PlaylistService(BaseService[Playlist]):
         """
         Save a playlist by its Spotify ID, fetching the name from Spotify.
         Creates the playlist if it doesn't exist, or returns existing one.
+
+        Raises:
+            ValueError: If the playlist is a Spotify-owned algorithmic playlist
         """
+        # Block Spotify-owned playlists (Discover Weekly, Daily Mix, etc.)
+        if is_spotify_owned_playlist(spotify_id):
+            raise ValueError(
+                "This is a Spotify-generated playlist (like Discover Weekly or Daily Mix) "
+                "which cannot be accessed via Spotify's API. "
+                "Try copying the tracks to your own playlist instead."
+            )
+
         spotify_uri = f"spotify:playlist:{spotify_id}"
 
         # Check if playlist already exists
@@ -189,7 +211,8 @@ class PlaylistService(BaseService[Playlist]):
         if existing_playlist:
             # Enable tracking if not already enabled
             if not existing_playlist.enabled:
-                existing_playlist.enabled = True
+                existing_playlist.status = PlaylistStatus.ACTIVE
+                existing_playlist.status_message = None
                 existing_playlist.auto_track_artists = auto_track_artists
                 await existing_playlist.asave()
 
@@ -227,9 +250,21 @@ class PlaylistService(BaseService[Playlist]):
     async def create_playlist(
         self, name: str, url: str, auto_track_artists: bool = False
     ) -> Playlist:
-        """Create a new playlist, checking for duplicates using normalized URLs."""
+        """Create a new playlist, checking for duplicates using normalized URLs.
+
+        Raises:
+            ValueError: If the playlist is a Spotify-owned algorithmic playlist
+        """
         # Normalize the URL to strip tracking parameters for deduplication
         normalized_url = self._normalize_spotify_url(url)
+
+        # Block Spotify-owned playlists (Discover Weekly, Daily Mix, etc.)
+        if is_spotify_owned_playlist(normalized_url):
+            raise ValueError(
+                "This is a Spotify-generated playlist (like Discover Weekly or Daily Mix) "
+                "which cannot be accessed via Spotify's API. "
+                "Try copying the tracks to your own playlist instead."
+            )
 
         # Check for duplicates against both normalized URI and potential HTTP format
         existing_playlist = await sync_to_async(
@@ -243,7 +278,7 @@ class PlaylistService(BaseService[Playlist]):
         django_playlist = self.model(
             name=name,
             url=normalized_url,  # Store the normalized URL
-            enabled=True,
+            status=PlaylistStatus.ACTIVE,
             auto_track_artists=auto_track_artists,
         )
         await django_playlist.asave()
@@ -354,7 +389,22 @@ class PlaylistService(BaseService[Playlist]):
     async def toggle_playlist(self, playlist_id: int) -> MutationResult:
         try:
             django_playlist = await self.model.objects.aget(id=playlist_id)
-            django_playlist.enabled = not django_playlist.enabled
+
+            # Can only toggle between ACTIVE and DISABLED_BY_USER
+            if django_playlist.status == PlaylistStatus.ACTIVE:
+                django_playlist.status = PlaylistStatus.DISABLED_BY_USER
+                django_playlist.status_message = None
+            elif django_playlist.status == PlaylistStatus.DISABLED_BY_USER:
+                django_playlist.status = PlaylistStatus.ACTIVE
+                django_playlist.status_message = None
+            else:
+                # Cannot toggle restricted/not_found playlists
+                return MutationResult(
+                    success=False,
+                    message=f"Cannot enable playlist with status: {django_playlist.get_status_display()}",
+                    playlist=self._to_graphql_type(django_playlist),
+                )
+
             await django_playlist.asave()
 
             return MutationResult(
@@ -419,7 +469,9 @@ class PlaylistService(BaseService[Playlist]):
             id=int(django_playlist.id),
             name=django_playlist.name,
             url=django_playlist.url,
-            enabled=django_playlist.enabled,
+            status=django_playlist.status,
+            status_message=django_playlist.status_message,
+            enabled=django_playlist.enabled,  # Computed property for backwards compat
             auto_track_artists=django_playlist.auto_track_artists,
             last_synced_at=(
                 django_playlist.last_synced_at.isoformat()

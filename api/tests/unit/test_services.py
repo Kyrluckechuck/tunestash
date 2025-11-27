@@ -274,6 +274,8 @@ class TestPlaylistService:
             mock_playlist.id = 1
             mock_playlist.name = "Test Playlist"
             mock_playlist.url = "https://open.spotify.com/playlist/test123"
+            mock_playlist.status = "active"
+            mock_playlist.status_message = None
             mock_playlist.enabled = True
             mock_playlist.auto_track_artists = True
             mock_playlist.last_synced_at = None
@@ -508,6 +510,8 @@ class TestPlaylistService:
                 mock_playlist.url = (
                     f"https://open.spotify.com/playlist/test{len(mock_playlists)}"
                 )
+                mock_playlist.status = "active"
+                mock_playlist.status_message = None
                 mock_playlist.enabled = True
                 mock_playlist.auto_track_artists = False
                 mock_playlist.last_synced_at = datetime.now()

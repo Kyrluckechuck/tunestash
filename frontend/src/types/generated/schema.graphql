@@ -168,6 +168,8 @@ type Playlist {
   id: Int!
   lastSyncedAt: DateTime
   name: String!
+  status: String!
+  statusMessage: String
   url: String!
 }
 
@@ -185,7 +187,7 @@ type Query {
   downloadHistory(after: String = null, entityType: String = null, first: Int = 20, status: String = null): HistoryConnection!
   periodicTasks(enabledOnly: Boolean = false): [PeriodicTask!]!
   playlist(id: String!): Playlist
-  playlists(after: String = null, enabled: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null): PlaylistConnection!
+  playlists(after: String = null, enabled: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, status: String = null): PlaylistConnection!
   queueStatus: QueueStatus!
   song(id: String!): Song
   songs(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, unavailable: Boolean = null): SongConnection!

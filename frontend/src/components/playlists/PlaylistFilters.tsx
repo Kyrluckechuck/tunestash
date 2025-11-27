@@ -1,30 +1,40 @@
 import { FilterButtonGroup, type FilterOption } from '../ui/FilterButtonGroup';
 
-interface PlaylistFiltersProps {
-  currentEnabledFilter: 'all' | 'enabled' | 'disabled';
-  onEnabledFilterChange: (filter: 'all' | 'enabled' | 'disabled') => void;
-  onFilterHover?: (filter: 'all' | 'enabled' | 'disabled') => void;
-}
+export type PlaylistFilterValue = 'all' | 'enabled' | 'disabled' | 'issues';
 
-const filterOptions: FilterOption<'all' | 'enabled' | 'disabled'>[] = [
-  { value: 'all', label: 'All Playlists', color: 'indigo' },
-  { value: 'enabled', label: 'Enabled Only', color: 'green' },
-  { value: 'disabled', label: 'Disabled Only', color: 'gray' },
-];
+interface PlaylistFiltersProps {
+  currentEnabledFilter: PlaylistFilterValue;
+  onEnabledFilterChange: (filter: PlaylistFilterValue) => void;
+  onFilterHover?: (filter: PlaylistFilterValue) => void;
+  issuesCount?: number;
+}
 
 export function PlaylistFilters({
   currentEnabledFilter,
   onEnabledFilterChange,
   onFilterHover,
+  issuesCount = 0,
 }: PlaylistFiltersProps) {
+  const filterOptions: FilterOption<PlaylistFilterValue>[] = [
+    { value: 'all', label: 'All Playlists', color: 'indigo' },
+    { value: 'enabled', label: 'Enabled', color: 'green' },
+    { value: 'disabled', label: 'Disabled', color: 'gray' },
+    {
+      value: 'issues',
+      label: `Issues${issuesCount > 0 ? ` (${issuesCount})` : ''}`,
+      color: 'amber',
+    },
+  ];
+
   return (
-    <FilterButtonGroup
-      value={currentEnabledFilter}
-      options={filterOptions}
-      onChange={onEnabledFilterChange}
-      onHover={onFilterHover}
-      label='Status'
-      className='mb-6'
-    />
+    <div className='flex items-center gap-4 mb-6'>
+      <FilterButtonGroup
+        value={currentEnabledFilter}
+        options={filterOptions}
+        onChange={onEnabledFilterChange}
+        onHover={onFilterHover}
+        label='Status'
+      />
+    </div>
   );
 }

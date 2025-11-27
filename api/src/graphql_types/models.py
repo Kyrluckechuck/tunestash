@@ -106,7 +106,9 @@ class Playlist:
     id: int
     name: str
     url: str
-    enabled: bool
+    status: str
+    status_message: Optional[str]
+    enabled: bool  # Computed from status for backwards compatibility
     auto_track_artists: bool
     last_synced_at: Optional[DateTime]
 

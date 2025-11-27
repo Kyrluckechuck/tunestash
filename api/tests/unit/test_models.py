@@ -1,6 +1,6 @@
 import pytest
 
-from library_manager.models import Album, Artist, Song, TrackedPlaylist
+from library_manager.models import Album, Artist, PlaylistStatus, Song, TrackedPlaylist
 
 
 @pytest.mark.django_db
@@ -111,22 +111,22 @@ class TestTrackedPlaylistModel:
         playlist = TrackedPlaylist.objects.create(
             name="Test Playlist",
             url="https://open.spotify.com/playlist/test123",
-            enabled=True,
+            status=PlaylistStatus.ACTIVE,
         )
         assert playlist.name == "Test Playlist"
         assert playlist.url == "https://open.spotify.com/playlist/test123"
-        assert playlist.enabled is True
+        assert playlist.enabled is True  # Computed from status
 
     def test_playlist_toggle_enabled(self):
-        """Test toggling playlist enabled status."""
+        """Test toggling playlist status affects enabled property."""
         playlist = TrackedPlaylist.objects.create(
             name="Test Playlist",
             url="https://open.spotify.com/playlist/test123",
-            enabled=False,
+            status=PlaylistStatus.DISABLED_BY_USER,
         )
         assert playlist.enabled is False
 
-        playlist.enabled = True
+        playlist.status = PlaylistStatus.ACTIVE
         playlist.save()
         playlist.refresh_from_db()
         assert playlist.enabled is True

@@ -10,6 +10,8 @@ mutation SavePlaylist($spotifyId: String!, $autoTrackArtists: Boolean) {
     id
     name
     url
+    status
+    statusMessage
     enabled
     autoTrackArtists
     lastSyncedAt

@@ -13,6 +13,7 @@ import type {
 // Import mock data
 import {
   mockGetPlaylistsResponse,
+  mockGetPlaylistsWithRestrictedResponse,
   mockTogglePlaylistResponse,
   mockSyncPlaylistResponse,
   createGraphQLError,
@@ -77,6 +78,24 @@ const TestPlaylistsComponent = () => {
     }
   };
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'Enabled';
+      case 'disabled_by_user':
+        return 'Disabled';
+      case 'spotify_api_restricted':
+        return 'Not Supported';
+      case 'not_found':
+        return 'Not Found';
+      default:
+        return status;
+    }
+  };
+
+  const isRestrictedStatus = (status: string) =>
+    status === 'spotify_api_restricted' || status === 'not_found';
+
   return (
     <div>
       <h1>
@@ -86,19 +105,33 @@ const TestPlaylistsComponent = () => {
         {data.playlists.edges.map((playlist: TestPlaylist) => (
           <div key={playlist.id} data-testid={`playlist-${playlist.id}`}>
             <span>{playlist.name}</span>
-            <span>{playlist.enabled ? 'Enabled' : 'Disabled'}</span>
-            <button
-              onClick={() => handleTogglePlaylist(playlist.id)}
-              data-testid={`toggle-${playlist.id}`}
-            >
-              Toggle
-            </button>
-            <button
-              onClick={() => handleSyncPlaylist(playlist.id)}
-              data-testid={`sync-${playlist.id}`}
-            >
-              Sync
-            </button>
+            <span data-testid={`status-${playlist.id}`}>
+              {getStatusLabel(playlist.status)}
+            </span>
+            {playlist.statusMessage && (
+              <span
+                data-testid={`status-message-${playlist.id}`}
+                title={playlist.statusMessage}
+              >
+                {playlist.statusMessage}
+              </span>
+            )}
+            {!isRestrictedStatus(playlist.status) && (
+              <>
+                <button
+                  onClick={() => handleTogglePlaylist(playlist.id)}
+                  data-testid={`toggle-${playlist.id}`}
+                >
+                  Toggle
+                </button>
+                <button
+                  onClick={() => handleSyncPlaylist(playlist.id)}
+                  data-testid={`sync-${playlist.id}`}
+                >
+                  Sync
+                </button>
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -302,6 +335,66 @@ describe('Playlists Route', () => {
       render(<TestPlaylistsComponent />);
 
       expect(screen.getByText(/2 of 2/)).toBeInTheDocument();
+    });
+  });
+
+  describe('Restricted Playlists', () => {
+    it('displays Not Supported status for Spotify-restricted playlists', () => {
+      mockUseQuery.mockReturnValue(
+        createMockUseQuery(mockGetPlaylistsWithRestrictedResponse)
+      );
+      mockUseMutation.mockReturnValue(createMockUseMutation());
+
+      render(<TestPlaylistsComponent />);
+
+      expect(screen.getByText('Discover Weekly')).toBeInTheDocument();
+      expect(screen.getByTestId('status-2')).toHaveTextContent('Not Supported');
+    });
+
+    it('displays Not Found status for deleted/private playlists', () => {
+      mockUseQuery.mockReturnValue(
+        createMockUseQuery(mockGetPlaylistsWithRestrictedResponse)
+      );
+      mockUseMutation.mockReturnValue(createMockUseMutation());
+
+      render(<TestPlaylistsComponent />);
+
+      expect(screen.getByText('Deleted Playlist')).toBeInTheDocument();
+      expect(screen.getByTestId('status-3')).toHaveTextContent('Not Found');
+    });
+
+    it('displays status message for restricted playlists', () => {
+      mockUseQuery.mockReturnValue(
+        createMockUseQuery(mockGetPlaylistsWithRestrictedResponse)
+      );
+      mockUseMutation.mockReturnValue(createMockUseMutation());
+
+      render(<TestPlaylistsComponent />);
+
+      const statusMessage = screen.getByTestId('status-message-2');
+      expect(statusMessage).toHaveAttribute(
+        'title',
+        'Spotify-generated playlists (Discover Weekly, Daily Mix, etc.) cannot be accessed via the API'
+      );
+    });
+
+    it('hides toggle and sync buttons for restricted playlists', () => {
+      mockUseQuery.mockReturnValue(
+        createMockUseQuery(mockGetPlaylistsWithRestrictedResponse)
+      );
+      mockUseMutation.mockReturnValue(createMockUseMutation());
+
+      render(<TestPlaylistsComponent />);
+
+      // Restricted playlists should not have toggle/sync buttons
+      expect(screen.queryByTestId('toggle-2')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('sync-2')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('toggle-3')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('sync-3')).not.toBeInTheDocument();
+
+      // Active playlist should still have buttons
+      expect(screen.getByTestId('toggle-1')).toBeInTheDocument();
+      expect(screen.getByTestId('sync-1')).toBeInTheDocument();
     });
   });
 });

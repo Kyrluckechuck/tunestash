@@ -19,4 +19,4 @@ export type WantedFilter = 'all' | 'wanted' | 'unwanted';
 export type DownloadFilter = 'all' | 'downloaded' | 'pending';
 
 // Filter types for playlists
-export type PlaylistEnabledFilter = 'all' | 'enabled' | 'disabled';
+export type PlaylistEnabledFilter = 'all' | 'enabled' | 'disabled' | 'issues';

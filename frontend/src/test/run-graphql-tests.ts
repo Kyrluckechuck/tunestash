@@ -121,7 +121,7 @@ const testQueries = [
   {
     name: 'GetPlaylists',
     query: gql`
-      query GetPlaylists(
+      query GetPlaylistsTest(
         $enabled: Boolean
         $first: Int = 20
         $after: String
@@ -148,6 +148,8 @@ const testQueries = [
             id
             name
             url
+            status
+            statusMessage
             enabled
             autoTrackArtists
             lastSyncedAt
@@ -326,13 +328,15 @@ const testMutations = [
   {
     name: 'TogglePlaylist',
     mutation: gql`
-      mutation TogglePlaylist($playlistId: Int!) {
+      mutation TogglePlaylistTest($playlistId: Int!) {
         togglePlaylist(playlistId: $playlistId) {
           success
           message
           playlist {
             id
             name
+            status
+            statusMessage
             enabled
           }
         }

@@ -185,6 +185,46 @@ def normalize_spotify_gid(gid: str) -> str:
     )
 
 
+def is_spotify_owned_playlist(playlist_id: str) -> bool:
+    """
+    Check if a playlist ID belongs to a Spotify-generated algorithmic playlist.
+
+    Spotify-owned playlists (Discover Weekly, Daily Mix, Release Radar, etc.)
+    are not accessible via the standard Spotify Web API without Extended Quota
+    Mode approval. These playlists have IDs starting with specific prefixes.
+
+    As of November 2024, Spotify's API returns 404 for these playlists.
+
+    Args:
+        playlist_id: The playlist ID to check (22-char base62 or extracted from URI)
+
+    Returns:
+        bool: True if this is a Spotify-owned/algorithmic playlist
+
+    Examples:
+        >>> is_spotify_owned_playlist("37i9dQZF1DXcBWIGoYBM5M")  # Today's Top Hits
+        True
+        >>> is_spotify_owned_playlist("37i9dQZEVXcMqts9cmyCXR")  # Discover Weekly
+        True
+        >>> is_spotify_owned_playlist("4tFwfZE3huEB7e8LRnKwmY")  # User playlist
+        False
+    """
+    if not playlist_id or not isinstance(playlist_id, str):
+        return False
+
+    # Extract ID if it's a full URI/URL
+    extracted_id = extract_spotify_id_from_uri(playlist_id)
+    if extracted_id:
+        playlist_id = extracted_id
+
+    # Spotify-owned algorithmic playlists start with these prefixes:
+    # - 37i9dQZF1 - Curated playlists (Today's Top Hits, RapCaviar, etc.)
+    # - 37i9dQZEV - Personalized playlists (Discover Weekly, Daily Mix, etc.)
+    spotify_owned_prefixes = ("37i9dQZF1", "37i9dQZEV")
+
+    return playlist_id.startswith(spotify_owned_prefixes)
+
+
 def validate_spotify_gid(gid: str, entity_type: str = "artist") -> None:
     """
     Validate a Spotify GID and raise descriptive error if invalid.
