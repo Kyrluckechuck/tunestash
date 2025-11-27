@@ -27,9 +27,91 @@ def sync_tracked_playlists(self: Any, task_id: Optional[str] = None) -> None:
     all_enabled_playlists = TrackedPlaylist.objects.filter(
         status=PlaylistStatus.ACTIVE,
     ).order_by("last_synced_at", "id")
-    helpers.enqueue_playlists(
-        list(all_enabled_playlists), priority=None
-    )  # task.priority not available
+
+    # Pre-filter playlists using snapshot_id to avoid queueing unchanged playlists
+    # This reduces Celery task overhead and API calls
+    playlists_to_sync = _filter_changed_playlists(list(all_enabled_playlists))
+
+    if playlists_to_sync:
+        logger.info(
+            f"Queueing {len(playlists_to_sync)} playlists for sync "
+            f"(skipped {len(all_enabled_playlists) - len(playlists_to_sync)} unchanged)"
+        )
+        helpers.enqueue_playlists(playlists_to_sync, priority=None)
+    else:
+        logger.info("All playlists unchanged, nothing to sync")
+
+
+def _filter_changed_playlists(
+    playlists: list[TrackedPlaylist],
+) -> list[TrackedPlaylist]:
+    """Filter playlists to only those that have changed since last sync.
+
+    Uses Spotify's snapshot_id to efficiently detect changes without fetching
+    full playlist data. Playlists without a stored snapshot_id are always included.
+
+    Args:
+        playlists: List of playlists to check
+
+    Returns:
+        List of playlists that need syncing (changed or never synced)
+    """
+    from .core import spotdl_wrapper
+
+    if not playlists:
+        return []
+
+    # Separate playlists that need snapshot_id check vs. those that must sync
+    playlists_to_check = []
+    playlists_to_sync = []
+
+    for playlist in playlists:
+        # Always sync if no snapshot_id or never synced
+        if not playlist.snapshot_id or not playlist.last_synced_at:
+            playlists_to_sync.append(playlist)
+        else:
+            playlists_to_check.append(playlist)
+
+    if not playlists_to_check:
+        return playlists_to_sync
+
+    # Check snapshot_ids for playlists that have been synced before
+    try:
+        for playlist in playlists_to_check:
+            # Extract playlist ID from URL
+            playlist_id = None
+            if "spotify:playlist:" in playlist.url:
+                playlist_id = playlist.url.split("spotify:playlist:", 1)[1]
+            elif "/playlist/" in playlist.url:
+                playlist_id = playlist.url.split("/playlist/", 1)[1].split("?")[0]
+
+            if not playlist_id:
+                # Can't extract ID, include for safety
+                playlists_to_sync.append(playlist)
+                continue
+
+            # Get current snapshot_id from Spotify
+            current_snapshot = spotdl_wrapper.downloader.get_playlist_snapshot_id(
+                playlist_id
+            )
+
+            if current_snapshot is None:
+                # API call failed, include for safety
+                playlists_to_sync.append(playlist)
+            elif current_snapshot != playlist.snapshot_id:
+                # Playlist has changed
+                logger.info(f"Playlist '{playlist.name}' changed, queueing for sync")
+                playlists_to_sync.append(playlist)
+            else:
+                # Playlist unchanged, skip
+                logger.debug(f"Playlist '{playlist.name}' unchanged, skipping")
+
+    except Exception as e:
+        logger.warning(f"Error checking playlist snapshots: {e}, syncing all")
+        # On error, sync all playlists that we were checking
+        playlists_to_sync.extend(playlists_to_check)
+
+    return playlists_to_sync
 
 
 @celery_app.task(

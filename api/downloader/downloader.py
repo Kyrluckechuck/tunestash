@@ -54,6 +54,34 @@ class Downloader:
     def get_track(self, track_id: str) -> Any:
         return self.spotipy_client.track(track_id)
 
+    def get_tracks_batch(self, track_ids: List[str]) -> List[Any]:
+        """Batch fetch multiple tracks in a single API call.
+
+        Uses Spotify's "Get Several Tracks" endpoint which supports up to 50 tracks
+        per request, significantly reducing API calls for bulk operations.
+
+        Args:
+            track_ids: List of Spotify track IDs (max 50 per call, will batch if more)
+
+        Returns:
+            List of track objects from the API
+        """
+        if not track_ids:
+            return []
+
+        all_tracks = []
+        # Spotify allows max 50 tracks per request
+        batch_size = 50
+
+        for i in range(0, len(track_ids), batch_size):
+            batch = track_ids[i : i + batch_size]
+            result = self.spotipy_client.tracks(batch)
+            if result and "tracks" in result:
+                # Filter out None values (tracks that don't exist)
+                all_tracks.extend([t for t in result["tracks"] if t is not None])
+
+        return all_tracks
+
     def create_album(self, album_id: str, artist: Artist) -> Album:
         album_details = self.get_album(album_id)
         album = Album.objects.create(
@@ -150,6 +178,70 @@ class Downloader:
                 return download_queue, metadata
             return download_queue
         raise Exception("Not a valid Spotify URL")
+
+    def get_download_queue_batch(
+        self, urls: List[str]
+    ) -> tuple[List[List[Dict[str, Any]]], Dict[str, Dict[str, Any]]]:
+        """Get download queues for multiple URLs with optimized batching.
+
+        This method batches individual track requests to reduce API calls.
+        For example, 100 individual track URLs become 2 API calls (50 tracks each)
+        instead of 100 individual calls.
+
+        Args:
+            urls: List of Spotify URLs/URIs (tracks, albums, playlists)
+
+        Returns:
+            Tuple of (list of download queues, dict mapping URL to metadata)
+        """
+        download_queues: List[List[Dict[str, Any]]] = []
+        metadata_map: Dict[str, Dict[str, Any]] = {}
+
+        # Separate URLs by type for batch processing
+        track_urls: List[tuple[int, str, str]] = []  # (index, url, track_id)
+        other_urls: List[tuple[int, str]] = []  # (index, url)
+
+        for idx, url in enumerate(urls):
+            match = re.search(r"(\w{22})", url)
+            if match is None:
+                continue
+
+            uri = match.group(1)
+
+            if "track" in url:
+                track_urls.append((idx, url, uri))
+            else:
+                other_urls.append((idx, url))
+
+        # Initialize result lists with correct size
+        download_queues = [[] for _ in range(len(urls))]
+
+        # Batch fetch all tracks at once
+        if track_urls:
+            track_ids = [t[2] for t in track_urls]
+            tracks = self.get_tracks_batch(track_ids)
+
+            # Map results back to their indices
+            track_id_to_data = {t["id"]: t for t in tracks if t}
+            for idx, url, track_id in track_urls:
+                if track_id in track_id_to_data:
+                    download_queues[idx] = [track_id_to_data[track_id]]
+                    metadata_map[url] = {"type": "track", "id": track_id}
+
+        # Process non-track URLs individually (albums/playlists already efficient)
+        for idx, url in other_urls:
+            try:
+                result = self.get_download_queue(url, include_metadata=True)
+                if isinstance(result, tuple):
+                    download_queues[idx] = result[0]
+                    metadata_map[url] = result[1]
+                else:
+                    download_queues[idx] = result
+            except Exception:
+                # Skip failed URLs
+                pass
+
+        return download_queues, metadata_map
 
     def get_song_core_info(self, metadata: Dict[str, Any]) -> Dict[str, str]:
         from library_manager.validators import extract_spotify_id_from_uri

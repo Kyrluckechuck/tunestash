@@ -317,6 +317,58 @@ class SpotdlWrapper:
         )  # URL -> metadata (e.g., snapshot_id)
         error_count = 0
 
+        # Check if all URLs are tracks - if so, use batch API for efficiency
+        # This is common for retry_failed_songs which passes 100 track URIs
+        all_tracks = all(
+            "track" in url or url.startswith("spotify:track:") for url in config.urls
+        )
+        if all_tracks and len(config.urls) > 1:
+            self.logger.info(
+                f"Batch fetching {len(config.urls)} tracks using optimized API"
+            )
+            try:
+                queues, metadata = self.downloader.get_download_queue_batch(config.urls)
+                # Filter out empty queues (failed fetches)
+                for url, queue in zip(config.urls, queues):
+                    if queue:
+                        download_queue.append(queue)
+                        download_queue_urls.append(url)
+                        if url in metadata:
+                            download_queue_metadata[url] = metadata[url]
+                self.logger.info(
+                    f"Batch fetch complete: {len(download_queue)} tracks retrieved "
+                    f"({len(config.urls) - len(download_queue)} failed/missing)"
+                )
+            except SpotifyException as spotify_exception:
+                if (
+                    "401" in str(spotify_exception)
+                    or "access token expired" in str(spotify_exception).lower()
+                ):
+                    self.logger.warning(
+                        "Spotify OAuth token expired during batch fetch, attempting refresh..."
+                    )
+                    if self.refresh_spotify_client():
+                        try:
+                            queues, metadata = self.downloader.get_download_queue_batch(
+                                config.urls
+                            )
+                            for url, queue in zip(config.urls, queues):
+                                if queue:
+                                    download_queue.append(queue)
+                                    download_queue_urls.append(url)
+                                    if url in metadata:
+                                        download_queue_metadata[url] = metadata[url]
+                        except Exception as retry_exception:
+                            self.logger.error(
+                                f"Batch fetch failed after token refresh: {retry_exception}"
+                            )
+                            # Fall back to individual fetching below
+                else:
+                    self.logger.error(f"Batch fetch failed: {spotify_exception}")
+            except Exception as e:
+                self.logger.error(f"Batch fetch failed: {e}")
+                # Fall back to individual fetching below
+
         if config.artist_to_fetch is not None:
             # Do not track the artist if it's mass downloaded
             try:
@@ -357,7 +409,14 @@ class SpotdlWrapper:
                 else:
                     # Not a 401 error, re-raise
                     raise
+        # Skip individual URL fetching if we already batch-fetched all tracks
+        urls_already_fetched = set(download_queue_urls)
+
         for url_index, url in enumerate(config.urls, start=1):
+            # Skip URLs already processed by batch fetch
+            if url in urls_already_fetched:
+                continue
+
             current_url = f"URL {url_index}/{len(config.urls)}"
             try:
                 # For playlists, check snapshot_id first to avoid unnecessary API calls
