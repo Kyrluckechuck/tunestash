@@ -49,6 +49,8 @@ export const createMockPlaylist = (overrides = {}) => ({
   id: 1,
   name: 'Test Playlist',
   url: 'https://open.spotify.com/playlist/test',
+  status: 'active',
+  statusMessage: null,
   enabled: true,
   autoTrackArtists: true,
   lastSyncedAt: '2024-01-01T00:00:00Z',
@@ -131,7 +133,43 @@ export const mockGetPlaylistsResponse: GetPlaylistsQuery = {
     },
     edges: [
       createMockPlaylist({ id: 1, name: 'Playlist 1' }),
-      createMockPlaylist({ id: 2, name: 'Playlist 2', enabled: false }),
+      createMockPlaylist({
+        id: 2,
+        name: 'Playlist 2',
+        status: 'disabled_by_user',
+        enabled: false,
+      }),
+    ],
+  },
+};
+
+export const mockGetPlaylistsWithRestrictedResponse: GetPlaylistsQuery = {
+  playlists: {
+    totalCount: 3,
+    pageInfo: {
+      hasNextPage: false,
+      hasPreviousPage: false,
+      startCursor: 'cursor1',
+      endCursor: 'cursor3',
+    },
+    edges: [
+      createMockPlaylist({ id: 1, name: 'Playlist 1' }),
+      createMockPlaylist({
+        id: 2,
+        name: 'Discover Weekly',
+        status: 'spotify_api_restricted',
+        statusMessage:
+          'Spotify-generated playlists (Discover Weekly, Daily Mix, etc.) cannot be accessed via the API',
+        enabled: false,
+      }),
+      createMockPlaylist({
+        id: 3,
+        name: 'Deleted Playlist',
+        status: 'not_found',
+        statusMessage:
+          'Playlist not found - may have been deleted or made private',
+        enabled: false,
+      }),
     ],
   },
 };

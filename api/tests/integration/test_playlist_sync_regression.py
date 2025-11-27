@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from library_manager.models import TrackedPlaylist
+from library_manager.models import PlaylistStatus, TrackedPlaylist
 
 
 @pytest.mark.django_db
@@ -44,7 +44,7 @@ class TestPlaylistSyncRegression:
         playlist = TrackedPlaylist.objects.create(
             name="Test Playlist",
             url="spotify:playlist:test123",
-            enabled=True,
+            status=PlaylistStatus.ACTIVE,
             auto_track_artists=False,
         )
 
@@ -91,7 +91,7 @@ class TestPlaylistSyncRegression:
         playlist = TrackedPlaylist.objects.create(
             name="Test Playlist",
             url="spotify:playlist:test789",
-            enabled=True,
+            status=PlaylistStatus.ACTIVE,
             auto_track_artists=False,
         )
 

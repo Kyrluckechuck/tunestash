@@ -1,6 +1,6 @@
 import pytest
 
-from library_manager.models import Album, Artist, Song, TrackedPlaylist
+from library_manager.models import Album, Artist, PlaylistStatus, Song, TrackedPlaylist
 
 
 @pytest.fixture
@@ -63,6 +63,6 @@ def sample_playlist():
     return TrackedPlaylist.objects.create(
         name="Test Playlist",
         url="https://open.spotify.com/playlist/test123",
-        enabled=True,
+        status=PlaylistStatus.ACTIVE,
         auto_track_artists=True,
     )

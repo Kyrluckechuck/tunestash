@@ -251,6 +251,64 @@ class SpotdlWrapper:
             self.logger.error(f"Failed to refresh Spotify OAuth token: {e}")
             return False
 
+    def _update_playlist_status_on_error(self, url: str) -> None:
+        """
+        Update playlist status when a 404 error indicates the playlist is inaccessible.
+
+        This handles both Spotify-generated playlists (Discover Weekly, Daily Mix, etc.)
+        which cannot be accessed via the API, and regular playlists that have been
+        deleted or made private.
+
+        Args:
+            url: The Spotify playlist URL or URI that failed
+        """
+        from library_manager.models import PlaylistStatus
+        from library_manager.validators import is_spotify_owned_playlist
+
+        # Extract playlist ID from URL
+        if "spotify:playlist:" in url:
+            playlist_id = url.split("spotify:playlist:", 1)[1]
+        else:
+            playlist_id = url.split("/playlist/", 1)[1].split("?")[0]
+
+        # Determine the appropriate status based on playlist type
+        if is_spotify_owned_playlist(playlist_id):
+            new_status = PlaylistStatus.SPOTIFY_API_RESTRICTED
+            status_message = (
+                "Spotify-generated playlists (Discover Weekly, Daily Mix, etc.) "
+                "cannot be accessed via the API"
+            )
+            self.logger.warning(
+                f"Playlist is a Spotify-generated playlist (API restricted): {playlist_id}"
+            )
+        else:
+            new_status = PlaylistStatus.NOT_FOUND
+            status_message = (
+                "Playlist not found - may have been deleted or made private"
+            )
+            self.logger.warning(
+                f"Playlist appears to be inaccessible (private or deleted): {playlist_id}"
+            )
+
+        # Try to find and update the playlist status
+        try:
+            playlist = TrackedPlaylist.objects.get(url__contains=playlist_id)
+            # Update status if playlist is active OR disabled by user
+            # (user-disabled playlists should still get updated to reflect
+            # the actual reason they can't be synced)
+            if playlist.status in (
+                PlaylistStatus.ACTIVE,
+                PlaylistStatus.DISABLED_BY_USER,
+            ):
+                self.logger.warning(
+                    f"Setting playlist status to {new_status}: {playlist.name} ({playlist_id})"
+                )
+                playlist.status = new_status
+                playlist.status_message = status_message
+                playlist.save()
+        except TrackedPlaylist.DoesNotExist:
+            self.logger.warning(f"Playlist not found in database: {playlist_id}")
+
     def execute(self, config: Config, task_progress_callback=None) -> int:
         download_queue = []
         download_queue_urls: list[str] = []
@@ -345,6 +403,17 @@ class SpotdlWrapper:
                 self.logger.error(f"Spotify exception: {spotify_exception}")
                 if config.print_exceptions:
                     self.logger.error(traceback.format_exc())
+
+                # Handle (gracefully) playlists that are inaccessible (404 errors)
+                if (
+                    "too many 404 error responses" in str(spotify_exception)
+                    or "Max Retries" in str(spotify_exception)
+                ) and (
+                    url.startswith("spotify:playlist:")
+                    or url.startswith("https://open.spotify.com/playlist")
+                ):
+                    self._update_playlist_status_on_error(url)
+
             except Exception as general_exception:
                 error_count += 1
                 self.logger.error(f'({current_url}) Failed to check "{url}"')
@@ -361,33 +430,7 @@ class SpotdlWrapper:
                     url.startswith("spotify:playlist:")
                     or url.startswith("https://open.spotify.com/playlist")
                 ):
-                    # Extract playlist ID from URL
-                    if "spotify:playlist:" in url:
-                        playlist_id = url.split("spotify:playlist:", 1)[1]
-                    else:
-                        playlist_id = url.split("/playlist/", 1)[1].split("?")[0]
-
-                    self.logger.warning(
-                        f"Playlist appears to be inaccessible (private, deleted, or rate limited): {playlist_id}"
-                    )
-
-                    # Try to find and disable the playlist
-                    try:
-                        playlist = TrackedPlaylist.objects.get(
-                            url__contains=playlist_id
-                        )
-                        if playlist.enabled:
-                            self.logger.warning(
-                                f"Disabling inaccessible playlist: {playlist.name} ({playlist_id})"
-                            )
-                            playlist.enabled = False
-                            playlist.save()
-                    except TrackedPlaylist.DoesNotExist:
-                        self.logger.warning(
-                            f"Playlist not found in database: {playlist_id}"
-                        )
-
-                    # Skip this playlist and continue
+                    self._update_playlist_status_on_error(url)
                     continue
 
                 # Handle (gracefully) songs that no longer exist (at all) with Spotify

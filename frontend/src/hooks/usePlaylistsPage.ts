@@ -35,9 +35,13 @@ export function usePlaylistsPage() {
   const [editingPlaylist, setEditingPlaylist] = useState<Playlist | null>(null);
 
   // Memoize query variables
+  // Note: 'issues' filter is handled client-side, so we fetch all playlists
   const queryVariables = useMemo(
     () => ({
-      enabled: filter === 'all' ? undefined : filter === 'enabled',
+      enabled:
+        filter === 'all' || filter === 'issues'
+          ? undefined
+          : filter === 'enabled',
       first: pageSize,
       sortBy: sortField,
       sortDirection: sortDirection,
@@ -136,7 +140,10 @@ export function usePlaylistsPage() {
   const handleEnabledFilterChange = createPrefetchHandler(
     setFilter,
     (newFilter: PlaylistEnabledFilter) => ({
-      enabled: newFilter === 'all' ? undefined : newFilter === 'enabled',
+      enabled:
+        newFilter === 'all' || newFilter === 'issues'
+          ? undefined
+          : newFilter === 'enabled',
     })
   );
 
@@ -165,7 +172,10 @@ export function usePlaylistsPage() {
   const handleFilterHover = createPrefetchHandler(
     null,
     (hoverFilter: PlaylistEnabledFilter) => ({
-      enabled: hoverFilter === 'all' ? undefined : hoverFilter === 'enabled',
+      enabled:
+        hoverFilter === 'all' || hoverFilter === 'issues'
+          ? undefined
+          : hoverFilter === 'enabled',
     })
   );
 
@@ -310,8 +320,32 @@ export function usePlaylistsPage() {
   };
 
   // Derived state
-  const playlists = data?.playlists?.edges || [];
-  const totalCount = data?.playlists?.totalCount || 0;
+  const allPlaylists = useMemo(
+    () => data?.playlists?.edges || [],
+    [data?.playlists?.edges]
+  );
+
+  // Apply client-side filtering for 'issues' filter
+  const playlists = useMemo(() => {
+    if (filter === 'issues') {
+      return allPlaylists.filter(
+        p => p.status === 'spotify_api_restricted' || p.status === 'not_found'
+      );
+    }
+    return allPlaylists;
+  }, [allPlaylists, filter]);
+
+  // Count for issues badge (always computed from all data)
+  const issuesCount = useMemo(
+    () =>
+      allPlaylists.filter(
+        p => p.status === 'spotify_api_restricted' || p.status === 'not_found'
+      ).length,
+    [allPlaylists]
+  );
+
+  const totalCount =
+    filter === 'issues' ? playlists.length : data?.playlists?.totalCount || 0;
   const pageInfo = data?.playlists?.pageInfo;
   const { isRefreshing, isInitial: isInitialLoading } =
     useRequestState(networkStatus);
@@ -325,6 +359,7 @@ export function usePlaylistsPage() {
     error,
     isRefreshing,
     isInitialLoading,
+    issuesCount,
 
     // Filters & sorting
     filter,

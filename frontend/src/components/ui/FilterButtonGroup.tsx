@@ -11,7 +11,15 @@
 export interface FilterOption<T extends string> {
   value: T;
   label: string;
-  color?: 'indigo' | 'green' | 'orange' | 'yellow' | 'red' | 'gray' | 'blue';
+  color?:
+    | 'indigo'
+    | 'green'
+    | 'orange'
+    | 'yellow'
+    | 'red'
+    | 'gray'
+    | 'blue'
+    | 'amber';
 }
 
 interface FilterButtonGroupProps<T extends string> {
@@ -57,6 +65,10 @@ const colorStyles = {
   blue: {
     active: 'bg-blue-700 border-blue-700 shadow-md ring-2 ring-blue-300',
     activeBg: '#1d4ed8',
+  },
+  amber: {
+    active: 'bg-amber-600 border-amber-600 shadow-md ring-2 ring-amber-300',
+    activeBg: '#d97706',
   },
 };
 

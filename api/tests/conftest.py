@@ -172,11 +172,11 @@ def sample_song(sample_artist):
 @pytest.fixture
 def sample_playlist():
     """Create a sample playlist for testing."""
-    from library_manager.models import TrackedPlaylist
+    from library_manager.models import PlaylistStatus, TrackedPlaylist
 
     return TrackedPlaylist.objects.create(
         name="Test Playlist",
         url="https://open.spotify.com/playlist/test123",
-        enabled=True,
+        status=PlaylistStatus.ACTIVE,
         auto_track_artists=True,
     )
