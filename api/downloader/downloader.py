@@ -83,23 +83,71 @@ class Downloader:
             playlist_iterator = self.spotipy_client.next(playlist_iterator)
         return playlist
 
-    def get_download_queue(self, url: str) -> List[Dict[str, Any]]:
+    def get_playlist_snapshot_id(self, playlist_id: str) -> str | None:
+        """Get only the snapshot_id of a playlist (lightweight API call).
+
+        This allows checking if a playlist has changed without fetching all tracks.
+        Uses the fields parameter to minimize API response size and reduce rate
+        limiting risk.
+
+        Args:
+            playlist_id: The Spotify playlist ID (22-character base62 string)
+
+        Returns:
+            The playlist's snapshot_id string, or None if request fails
+        """
+        try:
+            # Request only snapshot_id field for minimal API usage
+            result = self.spotipy_client.playlist(playlist_id, fields="snapshot_id")
+            return result.get("snapshot_id")
+        except Exception:
+            return None
+
+    def get_download_queue(
+        self, url: str, include_metadata: bool = False
+    ) -> List[Dict[str, Any]] | tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Get the download queue for a Spotify URL.
+
+        Args:
+            url: Spotify URL or URI
+            include_metadata: If True, also return playlist/album metadata (including
+                snapshot_id for playlists)
+
+        Returns:
+            If include_metadata is False: List of track dicts
+            If include_metadata is True: Tuple of (track list, metadata dict)
+        """
         match = re.search(r"(\w{22})", url)
         if match is None:
             raise ValueError("Invalid Spotify URL format")
         uri = match.group(1)
-        download_queue = []
+        download_queue: list[Dict[str, Any]] = []
+        metadata: Dict[str, Any] = {}
+
         if "album" in url:
-            download_queue.extend(self.get_album(uri)["tracks"]["items"])
+            album = self.get_album(uri)
+            download_queue.extend(album["tracks"]["items"])
+            if include_metadata:
+                return download_queue, {"type": "album", "id": uri}
             return download_queue
         if "track" in url:
             download_queue.append(self.get_track(uri))
+            if include_metadata:
+                return download_queue, {"type": "track", "id": uri}
             return download_queue
         if "playlist" in url:
-            raw_playlist = self.get_playlist(uri)["tracks"]["items"]
+            playlist = self.get_playlist(uri)
+            raw_playlist = playlist["tracks"]["items"]
+            metadata = {
+                "type": "playlist",
+                "id": uri,
+                "snapshot_id": playlist.get("snapshot_id"),
+            }
             for i in raw_playlist:
                 i["track"]["added_at"] = i["added_at"]
             download_queue.extend([i["track"] for i in raw_playlist])
+            if include_metadata:
+                return download_queue, metadata
             return download_queue
         raise Exception("Not a valid Spotify URL")
 

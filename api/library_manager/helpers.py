@@ -147,10 +147,18 @@ def download_non_enqueued_playlists(
     priority: Optional[int] = None,
 ) -> None:
     # Local import to avoid circular import during module initialization
+    from .models import PlaylistStatus
     from .tasks import download_playlist
 
     for playlist in playlists_to_enqueue:
         if playlist.url in already_enqueued_playlists:
+            continue
+
+        # Skip playlists with problematic statuses to avoid hitting rate limits
+        if playlist.status in (
+            PlaylistStatus.SPOTIFY_API_RESTRICTED,
+            PlaylistStatus.NOT_FOUND,
+        ):
             continue
 
         # Generate deterministic task ID for deduplication

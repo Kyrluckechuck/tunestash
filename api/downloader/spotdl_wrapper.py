@@ -312,6 +312,9 @@ class SpotdlWrapper:
     def execute(self, config: Config, task_progress_callback=None) -> int:
         download_queue = []
         download_queue_urls: list[str] = []
+        download_queue_metadata: dict[str, dict] = (
+            {}
+        )  # URL -> metadata (e.g., snapshot_id)
         error_count = 0
 
         if config.artist_to_fetch is not None:
@@ -357,8 +360,56 @@ class SpotdlWrapper:
         for url_index, url in enumerate(config.urls, start=1):
             current_url = f"URL {url_index}/{len(config.urls)}"
             try:
+                # For playlists, check snapshot_id first to avoid unnecessary API calls
+                if (
+                    url.startswith("spotify:playlist:")
+                    or url.startswith("https://open.spotify.com/playlist")
+                    or "/playlist/" in url
+                ):
+                    playlist_id = (
+                        url.split("spotify:playlist:", 1)[1]
+                        if "spotify:playlist:" in url
+                        else url.split("/playlist/", 1)[1].split("?")[0]
+                    )
+
+                    # Try to find the tracked playlist and check snapshot_id
+                    normalized_url = utils.normalize_spotify_url(url)
+                    try:
+                        tracked_playlist = TrackedPlaylist.objects.get(
+                            url=normalized_url
+                        )
+                        if (
+                            tracked_playlist.snapshot_id
+                            and tracked_playlist.last_synced_at
+                            and not config.force_playlist_resync
+                        ):
+                            # Check if playlist has changed using lightweight API call
+                            current_snapshot = self.downloader.get_playlist_snapshot_id(
+                                playlist_id
+                            )
+                            if current_snapshot == tracked_playlist.snapshot_id:
+                                self.logger.info(
+                                    f"({current_url}) Playlist unchanged (snapshot_id match), skipping"
+                                )
+                                continue
+                            else:
+                                self.logger.info(
+                                    f"({current_url}) Playlist changed (snapshot_id mismatch), syncing"
+                                )
+                    except TrackedPlaylist.DoesNotExist:
+                        pass  # Not a tracked playlist, proceed with normal flow
+
                 self.logger.info(f'({current_url}) Checking "{url}"')
-                download_queue.append(self.downloader.get_download_queue(url=url))
+                # Use include_metadata=True to get snapshot_id for playlists
+                result = self.downloader.get_download_queue(
+                    url=url, include_metadata=True
+                )
+                if isinstance(result, tuple):
+                    queue_items, metadata = result
+                    download_queue.append(queue_items)
+                    download_queue_metadata[url] = metadata
+                else:
+                    download_queue.append(result)
                 download_queue_urls.append(url)
             except SpotifyException as spotify_exception:
                 # Check if this is a 401 Unauthorized error (expired token)
@@ -377,9 +428,15 @@ class SpotdlWrapper:
                             self.logger.info(
                                 f'({current_url}) Retrying after token refresh: "{url}"'
                             )
-                            download_queue.append(
-                                self.downloader.get_download_queue(url=url)
+                            result = self.downloader.get_download_queue(
+                                url=url, include_metadata=True
                             )
+                            if isinstance(result, tuple):
+                                queue_items, metadata = result
+                                download_queue.append(queue_items)
+                                download_queue_metadata[url] = metadata
+                            else:
+                                download_queue.append(result)
                             download_queue_urls.append(url)
                             continue  # Success, move to next URL
                         except Exception as retry_exception:
@@ -522,8 +579,14 @@ class SpotdlWrapper:
                         self.logger.info(
                             f"Playlist has no newer tracks and all older tracks are downloaded (last sync: {tracked_playlist.last_synced_at}), skipping"
                         )
-                        # Update last_synced_at even when skipping - we still checked for updates
+                        # Update last_synced_at and snapshot_id even when skipping
                         tracked_playlist.last_synced_at = Now()
+                        # Update snapshot_id from the metadata if available
+                        url_metadata = download_queue_metadata.get(
+                            download_queue_url, {}
+                        )
+                        if url_metadata.get("snapshot_id"):
+                            tracked_playlist.snapshot_id = url_metadata["snapshot_id"]
                         tracked_playlist.save()
                         continue
                     else:
@@ -886,10 +949,14 @@ class SpotdlWrapper:
                                 "Spotify album downloaded but was not expected and could not be created"
                             )
 
-            # Update last_synced_at after processing all tracks in the playlist
+            # Update last_synced_at and snapshot_id after processing all tracks
             # This should happen regardless of whether tracks were skipped or downloaded
             if tracked_playlist is not None:
                 tracked_playlist.last_synced_at = Now()
+                # Update snapshot_id from the metadata if available
+                url_metadata = download_queue_metadata.get(download_queue_url, {})
+                if url_metadata.get("snapshot_id"):
+                    tracked_playlist.snapshot_id = url_metadata["snapshot_id"]
                 tracked_playlist.save()
 
         self.logger.info(f"Done ({error_count} error(s))")

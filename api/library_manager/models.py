@@ -617,6 +617,12 @@ class TrackedPlaylist(models.Model):
     )
     auto_track_artists: models.BooleanField = models.BooleanField(default=False)
     last_synced_at: models.DateTimeField = models.DateTimeField(default=None, null=True)
+    snapshot_id: models.CharField = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text="Spotify playlist version identifier for efficient change detection",
+    )
 
     @property
     def enabled(self) -> bool:
