@@ -77,12 +77,13 @@ app.conf.task_annotations = {
         "rate_limit": "2/s"
     },
     "library_manager.tasks.download_missing_tracked_artists": {"rate_limit": "2/s"},
-    # Spotify tasks: More lenient (Spotify API is 180 req/min = 3/sec, so 5 concurrent is safe)
-    "library_manager.tasks.fetch_all_albums_for_artist": {"rate_limit": "5/s"},
-    "library_manager.tasks.sync_tracked_playlist": {"rate_limit": "5/s"},
-    "library_manager.tasks.sync_tracked_playlist_artists": {"rate_limit": "5/s"},
-    "library_manager.tasks.update_tracked_artists": {"rate_limit": "5/s"},
-    "library_manager.tasks.sync_tracked_playlists": {"rate_limit": "5/s"},
+    # Spotify tasks: Conservative rate to avoid 429s at startup when many tasks queue
+    # (Spotify API is 180 req/min = 3/sec, but bursts cause issues)
+    "library_manager.tasks.fetch_all_albums_for_artist": {"rate_limit": "2/s"},
+    "library_manager.tasks.sync_tracked_playlist": {"rate_limit": "2/s"},
+    "library_manager.tasks.sync_tracked_playlist_artists": {"rate_limit": "2/s"},
+    "library_manager.tasks.update_tracked_artists": {"rate_limit": "2/s"},
+    "library_manager.tasks.sync_tracked_playlists": {"rate_limit": "2/s"},
 }
 
 # Ensure all task results include task names
