@@ -181,9 +181,10 @@ def retry_failed_songs(self: Any) -> None:
     """
     Periodically retry downloading songs that have previously failed.
 
-    Uses a priority queue approach: songs with fewer failures are retried first.
-    As songs fail and their failed_count increments, they naturally move to the
-    back of the queue, ensuring fair rotation over time.
+    Uses smart exponential backoff based on failure reason:
+    - TEMPORARY_ERROR: 1, 2, 4, 7 days (capped)
+    - SPOTIFY_NOT_FOUND/YTM_NO_MATCH: 2, 4, 8, 16, 30 days (capped)
+    - BOTH_UNAVAILABLE: 30 days flat
 
     Processes up to 100 songs per run, ordered by:
     1. failed_count ASC (fewer failures = higher priority)
@@ -192,6 +193,8 @@ def retry_failed_songs(self: Any) -> None:
     Songs with >10 failures are skipped (likely permanently unavailable).
     Runs 3 times per week (Mon/Wed/Fri).
     """
+    from ..models import FailureReason
+
     try:
         logger.info("Starting periodic retry of failed songs")
 
@@ -200,31 +203,53 @@ def retry_failed_songs(self: Any) -> None:
 
         # Find songs that have failed but might succeed on retry
         # Priority: songs with fewer failures first
-        failed_songs = Song.objects.filter(
+        candidate_songs = Song.objects.filter(
             downloaded=False,
             failed_count__gt=0,
             failed_count__lte=10,  # Skip songs that have failed too many times
-        ).order_by("failed_count", "created_at")[:100]
+        ).order_by("failed_count", "created_at")[
+            :200
+        ]  # Fetch extra to filter
 
-        if not failed_songs.exists():
+        if not candidate_songs.exists():
             logger.info("No failed songs to retry")
             return
 
-        song_count = failed_songs.count()
-        logger.info(
-            f"Found {song_count} failed songs to retry " f"(failed_count range: 1-10)"
-        )
+        # Filter to only songs that are ready for retry (past their backoff period)
+        songs_to_retry = [
+            song for song in candidate_songs if song.is_ready_for_retry()
+        ][:100]
+
+        if not songs_to_retry:
+            logger.info("No failed songs ready for retry (all in backoff period)")
+            return
+
+        # Log stats about what we're skipping vs retrying
+        skipped_count = len(list(candidate_songs)) - len(songs_to_retry)
+        if skipped_count > 0:
+            logger.info(f"Skipped {skipped_count} songs still in backoff period")
+
+        song_count = len(songs_to_retry)
+        logger.info(f"Found {song_count} failed songs ready for retry")
 
         # Build list of Spotify URIs to retry
-        song_uris = [song.spotify_uri for song in failed_songs]
+        song_uris = [song.spotify_uri for song in songs_to_retry]
 
         # Log some stats about what we're retrying
         failure_counts: dict[int, int] = {}
-        for song in failed_songs:
+        failure_reasons: dict[str, int] = {}
+        for song in songs_to_retry:
             failure_counts[song.failed_count] = (
                 failure_counts.get(song.failed_count, 0) + 1
             )
+            if song.failure_reason:
+                reason_label = str(FailureReason(song.failure_reason).label)
+            else:
+                reason_label = "Unknown"
+            failure_reasons[reason_label] = failure_reasons.get(reason_label, 0) + 1
+
         logger.info(f"Retry batch failure count distribution: {failure_counts}")
+        logger.info(f"Retry batch failure reason distribution: {failure_reasons}")
 
         # Download the songs
         downloader_config = Config(urls=song_uris, track_artists=False)
