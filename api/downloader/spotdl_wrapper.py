@@ -33,6 +33,7 @@ from library_manager.models import (
     Artist,
     ContributingArtist,
     DownloadHistory,
+    FailureReason,
     Song,
     TrackedPlaylist,
 )
@@ -573,7 +574,11 @@ class SpotdlWrapper:
 
                     try:
                         db_song = Song.objects.get(gid=song_gid)
-                        db_song.increment_failed_count()
+                        db_song.increment_failed_count(FailureReason.SPOTIFY_NOT_FOUND)
+                        self.logger.info(
+                            f"Song '{db_song.name}' not found on Spotify, "
+                            f"next retry in {db_song.get_retry_backoff_days()} days"
+                        )
                     except Song.DoesNotExist:
                         self.logger.warning(f"Song not found in database: {song_gid}")
                         continue
@@ -820,10 +825,9 @@ class SpotdlWrapper:
                             break
 
                     if audio_track is not None and bit_rate > 0:
-                        db_song.bitrate = bit_rate
-                        db_song.set_file_path(output_path)
-                        db_song.downloaded = True
-                        db_song.save()
+                        db_song.mark_downloaded(
+                            bitrate=int(bit_rate), file_path=output_path
+                        )
                     if audio_track is None or bit_rate < expected_bitrate:
                         # pathlib.Path.unlink(output_path)
                         if audio_track is None:
@@ -905,10 +909,9 @@ class SpotdlWrapper:
                                         break
 
                                 if audio_track is not None and bit_rate > 0:
-                                    db_song.bitrate = bit_rate
-                                    db_song.set_file_path(output_path)
-                                    db_song.downloaded = True
-                                    db_song.save()
+                                    db_song.mark_downloaded(
+                                        bitrate=int(bit_rate), file_path=output_path
+                                    )
                                     self.logger.info(
                                         f"({current_track}) Successfully downloaded after token refresh"
                                     )
@@ -947,8 +950,13 @@ class SpotdlWrapper:
                         self.logger.error(traceback.format_exc())
                     # Increment failed_count for non-401 Spotify errors (if song was created)
                     if db_song is not None:
-                        db_song.failed_count += 1
-                        db_song.save()
+                        # Categorize the Spotify error
+                        err_str = str(spotify_exception).lower()
+                        if "404" in err_str or "not found" in err_str:
+                            reason = FailureReason.SPOTIFY_NOT_FOUND
+                        else:
+                            reason = FailureReason.TEMPORARY_ERROR
+                        db_song.increment_failed_count(reason)
                 except SpotdlDownloadError as spotdl_download_exception:
                     error_count += 1
                     song_name = db_song.name if db_song is not None else track["name"]
@@ -965,7 +973,24 @@ class SpotdlWrapper:
                             self.logger.debug(f"Spotdl error detail: {err}")
                     # Don't infinitely retry missing songs (if song was created)
                     if db_song is not None:
-                        db_song.increment_failed_count()
+                        # SpotDL errors typically mean YTM couldn't find a match
+                        # Check the error message to categorize
+                        err_str = str(spotdl_download_exception).lower()
+                        spotdl_err_strs = [
+                            str(e).lower()
+                            for e in (spotdl_download_exception.spotdl_errors or [])
+                        ]
+                        all_errors = err_str + " ".join(spotdl_err_strs)
+
+                        if (
+                            "no results found" in all_errors
+                            or "no suitable match" in all_errors
+                            or "couldn't find" in all_errors
+                        ):
+                            reason = FailureReason.YTM_NO_MATCH
+                        else:
+                            reason = FailureReason.TEMPORARY_ERROR
+                        db_song.increment_failed_count(reason)
                 except Exception as general_exception:
                     error_count += 1
                     song_name = db_song.name if db_song is not None else track["name"]
@@ -974,8 +999,8 @@ class SpotdlWrapper:
                     )
                     self.logger.error(f"General Exception: {general_exception}")
                     if db_song is not None:
-                        db_song.failed_count += 1
-                        db_song.save()
+                        # General exceptions are typically temporary
+                        db_song.increment_failed_count(FailureReason.TEMPORARY_ERROR)
                     if config.print_exceptions:
                         self.logger.error(traceback.format_exc())
                 finally:

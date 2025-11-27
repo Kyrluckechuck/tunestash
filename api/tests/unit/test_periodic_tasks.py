@@ -536,3 +536,278 @@ class TestRetryFailedSongsTask(TestCase):
         for i in range(11, 21):
             gid = f"highfail{i:015d}"
             assert f"spotify:track:{gid}" not in downloaded_uris
+
+
+class TestSongFailureBackoff(TestCase):
+    """Test exponential backoff for failed song retries."""
+
+    def setUp(self):
+        """Set up test data."""
+        from library_manager.models import FailureReason, Song
+
+        self.artist = Artist.objects.create(
+            name="Test Artist", gid="artist_backoff", tracked=True
+        )
+
+        # Song with temporary error - should have short backoff
+        self.temp_error_song = Song.objects.create(
+            name="Temporary Error Song",
+            gid="song_temp_err",
+            primary_artist=self.artist,
+            failed_count=1,
+            downloaded=False,
+            failure_reason=FailureReason.TEMPORARY_ERROR,
+        )
+
+        # Song not found on Spotify - should have medium backoff
+        self.spotify_404_song = Song.objects.create(
+            name="Spotify 404 Song",
+            gid="song_sp_404",
+            primary_artist=self.artist,
+            failed_count=1,
+            downloaded=False,
+            failure_reason=FailureReason.SPOTIFY_NOT_FOUND,
+        )
+
+        # Song unavailable on both platforms - should have long backoff
+        self.both_unavailable_song = Song.objects.create(
+            name="Both Unavailable Song",
+            gid="song_both",
+            primary_artist=self.artist,
+            failed_count=3,
+            downloaded=False,
+            failure_reason=FailureReason.BOTH_UNAVAILABLE,
+        )
+
+    def test_backoff_days_temporary_error(self):
+        """Test exponential backoff for temporary errors."""
+        from library_manager.models import FailureReason, Song
+
+        song = Song.objects.create(
+            name="Temp Test",
+            gid="temp_backoff_test",
+            primary_artist=self.artist,
+            failed_count=0,
+            downloaded=False,
+            failure_reason=None,
+        )
+
+        # First failure: 1 day backoff
+        song.increment_failed_count(FailureReason.TEMPORARY_ERROR)
+        assert song.get_retry_backoff_days() == 1
+
+        # Second failure: 2 days backoff
+        song.increment_failed_count(FailureReason.TEMPORARY_ERROR)
+        assert song.get_retry_backoff_days() == 2
+
+        # Third failure: 4 days backoff
+        song.increment_failed_count(FailureReason.TEMPORARY_ERROR)
+        assert song.get_retry_backoff_days() == 4
+
+        # Fourth failure: 7 days backoff (capped)
+        song.increment_failed_count(FailureReason.TEMPORARY_ERROR)
+        assert song.get_retry_backoff_days() == 7
+
+        # Fifth failure: still 7 days (capped)
+        song.increment_failed_count(FailureReason.TEMPORARY_ERROR)
+        assert song.get_retry_backoff_days() == 7
+
+    def test_backoff_days_spotify_not_found(self):
+        """Test longer backoff for Spotify 404 errors."""
+        from library_manager.models import FailureReason, Song
+
+        song = Song.objects.create(
+            name="Spotify 404 Test",
+            gid="sp404_backoff_test",
+            primary_artist=self.artist,
+            failed_count=0,
+            downloaded=False,
+            failure_reason=None,
+        )
+
+        # First failure: 2 days backoff
+        song.increment_failed_count(FailureReason.SPOTIFY_NOT_FOUND)
+        assert song.get_retry_backoff_days() == 2
+
+        # Second failure: 4 days backoff
+        song.increment_failed_count(FailureReason.SPOTIFY_NOT_FOUND)
+        assert song.get_retry_backoff_days() == 4
+
+        # Third failure: upgrades to BOTH_UNAVAILABLE with 30 day backoff
+        song.increment_failed_count(FailureReason.SPOTIFY_NOT_FOUND)
+        assert song.failure_reason == FailureReason.BOTH_UNAVAILABLE
+        assert song.get_retry_backoff_days() == 30
+
+    def test_backoff_days_both_unavailable(self):
+        """Test flat 30-day backoff for both unavailable."""
+        assert self.both_unavailable_song.get_retry_backoff_days() == 30
+
+    def test_is_ready_for_retry_no_failures(self):
+        """Test that songs with no failures are always ready."""
+        from library_manager.models import Song
+
+        song = Song.objects.create(
+            name="No Failures",
+            gid="no_fail_test",
+            primary_artist=self.artist,
+            failed_count=0,
+            downloaded=False,
+        )
+        assert song.is_ready_for_retry() is True
+
+    def test_is_ready_for_retry_with_backoff(self):
+        """Test that songs in backoff period are not ready."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from library_manager.models import FailureReason, Song
+
+        song = Song.objects.create(
+            name="Backoff Test",
+            gid="backoff_ready_test",
+            primary_artist=self.artist,
+            failed_count=1,
+            downloaded=False,
+            failure_reason=FailureReason.TEMPORARY_ERROR,
+            last_failed_at=timezone.now(),  # Just failed
+        )
+
+        # Just failed - should NOT be ready (backoff is 1 day)
+        assert song.is_ready_for_retry() is False
+
+        # Simulate time passing - 2 days later
+        song.last_failed_at = timezone.now() - timedelta(days=2)
+        song.save()
+
+        # Should now be ready
+        assert song.is_ready_for_retry() is True
+
+    def test_is_ready_for_retry_both_unavailable(self):
+        """Test 30-day backoff for songs unavailable on both platforms."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from library_manager.models import FailureReason, Song
+
+        song = Song.objects.create(
+            name="Both Unavailable Test",
+            gid="both_unavail_test",
+            primary_artist=self.artist,
+            failed_count=5,
+            downloaded=False,
+            failure_reason=FailureReason.BOTH_UNAVAILABLE,
+            last_failed_at=timezone.now() - timedelta(days=15),  # 15 days ago
+        )
+
+        # 15 days into 30-day backoff - should NOT be ready
+        assert song.is_ready_for_retry() is False
+
+        # 31 days later - should be ready
+        song.last_failed_at = timezone.now() - timedelta(days=31)
+        song.save()
+        assert song.is_ready_for_retry() is True
+
+    @patch("library_manager.tasks.maintenance.require_download_capability")
+    @patch("library_manager.tasks.maintenance.spotdl_wrapper")
+    def test_retry_task_respects_backoff(self, mock_spotdl, mock_require_download):
+        """Test that retry task skips songs in backoff period."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from library_manager.models import FailureReason, Song
+        from library_manager.tasks import retry_failed_songs
+
+        # Create a song that just failed (in backoff)
+        recent_fail = Song.objects.create(
+            name="Recent Failure",
+            gid="recent_fail_test",
+            primary_artist=self.artist,
+            failed_count=1,
+            downloaded=False,
+            failure_reason=FailureReason.TEMPORARY_ERROR,
+            last_failed_at=timezone.now(),  # Just failed
+        )
+
+        # Create a song that failed long ago (past backoff)
+        old_fail = Song.objects.create(
+            name="Old Failure",
+            gid="old_fail_test000",
+            primary_artist=self.artist,
+            failed_count=1,
+            downloaded=False,
+            failure_reason=FailureReason.TEMPORARY_ERROR,
+            last_failed_at=timezone.now() - timedelta(days=7),  # 7 days ago
+        )
+
+        # Run the retry task
+        retry_failed_songs()
+
+        # Should only include the old failure (past backoff)
+        call_args = mock_spotdl.execute.call_args
+        config = call_args[0][0]
+        downloaded_uris = config.urls
+
+        assert old_fail.spotify_uri in downloaded_uris
+        assert recent_fail.spotify_uri not in downloaded_uris
+
+    def test_increment_failed_count_sets_timestamp(self):
+        """Test that increment_failed_count sets last_failed_at."""
+        from django.utils import timezone
+
+        from library_manager.models import FailureReason, Song
+
+        song = Song.objects.create(
+            name="Timestamp Test",
+            gid="timestamp_test00",
+            primary_artist=self.artist,
+            failed_count=0,
+            downloaded=False,
+        )
+
+        assert song.last_failed_at is None
+
+        before = timezone.now()
+        song.increment_failed_count(FailureReason.TEMPORARY_ERROR)
+        after = timezone.now()
+
+        assert song.last_failed_at is not None
+        assert before <= song.last_failed_at <= after
+        assert song.failure_reason == FailureReason.TEMPORARY_ERROR
+
+    def test_mark_downloaded_clears_failure_tracking(self):
+        """Test that mark_downloaded resets all failure tracking fields."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from library_manager.models import FailureReason, Song
+
+        # Create a song with failure history
+        song = Song.objects.create(
+            name="Previously Failed Song",
+            gid="prev_failed_test",
+            primary_artist=self.artist,
+            failed_count=5,
+            downloaded=False,
+            failure_reason=FailureReason.SPOTIFY_NOT_FOUND,
+            last_failed_at=timezone.now() - timedelta(days=1),
+            unavailable=True,
+        )
+
+        # Mark it as downloaded
+        song.mark_downloaded(bitrate=320, file_path="/music/test.mp3")
+
+        # Refresh from DB to ensure it was saved
+        song.refresh_from_db()
+
+        # Verify all failure tracking was cleared
+        assert song.downloaded is True
+        assert song.bitrate == 320
+        assert song.file_path == "/music/test.mp3"
+        assert song.failed_count == 0
+        assert song.failure_reason is None
+        assert song.last_failed_at is None
+        assert song.unavailable is False

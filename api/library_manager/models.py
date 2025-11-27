@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 import django.core.validators
 from django.conf import settings
 from django.db import models
-from django.db.models import QuerySet, Sum
+from django.db.models import QuerySet, Sum, TextChoices
 from django.utils import timezone
 
 # TypedModelMeta is only needed for type checking with mypy
@@ -157,6 +157,23 @@ class Artist(models.Model):
         return f"name: {self.name} | gid: {self.gid} | tracked: {self.tracked}"
 
 
+class FailureReason(TextChoices):
+    """Categorizes why a song download failed for smart retry logic.
+
+    NULL means no failure has occurred (saves storage vs storing a "none" value).
+    """
+
+    # Temporary failures - retry frequently
+    TEMPORARY_ERROR = "temporary", "Temporary error (network, rate limit, auth)"
+
+    # Semi-permanent failures - use exponential backoff
+    SPOTIFY_NOT_FOUND = "spotify_404", "Song not found on Spotify"
+    YTM_NO_MATCH = "ytm_no_match", "No YouTube Music match found"
+
+    # Permanent failures - very long backoff (30+ days)
+    BOTH_UNAVAILABLE = "both_unavailable", "Unavailable on both Spotify and YTM"
+
+
 class Song(models.Model):
     """
     Represents a music track/song.
@@ -175,6 +192,8 @@ class Song(models.Model):
         file_path_ref: Reference to file path (if downloaded)
         downloaded: Whether the song has been downloaded
         last_download_attempt: When the song was last queued for download (for rate limiting)
+        failure_reason: Categorized reason for last failure (for smart retry backoff)
+        last_failed_at: When the song last failed (for exponential backoff calculation)
     """
 
     id: models.BigAutoField = models.BigAutoField(primary_key=True)
@@ -197,6 +216,18 @@ class Song(models.Model):
     downloaded: models.BooleanField = models.BooleanField(default=False)
     last_download_attempt: models.DateTimeField = models.DateTimeField(
         null=True, blank=True, help_text="When the song was last queued for download"
+    )
+    failure_reason: models.CharField = models.CharField(
+        max_length=20,
+        choices=FailureReason.choices,
+        null=True,
+        blank=True,
+        help_text="Categorized reason for last failure (NULL = no failure)",
+    )
+    last_failed_at: models.DateTimeField = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the song last failed (for exponential backoff calculation)",
     )
 
     def clean(self) -> None:
@@ -243,10 +274,84 @@ class Song(models.Model):
     def spotify_uri(self) -> str:
         return f"spotify:track:{self.gid}"
 
-    def increment_failed_count(self) -> None:
+    def increment_failed_count(
+        self, reason: "FailureReason" = FailureReason.TEMPORARY_ERROR
+    ) -> None:
+        """Increment the failed count and update failure tracking fields.
+
+        Args:
+            reason: The categorized reason for the failure. Used for smart retry
+                    backoff - permanent failures get longer delays between retries.
+        """
         self.failed_count += 1
+        self.failure_reason = reason
+        self.last_failed_at = timezone.now()
+
+        # Upgrade to BOTH_UNAVAILABLE if it was a Spotify 404 and still failing
+        if (
+            self.failure_reason == FailureReason.SPOTIFY_NOT_FOUND
+            and self.failed_count >= 3
+        ):
+            self.failure_reason = FailureReason.BOTH_UNAVAILABLE
+
         if self.failed_count > 3:
             self.unavailable = True
+        self.save()
+
+    def get_retry_backoff_days(self) -> int:
+        """Calculate how many days to wait before retrying this song.
+
+        Returns:
+            Number of days to wait based on failure_reason and failed_count.
+            - None (no failure): 0 days
+            - TEMPORARY_ERROR: 1 day base, doubles each failure (max 7 days)
+            - SPOTIFY_NOT_FOUND/YTM_NO_MATCH: 2 day base, doubles each failure (max 30 days)
+            - BOTH_UNAVAILABLE: 30 days flat
+        """
+        if self.failure_reason is None:
+            return 0
+
+        if self.failure_reason == FailureReason.BOTH_UNAVAILABLE:
+            return 30
+
+        if self.failure_reason == FailureReason.TEMPORARY_ERROR:
+            # Exponential backoff: 1, 2, 4, 7 (capped) days
+            return int(min(2 ** (self.failed_count - 1), 7))
+
+        # SPOTIFY_NOT_FOUND or YTM_NO_MATCH - slower backoff
+        # 2, 4, 8, 16, 30 (capped) days
+        return int(min(2**self.failed_count, 30))
+
+    def is_ready_for_retry(self) -> bool:
+        """Check if enough time has passed since last failure to retry.
+
+        Returns:
+            True if the song should be retried, False if still in backoff period.
+        """
+        if self.failed_count == 0 or self.last_failed_at is None:
+            return True
+
+        from datetime import timedelta
+
+        backoff_days = self.get_retry_backoff_days()
+        next_retry_at = self.last_failed_at + timedelta(days=backoff_days)
+        return bool(timezone.now() >= next_retry_at)
+
+    def mark_downloaded(self, bitrate: int, file_path: str) -> None:
+        """Mark the song as successfully downloaded, clearing failure tracking.
+
+        Args:
+            bitrate: Audio bitrate of the downloaded file
+            file_path: Path to the downloaded file
+        """
+        self.downloaded = True
+        self.bitrate = bitrate
+        self.set_file_path(file_path)
+        # Clear failure tracking on success (NULL saves storage)
+        self.failed_count = 0
+        self.failure_reason = None
+        self.last_failed_at = None
+        self.unavailable = False
         self.save()
 
     class Meta(TypedModelMeta):
