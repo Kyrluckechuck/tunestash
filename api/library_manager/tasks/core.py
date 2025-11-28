@@ -30,26 +30,32 @@ class TaskCancelledException(Exception):
 # Lazy-initialized SpotdlWrapper to avoid import-time Spotify client creation.
 # This prevents credential validation during test collection when Django settings
 # may not be fully configured yet.
-_spotdl_wrapper: Optional[SpotdlWrapper] = None
+class _SpotdlWrapperProxy:
+    """Proxy that lazily initializes SpotdlWrapper on first attribute access.
+
+    Uses class-level caching to maintain singleton behavior without global statements.
+    """
+
+    _instance: Optional[SpotdlWrapper] = None
+
+    @classmethod
+    def get_instance(cls) -> SpotdlWrapper:
+        """Get the SpotdlWrapper singleton, initializing lazily on first access."""
+        if cls._instance is None:
+            cls._instance = SpotdlWrapper(Config())
+        return cls._instance
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.get_instance(), name)
 
 
 def get_spotdl_wrapper() -> SpotdlWrapper:
     """Get the SpotdlWrapper singleton, initializing lazily on first access."""
-    global _spotdl_wrapper
-    if _spotdl_wrapper is None:
-        _spotdl_wrapper = SpotdlWrapper(Config())
-    return _spotdl_wrapper
+    return _SpotdlWrapperProxy.get_instance()
 
 
 # For backwards compatibility, expose as a property-like module attribute
 # This allows existing code using `spotdl_wrapper.method()` to continue working
-class _SpotdlWrapperProxy:
-    """Proxy that lazily initializes SpotdlWrapper on first attribute access."""
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(get_spotdl_wrapper(), name)
-
-
 spotdl_wrapper: Any = _SpotdlWrapperProxy()
 
 # Initialize Celery logger
