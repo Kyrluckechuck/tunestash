@@ -4,6 +4,12 @@ import os
 
 from settings import *  # noqa: F401,F403
 
+# Provide dummy Spotify credentials for tests
+# These allow the Spotipy client to initialize without raising SpotifyOauthError
+# Actual API calls should be mocked in tests
+SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID", "test_client_id")
+SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET", "test_client_secret")
+
 
 # Support for pytest-xdist parallel execution
 # Each worker gets its own test database

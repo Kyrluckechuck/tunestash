@@ -69,6 +69,25 @@ def enable_db_access_for_all_tests(db):
     """Automatically enable database access for all tests."""
 
 
+@pytest.fixture(autouse=True)
+def reset_spotify_client_singletons():
+    """Reset Spotify client singletons between tests to prevent state leakage.
+
+    This ensures tests don't share singleton state and that each test starts with
+    a fresh client. Dummy credentials are provided in test_settings.py to allow
+    the clients to initialize without SpotifyOauthError.
+    """
+    from downloader.spotipy_tasks import OAuthSpotifyClient, PublicSpotifyClient
+
+    # Reset before test
+    PublicSpotifyClient.reset()
+    OAuthSpotifyClient.reset()
+    yield
+    # Reset after test
+    PublicSpotifyClient.reset()
+    OAuthSpotifyClient.reset()
+
+
 @pytest.fixture(scope="session")
 def django_db_setup(django_db_setup, django_db_blocker):
     """Set up the database for the test session."""
