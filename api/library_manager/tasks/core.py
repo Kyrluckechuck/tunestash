@@ -27,8 +27,30 @@ class TaskCancelledException(Exception):
     """Raised when a task has been cancelled and should stop execution."""
 
 
-# Initialize SpotdlWrapper
-spotdl_wrapper = SpotdlWrapper(Config())
+# Lazy-initialized SpotdlWrapper to avoid import-time Spotify client creation.
+# This prevents credential validation during test collection when Django settings
+# may not be fully configured yet.
+_spotdl_wrapper: Optional[SpotdlWrapper] = None
+
+
+def get_spotdl_wrapper() -> SpotdlWrapper:
+    """Get the SpotdlWrapper singleton, initializing lazily on first access."""
+    global _spotdl_wrapper
+    if _spotdl_wrapper is None:
+        _spotdl_wrapper = SpotdlWrapper(Config())
+    return _spotdl_wrapper
+
+
+# For backwards compatibility, expose as a property-like module attribute
+# This allows existing code using `spotdl_wrapper.method()` to continue working
+class _SpotdlWrapperProxy:
+    """Proxy that lazily initializes SpotdlWrapper on first attribute access."""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(get_spotdl_wrapper(), name)
+
+
+spotdl_wrapper: Any = _SpotdlWrapperProxy()
 
 # Initialize Celery logger
 logger = get_task_logger(__name__)
