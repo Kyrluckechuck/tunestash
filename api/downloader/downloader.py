@@ -232,6 +232,8 @@ class Downloader:
                 return download_queue, {"type": "track", "id": uri}
             return download_queue
         if "playlist" in url:
+            from library_manager.validators import is_local_track
+
             playlist = self.get_playlist(uri)
             raw_playlist = playlist["tracks"]["items"]
             metadata = {
@@ -241,7 +243,10 @@ class Downloader:
             }
             for i in raw_playlist:
                 i["track"]["added_at"] = i["added_at"]
-            download_queue.extend([i["track"] for i in raw_playlist])
+            # Filter out local files - they can't be downloaded via Spotify API
+            download_queue.extend(
+                [i["track"] for i in raw_playlist if not is_local_track(i["track"])]
+            )
             if include_metadata:
                 return download_queue, metadata
             return download_queue

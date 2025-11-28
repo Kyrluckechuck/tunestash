@@ -5,7 +5,44 @@ This module provides validation functions for Spotify identifiers and URIs.
 """
 
 import re
-from typing import Optional
+from typing import Any, Dict, Optional
+
+
+def is_local_track(track: Dict[str, Any]) -> bool:
+    """
+    Check if a track is a local file added to a Spotify playlist.
+
+    Local files are user-uploaded tracks that exist only in that user's library.
+    They cannot be downloaded via the Spotify API. The Spotify API marks these
+    tracks with `is_local: true` and they have `null` IDs.
+
+    Args:
+        track: Track object from Spotify API (the inner "track" dict, not the
+               playlist item wrapper)
+
+    Returns:
+        bool: True if this is a local file, False if it's a real Spotify track
+
+    Examples:
+        >>> is_local_track({"is_local": True, "id": None, "name": "My Local Song"})
+        True
+        >>> is_local_track({"is_local": False, "id": "6rqhFgbbKwnb9MLmUQDhG6", "name": "Real Song"})
+        False
+    """
+    if not track or not isinstance(track, dict):
+        return False
+
+    # Primary check: Spotify explicitly marks local files
+    if track.get("is_local") is True:
+        return True
+
+    # Fallback: local tracks have null/missing IDs
+    # This catches edge cases where is_local might not be present
+    track_id = track.get("id")
+    if track_id is None:
+        return True
+
+    return False
 
 
 def is_valid_spotify_id(spotify_id: str) -> bool:

@@ -8,6 +8,7 @@ from library_manager.validation import (
     is_spotify_track_url,
     validate_spotify_url,
 )
+from library_manager.validators import is_local_track
 
 
 class TestValidationFunctionsSimple:
@@ -163,3 +164,62 @@ class TestValidationFunctionsSimple:
             assert (
                 url_type == expected_type
             ), f"Expected {expected_type}, got {url_type} for {url}"
+
+
+class TestIsLocalTrack:
+    """Test local track detection for Spotify playlist items."""
+
+    def test_is_local_track_with_is_local_true(self) -> None:
+        """Test detection when is_local flag is explicitly True."""
+        local_track = {
+            "is_local": True,
+            "id": None,
+            "name": "My Local Song",
+            "artists": [{"name": "Unknown Artist", "id": None}],
+        }
+        assert is_local_track(local_track) is True
+
+    def test_is_local_track_with_null_id(self) -> None:
+        """Test detection when track has null ID (fallback check)."""
+        track_with_null_id = {
+            "id": None,
+            "name": "Weird Track",
+            "artists": [{"name": "Artist", "id": None}],
+        }
+        assert is_local_track(track_with_null_id) is True
+
+    def test_is_local_track_regular_track(self) -> None:
+        """Test that regular Spotify tracks are not detected as local."""
+        regular_track = {
+            "is_local": False,
+            "id": "6rqhFgbbKwnb9MLmUQDhG6",
+            "name": "Real Spotify Song",
+            "artists": [{"name": "Real Artist", "id": "0TnOYISbd1XYRBk9myaseg"}],
+            "external_urls": {
+                "spotify": "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"
+            },
+        }
+        assert is_local_track(regular_track) is False
+
+    def test_is_local_track_without_is_local_field(self) -> None:
+        """Test track without is_local field but with valid ID."""
+        track_missing_field = {
+            "id": "6rqhFgbbKwnb9MLmUQDhG6",
+            "name": "Song Without is_local Field",
+            "artists": [{"name": "Artist", "id": "0TnOYISbd1XYRBk9myaseg"}],
+        }
+        assert is_local_track(track_missing_field) is False
+
+    def test_is_local_track_empty_dict(self) -> None:
+        """Test with empty dictionary."""
+        assert is_local_track({}) is False
+
+    def test_is_local_track_none(self) -> None:
+        """Test with None input."""
+        assert is_local_track(None) is False
+
+    def test_is_local_track_non_dict(self) -> None:
+        """Test with non-dict input."""
+        assert is_local_track("not a dict") is False
+        assert is_local_track(123) is False
+        assert is_local_track([]) is False
