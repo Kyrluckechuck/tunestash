@@ -51,7 +51,8 @@ def pytest_configure(config):
         os.environ["SPOTDL_CACHE_PATH"] = worker_spotdl_cache
 
     # Configure Django settings for testing AFTER setting environment
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "test_settings")
+    # Use direct assignment (not setdefault) to override pytest.ini if needed
+    os.environ["DJANGO_SETTINGS_MODULE"] = "test_settings"
     django.setup()
 
 
