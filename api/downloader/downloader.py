@@ -134,12 +134,36 @@ class Downloader:
         return album
 
     def get_playlist(self, playlist_id: str) -> Any:
-        playlist = self.spotipy_client.playlist(playlist_id)
-        playlist_iterator = self.spotipy_client.next(playlist["tracks"])
+        """Get playlist with all tracks.
 
+        Tries public client first (works for public playlists, saves OAuth quota),
+        falls back to OAuth client for private playlists. This allows users who
+        haven't authenticated to still sync public playlists.
+        """
+        playlist = None
+        used_client = None
+
+        # Try public client first (works for public playlists)
+        try:
+            playlist = self.public_client.playlist(playlist_id)
+            used_client = self.public_client
+        except Exception:
+            pass
+
+        # Fall back to OAuth client (needed for private playlists)
+        if playlist is None and self.public_client != self.spotipy_client:
+            playlist = self.spotipy_client.playlist(playlist_id)
+            used_client = self.spotipy_client
+
+        if playlist is None:
+            raise Exception(f"Failed to fetch playlist {playlist_id}")
+
+        # Paginate through all tracks using the same client that succeeded
+        playlist_iterator = used_client.next(playlist["tracks"])
         while playlist_iterator is not None:
             playlist["tracks"]["items"].extend(playlist_iterator["items"])
-            playlist_iterator = self.spotipy_client.next(playlist_iterator)
+            playlist_iterator = used_client.next(playlist_iterator)
+
         return playlist
 
     def get_playlist_snapshot_id(self, playlist_id: str) -> str | None:
