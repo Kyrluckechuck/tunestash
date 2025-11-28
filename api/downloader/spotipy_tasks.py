@@ -129,6 +129,14 @@ def track_artists_in_playlist(playlist_url: str, task_id: Optional[str] = None) 
     # pp(playlist)
     artists_to_track = []
     for track in playlist["tracks"]["items"]:
+        from library_manager.validators import is_local_track
+
+        # Skip local files - they're user-uploaded and have no Spotify metadata
+        if is_local_track(track["track"]):
+            print(
+                f"Skipping local file '{track['track']['name']}' - cannot track artists from local files"
+            )
+            continue
         if len(track["track"]["artists"]) == 0:
             print(
                 f"Skipping track {track['track']['name']}('{track['track']['uri']}') due to lack of artists"

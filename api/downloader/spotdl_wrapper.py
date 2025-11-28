@@ -796,6 +796,14 @@ class SpotdlWrapper:
             main_queue_progress = ((queue_item_index - 1) / len(download_queue)) * 1000
 
             for track_index, track in enumerate(queue_item, start=1):
+                # Skip local files - they're user-uploaded and can't be downloaded
+                from library_manager.validators import is_local_track
+
+                if is_local_track(track):
+                    self.logger.debug(
+                        f"Skipping local file '{track.get('name', 'Unknown')}' - cannot download local files"
+                    )
+                    continue
 
                 # Check if this is a tracked playlist, and if so let's only sync if the track is newer than the last sync
                 # OR if the track hasn't been downloaded yet (catches songs added before we started tracking)
