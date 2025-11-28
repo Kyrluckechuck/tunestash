@@ -63,6 +63,54 @@ class PremiumExpiredException(Exception):
     pass
 
 
+class PlaylistSyncError(Exception):
+    """Raised for non-retryable playlist sync errors (429, 401, 404).
+
+    These errors should fail fast without retrying - the next scheduled sync
+    will attempt the operation again. This prevents wasting API quota on
+    operations that are likely to fail repeatedly.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _is_fail_fast_error(exception: Exception) -> tuple[bool, int | None]:
+    """Check if an exception should trigger fail-fast behavior (no retries).
+
+    Fail-fast errors are:
+    - 429 (Rate Limited): Retrying immediately won't help
+    - 401 (Unauthorized): Token issues won't resolve with retries
+    - 404 (Not Found): Resource doesn't exist, retries won't help
+
+    Args:
+        exception: The exception to check
+
+    Returns:
+        Tuple of (is_fail_fast, status_code)
+    """
+    err_str = str(exception).lower()
+
+    # Check for rate limiting (429)
+    if "429" in err_str or "rate limit" in err_str or "too many requests" in err_str:
+        return True, 429
+
+    # Check for authentication errors (401)
+    if (
+        "401" in err_str
+        or "unauthorized" in err_str
+        or "access token expired" in err_str
+    ):
+        return True, 401
+
+    # Check for not found errors (404)
+    if "404" in err_str or "not found" in err_str or "max retries" in err_str.lower():
+        return True, 404
+
+    return False, None
+
+
 # Apply monkeypatches to Spotdl for compatibility
 # See spotdl_override module for more information
 Spotdl.__init__ = spotdl_override.__init__
@@ -157,9 +205,20 @@ class SpotdlWrapper:
         spotdl_settings["loop"] = loop
         self.spotdl = Spotdl(**spotdl_settings)
 
+        # Initialize dual Spotify clients for separate rate limit buckets
+        # SpotDL's SpotifyClient is the primary client (gets OAuth from spotdl_override)
         self.spotipy_client = SpotifyClient()
 
-        self.downloader = Downloader(self.spotipy_client)
+        # Public client uses Client Credentials flow (separate rate limit bucket)
+        from .spotipy_tasks import PublicSpotifyClient
+
+        self.public_spotipy_client = PublicSpotifyClient()
+
+        # Pass both clients to Downloader - routes operations to appropriate client
+        # SpotDL's SpotifyClient is the Spotipy client itself (not a wrapper)
+        self.downloader = Downloader(
+            self.spotipy_client, public_client=self.public_spotipy_client.sp
+        )
 
         # Initialize premium detector for quality validation
         self.premium_detector = PremiumDetector(
@@ -242,6 +301,7 @@ class SpotdlWrapper:
             )
 
             # Update our reference to the new client instance
+            # SpotDL's SpotifyClient is the Spotipy client itself
             self.spotipy_client = SpotifyClient()
             self.downloader.spotipy_client = self.spotipy_client
 
@@ -341,10 +401,21 @@ class SpotdlWrapper:
                     f"({len(config.urls) - len(download_queue)} failed/missing)"
                 )
             except SpotifyException as spotify_exception:
-                if (
-                    "401" in str(spotify_exception)
-                    or "access token expired" in str(spotify_exception).lower()
-                ):
+                is_fail_fast, status_code = _is_fail_fast_error(spotify_exception)
+
+                # For 429 (rate limit), fail fast - don't fall back to individual fetching
+                if status_code == 429:
+                    self.logger.error(
+                        f"Rate limited (429) during batch fetch - failing fast. "
+                        f"Will retry on next sync. Error: {spotify_exception}"
+                    )
+                    raise PlaylistSyncError(
+                        f"Rate limited during batch fetch: {spotify_exception}",
+                        status_code=429,
+                    )
+
+                # For 401, try token refresh once
+                if status_code == 401:
                     self.logger.warning(
                         "Spotify OAuth token expired during batch fetch, attempting refresh..."
                     )
@@ -360,12 +431,29 @@ class SpotdlWrapper:
                                     if url in metadata:
                                         download_queue_metadata[url] = metadata[url]
                         except Exception as retry_exception:
+                            # Token refresh worked but retry still failed - fail fast
                             self.logger.error(
-                                f"Batch fetch failed after token refresh: {retry_exception}"
+                                f"Batch fetch failed after token refresh (failing fast): {retry_exception}"
                             )
-                            # Fall back to individual fetching below
+                            raise PlaylistSyncError(
+                                f"Batch fetch failed after token refresh: {retry_exception}",
+                                status_code=401,
+                            )
+                    else:
+                        # Token refresh failed - fail fast
+                        self.logger.error(
+                            "Failed to refresh Spotify OAuth token - failing fast"
+                        )
+                        raise PlaylistSyncError(
+                            "Token refresh failed during batch fetch",
+                            status_code=401,
+                        )
                 else:
                     self.logger.error(f"Batch fetch failed: {spotify_exception}")
+                    # Fall back to individual fetching for non-fail-fast errors
+            except PlaylistSyncError:
+                # Re-raise fail-fast errors
+                raise
             except Exception as e:
                 self.logger.error(f"Batch fetch failed: {e}")
                 # Fall back to individual fetching below
@@ -472,18 +560,32 @@ class SpotdlWrapper:
                     download_queue.append(result)
                 download_queue_urls.append(url)
             except SpotifyException as spotify_exception:
-                # Check if this is a 401 Unauthorized error (expired token)
-                if (
-                    "401" in str(spotify_exception)
-                    or "access token expired" in str(spotify_exception).lower()
-                ):
+                is_fail_fast, status_code = _is_fail_fast_error(spotify_exception)
+                is_playlist_url = (
+                    url.startswith("spotify:playlist:")
+                    or url.startswith("https://open.spotify.com/playlist")
+                    or "/playlist/" in url
+                )
+
+                # For 429 (rate limit) on playlist sync, fail fast entirely
+                if status_code == 429 and is_playlist_url:
+                    self.logger.error(
+                        f"({current_url}) Rate limited (429) during playlist sync - "
+                        f"failing fast. Will retry on next sync."
+                    )
+                    self._update_playlist_status_on_error(url)
+                    raise PlaylistSyncError(
+                        f"Rate limited during playlist sync: {spotify_exception}",
+                        status_code=429,
+                    )
+
+                # For 401, try token refresh once (this often works)
+                if status_code == 401:
                     self.logger.warning(
                         f"({current_url}) Spotify OAuth token expired, attempting refresh..."
                     )
 
-                    # Try to refresh the token
                     if self.refresh_spotify_client():
-                        # Retry the operation once with the refreshed token
                         try:
                             self.logger.info(
                                 f'({current_url}) Retrying after token refresh: "{url}"'
@@ -500,55 +602,86 @@ class SpotdlWrapper:
                             download_queue_urls.append(url)
                             continue  # Success, move to next URL
                         except Exception as retry_exception:
+                            # Token refresh worked but retry still failed - fail fast for playlists
                             error_count += 1
                             self.logger.error(
-                                f"({current_url}) Failed to check after token refresh: {retry_exception}"
+                                f"({current_url}) Failed after token refresh (failing fast): {retry_exception}"
                             )
+                            if is_playlist_url:
+                                raise PlaylistSyncError(
+                                    f"Playlist sync failed after token refresh: {retry_exception}",
+                                    status_code=401,
+                                )
                             if config.print_exceptions:
                                 self.logger.error(traceback.format_exc())
-                            continue  # Move to next URL
+                            continue
                     else:
+                        # Token refresh failed - fail fast for playlists
                         error_count += 1
                         self.logger.error(
                             f"({current_url}) Failed to refresh Spotify OAuth token"
                         )
-                        continue  # Move to next URL
+                        if is_playlist_url:
+                            raise PlaylistSyncError(
+                                "Token refresh failed during playlist sync",
+                                status_code=401,
+                            )
+                        continue
 
-                # Not a 401 error, treat as generic exception
+                # For 404 errors on playlists, update status and continue (not fatal)
+                if status_code == 404 and is_playlist_url:
+                    error_count += 1
+                    self.logger.warning(
+                        f"({current_url}) Playlist not found (404) - marking as inaccessible"
+                    )
+                    self._update_playlist_status_on_error(url)
+                    continue  # Move to next URL, don't fail entire sync
+
+                # Other errors - log and continue
                 error_count += 1
                 self.logger.error(f'({current_url}) Failed to check "{url}"')
                 self.logger.error(f"Spotify exception: {spotify_exception}")
                 if config.print_exceptions:
                     self.logger.error(traceback.format_exc())
 
-                # Handle (gracefully) playlists that are inaccessible (404 errors)
-                if (
-                    "too many 404 error responses" in str(spotify_exception)
-                    or "Max Retries" in str(spotify_exception)
-                ) and (
-                    url.startswith("spotify:playlist:")
-                    or url.startswith("https://open.spotify.com/playlist")
-                ):
-                    self._update_playlist_status_on_error(url)
+            except PlaylistSyncError:
+                # Re-raise fail-fast errors
+                raise
 
             except Exception as general_exception:
+                is_fail_fast, status_code = _is_fail_fast_error(general_exception)
+                is_playlist_url = (
+                    url.startswith("spotify:playlist:")
+                    or url.startswith("https://open.spotify.com/playlist")
+                    or "/playlist/" in url
+                )
+
+                # For 429 on playlist sync, fail fast
+                if status_code == 429 and is_playlist_url:
+                    self.logger.error(
+                        f"({current_url}) Rate limited (429) - failing fast. "
+                        f"Will retry on next sync."
+                    )
+                    self._update_playlist_status_on_error(url)
+                    raise PlaylistSyncError(
+                        f"Rate limited: {general_exception}",
+                        status_code=429,
+                    )
+
+                # For 404 on playlists, mark as inaccessible
+                if status_code == 404 and is_playlist_url:
+                    error_count += 1
+                    self.logger.warning(
+                        f"({current_url}) Playlist not found - marking as inaccessible"
+                    )
+                    self._update_playlist_status_on_error(url)
+                    continue
+
                 error_count += 1
                 self.logger.error(f'({current_url}) Failed to check "{url}"')
                 self.logger.error(f"exception: {general_exception}")
                 if config.print_exceptions:
                     self.logger.error(traceback.format_exc())
-
-                # Handle (gracefully) playlists that are inaccessible
-                if (
-                    "too many 404 error responses" in str(general_exception)
-                    or "http status: 429" in str(general_exception)
-                    or "Max Retries" in str(general_exception)
-                ) and (
-                    url.startswith("spotify:playlist:")
-                    or url.startswith("https://open.spotify.com/playlist")
-                ):
-                    self._update_playlist_status_on_error(url)
-                    continue
 
                 # Handle (gracefully) songs that no longer exist (at all) with Spotify
                 if (

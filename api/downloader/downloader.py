@@ -1,15 +1,40 @@
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from library_manager.models import Album, Artist
 
 
 class Downloader:
-    def __init__(self, spotipy_client):
+    """Handles Spotify API operations with dual-client architecture.
+
+    Uses two separate Spotipy clients to leverage independent rate limit buckets:
+    - public_client: Client Credentials flow for metadata (tracks, albums, artists)
+    - oauth_client: OAuth flow for private playlists and user operations
+
+    This separation reduces rate limiting issues by distributing API calls across
+    different authentication contexts.
+    """
+
+    def __init__(
+        self,
+        spotipy_client: Any,
+        public_client: Optional[Any] = None,
+    ):
+        """Initialize Downloader with Spotipy client(s).
+
+        Args:
+            spotipy_client: Primary client (OAuth preferred) for playlist operations.
+                           Also used as fallback if public_client is None.
+            public_client: Optional client using Client Credentials for public
+                          metadata operations. If None, spotipy_client is used for all.
+        """
         self.spotipy_client = spotipy_client
+        self.public_client = public_client if public_client else spotipy_client
 
     def get_artist_albums(self, artist_gid: str) -> List[Album]:
-        """Get all albums (including EPs and Singles) for this artist
+        """Get all albums (including EPs and Singles) for this artist.
+
+        Uses the public client (Client Credentials) since artist data is public.
 
         Args:
             artist_gid (str): The artist GID as supplied by Spotify
@@ -22,7 +47,8 @@ class Downloader:
         # artist_gid is already a Spotify ID, just format as URI
         artist_uri = f"spotify:artist:{artist_gid}"
 
-        album_iterator = self.spotipy_client.artist_albums(artist_uri, limit=50)
+        # Use public client - artist data doesn't require user auth
+        album_iterator = self.public_client.artist_albums(artist_uri, limit=50)
 
         while album_iterator is not None:
             for album in album_iterator["items"]:
@@ -38,7 +64,7 @@ class Downloader:
 
                 albums_to_create_or_update.append(new_or_updated_album_data)
 
-            album_iterator = self.spotipy_client.next(album_iterator)
+            album_iterator = self.public_client.next(album_iterator)
 
         if len(albums_to_create_or_update) == 0:
             return []
@@ -52,13 +78,16 @@ class Downloader:
         return albums
 
     def get_track(self, track_id: str) -> Any:
-        return self.spotipy_client.track(track_id)
+        """Get track metadata. Uses public client since track data is public."""
+        return self.public_client.track(track_id)
 
     def get_tracks_batch(self, track_ids: List[str]) -> List[Any]:
         """Batch fetch multiple tracks in a single API call.
 
         Uses Spotify's "Get Several Tracks" endpoint which supports up to 50 tracks
         per request, significantly reducing API calls for bulk operations.
+
+        Uses the public client since track metadata is public data.
 
         Args:
             track_ids: List of Spotify track IDs (max 50 per call, will batch if more)
@@ -75,7 +104,8 @@ class Downloader:
 
         for i in range(0, len(track_ids), batch_size):
             batch = track_ids[i : i + batch_size]
-            result = self.spotipy_client.tracks(batch)
+            # Use public client - track metadata doesn't require user auth
+            result = self.public_client.tracks(batch)
             if result and "tracks" in result:
                 # Filter out None values (tracks that don't exist)
                 all_tracks.extend([t for t in result["tracks"] if t is not None])
@@ -94,12 +124,13 @@ class Downloader:
         return album
 
     def get_album(self, album_id: str) -> Any:
-        album = self.spotipy_client.album(album_id)
-        album_track_iterator = self.spotipy_client.next(album["tracks"])
+        """Get album details. Uses public client since album data is public."""
+        album = self.public_client.album(album_id)
+        album_track_iterator = self.public_client.next(album["tracks"])
 
         while album_track_iterator is not None:
             album["tracks"]["items"].extend(album_track_iterator["items"])
-            album_track_iterator = self.spotipy_client.next(album_track_iterator)
+            album_track_iterator = self.public_client.next(album_track_iterator)
         return album
 
     def get_playlist(self, playlist_id: str) -> Any:
@@ -118,18 +149,31 @@ class Downloader:
         Uses the fields parameter to minimize API response size and reduce rate
         limiting risk.
 
+        Tries public client first (public playlists), falls back to OAuth client
+        for private playlists. This reduces OAuth rate limit usage.
+
         Args:
             playlist_id: The Spotify playlist ID (22-character base62 string)
 
         Returns:
             The playlist's snapshot_id string, or None if request fails
         """
+        # Try public client first (works for public playlists, saves OAuth quota)
         try:
-            # Request only snapshot_id field for minimal API usage
-            result = self.spotipy_client.playlist(playlist_id, fields="snapshot_id")
+            result = self.public_client.playlist(playlist_id, fields="snapshot_id")
             return result.get("snapshot_id")
         except Exception:
-            return None
+            pass
+
+        # Fall back to OAuth client (needed for private playlists)
+        if self.public_client != self.spotipy_client:
+            try:
+                result = self.spotipy_client.playlist(playlist_id, fields="snapshot_id")
+                return result.get("snapshot_id")
+            except Exception:
+                pass
+
+        return None
 
     def get_download_queue(
         self, url: str, include_metadata: bool = False
