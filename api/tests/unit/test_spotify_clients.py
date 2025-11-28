@@ -202,18 +202,60 @@ class TestDownloaderDualClients:
         mock_public.album.assert_called_once_with("test_id")
         mock_oauth.album.assert_not_called()
 
-    def test_get_playlist_uses_oauth_client(self) -> None:
-        """get_playlist() should use the OAuth client (for private access)."""
+    def test_get_playlist_tries_public_first(self) -> None:
+        """get_playlist() should try public client first (for public playlists)."""
         mock_oauth = MagicMock()
         mock_public = MagicMock()
+        mock_public.playlist.return_value = {"id": "test", "tracks": {"items": []}}
+        mock_public.next.return_value = None
+
+        downloader = Downloader(mock_oauth, public_client=mock_public)
+        downloader.get_playlist("test_id")
+
+        mock_public.playlist.assert_called_once_with("test_id")
+        mock_oauth.playlist.assert_not_called()
+
+    def test_get_playlist_falls_back_to_oauth(self) -> None:
+        """get_playlist() should fall back to OAuth for private playlists."""
+        mock_oauth = MagicMock()
+        mock_public = MagicMock()
+        mock_public.playlist.side_effect = Exception("Not authorized")
         mock_oauth.playlist.return_value = {"id": "test", "tracks": {"items": []}}
         mock_oauth.next.return_value = None
 
         downloader = Downloader(mock_oauth, public_client=mock_public)
         downloader.get_playlist("test_id")
 
+        mock_public.playlist.assert_called_once()
         mock_oauth.playlist.assert_called_once_with("test_id")
-        mock_public.playlist.assert_not_called()
+
+    def test_get_playlist_works_without_oauth(self) -> None:
+        """get_playlist() should work with only public client (no OAuth configured)."""
+        mock_client = MagicMock()
+        mock_client.playlist.return_value = {"id": "test", "tracks": {"items": []}}
+        mock_client.next.return_value = None
+
+        # When no public_client is provided, spotipy_client is used for both
+        downloader = Downloader(mock_client)
+
+        # Should work - this is the case for users without OAuth
+        result = downloader.get_playlist("test_id")
+
+        assert result["id"] == "test"
+        mock_client.playlist.assert_called_once_with("test_id")
+
+    def test_get_playlist_snapshot_id_works_without_oauth(self) -> None:
+        """get_playlist_snapshot_id() should work with only public client."""
+        mock_client = MagicMock()
+        mock_client.playlist.return_value = {"snapshot_id": "abc123"}
+
+        # When no public_client is provided, spotipy_client is used for both
+        downloader = Downloader(mock_client)
+
+        result = downloader.get_playlist_snapshot_id("test_id")
+
+        assert result == "abc123"
+        mock_client.playlist.assert_called_once()
 
     def test_get_playlist_snapshot_id_tries_public_first(self) -> None:
         """get_playlist_snapshot_id() should try public client first."""
