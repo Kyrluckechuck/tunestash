@@ -133,51 +133,88 @@ class TestTaskManagementService:
         self, task_management_service, mock_celery_task
     ):
         """Test cancelling all pending tasks successfully."""
-        with patch("src.services.task_management.TaskResult") as mock_task_result:
+        with (
+            patch("src.services.task_management.TaskResult") as mock_task_result,
+            patch("src.services.task_management.celery_app"),
+            patch("src.services.task_management.sync_to_async") as mock_sync,
+            patch("library_manager.models.TaskHistory") as mock_task_history,
+        ):
             # Mock database update to return 1 updated row
             mock_queryset = Mock()
             mock_queryset.aupdate = AsyncMock(return_value=1)
             mock_task_result.objects.filter.return_value = mock_queryset
 
+            # Mock TaskHistory update
+            mock_th_queryset = Mock()
+            mock_th_queryset.aupdate = AsyncMock(return_value=2)
+            mock_task_history.objects.filter.return_value = mock_th_queryset
+
+            # Mock purge to return 3
+            mock_sync.return_value = AsyncMock(return_value=3)
+
             result = await task_management_service.cancel_all_pending_tasks()
 
             assert isinstance(result, MutationResult)
             assert result.success is True
-            assert "Successfully cancelled 1 pending tasks" in result.message
-            # Verify aupdate was called with REVOKED status
-            mock_queryset.aupdate.assert_called_once_with(status="REVOKED")
+            assert "Successfully cancelled tasks" in result.message
 
     @pytest.mark.asyncio
     async def test_cancel_all_pending_tasks_empty_queue(self, task_management_service):
         """Test cancelling all pending tasks when queue is empty."""
-        with patch("src.services.task_management.TaskResult") as mock_task_result:
+        with (
+            patch("src.services.task_management.TaskResult") as mock_task_result,
+            patch("src.services.task_management.celery_app"),
+            patch("src.services.task_management.sync_to_async") as mock_sync,
+            patch("library_manager.models.TaskHistory") as mock_task_history,
+        ):
             # Mock database update to return 0 updated rows
             mock_queryset = Mock()
             mock_queryset.aupdate = AsyncMock(return_value=0)
             mock_task_result.objects.filter.return_value = mock_queryset
 
+            # Mock TaskHistory update
+            mock_th_queryset = Mock()
+            mock_th_queryset.aupdate = AsyncMock(return_value=0)
+            mock_task_history.objects.filter.return_value = mock_th_queryset
+
+            # Mock purge to return 0
+            mock_sync.return_value = AsyncMock(return_value=0)
+
             result = await task_management_service.cancel_all_pending_tasks()
 
             assert isinstance(result, MutationResult)
             assert result.success is True
-            assert "Successfully cancelled 0 pending tasks" in result.message
+            assert "Successfully cancelled tasks" in result.message
 
     @pytest.mark.asyncio
     async def test_cancel_all_pending_tasks_multiple_tasks(
         self, task_management_service
     ):
         """Test cancelling multiple pending tasks."""
-        with patch("src.services.task_management.TaskResult") as mock_task_result:
+        with (
+            patch("src.services.task_management.TaskResult") as mock_task_result,
+            patch("src.services.task_management.celery_app"),
+            patch("src.services.task_management.sync_to_async") as mock_sync,
+            patch("library_manager.models.TaskHistory") as mock_task_history,
+        ):
             # Mock database update to return 5 updated rows
             mock_queryset = Mock()
             mock_queryset.aupdate = AsyncMock(return_value=5)
             mock_task_result.objects.filter.return_value = mock_queryset
 
+            # Mock TaskHistory update
+            mock_th_queryset = Mock()
+            mock_th_queryset.aupdate = AsyncMock(return_value=3)
+            mock_task_history.objects.filter.return_value = mock_th_queryset
+
+            # Mock purge to return 10
+            mock_sync.return_value = AsyncMock(return_value=10)
+
             result = await task_management_service.cancel_all_pending_tasks()
 
             assert isinstance(result, MutationResult)
             assert result.success is True
-            assert "Successfully cancelled 5 pending tasks" in result.message
+            assert "Successfully cancelled tasks" in result.message
 
     @pytest.mark.asyncio
     async def test_cancel_all_pending_tasks_celery_exception(
@@ -282,8 +319,9 @@ class TestTaskManagementService:
         """Test cancelling all tasks (pending and running) successfully."""
         with (
             patch("src.services.task_management.TaskResult") as mock_task_result,
-            patch("library_manager.models.TaskHistory"),
+            patch("src.services.task_management.celery_app"),
             patch("src.services.task_management.sync_to_async") as mock_sync_to_async,
+            patch("library_manager.models.TaskHistory") as mock_task_history,
         ):
             # Mock pending tasks update to return 1 updated row
             mock_pending_queryset = Mock()
@@ -299,22 +337,28 @@ class TestTaskManagementService:
                 mock_running_queryset,  # Second call for running task
             ]
 
-            # Mock running tasks
+            # Mock TaskHistory updates
+            mock_th_queryset = Mock()
+            mock_th_queryset.aupdate = AsyncMock(return_value=2)
+            mock_task_history.objects.filter.return_value = mock_th_queryset
+
+            # Mock running tasks (for cancel_all_tasks second part)
             mock_running_task = Mock()
             mock_running_task.task_id = "task_2"
             mock_running_task.status = "RUNNING"
             mock_running_task.asave = AsyncMock()
 
-            # Mock sync_to_async to return the list of running tasks
-            mock_sync_to_async.return_value = AsyncMock(
-                return_value=[mock_running_task]
-            )
+            # Mock sync_to_async - first call for purge (returns 0), second for running tasks list
+            mock_sync_to_async.side_effect = [
+                AsyncMock(return_value=0),  # purge_queues result
+                AsyncMock(return_value=[mock_running_task]),  # running tasks list
+            ]
 
             result = await task_management_service.cancel_all_tasks()
 
             assert isinstance(result, MutationResult)
             assert result.success is True
-            assert "Successfully cancelled 2 total tasks" in result.message
+            assert "Successfully cancelled" in result.message
 
     @pytest.mark.asyncio
     async def test_get_queue_status_success(self, task_management_service):

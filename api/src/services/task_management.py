@@ -7,6 +7,7 @@ from typing import Any, Dict
 from django.utils import timezone
 
 from asgiref.sync import sync_to_async
+from celery_app import app as celery_app
 from django_celery_results.models import TaskResult
 
 
@@ -23,20 +24,57 @@ class TaskManagementService:
 
     async def cancel_all_pending_tasks(self) -> MutationResult:
         """
-        Cancel all pending tasks by updating database records.
+        Cancel all pending tasks by purging Celery broker queues and updating DB.
 
-        Note: With SQLAlchemy/PostgreSQL broker, control.revoke() doesn't work.
-        Instead, we mark tasks as REVOKED in the database directly.
+        This method:
+        1. Purges all Celery broker queues (downloads, spotify, celery)
+        2. Updates TaskResult records to REVOKED status
+        3. Updates TaskHistory records to CANCELLED status
+
+        Note: purge() clears the broker queue directly, which is necessary because
+        with PostgreSQL broker, tasks live in kombu_message table, not TaskResult.
         """
         try:
-            # Update pending tasks to REVOKED status in database
-            cancelled_count = await TaskResult.objects.filter(
+            from library_manager.models import TaskHistory
+
+            # 1. Purge all broker queues (this actually stops tasks from running)
+            queues_to_purge = ["downloads", "spotify", "celery"]
+            purged_count = 0
+
+            def purge_queues() -> int:
+                total = 0
+                for queue in queues_to_purge:
+                    try:
+                        count = celery_app.control.purge()
+                        if count:
+                            total += count
+                    except Exception:
+                        pass
+                return total
+
+            purged_count = await sync_to_async(purge_queues)()
+
+            # 2. Update TaskResult records to REVOKED status
+            task_result_count = await TaskResult.objects.filter(
                 status__in=["PENDING", "STARTED", "RETRY"]
             ).aupdate(status="REVOKED")
 
+            # 3. Update TaskHistory records to CANCELLED status
+            task_history_count = await TaskHistory.objects.filter(
+                status__in=["PENDING", "RUNNING"]
+            ).aupdate(
+                status="CANCELLED",
+                completed_at=timezone.now(),
+                error_message="Cancelled by user (all tasks purged)",
+            )
+
             return MutationResult(
                 success=True,
-                message=f"Successfully cancelled {cancelled_count} pending tasks",
+                message=(
+                    f"Successfully cancelled tasks: {purged_count} purged from queue, "
+                    f"{task_result_count} TaskResult updated, "
+                    f"{task_history_count} TaskHistory updated"
+                ),
             )
 
         except Exception as e:

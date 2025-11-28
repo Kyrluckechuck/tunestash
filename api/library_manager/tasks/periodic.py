@@ -1,6 +1,6 @@
 """Periodic tasks for the Spotify library manager."""
 
-from typing import Any, Optional
+from typing import Any, Optional, Set
 
 from celery_app import app as celery_app
 
@@ -10,10 +10,29 @@ from ..models import (
     ALBUM_TYPES_TO_DOWNLOAD,
     Album,
     PlaylistStatus,
+    TaskHistory,
     TrackedPlaylist,
 )
 from .core import logger
 from .download import download_single_album
+
+
+def get_albums_with_pending_tasks() -> Set[str]:
+    """Get set of album spotify_gids that already have pending/running download tasks.
+
+    This prevents queueing duplicate download tasks for the same album when
+    the periodic task runs multiple times before previous downloads complete.
+
+    Returns:
+        Set of spotify_gid strings for albums with active tasks
+    """
+    pending_tasks = TaskHistory.objects.filter(
+        entity_type="ALBUM",
+        type="DOWNLOAD",
+        status__in=["PENDING", "RUNNING"],
+    ).values_list("entity_id", flat=True)
+
+    return set(pending_tasks)
 
 
 @celery_app.task(
@@ -123,9 +142,19 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
 
     Finds up to 50 albums that are marked as wanted but not yet downloaded
     from tracked artists, and queues them for download. Runs hourly.
+
+    Skips albums that already have pending/running download tasks to prevent
+    duplicate task queuing.
     """
     try:
         logger.info("Starting periodic queue of missing albums for tracked artists")
+
+        # Get albums that already have pending/running tasks to avoid duplicates
+        albums_with_pending_tasks = get_albums_with_pending_tasks()
+        if albums_with_pending_tasks:
+            logger.info(
+                f"Found {len(albums_with_pending_tasks)} albums with pending/running tasks, will skip"
+            )
 
         # Find all missing albums for tracked artists
         missing_albums = (
@@ -146,16 +175,31 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
             return
 
         queued_count = 0
+        skipped_count = 0
         for album in missing_albums:
+            # Skip if album already has a pending/running task
+            if album.spotify_gid in albums_with_pending_tasks:
+                skipped_count += 1
+                continue
+
             try:
                 download_single_album.delay(album.id)
                 queued_count += 1
             except Exception as e:
                 logger.warning(f"Failed to queue album {album.name} ({album.id}): {e}")
 
-        logger.info(
-            f"Queued {queued_count} missing albums from tracked artists for download"
-        )
+        if skipped_count:
+            logger.info(
+                "Queued %d missing albums from tracked artists for download "
+                "(skipped %d with pending tasks)",
+                queued_count,
+                skipped_count,
+            )
+        else:
+            logger.info(
+                "Queued %d missing albums from tracked artists for download",
+                queued_count,
+            )
 
     except Exception as e:
         logger.error(
