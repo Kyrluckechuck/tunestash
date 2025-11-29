@@ -98,6 +98,8 @@ setup:
 	pip install -r requirements.txt
 	# Install frontend dependencies
 	cd frontend && yarn install
+	# Install git hooks for pre-commit validation
+	sh scripts/install-git-hooks.sh
 
 install-api:
 	pip install -r requirements.txt

@@ -227,6 +227,52 @@ class TestPlaylistMutations(TransactionTestCase):
         assert result.data["togglePlaylist"]["success"] is True
         assert result.data["togglePlaylist"]["playlist"]["enabled"] is False
 
+    async def test_recheck_not_found_playlist(self):
+        """Test rechecking a playlist that was marked as not found."""
+        from unittest.mock import MagicMock, patch
+
+        playlist = await sync_to_async(TrackedPlaylist.objects.create)(
+            name="Missing Playlist",
+            url="https://open.spotify.com/playlist/notfound123",
+            status=PlaylistStatus.NOT_FOUND,
+            status_message="Playlist not found - may have been deleted or made private",
+            auto_track_artists=False,
+        )
+
+        mutation = """
+        mutation SyncPlaylist($playlistId: Int!, $recheck: Boolean) {
+            syncPlaylist(playlistId: $playlistId, recheck: $recheck) {
+                success
+                message
+                playlist {
+                    id
+                    name
+                    status
+                }
+            }
+        }
+        """
+
+        # Mock the Celery task to avoid broker connection issues
+        with patch("library_manager.tasks.download_playlist") as mock_task:
+            mock_task.delay = MagicMock()
+
+            variables = {"playlistId": playlist.id, "recheck": True}
+            result = await schema.execute(mutation, variable_values=variables)
+
+            assert result.errors is None, f"GraphQL errors: {result.errors}"
+            assert (
+                result.data["syncPlaylist"]["success"] is True
+            ), f"Expected success but got: {result.data['syncPlaylist']}"
+            assert "recheck" in result.data["syncPlaylist"]["message"].lower()
+            # Status should be reset to ACTIVE (sync task will update it if still not found)
+            assert result.data["syncPlaylist"]["playlist"]["status"] == "active"
+
+            # Verify the task was queued with correct parameters
+            mock_task.delay.assert_called_once()
+            call_kwargs = mock_task.delay.call_args[1]
+            assert call_kwargs["force_playlist_resync"] is True
+
 
 class TestTaskMutations(TransactionTestCase):
     """Test task-related mutations."""

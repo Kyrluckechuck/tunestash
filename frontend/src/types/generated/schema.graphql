@@ -124,7 +124,7 @@ type Mutation {
   setPeriodicTaskEnabled(enabled: Boolean!, taskId: Int!): PeriodicTask!
   syncAllTrackedArtists: MutationResult!
   syncArtist(artistId: String!): Artist!
-  syncPlaylist(force: Boolean! = false, playlistId: Int!): MutationResult!
+  syncPlaylist(force: Boolean! = false, playlistId: Int!, recheck: Boolean! = false): MutationResult!
   togglePlaylist(playlistId: Int!): MutationResult!
   togglePlaylistAutoTrack(playlistId: Int!): MutationResult!
   trackArtist(artistId: Int!): MutationResult!

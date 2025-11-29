@@ -241,6 +241,20 @@ mutation ForceSyncPlaylist($playlistId: Int!) {
   }
 }
 
+mutation RecheckPlaylist($playlistId: Int!) {
+  syncPlaylist(playlistId: $playlistId, recheck: true) {
+    success
+    message
+    playlist {
+      id
+      name
+      status
+      statusMessage
+      enabled
+    }
+  }
+}
+
 mutation TogglePlaylistAutoTrack($playlistId: Int!) {
   togglePlaylistAutoTrack(playlistId: $playlistId) {
     success

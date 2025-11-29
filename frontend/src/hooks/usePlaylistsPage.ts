@@ -6,6 +6,7 @@ import {
   TogglePlaylistAutoTrackDocument,
   SyncPlaylistDocument,
   ForceSyncPlaylistDocument,
+  RecheckPlaylistDocument,
   DownloadAllPlaylistsDocument,
   DeletePlaylistDocument,
   type Playlist,
@@ -69,6 +70,7 @@ export function usePlaylistsPage() {
   );
   const [syncPlaylist] = useMutation(SyncPlaylistDocument);
   const [forceSyncPlaylist] = useMutation(ForceSyncPlaylistDocument);
+  const [recheckPlaylist] = useMutation(RecheckPlaylistDocument);
   const [downloadAllPlaylists] = useMutation(DownloadAllPlaylistsDocument);
   const [deletePlaylist] = useMutation(DeletePlaylistDocument);
 
@@ -102,6 +104,12 @@ export function usePlaylistsPage() {
     loadingIds: deleteMutatingIds,
     startLoading: startDelete,
     stopLoading: stopDelete,
+  } = useMutationLoadingState();
+
+  const {
+    loadingIds: recheckMutatingIds,
+    startLoading: startRecheck,
+    stopLoading: stopRecheck,
   } = useMutationLoadingState();
 
   // Prefetching setup
@@ -211,6 +219,29 @@ export function usePlaylistsPage() {
       toast.error(error instanceof Error ? error.message : 'Force sync failed');
     } finally {
       stopForceSync(playlistId);
+    }
+  };
+
+  const handleRecheckPlaylist = async (playlistId: number) => {
+    try {
+      startRecheck(playlistId);
+      const result = await recheckPlaylist({
+        variables: { playlistId },
+        refetchQueries: [
+          { query: GetPlaylistsDocument, variables: queryVariables },
+        ],
+      });
+      if (result.data?.syncPlaylist?.success) {
+        toast.success(
+          'Playlist recheck started - status will update when complete'
+        );
+      } else {
+        toast.error(result.data?.syncPlaylist?.message || 'Recheck failed');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Recheck failed');
+    } finally {
+      stopRecheck(playlistId);
     }
   };
 
@@ -380,6 +411,7 @@ export function usePlaylistsPage() {
     syncMutatingIds,
     forceSyncMutatingIds,
     deleteMutatingIds,
+    recheckMutatingIds,
     errorById,
 
     // Handlers
@@ -391,6 +423,7 @@ export function usePlaylistsPage() {
     handleTogglePlaylist,
     handleSyncPlaylist,
     handleForceSyncPlaylist,
+    handleRecheckPlaylist,
     handleDeletePlaylist,
     handleToggleAutoTrack,
     handleEditPlaylist,

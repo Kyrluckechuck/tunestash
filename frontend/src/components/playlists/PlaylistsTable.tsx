@@ -23,6 +23,7 @@ interface PlaylistsTableProps {
   onToggleAutoTrack: (playlist: Playlist) => void;
   onSyncPlaylist: (playlistId: number) => void;
   onForceSyncPlaylist?: (playlistId: number) => void;
+  onRecheckPlaylist?: (playlistId: number) => void;
   onEditPlaylist?: (playlist: Playlist) => void;
   onDeletePlaylist?: (playlistId: number, playlistName: string) => void;
   loading?: boolean;
@@ -30,6 +31,7 @@ interface PlaylistsTableProps {
   autoMutatingIds?: Set<number>;
   syncMutatingIds?: Set<number>;
   forceSyncMutatingIds?: Set<number>;
+  recheckMutatingIds?: Set<number>;
   deleteMutatingIds?: Set<number>;
   enabledPulseIds?: Set<number>;
   autoPulseIds?: Set<number>;
@@ -45,6 +47,7 @@ export function PlaylistsTable({
   onToggleAutoTrack,
   onSyncPlaylist,
   onForceSyncPlaylist,
+  onRecheckPlaylist,
   onEditPlaylist,
   onDeletePlaylist,
   loading = false,
@@ -52,6 +55,7 @@ export function PlaylistsTable({
   autoMutatingIds,
   syncMutatingIds,
   forceSyncMutatingIds,
+  recheckMutatingIds,
   deleteMutatingIds,
   enabledPulseIds,
   autoPulseIds,
@@ -206,6 +210,23 @@ export function PlaylistsTable({
                     : 'Never'}
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2'>
+                  {isRestrictedStatus(playlist.status) && onRecheckPlaylist && (
+                    <button
+                      onClick={() => onRecheckPlaylist(playlist.id)}
+                      disabled={recheckMutatingIds?.has(playlist.id)}
+                      className='px-3 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 hover:bg-purple-200 transition-colors'
+                      title='Re-check if this playlist has become accessible'
+                    >
+                      {recheckMutatingIds?.has(playlist.id) ? (
+                        <span className='inline-flex items-center gap-2'>
+                          <span className='w-3 h-3 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin' />
+                          <span>Checking…</span>
+                        </span>
+                      ) : (
+                        'Recheck'
+                      )}
+                    </button>
+                  )}
                   {!isRestrictedStatus(playlist.status) && (
                     <>
                       <button
