@@ -165,9 +165,11 @@ class Mutation:  # pylint: disable=too-many-public-methods
 
     @strawberry.mutation
     async def sync_playlist(
-        self, playlist_id: int, force: bool = False
+        self, playlist_id: int, force: bool = False, recheck: bool = False
     ) -> "MutationResult":
-        return await services.playlist.sync_playlist(playlist_id, force=force)
+        return await services.playlist.sync_playlist(
+            playlist_id, force=force, recheck=recheck
+        )
 
     @strawberry.mutation
     async def download_album(self, album_id: str) -> Album:

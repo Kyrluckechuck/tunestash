@@ -347,13 +347,24 @@ class PlaylistService(BaseService[Playlist]):
             )
 
     async def sync_playlist(
-        self, playlist_id: int, force: bool = False
+        self, playlist_id: int, force: bool = False, recheck: bool = False
     ) -> MutationResult:
         try:
             django_playlist = await self.model.objects.aget(id=playlist_id)
 
-            if force:
-                # For force sync, directly queue the download_playlist task with force_playlist_resync=True
+            # If recheck=True, reset error status to ACTIVE before syncing
+            # This allows re-checking playlists that were marked NOT_FOUND or SPOTIFY_API_RESTRICTED
+            if recheck and django_playlist.status in (
+                PlaylistStatus.NOT_FOUND,
+                PlaylistStatus.SPOTIFY_API_RESTRICTED,
+            ):
+                django_playlist.status = PlaylistStatus.ACTIVE
+                django_playlist.status_message = None
+                await sync_to_async(django_playlist.save)()
+
+            if force or recheck:
+                # For force/recheck sync, directly queue the download_playlist task
+                # with force_playlist_resync=True to bypass snapshot comparison
                 from library_manager.tasks import download_playlist
 
                 await sync_to_async(download_playlist.delay)(
@@ -361,7 +372,11 @@ class PlaylistService(BaseService[Playlist]):
                     tracked=django_playlist.auto_track_artists,
                     force_playlist_resync=True,
                 )
-                message = "Playlist force sync started successfully"
+                message = (
+                    "Playlist recheck started successfully"
+                    if recheck
+                    else "Playlist force sync started successfully"
+                )
             else:
                 # Trigger normal sync task (queue it for Celery worker)
                 # Local import to avoid circular import during module initialization

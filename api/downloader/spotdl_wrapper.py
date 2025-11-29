@@ -259,11 +259,9 @@ class SpotdlWrapper:
 
     def refresh_spotify_client(self) -> bool:
         """
-        Refresh the Spotify OAuth token and reset the SpotifyClient singleton.
+        Reset the SpotifyClient singleton and reinitialize with current OAuth credentials.
 
-        This method is called when a 401 error is detected, indicating the OAuth token
-        has expired. It refreshes the token from the database and reinitializes the
-        SpotifyClient singleton with the new token.
+        Called reactively when a 401 error indicates token expiration.
 
         Returns:
             bool: True if refresh was successful, False otherwise
