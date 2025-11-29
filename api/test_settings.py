@@ -3,14 +3,19 @@
 import os
 
 from settings import *  # noqa: F401,F403
+from settings import settings as dynaconf_settings
 
 # Provide dummy Spotify credentials for tests
 # These allow the Spotipy client to initialize without raising SpotifyOauthError
 # Actual API calls should be mocked in tests
-# Note: We hardcode these instead of using os.getenv() to ensure they're always set
-# even if the main settings.py was imported first with empty defaults
+# Note: We use dynaconf's set() method to override values loaded from config files
+# Simple module-level assignment doesn't work because dynaconf wraps the settings
 SPOTIPY_CLIENT_ID = "test_client_id_for_ci_tests"
 SPOTIPY_CLIENT_SECRET = "test_client_secret_for_ci_tests"
+
+# Force dynaconf to use our test values (overrides /config/settings.yaml)
+dynaconf_settings.set("SPOTIPY_CLIENT_ID", SPOTIPY_CLIENT_ID)
+dynaconf_settings.set("SPOTIPY_CLIENT_SECRET", SPOTIPY_CLIENT_SECRET)
 
 
 # Support for pytest-xdist parallel execution
