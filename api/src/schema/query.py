@@ -17,6 +17,7 @@ from ..graphql_types.models import (
     QueueStatus,
     Song,
     SongConnection,
+    SpotifyPlaylistInfo,
     SpotifySearchAlbum,
     SpotifySearchArtist,
     SpotifySearchPlaylist,
@@ -402,4 +403,30 @@ class Query:
                 )
                 for p in results.playlists
             ],
+        )
+
+    @strawberry.field
+    async def spotify_playlist_info(self, url: str) -> Optional[SpotifyPlaylistInfo]:
+        """
+        Fetch playlist metadata from Spotify by URL or URI.
+
+        Used by the frontend to auto-populate playlist name when creating a new playlist.
+        Does not create any database records.
+
+        Args:
+            url: Spotify playlist URL or URI (e.g., "spotify:playlist:..." or
+                 "https://open.spotify.com/playlist/...")
+
+        Returns:
+            Playlist info (name, owner, track count, image) or null if not found
+        """
+        result = await services.playlist.get_spotify_playlist_info(url)
+        if result is None:
+            return None
+
+        return SpotifyPlaylistInfo(
+            name=result["name"],
+            owner_name=result.get("owner_name"),
+            track_count=result.get("track_count", 0),
+            image_url=result.get("image_url"),
         )

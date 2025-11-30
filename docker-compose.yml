@@ -90,7 +90,8 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - HOME=/config
-    command: celery -A celery_app worker --loglevel=info --queues=downloads,spotify,celery --concurrency=3
+    # Download tasks use a DB lock to ensure only 1 download runs at a time
+    command: celery -A celery_app worker --loglevel=info --queues=downloads,spotify,celery --concurrency=2
     depends_on:
       postgres:
         condition: service_healthy

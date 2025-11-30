@@ -3,8 +3,6 @@ from typing import Optional
 from django.conf import settings
 
 import spotipy
-
-# from huey.api import Task  # Removed for Celery migration
 from spotipy.oauth2 import SpotifyClientCredentials
 
 from library_manager.models import Artist

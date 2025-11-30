@@ -21,6 +21,7 @@ from .artist import (
 
 # Re-export core utilities
 from .core import (
+    DownloadLockUnavailable,
     celery_app,
     check_and_update_progress,
     check_task_cancellation,
@@ -29,7 +30,9 @@ from .core import (
     log_memory_usage,
     logger,
     require_download_capability,
+    require_download_lock,
     spotdl_wrapper,
+    try_download_lock,
     update_task_heartbeat,
     update_task_progress,
 )
@@ -68,6 +71,7 @@ from .playlist import (
 
 __all__ = [
     # Core utilities
+    "DownloadLockUnavailable",
     "celery_app",
     "check_and_update_progress",
     "check_task_cancellation",
@@ -76,7 +80,9 @@ __all__ = [
     "log_memory_usage",
     "logger",
     "require_download_capability",
+    "require_download_lock",
     "spotdl_wrapper",
+    "try_download_lock",
     "update_task_heartbeat",
     "update_task_progress",
     # Artist tasks

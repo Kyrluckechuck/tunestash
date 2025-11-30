@@ -25,6 +25,7 @@ from .core import (
     create_task_history,
     logger,
     require_download_capability,
+    require_download_lock,
     spotdl_wrapper,
     update_task_progress,
 )
@@ -33,6 +34,7 @@ from .core import (
 @celery_app.task(
     bind=True, name="library_manager.tasks.download_missing_albums_for_artist"
 )
+@require_download_lock()
 def download_missing_albums_for_artist(
     self: Any, artist_id: int, delay: int = 0
 ) -> None:
@@ -166,6 +168,7 @@ def download_missing_albums_for_artist(
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_single_album")
+@require_download_lock()
 def download_single_album(self: Any, album_id: int) -> None:
     """Download a single specific album by ID."""
     task_history = None
@@ -244,6 +247,7 @@ def download_single_album(self: Any, album_id: int) -> None:
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_playlist")
+@require_download_lock()
 def download_playlist(
     self: Any,
     playlist_url: str,
@@ -341,6 +345,7 @@ def download_playlist(
 @celery_app.task(
     bind=True, name="library_manager.tasks.download_extra_album_types_for_artist"
 )
+@require_download_lock()
 def download_extra_album_types_for_artist(
     self: Any, artist_id: int, task_id: Optional[str] = None
 ) -> None:
@@ -399,6 +404,7 @@ def download_extra_album_types_for_artist(
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_album_by_spotify_id")
+@require_download_lock()
 def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
     """
     Download an album by its Spotify ID (not database ID).
@@ -520,6 +526,7 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_single_track")
+@require_download_lock()
 def download_single_track(self: Any, track_id: str) -> None:
     """
     Download a single track by its Spotify ID.

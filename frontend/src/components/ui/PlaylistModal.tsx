@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react';
-import { useMutation } from '@apollo/client/react';
+import { useState, useEffect, useRef } from 'react';
+import { useMutation, useLazyQuery } from '@apollo/client/react';
 import {
   UpdatePlaylistDocument,
   CreatePlaylistDocument,
   GetPlaylistsDocument,
+  GetSpotifyPlaylistInfoDocument,
   type UpdatePlaylistMutation,
   type UpdatePlaylistMutationVariables,
   type Playlist,
 } from '../../types/generated/graphql';
+
+// Regex to detect valid Spotify playlist URLs/URIs
+const SPOTIFY_PLAYLIST_REGEX =
+  /^(spotify:playlist:[a-zA-Z0-9]+|https?:\/\/open\.spotify\.com\/playlist\/[a-zA-Z0-9]+)/;
 
 interface PlaylistModalProps {
   isOpen: boolean;
@@ -27,6 +32,10 @@ export function PlaylistModal({
   const [autoTrackArtists, setAutoTrackArtists] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Track whether user has manually edited the name field
+  const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
+  // Track the last URL we fetched info for (to avoid duplicate fetches)
+  const lastFetchedUrlRef = useRef<string>('');
 
   const [updatePlaylist] = useMutation<
     UpdatePlaylistMutation,
@@ -39,19 +48,56 @@ export function PlaylistModal({
     refetchQueries: [{ query: GetPlaylistsDocument }],
   });
 
+  const [fetchPlaylistInfo, { loading: fetchingInfo, data: playlistInfoData }] =
+    useLazyQuery(GetSpotifyPlaylistInfoDocument, {
+      fetchPolicy: 'network-only',
+    });
+
+  // Handle playlist info fetch results
+  useEffect(() => {
+    if (playlistInfoData?.spotifyPlaylistInfo && !nameManuallyEdited) {
+      setName(playlistInfoData.spotifyPlaylistInfo.name);
+    }
+  }, [playlistInfoData, nameManuallyEdited]);
+
   // Initialize form when editing
   useEffect(() => {
     if (playlist && mode === 'edit') {
       setName(playlist.name);
       setUrl(playlist.url);
       setAutoTrackArtists(playlist.autoTrackArtists);
+      setNameManuallyEdited(true); // Don't overwrite existing playlist names
     } else {
       setName('');
       setUrl('');
       setAutoTrackArtists(false);
+      setNameManuallyEdited(false);
+      lastFetchedUrlRef.current = '';
     }
     setError(null);
   }, [playlist, mode]);
+
+  // Debounced effect to fetch playlist info when URL changes
+  useEffect(() => {
+    // Only fetch in create mode
+    if (mode !== 'create') return;
+
+    const trimmedUrl = url.trim();
+
+    // Check if URL matches Spotify playlist pattern
+    if (!SPOTIFY_PLAYLIST_REGEX.test(trimmedUrl)) return;
+
+    // Don't fetch if we already fetched this URL
+    if (trimmedUrl === lastFetchedUrlRef.current) return;
+
+    // Debounce the fetch
+    const timeoutId = setTimeout(() => {
+      lastFetchedUrlRef.current = trimmedUrl;
+      fetchPlaylistInfo({ variables: { url: trimmedUrl } });
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [url, mode, fetchPlaylistInfo]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,8 +167,16 @@ export function PlaylistModal({
       setUrl('');
       setAutoTrackArtists(false);
       setError(null);
+      setNameManuallyEdited(false);
+      lastFetchedUrlRef.current = '';
       onClose();
     }
+  };
+
+  const handleNameChange = (value: string) => {
+    setName(value);
+    // Mark as manually edited so we don't overwrite user's input
+    setNameManuallyEdited(true);
   };
 
   if (!isOpen) return null;
@@ -145,24 +199,6 @@ export function PlaylistModal({
         <form onSubmit={handleSubmit} className='px-6 py-4'>
           <div className='mb-4'>
             <label
-              htmlFor='name'
-              className='block text-sm font-medium text-gray-700 mb-2'
-            >
-              Playlist Name
-            </label>
-            <input
-              type='text'
-              id='name'
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder='Enter playlist name'
-              className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <div className='mb-4'>
-            <label
               htmlFor='url'
               className='block text-sm font-medium text-gray-700 mb-2'
             >
@@ -178,8 +214,37 @@ export function PlaylistModal({
               disabled={isSubmitting}
             />
             <p className='text-xs text-gray-500 mt-1'>
-              Copy from Spotify: Share → Copy link or Copy Spotify URI
+              {mode === 'create'
+                ? 'Paste a playlist link to auto-fill the name'
+                : 'Copy from Spotify: Share → Copy link'}
             </p>
+          </div>
+
+          <div className='mb-4'>
+            <label
+              htmlFor='name'
+              className='block text-sm font-medium text-gray-700 mb-2'
+            >
+              Playlist Name
+              {fetchingInfo && (
+                <span className='ml-2 text-xs text-gray-400 font-normal'>
+                  Loading...
+                </span>
+              )}
+            </label>
+            <input
+              type='text'
+              id='name'
+              value={name}
+              onChange={e => handleNameChange(e.target.value)}
+              placeholder={
+                fetchingInfo
+                  ? 'Fetching playlist name...'
+                  : 'Enter playlist name'
+              }
+              className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
+              disabled={isSubmitting}
+            />
           </div>
 
           {mode === 'create' && (

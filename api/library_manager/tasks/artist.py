@@ -25,12 +25,14 @@ from .core import (
     create_task_history,
     logger,
     require_download_capability,
+    require_download_lock,
     spotdl_wrapper,
     update_task_progress,
 )
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.fetch_all_albums_for_artist")
+@require_download_lock()
 def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
     task_history = None
     try:
