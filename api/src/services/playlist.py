@@ -479,6 +479,54 @@ class PlaylistService(BaseService[Playlist]):
                 message=f"Error deleting playlist: {str(e)}",
             )
 
+    async def get_spotify_playlist_info(self, url: str) -> Optional[dict[str, Any]]:
+        """
+        Fetch playlist metadata from Spotify without creating a database record.
+
+        Used by the frontend to auto-populate playlist name when a URL is pasted.
+
+        Args:
+            url: Spotify playlist URL or URI
+
+        Returns:
+            Dict with 'name', 'owner_name', 'track_count', 'image_url' or None if not found
+        """
+        normalized_url = self._normalize_spotify_url(url)
+
+        # Extract the playlist ID from the normalized URI
+        if not normalized_url.startswith("spotify:playlist:"):
+            return None
+
+        spotify_id = normalized_url.split(":")[-1]
+
+        # Block Spotify-owned playlists
+        if is_spotify_owned_playlist(normalized_url):
+            return None
+
+        def fetch_from_spotify() -> Optional[dict[str, Any]]:
+            try:
+                from downloader.spotipy_tasks import SpotifyClient
+
+                sp = SpotifyClient().sp
+                playlist_data = sp.playlist(
+                    spotify_id, fields="name,owner(display_name),tracks(total),images"
+                )
+
+                # Get the best image (first one is usually the largest)
+                images = playlist_data.get("images", [])
+                image_url = images[0].get("url") if images else None
+
+                return {
+                    "name": playlist_data.get("name", f"Playlist {spotify_id}"),
+                    "owner_name": playlist_data.get("owner", {}).get("display_name"),
+                    "track_count": playlist_data.get("tracks", {}).get("total", 0),
+                    "image_url": image_url,
+                }
+            except Exception:
+                return None
+
+        return await sync_to_async(fetch_from_spotify)()
+
     def _to_graphql_type(self, django_playlist: DjangoPlaylist) -> Playlist:
         return Playlist(
             id=int(django_playlist.id),

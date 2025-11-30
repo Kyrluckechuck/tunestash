@@ -186,6 +186,13 @@ This is a **full-stack music library sync application** (TuneStash) with the fol
 - **Vitest** for frontend testing
 - **Coverage targets**: 80%+ for critical paths
 
+### Comment Standards
+- **Never write changelog-style comments** - Comments should explain *why* code exists, not *what changed*
+- **Bad**: `# Reduced from 3 to 2 to lower API pressure` or `# Previously used X, now using Y`
+- **Good**: `# Limited to 2 concurrent workers to stay within API rate limits`
+- **Remove dead code** - Don't comment out code with explanations like `# Removed for X migration`
+- If the code's purpose isn't obvious, explain the *reasoning*, not the *history*
+
 ### Linting Workflow
 
 **For Claude Code users:** When fixing linting issues, use `make lint-all` or `make lint-api-all` instead of the standard `make lint-api` command. This runs all linters without stopping on the first failure, allowing you to see and fix all issues at once.

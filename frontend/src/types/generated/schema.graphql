@@ -191,6 +191,7 @@ type Query {
   queueStatus: QueueStatus!
   song(id: String!): Song
   songs(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, unavailable: Boolean = null): SongConnection!
+  spotifyPlaylistInfo(url: String!): SpotifyPlaylistInfo
   spotifySearch(limit: Int = 10, query: String!, types: [String!] = null): SpotifySearchResults!
   systemHealth: SystemHealth!
   taskHistory(after: String = null, entityType: String = null, first: Int = 20, search: String = null, status: String = null, type: String = null): TaskHistoryConnection!
@@ -267,6 +268,14 @@ type SpotifySearchResults {
   artists: [SpotifySearchArtist!]!
   playlists: [SpotifySearchPlaylist!]!
   tracks: [SpotifySearchTrack!]!
+}
+
+"""Playlist info fetched directly from Spotify by URL/URI."""
+type SpotifyPlaylistInfo {
+  imageUrl: String
+  name: String!
+  ownerName: String
+  trackCount: Int!
 }
 
 type SpotifySearchTrack {

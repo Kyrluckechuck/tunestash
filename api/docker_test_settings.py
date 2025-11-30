@@ -45,10 +45,8 @@ PASSWORD_HASHERS = [
 ]
 
 
-# Migrations are enabled for tests to ensure schema changes are applied
-# Previously disabled for performance, but this caused stale test databases
-# when new migrations were added. The performance cost is acceptable for
-# correctness and avoiding confusing test failures.
+# Migrations are enabled for tests to ensure schema changes are applied.
+# The performance cost is acceptable for correctness.
 
 # Celery configuration for tests - use django-db broker
 CELERY_BROKER_URL = "django-db"

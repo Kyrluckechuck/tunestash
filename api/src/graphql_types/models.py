@@ -399,3 +399,13 @@ class SpotifySearchResults:
     albums: List[SpotifySearchAlbum]
     tracks: List[SpotifySearchTrack]
     playlists: List[SpotifySearchPlaylist]
+
+
+@strawberry.type
+class SpotifyPlaylistInfo:
+    """Playlist info fetched directly from Spotify by URL/URI."""
+
+    name: str
+    owner_name: Optional[str]
+    track_count: int
+    image_url: Optional[str]

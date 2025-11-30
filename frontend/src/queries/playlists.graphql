@@ -24,3 +24,12 @@ mutation DeletePlaylist($playlistId: Int!) {
     message
   }
 }
+
+query GetSpotifyPlaylistInfo($url: String!) {
+  spotifyPlaylistInfo(url: $url) {
+    name
+    ownerName
+    trackCount
+    imageUrl
+  }
+}
