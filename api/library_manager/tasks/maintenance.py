@@ -35,7 +35,9 @@ def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> N
         logger.info("All songs downloaded, exiting missing known song loop!")
         return
 
-    failed_song_array = [song.spotify_uri for song in missing_known_songs_list]
+    failed_song_array = [
+        song.spotify_uri for song in missing_known_songs_list.iterator()
+    ]
 
     logger.info(f"Downloading {len(failed_song_array)} missing songs")
     downloader_config = Config(urls=failed_song_array, track_artists=False)
@@ -146,11 +148,14 @@ def validate_undownloaded_songs(
         )
         return
 
-    # Mark these songs as being attempted now
-    song_ids = [song.id for song in non_downloaded_songs]
-    Song.objects.filter(id__in=song_ids).update(last_download_attempt=timezone.now())
+    # Mark these songs as being attempted now and build URI list in single pass
+    song_ids = []
+    missing_song_array = []
+    for song in non_downloaded_songs.iterator():
+        song_ids.append(song.id)
+        missing_song_array.append(song.spotify_uri)
 
-    missing_song_array = [song.spotify_uri for song in non_downloaded_songs]
+    Song.objects.filter(id__in=song_ids).update(last_download_attempt=timezone.now())
 
     logger.info(f"Downloading {len(missing_song_array)} missing songs")
     downloader_config = Config(urls=missing_song_array, track_artists=False)
@@ -216,16 +221,21 @@ def retry_failed_songs(self: Any) -> None:
             return
 
         # Filter to only songs that are ready for retry (past their backoff period)
-        songs_to_retry = [
-            song for song in candidate_songs if song.is_ready_for_retry()
-        ][:100]
+        songs_to_retry = []
+        skipped_count = 0
+        for song in candidate_songs.iterator():
+            if song.is_ready_for_retry():
+                songs_to_retry.append(song)
+                if len(songs_to_retry) >= 100:
+                    break
+            else:
+                skipped_count += 1
 
         if not songs_to_retry:
             logger.info("No failed songs ready for retry (all in backoff period)")
             return
 
         # Log stats about what we're skipping vs retrying
-        skipped_count = len(list(candidate_songs)) - len(songs_to_retry)
         if skipped_count > 0:
             logger.info(f"Skipped {skipped_count} songs still in backoff period")
 
