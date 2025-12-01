@@ -34,6 +34,10 @@ class TestTaskManagementGraphQL:
                 "src.services.task_management.TaskManagementService.get_task_count_by_name",
                 new_callable=AsyncMock,
             ) as mock_task_count,
+            patch(
+                "src.services.task_management.TaskManagementService.get_pending_tasks_with_details",
+                new_callable=AsyncMock,
+            ) as mock_pending_tasks,
         ):
 
             # Mock database query to return count of 3 pending tasks
@@ -46,6 +50,9 @@ class TestTaskManagementGraphQL:
                 "download_playlist": 2,
                 "sync_playlist": 1,
             }
+
+            # Mock pending tasks with details to return empty list
+            mock_pending_tasks.return_value = []
 
             result = await schema.execute(query)
 
@@ -103,6 +110,10 @@ class TestTaskManagementGraphQL:
                 "src.services.task_management.TaskManagementService.get_task_count_by_name",
                 new_callable=AsyncMock,
             ) as mock_task_count,
+            patch(
+                "src.services.task_management.TaskManagementService.get_pending_tasks_with_details",
+                new_callable=AsyncMock,
+            ) as mock_pending_tasks,
         ):
 
             # Mock database query to return count of 0
@@ -112,6 +123,9 @@ class TestTaskManagementGraphQL:
 
             # Mock empty task counts
             mock_task_count.return_value = {}
+
+            # Mock pending tasks with details to return empty list
+            mock_pending_tasks.return_value = []
 
             result = await schema.execute(query)
 

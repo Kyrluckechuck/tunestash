@@ -249,6 +249,13 @@ class Mutation:  # pylint: disable=too-many-public-methods
         return await services.task_management.cancel_all_tasks()
 
     @strawberry.mutation
+    async def cancel_task_by_id(self, task_id: str) -> "MutationResult":
+        """Cancel a single task by its ID."""
+        if not task_id or not task_id.strip():
+            return MutationResult(success=False, message="Task ID cannot be empty")
+        return await services.task_management.cancel_task_by_id(task_id.strip())
+
+    @strawberry.mutation
     async def sync_all_tracked_artists(self) -> "MutationResult":
         """Sync all tracked artists in batch."""
         try:

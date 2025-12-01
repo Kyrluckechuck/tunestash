@@ -253,11 +253,15 @@ class UpdatePlaylistInput:
 
 @strawberry.type
 class PendingTask:
-    id: str
-    name: str
-    args: List[str]
-    kwargs: dict
-    priority: Optional[int]
+    """A pending task in the Celery queue with resolved entity details."""
+
+    task_id: str
+    task_name: str
+    display_name: str
+    entity_type: Optional[str]
+    entity_id: Optional[str]
+    entity_name: Optional[str]
+    status: str
     created_at: Optional[str]
 
 
@@ -271,6 +275,7 @@ class TaskCount:
 class QueueStatus:
     total_pending_tasks: int
     task_counts: List[TaskCount]
+    pending_tasks: List[PendingTask]
     queue_size: int
 
 

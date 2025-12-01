@@ -11,6 +11,7 @@ from ..graphql_types.models import (
     HistoryConnection,
     HistoryEdge,
     PageInfo,
+    PendingTask,
     PeriodicTask,
     Playlist,
     PlaylistConnection,
@@ -267,9 +268,28 @@ class Query:
             if name  # Skip null or empty names
         ]
 
+        # Get pending tasks with resolved entity details
+        pending_task_infos = (
+            await services.task_management.get_pending_tasks_with_details()
+        )
+        pending_tasks = [
+            PendingTask(
+                task_id=t.task_id,
+                task_name=t.task_name,
+                display_name=t.display_name,
+                entity_type=t.entity_type,
+                entity_id=t.entity_id,
+                entity_name=t.entity_name,
+                status=t.status,
+                created_at=t.created_at,
+            )
+            for t in pending_task_infos
+        ]
+
         return QueueStatus(
             total_pending_tasks=status["total_pending_tasks"],
             task_counts=task_counts,
+            pending_tasks=pending_tasks,
             queue_size=status["queue_size"],
         )
 
