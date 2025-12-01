@@ -44,6 +44,64 @@ from .default_download_settings import DEFAULT_DOWNLOAD_SETTINGS
 from .downloader import Downloader
 from .premium_detector import PremiumDetector, PremiumStatus
 
+# Memory management thresholds (in MB) - must match celery_app.py
+_MEMORY_WARNING_THRESHOLD_MB = 600
+_MEMORY_CHECK_INTERVAL_TRACKS = 25  # Check memory every N tracks
+
+
+def _check_and_release_memory(logger: logging.Logger, track_index: int) -> None:
+    """
+    Periodically check memory usage and attempt to release memory during long downloads.
+
+    This function is called during long-running download operations to prevent OOM kills.
+    It uses malloc_trim() on Linux to return freed memory to the OS.
+
+    Args:
+        logger: Logger instance for output
+        track_index: Current track number (used for periodic check interval)
+    """
+    # Only check every N tracks to avoid overhead
+    if track_index % _MEMORY_CHECK_INTERVAL_TRACKS != 0:
+        return
+
+    try:
+        import gc
+        import os
+
+        import psutil
+
+        process = psutil.Process(os.getpid())
+        rss_mb = process.memory_info().rss / 1024 / 1024
+
+        if rss_mb >= _MEMORY_WARNING_THRESHOLD_MB:
+            # Run garbage collection
+            gc.collect()
+
+            # Try malloc_trim on Linux to release memory to OS
+            try:
+                import ctypes
+
+                libc = ctypes.CDLL("libc.so.6")
+                libc.malloc_trim(0)
+            except (OSError, AttributeError):
+                pass  # Not on Linux/glibc
+
+            # Check if we released anything
+            new_rss_mb = process.memory_info().rss / 1024 / 1024
+            released = rss_mb - new_rss_mb
+
+            if released > 5:  # Only log if we released >5MB
+                logger.info(
+                    f"[MEMORY] Released {released:.1f} MB during download "
+                    f"({rss_mb:.1f} -> {new_rss_mb:.1f} MB) at track {track_index}"
+                )
+            elif rss_mb >= _MEMORY_WARNING_THRESHOLD_MB:
+                logger.warning(
+                    f"[MEMORY] High memory usage: {rss_mb:.1f} MB at track {track_index}"
+                )
+    except Exception:
+        pass  # Don't let memory checks break downloads
+
 
 class BitrateException(Exception):
     pass
@@ -845,6 +903,9 @@ class SpotdlWrapper:
                         progress_pct,
                         f"Downloaded {track_index}/{len(queue_item)} songs from queue {queue_item_index}/{len(download_queue)}",
                     )
+
+                # Periodic memory management to prevent OOM during long downloads
+                _check_and_release_memory(self.logger, track_index)
 
                 # Initialize db_song to None so exception handlers can check if it was created
                 db_song = None
