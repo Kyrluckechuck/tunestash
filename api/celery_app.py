@@ -235,15 +235,59 @@ def worker_shutdown_handler(sender: Any = None, **kwargs: Any) -> None:
 
 
 # ============================================================================
-# Post-Task Memory Monitoring
+# Post-Task Memory Management
 # ============================================================================
 
-# Memory thresholds in MB
-MEMORY_WARNING_THRESHOLD_MB = 800
-MEMORY_CRITICAL_THRESHOLD_MB = 1200
+# Memory thresholds in MB (per-worker, not container total)
+# With 2 workers + main process, aim for ~800MB each to stay under 2GB container limit
+MEMORY_WARNING_THRESHOLD_MB = 600
+MEMORY_CRITICAL_THRESHOLD_MB = 700
+MEMORY_RECYCLE_THRESHOLD_MB = 800
 
 # Track peak memory per worker for reporting
 _worker_peak_memory_mb: float = 0.0
+
+
+def try_release_memory() -> bool:
+    """
+    Attempt to release memory back to the OS.
+
+    Python's allocator (pymalloc) doesn't normally return memory to the OS.
+    On Linux with glibc, we can use malloc_trim() to force this.
+
+    Returns True if memory release was attempted, False if not available.
+    """
+    import gc
+
+    # First, run garbage collection to free Python objects
+    gc.collect()
+
+    # On Linux, try to use malloc_trim to release memory back to OS
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL("libc.so.6")
+        # malloc_trim(0) tells glibc to release as much memory as possible
+        libc.malloc_trim(0)
+        return True
+    except (OSError, AttributeError):
+        # Not on Linux or glibc not available
+        return False
+
+
+def request_worker_shutdown() -> None:
+    """
+    Request graceful shutdown of this worker process.
+
+    This sends SIGUSR1 to the parent (main worker) which tells Celery
+    to restart this specific worker process after the current task completes.
+    """
+    try:
+        # Send SIGTERM to ourselves - Celery will handle this gracefully
+        # and restart the worker process
+        os.kill(os.getpid(), signal.SIGTERM)
+    except Exception as e:
+        logger.error(f"[MEMORY] Failed to request worker shutdown: {e}")
 
 
 @task_postrun.connect  # type: ignore[misc]
@@ -258,10 +302,12 @@ def task_postrun_memory_check(
     **kw: Any,
 ) -> None:
     """
-    Log memory usage after each task completes.
+    Log memory usage after each task completes and manage memory proactively.
 
-    Always logs at INFO level for visibility. Logs WARNING if memory exceeds
-    threshold, which can indicate a memory leak or need for worker recycling.
+    This hook:
+    1. Logs memory usage at appropriate levels (INFO/WARNING/CRITICAL)
+    2. Attempts to release memory back to OS using malloc_trim
+    3. Requests graceful worker restart if memory exceeds recycle threshold
     """
     global _worker_peak_memory_mb
 
@@ -277,8 +323,31 @@ def task_postrun_memory_check(
         if rss_mb > _worker_peak_memory_mb:
             _worker_peak_memory_mb = rss_mb
 
-        # Determine log level based on memory usage
-        if rss_mb >= MEMORY_CRITICAL_THRESHOLD_MB:
+        # Try to release memory if above warning threshold
+        memory_released = False
+        if rss_mb >= MEMORY_WARNING_THRESHOLD_MB:
+            memory_released = try_release_memory()
+            if memory_released:
+                # Re-check memory after release attempt
+                new_memory = get_memory_info()
+                if "error" not in new_memory:
+                    released_mb = rss_mb - new_memory["rss_mb"]
+                    if released_mb > 1:  # Only log if meaningful release
+                        logger.info(
+                            f"[MEMORY] Released {released_mb:.1f} MB via malloc_trim "
+                            f"({rss_mb:.1f} -> {new_memory['rss_mb']:.1f} MB)"
+                        )
+                    rss_mb = new_memory["rss_mb"]
+
+        # Determine log level and action based on memory usage
+        if rss_mb >= MEMORY_RECYCLE_THRESHOLD_MB:
+            logger.critical(
+                f"[MEMORY RECYCLE] {rss_mb:.1f} MB after {task_name} exceeds "
+                f"recycle threshold ({MEMORY_RECYCLE_THRESHOLD_MB} MB) - "
+                f"requesting graceful worker restart. PID: {os.getpid()}"
+            )
+            request_worker_shutdown()
+        elif rss_mb >= MEMORY_CRITICAL_THRESHOLD_MB:
             logger.critical(
                 f"[MEMORY CRITICAL] {rss_mb:.1f} MB after {task_name} "
                 f"(peak: {_worker_peak_memory_mb:.1f} MB) - "

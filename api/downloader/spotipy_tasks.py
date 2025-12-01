@@ -3,6 +3,7 @@ from typing import Optional
 from django.conf import settings
 
 import spotipy
+from spotipy.cache_handler import MemoryCacheHandler
 from spotipy.oauth2 import SpotifyClientCredentials
 
 from library_manager.models import Artist
@@ -39,6 +40,7 @@ class PublicSpotifyClient:
         client_credentials_manager = SpotifyClientCredentials(
             client_id=getattr(settings, "SPOTIPY_CLIENT_ID", ""),
             client_secret=getattr(settings, "SPOTIPY_CLIENT_SECRET", ""),
+            cache_handler=MemoryCacheHandler(),
         )
         self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
@@ -84,6 +86,7 @@ class OAuthSpotifyClient:
             client_credentials_manager = SpotifyClientCredentials(
                 client_id=getattr(settings, "SPOTIPY_CLIENT_ID", ""),
                 client_secret=getattr(settings, "SPOTIPY_CLIENT_SECRET", ""),
+                cache_handler=MemoryCacheHandler(),
             )
             self.sp = spotipy.Spotify(
                 client_credentials_manager=client_credentials_manager
