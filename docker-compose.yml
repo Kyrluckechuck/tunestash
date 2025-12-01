@@ -90,8 +90,7 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - HOME=/config
-    # Download tasks use a DB lock to ensure only 1 download runs at a time
-    command: celery -A celery_app worker --loglevel=info --queues=downloads,spotify,celery --concurrency=2
+    command: celery -A celery_app worker --loglevel=info --queues=downloads,spotify,celery --concurrency=2 --max-tasks-per-child=25
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,14 +100,12 @@ services:
     restart: unless-stopped
     networks:
       - slm_net
-    # Memory limits to prevent OOM kills and enable graceful failure
-    # Worker handles downloads which can be memory-intensive
     deploy:
       resources:
         limits:
-          memory: 2G # Hard limit - container will be killed if exceeded
+          memory: 2G
         reservations:
-          memory: 512M # Soft limit - guaranteed minimum
+          memory: 512M
 
   beat:
     image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash:latest}

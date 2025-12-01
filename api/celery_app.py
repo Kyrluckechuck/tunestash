@@ -13,7 +13,12 @@ import django
 
 import psutil
 from celery import Celery
-from celery.signals import worker_process_init, worker_process_shutdown, worker_shutdown
+from celery.signals import (
+    task_postrun,
+    worker_process_init,
+    worker_process_shutdown,
+    worker_shutdown,
+)
 
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
@@ -227,3 +232,69 @@ def worker_shutdown_handler(sender: Any = None, **kwargs: Any) -> None:
             f"[WORKER LIFECYCLE] Main worker shutting down - PID: {os.getpid()}"
         )
         log_process_state("Main worker shutdown")
+
+
+# ============================================================================
+# Post-Task Memory Monitoring
+# ============================================================================
+
+# Memory thresholds in MB
+MEMORY_WARNING_THRESHOLD_MB = 800
+MEMORY_CRITICAL_THRESHOLD_MB = 1200
+
+# Track peak memory per worker for reporting
+_worker_peak_memory_mb: float = 0.0
+
+
+@task_postrun.connect  # type: ignore[misc]
+def task_postrun_memory_check(
+    sender: Any = None,
+    task_id: Optional[str] = None,
+    task: Any = None,
+    args: Any = None,
+    kwargs: Any = None,
+    retval: Any = None,
+    state: Optional[str] = None,
+    **kw: Any,
+) -> None:
+    """
+    Log memory usage after each task completes.
+
+    Always logs at INFO level for visibility. Logs WARNING if memory exceeds
+    threshold, which can indicate a memory leak or need for worker recycling.
+    """
+    global _worker_peak_memory_mb
+
+    try:
+        memory = get_memory_info()
+        if "error" in memory:
+            return
+
+        rss_mb = memory["rss_mb"]
+        task_name = task.name if task else "unknown"
+
+        # Update peak tracking
+        if rss_mb > _worker_peak_memory_mb:
+            _worker_peak_memory_mb = rss_mb
+
+        # Determine log level based on memory usage
+        if rss_mb >= MEMORY_CRITICAL_THRESHOLD_MB:
+            logger.critical(
+                f"[MEMORY CRITICAL] {rss_mb:.1f} MB after {task_name} "
+                f"(peak: {_worker_peak_memory_mb:.1f} MB) - "
+                f"PID: {os.getpid()}, Task: {task_id}"
+            )
+        elif rss_mb >= MEMORY_WARNING_THRESHOLD_MB:
+            logger.warning(
+                f"[MEMORY WARNING] {rss_mb:.1f} MB after {task_name} "
+                f"(peak: {_worker_peak_memory_mb:.1f} MB) - "
+                f"PID: {os.getpid()}, Task: {task_id}"
+            )
+        else:
+            # Standard info logging - useful for tracking memory growth over time
+            logger.info(
+                f"[MEMORY] {rss_mb:.1f} MB after {task_name} - PID: {os.getpid()}"
+            )
+
+    except Exception as e:
+        logger.debug(f"[MEMORY] Failed to check post-task memory: {e}")

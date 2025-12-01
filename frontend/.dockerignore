@@ -1,5 +1,6 @@
 # Node modules (will be installed in container)
 node_modules/
+frontend/node_modules/
 
 # Build output (will be created in container)
 dist/
@@ -43,3 +44,5 @@ yarn-error.log*
 # Temporary files
 tmp/
 temp/
+
+

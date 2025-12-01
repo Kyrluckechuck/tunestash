@@ -32,7 +32,7 @@ from .core import (
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.fetch_all_albums_for_artist")
-@require_download_lock()
+@require_download_lock()  # Lock required: this task makes heavy Spotify API calls, not just YouTube
 def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
     task_history = None
     try:
