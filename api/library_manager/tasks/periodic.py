@@ -176,7 +176,7 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
 
         queued_count = 0
         skipped_count = 0
-        for album in missing_albums:
+        for album in missing_albums.iterator():
             # Skip if album already has a pending/running task
             if album.spotify_gid in albums_with_pending_tasks:
                 skipped_count += 1

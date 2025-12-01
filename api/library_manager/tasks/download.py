@@ -102,7 +102,7 @@ def download_missing_albums_for_artist(
             []
         )  # This must be reset or it will persist between runs
         if missing_albums.count() > 0:
-            for missing_album in missing_albums:
+            for missing_album in missing_albums.iterator():
                 downloader_config.urls.append(missing_album.spotify_uri)
 
             logger.info(
@@ -371,7 +371,7 @@ def download_extra_album_types_for_artist(
     downloader_config = Config()
     downloader_config.urls = []  # This must be reset or it will persist between runs
     if missing_albums.count() > 0:
-        for missing_album in missing_albums:
+        for missing_album in missing_albums.iterator():
             downloader_config.urls.append(missing_album.spotify_uri)
 
         logger.info(
