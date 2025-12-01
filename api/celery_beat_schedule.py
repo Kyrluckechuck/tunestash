@@ -37,4 +37,9 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/5"),  # Every 5 minutes
         "options": {"priority": 5},
     },
+    "memory-health-check": {
+        "task": "library_manager.tasks.periodic_memory_health_check",
+        "schedule": crontab(minute="*/10"),  # Every 10 minutes
+        "options": {"priority": 10},  # Low priority - don't block real work
+    },
 }

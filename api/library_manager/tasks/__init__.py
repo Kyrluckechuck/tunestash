@@ -37,6 +37,14 @@ from .core import (
     update_task_progress,
 )
 
+# Re-export diagnostic tasks
+from .diagnostics import (
+    memory_compare_before_after,
+    memory_profile_after_init,
+    memory_profile_worker,
+    periodic_memory_health_check,
+)
+
 # Re-export download tasks
 from .download import (
     download_album_by_spotify_id,
@@ -110,4 +118,9 @@ __all__ = [
     # Periodic tasks
     "queue_missing_albums_for_tracked_artists",
     "sync_tracked_playlists",
+    # Diagnostic tasks
+    "memory_compare_before_after",
+    "memory_profile_after_init",
+    "memory_profile_worker",
+    "periodic_memory_health_check",
 ]
