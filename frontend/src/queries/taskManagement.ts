@@ -8,6 +8,16 @@ export const GetQueueStatusDocument = gql`
         taskName
         count
       }
+      pendingTasks {
+        taskId
+        taskName
+        displayName
+        entityType
+        entityId
+        entityName
+        status
+        createdAt
+      }
       queueSize
     }
   }
@@ -43,6 +53,15 @@ export const CancelRunningTasksByNameDocument = gql`
 export const CancelAllTasksDocument = gql`
   mutation CancelAllTasks {
     cancelAllTasks {
+      success
+      message
+    }
+  }
+`;
+
+export const CancelTaskByIdDocument = gql`
+  mutation CancelTaskById($taskId: String!) {
+    cancelTaskById(taskId: $taskId) {
       success
       message
     }

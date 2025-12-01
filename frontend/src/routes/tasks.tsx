@@ -10,6 +10,7 @@ import {
   CancelTasksByNameDocument,
   CancelRunningTasksByNameDocument,
   CancelAllTasksDocument,
+  CancelTaskByIdDocument,
   type TaskHistory,
   type TaskHistoryEdge,
 } from '../types/generated/graphql';
@@ -47,6 +48,7 @@ function Tasks() {
     CancelRunningTasksByNameDocument
   );
   const [cancelAllTasksEnhanced] = useMutation(CancelAllTasksDocument);
+  const [cancelTaskById] = useMutation(CancelTaskByIdDocument);
 
   const {
     data: historyData,
@@ -255,9 +257,41 @@ function Tasks() {
     [handleCancelWithConfirmation, cancelRunningTasksByName]
   );
 
+  const handleCancelTaskById = useCallback(
+    async (taskId: string, displayName: string) => {
+      const confirmed = await confirm({
+        title: 'Cancel Task',
+        message: `Are you sure you want to cancel this "${displayName}" task?`,
+        confirmText: 'Cancel Task',
+        cancelText: 'Keep Task',
+        variant: 'danger',
+      });
+
+      if (!confirmed) return;
+
+      try {
+        const result = await cancelTaskById({ variables: { taskId } });
+        if (result.data?.cancelTaskById?.success) {
+          toast.success('Task cancelled successfully');
+          refetchQueue();
+        } else {
+          toast.error(
+            result.data?.cancelTaskById?.message || 'Failed to cancel task'
+          );
+        }
+      } catch (error) {
+        toast.error(
+          `Error cancelling task: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    },
+    [confirm, cancelTaskById, toast, refetchQueue]
+  );
+
   const handleRefresh = useCallback(() => {
-    window.location.reload();
-  }, []);
+    refetchHistory();
+    refetchQueue();
+  }, [refetchHistory, refetchQueue]);
 
   return (
     <div className='space-y-8'>
@@ -274,7 +308,9 @@ function Tasks() {
         queueLoading={queueLoading}
         totalPendingTasks={queueData?.queueStatus?.totalPendingTasks || 0}
         taskCounts={queueData?.queueStatus?.taskCounts || []}
+        pendingTasks={queueData?.queueStatus?.pendingTasks || []}
         onCancelTasksByName={handleCancelTasksByName}
+        onCancelTaskById={handleCancelTaskById}
         onCancelAllTasks={handleCancelAllTasks}
       />
 

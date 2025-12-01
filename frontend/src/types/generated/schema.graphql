@@ -109,6 +109,7 @@ type Mutation {
   cancelAllPendingTasks: MutationResult!
   cancelAllTasks: MutationResult!
   cancelRunningTasksByName(taskName: String!): MutationResult!
+  cancelTaskById(taskId: String!): MutationResult!
   cancelTasksByName(taskName: String!): MutationResult!
   createPlaylist(autoTrackArtists: Boolean! = false, name: String!, url: String!): Playlist!
   deletePlaylist(playlistId: Int!): MutationResult!
@@ -197,8 +198,21 @@ type Query {
   taskHistory(after: String = null, entityType: String = null, first: Int = 20, search: String = null, status: String = null, type: String = null): TaskHistoryConnection!
 }
 
+"""A pending task in the Celery queue with resolved entity details."""
+type PendingTask {
+  taskId: String!
+  taskName: String!
+  displayName: String!
+  entityType: String
+  entityId: String
+  entityName: String
+  status: String!
+  createdAt: String
+}
+
 type QueueStatus {
   queueSize: Int!
+  pendingTasks: [PendingTask!]!
   taskCounts: [TaskCount!]!
   totalPendingTasks: Int!
 }

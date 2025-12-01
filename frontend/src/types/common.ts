@@ -53,6 +53,17 @@ export interface TaskCount {
   count: number;
 }
 
+export interface PendingTask {
+  taskId: string;
+  taskName: string;
+  displayName: string;
+  entityType: string | null;
+  entityId: string | null;
+  entityName: string | null;
+  status: string;
+  createdAt: string | null;
+}
+
 export interface FilterState {
   wanted?: 'all' | 'wanted' | 'unwanted';
   downloaded?: 'all' | 'downloaded' | 'not-downloaded';

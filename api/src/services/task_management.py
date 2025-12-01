@@ -2,13 +2,110 @@
 Task management service for handling Celery task operations.
 """
 
-from typing import Any, Dict
+import json
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from django.utils import timezone
 
 from asgiref.sync import sync_to_async
 from celery_app import app as celery_app
 from django_celery_results.models import TaskResult
+
+
+@dataclass
+class PendingTaskInfo:  # pylint: disable=too-many-instance-attributes
+    """Information about a pending task with resolved entity details."""
+
+    task_id: str
+    task_name: str
+    display_name: str
+    entity_type: Optional[str]
+    entity_id: Optional[str]
+    entity_name: Optional[str]
+    status: str
+    created_at: Optional[str]
+
+
+def _parse_json_field(value: Any) -> Any:
+    """Parse a JSON field that might be a string or already parsed.
+
+    Handles both JSON strings and Python repr strings (single quotes, True/False).
+    Also handles double-encoded values (JSON string containing Python repr).
+    """
+    import ast
+
+    if isinstance(value, str):
+        # First try JSON parsing
+        try:
+            parsed = json.loads(value)
+            # If result is still a string, it might be double-encoded
+            # (JSON string containing Python repr)
+            if isinstance(parsed, str):
+                try:
+                    return ast.literal_eval(parsed)
+                except (ValueError, SyntaxError):
+                    return parsed
+            return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Fall back to ast.literal_eval for Python repr strings
+        # (single quotes, True/False/None instead of true/false/null)
+        try:
+            return ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            pass
+
+        return value
+    return value
+
+
+def _format_task_name(full_name: str) -> str:
+    """Convert task name to human-readable format."""
+    name = full_name.replace("library_manager.tasks.", "").replace("downloader.", "")
+    return " ".join(word.capitalize() for word in name.split("_"))
+
+
+def _get_entity_type(task_name: str) -> Optional[str]:
+    """Determine entity type from task name."""
+    task_lower = task_name.lower()
+    if "artist" in task_lower:
+        return "artist"
+    if "album" in task_lower:
+        return "album"
+    if "playlist" in task_lower:
+        return "playlist"
+    if "track" in task_lower:
+        return "track"
+    return None
+
+
+def _extract_entity_id(
+    task_name: str, args: List[Any], kwargs: Dict[str, Any]
+) -> Optional[Any]:
+    """Extract entity ID from task arguments based on task type."""
+    # Check kwargs first (more explicit) - order matters for priority
+    # kwargs might be a string if JSON parsing failed, so check type first
+    if isinstance(kwargs, dict):
+        kwarg_keys = [
+            "playlist_url",
+            "playlist_id",
+            "artist_id",
+            "album_id",
+            "track_id",
+            "spotify_album_id",
+        ]
+        for key in kwarg_keys:
+            if key in kwargs:
+                return kwargs[key]
+
+    # Fall back to positional args
+    # args might be a string if JSON parsing failed, so check type first
+    if isinstance(args, list) and args:
+        return args[0]
+
+    return None
 
 
 class MutationResult:
@@ -212,6 +309,163 @@ class TaskManagementService:
         except Exception as e:
             # Re-raise the exception as expected by the test
             raise e
+
+    async def get_pending_tasks_with_details(self) -> List[PendingTaskInfo]:
+        """
+        Get pending tasks with resolved entity names.
+
+        Parses task arguments to extract entity IDs, then looks up
+        the entity names from the database.
+        """
+        from library_manager.models import Album, Artist, TrackedPlaylist
+
+        def fetch_tasks_and_resolve() -> List[PendingTaskInfo]:
+            tasks = TaskResult.objects.filter(
+                status__in=["PENDING", "STARTED", "RETRY"]
+            ).values(
+                "task_id",
+                "task_name",
+                "task_args",
+                "task_kwargs",
+                "status",
+                "date_created",
+            )
+
+            # Pre-fetch entities for efficiency
+            artist_ids: set = set()
+            album_ids: set = set()
+            playlist_ids: set = set()
+            playlist_urls: set = set()
+
+            task_list = list(tasks)
+
+            # First pass: collect entity IDs
+            for task in task_list:
+                task_name = task.get("task_name", "")
+                args = _parse_json_field(task.get("task_args", "[]"))
+                kwargs = _parse_json_field(task.get("task_kwargs", "{}"))
+
+                entity_id = _extract_entity_id(task_name, args, kwargs)
+                if entity_id:
+                    entity_id_str = str(entity_id)
+                    if "artist" in task_name.lower():
+                        try:
+                            artist_ids.add(int(entity_id))
+                        except (ValueError, TypeError):
+                            pass
+                    elif "album" in task_name.lower():
+                        try:
+                            album_ids.add(int(entity_id))
+                        except (ValueError, TypeError):
+                            pass
+                    elif "playlist" in task_name.lower():
+                        if entity_id_str.startswith(
+                            "spotify:"
+                        ) or entity_id_str.startswith("http"):
+                            playlist_urls.add(entity_id_str)
+                        else:
+                            try:
+                                playlist_ids.add(int(entity_id))
+                            except (ValueError, TypeError):
+                                pass
+
+            # Batch fetch entities
+            artists = {a.id: a.name for a in Artist.objects.filter(id__in=artist_ids)}
+            albums = {a.id: a.name for a in Album.objects.filter(id__in=album_ids)}
+            playlists_by_id = {
+                p.id: p.name
+                for p in TrackedPlaylist.objects.filter(id__in=playlist_ids)
+            }
+            playlists_by_url = {
+                p.url: p.name
+                for p in TrackedPlaylist.objects.filter(url__in=playlist_urls)
+            }
+
+            # Second pass: build result with resolved names
+            result: List[PendingTaskInfo] = []
+            for task in task_list:
+                task_name = task.get("task_name", "unknown")
+                args = _parse_json_field(task.get("task_args", "[]"))
+                kwargs = _parse_json_field(task.get("task_kwargs", "{}"))
+
+                entity_type = _get_entity_type(task_name)
+                entity_id = _extract_entity_id(task_name, args, kwargs)
+                entity_name = None
+
+                if entity_id and entity_type:
+                    entity_id_str = str(entity_id)
+                    if entity_type == "artist":
+                        try:
+                            entity_name = artists.get(int(entity_id))
+                        except (ValueError, TypeError):
+                            pass
+                    elif entity_type == "album":
+                        try:
+                            entity_name = albums.get(int(entity_id))
+                        except (ValueError, TypeError):
+                            pass
+                    elif entity_type == "playlist":
+                        if entity_id_str.startswith(
+                            "spotify:"
+                        ) or entity_id_str.startswith("http"):
+                            entity_name = playlists_by_url.get(entity_id_str)
+                        else:
+                            try:
+                                entity_name = playlists_by_id.get(int(entity_id))
+                            except (ValueError, TypeError):
+                                pass
+
+                created_at = task.get("date_created")
+                created_at_str = created_at.isoformat() if created_at else None
+
+                result.append(
+                    PendingTaskInfo(
+                        task_id=task.get("task_id", ""),
+                        task_name=task_name,
+                        display_name=_format_task_name(task_name),
+                        entity_type=entity_type,
+                        entity_id=str(entity_id) if entity_id else None,
+                        entity_name=entity_name,
+                        status=task.get("status", "PENDING"),
+                        created_at=created_at_str,
+                    )
+                )
+
+            return result
+
+        return await sync_to_async(fetch_tasks_and_resolve)()
+
+    async def cancel_task_by_id(self, task_id: str) -> MutationResult:
+        """Cancel a single task by its ID."""
+        try:
+            from library_manager.models import TaskHistory
+
+            # Update TaskResult to REVOKED
+            updated = await TaskResult.objects.filter(
+                task_id=task_id, status__in=["PENDING", "STARTED", "RETRY"]
+            ).aupdate(status="REVOKED")
+
+            # Also update TaskHistory if it exists
+            await TaskHistory.objects.filter(
+                task_id=task_id, status__in=["PENDING", "RUNNING"]
+            ).aupdate(
+                status="CANCELLED",
+                completed_at=timezone.now(),
+                error_message="Cancelled by user",
+            )
+
+            if updated > 0:
+                return MutationResult(
+                    success=True, message="Task cancelled successfully"
+                )
+            return MutationResult(
+                success=False, message="Task not found or already completed"
+            )
+
+        except Exception as e:
+            return MutationResult(
+                success=False, message=f"Failed to cancel task: {str(e)}"
+            )
 
     async def get_queue_status(self) -> Dict[str, Any]:
         """
