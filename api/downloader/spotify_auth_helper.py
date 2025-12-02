@@ -13,11 +13,16 @@ from library_manager.models import SpotifyOAuthToken
 logger = logging.getLogger(__name__)
 
 
-def get_spotify_oauth_credentials() -> Optional[dict]:
+def get_spotify_oauth_credentials(force_refresh: bool = False) -> Optional[dict]:
     """
     Get Spotify OAuth credentials from database if available.
 
     Automatically refreshes expired tokens using the refresh token.
+
+    Args:
+        force_refresh: If True, always refresh the token regardless of expiration.
+                      Use this after receiving a 401 error to handle cases where
+                      Spotify invalidated the token before our expected expiration.
 
     Returns:
         Dict with OAuth credentials, or None if not authenticated
@@ -28,9 +33,10 @@ def get_spotify_oauth_credentials() -> Optional[dict]:
 
         try:
             token = SpotifyOAuthToken.objects.get(id=1)
-            # Check if token is expired
-            if token.is_expired():
-                logger.info("Spotify OAuth token is expired - refreshing...")
+            # Check if token is expired or force refresh requested
+            if force_refresh or token.is_expired():
+                reason = "force_refresh requested" if force_refresh else "token expired"
+                logger.info(f"Refreshing Spotify OAuth token ({reason})...")
 
                 try:
                     # Import service here to avoid circular imports
