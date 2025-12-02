@@ -15,6 +15,7 @@ import logging
 import time
 import traceback
 from argparse import Namespace
+from pathlib import Path
 from typing import Any
 
 from django.db.models.functions import Now
@@ -186,6 +187,85 @@ def _is_fail_fast_error(exception: Exception) -> tuple[bool, int | None]:
         return True, 404
 
     return False, None
+
+
+# Minimum acceptable bitrate for downloaded songs (in kbps)
+# Songs below this threshold will be re-downloaded for quality upgrade
+MIN_ACCEPTABLE_BITRATE_KBPS = 192
+
+
+def _get_songs_needing_download(
+    track_gids: list[str],
+    logger: logging.Logger,
+    check_file_exists: bool = True,
+    min_bitrate: int = MIN_ACCEPTABLE_BITRATE_KBPS,
+) -> tuple[set[str], dict[str, str]]:
+    """
+    Batch-query songs that need downloading from a list of track GIDs.
+
+    A song needs downloading if ANY of these conditions are true:
+    1. Not in database at all (new song)
+    2. In database but downloaded=False
+    3. In database, downloaded=True, but file doesn't exist (missing file)
+    4. In database, downloaded=True, but bitrate < min_bitrate (quality upgrade)
+
+    Args:
+        track_gids: List of Spotify track GIDs to check
+        logger: Logger for debug output
+        check_file_exists: Whether to verify files exist on disk (can be slow for large sets)
+        min_bitrate: Minimum acceptable bitrate in kbps (default 192)
+
+    Returns:
+        Tuple of:
+        - Set of GIDs that need downloading
+        - Dict mapping GID -> reason (for logging)
+    """
+    if not track_gids:
+        return set(), {}
+
+    needs_download: set[str] = set()
+    reasons: dict[str, str] = {}
+
+    # Query all songs with these GIDs in one batch
+    existing_songs = Song.objects.filter(gid__in=track_gids).select_related(
+        "file_path_ref"
+    )
+    existing_by_gid = {song.gid: song for song in existing_songs}
+
+    for gid in track_gids:
+        if gid not in existing_by_gid:
+            # Case 1: New song not in database
+            needs_download.add(gid)
+            reasons[gid] = "new"
+            continue
+
+        song = existing_by_gid[gid]
+
+        if not song.downloaded:
+            # Case 2: In database but not downloaded
+            needs_download.add(gid)
+            reasons[gid] = "not_downloaded"
+            continue
+
+        # Song is marked as downloaded - check quality and file existence
+        if song.bitrate > 0 and song.bitrate < min_bitrate:
+            # Case 4: Quality upgrade needed
+            needs_download.add(gid)
+            reasons[gid] = f"low_bitrate_{song.bitrate}"
+            continue
+
+        if check_file_exists and song.file_path_ref:
+            file_path = Path(song.file_path_ref.path)
+            if not file_path.exists():
+                # Case 3: File missing from disk
+                needs_download.add(gid)
+                reasons[gid] = "missing_file"
+                logger.debug(
+                    f"Song '{song.name}' marked downloaded but file missing: {file_path}"
+                )
+                continue
+
+    return needs_download, reasons
 
 
 # Apply monkeypatches to Spotdl for compatibility
@@ -792,22 +872,8 @@ class SpotdlWrapper:
                         self.logger.warning(f"Song not found in database: {song_gid}")
                         continue
 
-        # Enrich track metadata with genres, publisher, copyright before downloading
-        # This batch-fetches album and artist data efficiently (~5 API calls for 100 tracks)
-        if download_queue:
-            all_tracks = [
-                track for queue_item in download_queue for track in queue_item
-            ]
-            if all_tracks:
-                self.logger.info(
-                    f"Enriching metadata for {len(all_tracks)} tracks (batch fetching genres, etc.)"
-                )
-                try:
-                    self.downloader.enrich_tracks_metadata(all_tracks)
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to enrich track metadata (will continue without): {e}"
-                    )
+        # Note: Metadata enrichment is now done per-queue-item after filtering
+        # This ensures we only fetch metadata for tracks we'll actually download
 
         if len(download_queue) > 0:
             one_queue_increment = (1 / len(download_queue)) * 1000
@@ -830,99 +896,89 @@ class SpotdlWrapper:
                 if config.force_playlist_resync:
                     tracked_playlist.last_synced_at = None
                     tracked_playlist.save()
-                # Check if this playlist has ever been synced
-                if tracked_playlist.last_synced_at is not None:
-                    playlist_needs_update = False
-                    # Collect all track GIDs to batch-check which are already downloaded
-                    track_gids = [
-                        gid
-                        for track in queue_item
-                        if (gid := extract_spotify_id_from_uri(track["id"]))
-                    ]
-
-                    # Get all downloaded songs in one query
-                    downloaded_gids = set(
-                        Song.objects.filter(
-                            gid__in=track_gids, downloaded=True
-                        ).values_list("gid", flat=True)
-                    )
-
-                    for track in queue_item:
-                        track_added_at = utils.convert_date_string_to_datetime(
-                            track["added_at"]
-                        )
-                        # Playlist needs update if track is newer OR if track isn't downloaded yet
-                        if track_added_at > tracked_playlist.last_synced_at:
-                            playlist_needs_update = True
-                            break
-                        else:
-                            # Check if this older track is missing from our downloads
-                            track_gid = extract_spotify_id_from_uri(track["id"])
-                            if track_gid and track_gid not in downloaded_gids:
-                                self.logger.debug(
-                                    f"Found undownloaded track '{track['name']}' added before last sync"
-                                )
-                                playlist_needs_update = True
-                                break
-
-                    if not playlist_needs_update:
-                        self.logger.info(
-                            f"Playlist has no newer tracks and all older tracks are downloaded (last sync: {tracked_playlist.last_synced_at}), skipping"
-                        )
-                        # Update last_synced_at and snapshot_id even when skipping
-                        tracked_playlist.last_synced_at = Now()
-                        # Update snapshot_id from the metadata if available
-                        url_metadata = download_queue_metadata.get(
-                            download_queue_url, {}
-                        )
-                        if url_metadata.get("snapshot_id"):
-                            tracked_playlist.snapshot_id = url_metadata["snapshot_id"]
-                        tracked_playlist.save()
-                        continue
-                    else:
-                        self.logger.info(
-                            f"Playlist has tracks to process (last sync: {tracked_playlist.last_synced_at}), resyncing"
-                        )
             except TrackedPlaylist.DoesNotExist:
                 tracked_playlist = None
+
+            # Filter out local files first
+            from library_manager.validators import is_local_track
+
+            queue_item = [track for track in queue_item if not is_local_track(track)]
+
+            # Batch-check which songs actually need downloading
+            # This handles: new songs, not downloaded, missing files, low bitrate
+            track_gids = [
+                gid
+                for track in queue_item
+                if (gid := extract_spotify_id_from_uri(track["id"]))
+            ]
+
+            gids_needing_download, download_reasons = _get_songs_needing_download(
+                track_gids,
+                self.logger,
+                check_file_exists=True,
+                min_bitrate=MIN_ACCEPTABLE_BITRATE_KBPS,
+            )
+
+            # Filter queue_item to only tracks that need downloading
+            original_count = len(queue_item)
+            queue_item = [
+                track
+                for track in queue_item
+                if extract_spotify_id_from_uri(track["id"]) in gids_needing_download
+            ]
+
+            # Log filtering results
+            skipped_count = original_count - len(queue_item)
+            if skipped_count > 0:
+                self.logger.info(
+                    f"Filtered {original_count} tracks → {len(queue_item)} to download "
+                    f"({skipped_count} already downloaded with valid files)"
+                )
+
+            # Log reasons for downloads (summarized)
+            if download_reasons:
+                reason_counts: dict[str, int] = {}
+                for reason in download_reasons.values():
+                    base_reason = (
+                        reason.split("_")[0]
+                        if reason.startswith("low_bitrate")
+                        else reason
+                    )
+                    reason_counts[base_reason] = reason_counts.get(base_reason, 0) + 1
+                reason_summary = ", ".join(
+                    f"{count} {reason}" for reason, count in reason_counts.items()
+                )
+                self.logger.debug(f"Download reasons: {reason_summary}")
+
+            if not queue_item:
+                self.logger.info(
+                    f"All tracks already downloaded for URL {queue_item_index}/{len(download_queue)}, skipping"
+                )
+                # Update last_synced_at and snapshot_id even when skipping
+                if tracked_playlist is not None:
+                    tracked_playlist.last_synced_at = Now()
+                    url_metadata = download_queue_metadata.get(download_queue_url, {})
+                    if url_metadata.get("snapshot_id"):
+                        tracked_playlist.snapshot_id = url_metadata["snapshot_id"]
+                    tracked_playlist.save()
+                continue
+
+            # Enrich metadata only for tracks we're actually downloading
+            # This batch-fetches album and artist data efficiently
+            self.logger.info(
+                f"Enriching metadata for {len(queue_item)} tracks (batch fetching genres, etc.)"
+            )
+            try:
+                self.downloader.enrich_tracks_metadata(queue_item)
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to enrich track metadata (will continue without): {e}"
+                )
 
             main_queue_progress = ((queue_item_index - 1) / len(download_queue)) * 1000
 
             for track_index, track in enumerate(queue_item, start=1):
-                # Skip local files - they're user-uploaded and can't be downloaded
-                from library_manager.validators import is_local_track
-
-                if is_local_track(track):
-                    self.logger.debug(
-                        f"Skipping local file '{track.get('name', 'Unknown')}' - cannot download local files"
-                    )
-                    continue
-
-                # Check if this is a tracked playlist, and if so let's only sync if the track is newer than the last sync
-                # OR if the track hasn't been downloaded yet (catches songs added before we started tracking)
-                if (
-                    tracked_playlist is not None
-                    and tracked_playlist.last_synced_at is not None
-                ):
-                    track_added_at = utils.convert_date_string_to_datetime(
-                        track["added_at"]
-                    )
-                    if track_added_at < tracked_playlist.last_synced_at:
-                        # Track is older than last sync - check if we already have it downloaded
-                        track_gid = extract_spotify_id_from_uri(track["id"])
-                        if track_gid:
-                            song_exists_downloaded = Song.objects.filter(
-                                gid=track_gid, downloaded=True
-                            ).exists()
-                            if song_exists_downloaded:
-                                self.logger.debug(
-                                    "track older than last playlist sync and already downloaded, skipping"
-                                )
-                                continue
-                            else:
-                                self.logger.debug(
-                                    "track older than last playlist sync but not downloaded, processing"
-                                )
+                # No need for per-track filtering - already done above
 
                 current_track = f"Track {track_index}/{len(queue_item)} from URL {queue_item_index}/{len(download_queue)}"
                 download_queue_item.progress = round(
