@@ -2,15 +2,19 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from downloader.downloader import Downloader
 from downloader.spotdl_wrapper import (
     PlaylistSyncError,
     _is_fail_fast_error,
 )
 from downloader.spotipy_tasks import (
+    MAX_RATE_LIMIT_WAIT_SECONDS,
+    LimitedRetry,
     OAuthSpotifyClient,
     PublicSpotifyClient,
     SpotifyClient,
+    SpotifyRateLimitError,
 )
 
 
@@ -25,24 +29,32 @@ class TestPublicSpotifyClient:
         """Reset singleton after each test."""
         PublicSpotifyClient.reset()
 
+    @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.SpotifyClientCredentials")
     @patch("downloader.spotipy_tasks.spotipy.Spotify")
     def test_uses_client_credentials(
-        self, mock_spotify: MagicMock, mock_creds: MagicMock
+        self,
+        mock_spotify: MagicMock,
+        mock_creds: MagicMock,
+        mock_create_session: MagicMock,
     ) -> None:
         """PublicSpotifyClient should use Client Credentials flow."""
         client = PublicSpotifyClient()
 
         # Should have created client credentials manager
         mock_creds.assert_called_once()
-        # Should have created Spotify client with credentials manager
+        # Should have created Spotify client with credentials manager and custom session
         mock_spotify.assert_called_once()
         assert client.sp is not None
 
+    @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.SpotifyClientCredentials")
     @patch("downloader.spotipy_tasks.spotipy.Spotify")
     def test_singleton_pattern(
-        self, mock_spotify: MagicMock, mock_creds: MagicMock
+        self,
+        mock_spotify: MagicMock,
+        mock_creds: MagicMock,
+        mock_create_session: MagicMock,
     ) -> None:
         """PublicSpotifyClient should reuse the same instance."""
         client1 = PublicSpotifyClient()
@@ -52,10 +64,14 @@ class TestPublicSpotifyClient:
         # Should only initialize once
         assert mock_creds.call_count == 1
 
+    @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.SpotifyClientCredentials")
     @patch("downloader.spotipy_tasks.spotipy.Spotify")
     def test_reset_clears_singleton(
-        self, mock_spotify: MagicMock, mock_creds: MagicMock
+        self,
+        mock_spotify: MagicMock,
+        mock_creds: MagicMock,
+        mock_create_session: MagicMock,
     ) -> None:
         """PublicSpotifyClient.reset() should clear the singleton."""
         client1 = PublicSpotifyClient()
@@ -78,20 +94,29 @@ class TestOAuthSpotifyClient:
         """Reset singleton after each test."""
         OAuthSpotifyClient.reset()
 
+    @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.get_spotify_oauth_credentials")
     @patch("downloader.spotipy_tasks.spotipy.Spotify")
     def test_uses_oauth_when_available(
-        self, mock_spotify: MagicMock, mock_get_oauth: MagicMock
+        self,
+        mock_spotify: MagicMock,
+        mock_get_oauth: MagicMock,
+        mock_create_session: MagicMock,
     ) -> None:
         """OAuthSpotifyClient should use OAuth token when available."""
         mock_get_oauth.return_value = {"access_token": "test_token"}
+        mock_session = MagicMock()
+        mock_create_session.return_value = mock_session
 
         client = OAuthSpotifyClient()
 
-        # Should have used the OAuth token
-        mock_spotify.assert_called_once_with(auth="test_token")
+        # Should have used the OAuth token with custom session
+        mock_spotify.assert_called_once_with(
+            auth="test_token", requests_session=mock_session
+        )
         assert client.is_oauth is True
 
+    @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.get_spotify_oauth_credentials")
     @patch("downloader.spotipy_tasks.SpotifyClientCredentials")
     @patch("downloader.spotipy_tasks.spotipy.Spotify")
@@ -100,6 +125,7 @@ class TestOAuthSpotifyClient:
         mock_spotify: MagicMock,
         mock_creds: MagicMock,
         mock_get_oauth: MagicMock,
+        mock_create_session: MagicMock,
     ) -> None:
         """OAuthSpotifyClient should fall back to Client Credentials when no OAuth."""
         mock_get_oauth.return_value = None
@@ -110,10 +136,14 @@ class TestOAuthSpotifyClient:
         mock_creds.assert_called_once()
         assert client.is_oauth is False
 
+    @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.get_spotify_oauth_credentials")
     @patch("downloader.spotipy_tasks.spotipy.Spotify")
     def test_refresh_token(
-        self, mock_spotify: MagicMock, mock_get_oauth: MagicMock
+        self,
+        mock_spotify: MagicMock,
+        mock_get_oauth: MagicMock,
+        mock_create_session: MagicMock,
     ) -> None:
         """refresh_token() should update the client with new token."""
         mock_get_oauth.side_effect = [
@@ -351,3 +381,72 @@ class TestPlaylistSyncError:
         """PlaylistSyncError status_code should default to None."""
         err = PlaylistSyncError("Some error")
         assert err.status_code is None
+
+
+class TestSpotifyRateLimitError:
+    """Tests for the SpotifyRateLimitError exception."""
+
+    def test_stores_retry_after(self) -> None:
+        """SpotifyRateLimitError should store the retry_after_seconds."""
+        err = SpotifyRateLimitError("Rate limited", retry_after_seconds=3600)
+        assert err.retry_after_seconds == 3600
+        assert "Rate limited" in str(err)
+
+
+class TestLimitedRetry:
+    """Tests for the LimitedRetry class that caps rate limit wait times."""
+
+    def test_allows_short_retry_after(self) -> None:
+        """LimitedRetry should allow retry-after values within threshold."""
+        retry = LimitedRetry(total=3)
+
+        # Mock response with short retry-after
+        mock_response = MagicMock()
+        mock_response.headers = {"Retry-After": "60"}  # 60 seconds
+
+        # Should return the retry-after value without raising
+        result = retry.get_retry_after(mock_response)
+        assert result == 60
+
+    def test_raises_on_excessive_retry_after(self) -> None:
+        """LimitedRetry should raise SpotifyRateLimitError for long waits."""
+        retry = LimitedRetry(total=3)
+
+        # Mock response with excessive retry-after (6 hours)
+        mock_response = MagicMock()
+        mock_response.headers = {"Retry-After": "21600"}  # 6 hours
+
+        # Should raise SpotifyRateLimitError
+        with pytest.raises(SpotifyRateLimitError) as exc_info:
+            retry.get_retry_after(mock_response)
+
+        assert exc_info.value.retry_after_seconds == 21600
+        assert "exceeds maximum wait" in str(exc_info.value)
+
+    def test_threshold_boundary(self) -> None:
+        """LimitedRetry should respect the exact threshold boundary."""
+        retry = LimitedRetry(total=3)
+
+        # At threshold should be allowed
+        mock_response = MagicMock()
+        mock_response.headers = {"Retry-After": str(MAX_RATE_LIMIT_WAIT_SECONDS)}
+
+        result = retry.get_retry_after(mock_response)
+        assert result == MAX_RATE_LIMIT_WAIT_SECONDS
+
+        # Just over threshold should raise
+        mock_response.headers = {"Retry-After": str(MAX_RATE_LIMIT_WAIT_SECONDS + 1)}
+
+        with pytest.raises(SpotifyRateLimitError):
+            retry.get_retry_after(mock_response)
+
+    def test_handles_no_retry_after_header(self) -> None:
+        """LimitedRetry should handle responses without Retry-After header."""
+        retry = LimitedRetry(total=3)
+
+        mock_response = MagicMock()
+        mock_response.headers = {}
+
+        # Should return None (no retry-after)
+        result = retry.get_retry_after(mock_response)
+        assert result is None

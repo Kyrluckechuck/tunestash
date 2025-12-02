@@ -1,5 +1,6 @@
 """Periodic tasks for the Spotify library manager."""
 
+import time
 from typing import Any, Optional, Set
 
 from celery_app import app as celery_app
@@ -15,6 +16,9 @@ from ..models import (
 )
 from .core import logger
 from .download import download_single_album
+
+# Rate limiting: delay between Spotify API calls (in seconds)
+_API_CALL_DELAY_SECONDS = 0.5
 
 
 def get_albums_with_pending_tasks() -> Set[str]:
@@ -113,6 +117,9 @@ def _filter_changed_playlists(
             current_snapshot = spotdl_wrapper.downloader.get_playlist_snapshot_id(
                 playlist_id
             )
+
+            # Rate limiting: delay between API calls to avoid rate limits
+            time.sleep(_API_CALL_DELAY_SECONDS)
 
             if current_snapshot is None:
                 # API call failed, include for safety

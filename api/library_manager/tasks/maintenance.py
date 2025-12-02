@@ -3,6 +3,7 @@
 from typing import Any, Optional
 
 from celery_app import app as celery_app
+from downloader.spotdl_wrapper import YouTubeRateLimitError
 from lib.config_class import Config
 
 from ..models import Song, TaskHistory
@@ -57,7 +58,20 @@ def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> N
 
             task_progress_callback = update_task_progress_callback
 
-    spotdl_wrapper.execute(downloader_config, task_progress_callback)
+    try:
+        spotdl_wrapper.execute(downloader_config, task_progress_callback)
+    except YouTubeRateLimitError as rate_limit_error:
+        # YouTube rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"YouTube rate limit hit during missing songs retry, "
+            f"rescheduling in {retry_after}s"
+        )
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=3,
+        )
 
     # Queue up next batch after ensuring rate limit has passed
     retry_all_missing_known_songs.apply_async(countdown=30)
@@ -175,7 +189,20 @@ def validate_undownloaded_songs(
 
             task_progress_callback = update_task_progress_callback
 
-    spotdl_wrapper.execute(downloader_config, task_progress_callback)
+    try:
+        spotdl_wrapper.execute(downloader_config, task_progress_callback)
+    except YouTubeRateLimitError as rate_limit_error:
+        # YouTube rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"YouTube rate limit hit during undownloaded songs validation, "
+            f"rescheduling in {retry_after}s"
+        )
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=3,
+        )
     logger.info(f"Completed validation attempt for {non_downloaded_songs_count} songs")
 
 
@@ -283,5 +310,17 @@ def retry_failed_songs(self: Any) -> None:
         spotdl_wrapper.execute(downloader_config, task_progress_callback)
         logger.info(f"Completed retry attempt for {song_count} songs")
 
+    except YouTubeRateLimitError as rate_limit_error:
+        # YouTube rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"YouTube rate limit hit during failed songs retry, "
+            f"rescheduling in {retry_after}s"
+        )
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=3,
+        )
     except Exception as e:
         logger.error(f"Error in retry_failed_songs: {e}", exc_info=True)

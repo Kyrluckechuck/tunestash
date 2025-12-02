@@ -1,15 +1,77 @@
+import logging
 from typing import Optional
 
 from django.conf import settings
 
+import requests
 import spotipy
+from requests.adapters import HTTPAdapter
 from spotipy.cache_handler import MemoryCacheHandler
 from spotipy.oauth2 import SpotifyClientCredentials
+from urllib3.util.retry import Retry
 
 from library_manager.models import Artist
 
 from .downloader import Downloader
 from .spotify_auth_helper import get_spotify_oauth_credentials
+
+logger = logging.getLogger(__name__)
+
+# Maximum time (in seconds) to wait for a Spotify rate limit retry
+# If Spotify asks for longer, we fail fast and let the task reschedule
+MAX_RATE_LIMIT_WAIT_SECONDS = 300  # 5 minutes
+
+
+class SpotifyRateLimitError(Exception):
+    """Raised when Spotify rate limit exceeds our maximum wait threshold."""
+
+    def __init__(self, message: str, retry_after_seconds: int):
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
+
+class LimitedRetry(Retry):
+    """Custom retry class that fails fast on excessive rate limit waits.
+
+    Spotify sometimes returns Retry-After headers of 6+ hours. Rather than
+    blocking for that long (holding locks and memory), we fail fast after
+    a configurable maximum wait time. This allows tasks to release resources
+    and reschedule themselves.
+    """
+
+    def get_retry_after(self, response):
+        """Override to cap the retry-after time."""
+        retry_after = super().get_retry_after(response)
+        if retry_after is not None and retry_after > MAX_RATE_LIMIT_WAIT_SECONDS:
+            logger.warning(
+                f"Spotify rate limit requests {retry_after}s wait, "
+                f"exceeds max of {MAX_RATE_LIMIT_WAIT_SECONDS}s - failing fast"
+            )
+            raise SpotifyRateLimitError(
+                f"Spotify rate limit ({retry_after}s) exceeds maximum wait "
+                f"({MAX_RATE_LIMIT_WAIT_SECONDS}s)",
+                retry_after_seconds=retry_after,
+            )
+        return retry_after
+
+
+def create_limited_session() -> requests.Session:
+    """Create a requests session with rate-limit-aware retry configuration."""
+    session = requests.Session()
+
+    # Configure retry with our custom LimitedRetry class
+    retry = LimitedRetry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
+    )
+
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
+    return session
 
 
 class PublicSpotifyClient:
@@ -21,6 +83,8 @@ class PublicSpotifyClient:
 
     Rate limits are per-app rather than per-user, providing better throughput
     for bulk operations that don't require user authorization.
+
+    Uses a custom session with LimitedRetry to fail fast on excessive rate limits.
     """
 
     _instance: Optional["PublicSpotifyClient"] = None
@@ -42,7 +106,11 @@ class PublicSpotifyClient:
             client_secret=getattr(settings, "SPOTIPY_CLIENT_SECRET", ""),
             cache_handler=MemoryCacheHandler(),
         )
-        self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+        # Use custom session with rate-limit-aware retry
+        self.sp = spotipy.Spotify(
+            client_credentials_manager=client_credentials_manager,
+            requests_session=create_limited_session(),
+        )
 
     @classmethod
     def reset(cls) -> None:
@@ -60,6 +128,8 @@ class OAuthSpotifyClient:
     - Private playlist access
     - User profile operations
     - Library modifications
+
+    Uses a custom session with LimitedRetry to fail fast on excessive rate limits.
     """
 
     _instance: Optional["OAuthSpotifyClient"] = None
@@ -79,7 +149,11 @@ class OAuthSpotifyClient:
         oauth_creds = get_spotify_oauth_credentials()
 
         if oauth_creds:
-            self.sp = spotipy.Spotify(auth=oauth_creds["access_token"])
+            # Use custom session with rate-limit-aware retry
+            self.sp = spotipy.Spotify(
+                auth=oauth_creds["access_token"],
+                requests_session=create_limited_session(),
+            )
             self.is_oauth = True
         else:
             # Fall back to client credentials (public access only)
@@ -89,7 +163,8 @@ class OAuthSpotifyClient:
                 cache_handler=MemoryCacheHandler(),
             )
             self.sp = spotipy.Spotify(
-                client_credentials_manager=client_credentials_manager
+                client_credentials_manager=client_credentials_manager,
+                requests_session=create_limited_session(),
             )
             self.is_oauth = False
 
@@ -106,7 +181,10 @@ class OAuthSpotifyClient:
         """
         oauth_creds = get_spotify_oauth_credentials()
         if oauth_creds:
-            self.sp = spotipy.Spotify(auth=oauth_creds["access_token"])
+            self.sp = spotipy.Spotify(
+                auth=oauth_creds["access_token"],
+                requests_session=create_limited_session(),
+            )
             self.is_oauth = True
             return True
         return False

@@ -1,5 +1,7 @@
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
@@ -8,6 +10,18 @@ from spotdl.download.downloader import Downloader
 from spotdl.types.options import DownloaderOptionalOptions, DownloaderOptions
 from spotdl.types.song import Song
 from spotdl.utils.spotify import SpotifyClient
+
+logger = logging.getLogger(__name__)
+
+# Maximum time (in seconds) to wait for a single song download
+# If exceeded, assume we're rate-limited and fail fast to release resources
+DOWNLOAD_TIMEOUT_SECONDS = 300  # 5 minutes per song
+
+
+class DownloadTimeoutError(Exception):
+    """Raised when a song download takes too long, likely due to rate limiting."""
+
+    pass
 
 
 # Class SpotDl
@@ -81,13 +95,20 @@ def __init__(
 # Monkeypatch to handle asyncio event loops not correctly assigning
 def download_song(self: "Downloader", song: Song) -> Tuple[Song, Optional[Path]]:
     """
-    Download a single song.
+    Download a single song with timeout protection.
+
+    If a download takes longer than DOWNLOAD_TIMEOUT_SECONDS, it's assumed to be
+    rate-limited by YouTube and raises DownloadTimeoutError. This allows the calling
+    code to release resources (like download locks) and reschedule the task.
 
     ### Arguments
     - song: The song to download.
 
     ### Returns
     - tuple with the song and the path to the downloaded file if successful.
+
+    ### Raises
+    - DownloadTimeoutError: If download exceeds timeout (likely rate-limited)
     """
     # Check if there's already a running event loop
     try:
@@ -96,8 +117,18 @@ def download_song(self: "Downloader", song: Song) -> Tuple[Song, Optional[Path]]
         # to avoid "this event loop is already running" error
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_download_song_sync, self, song)
-            result = future.result()
-            return result
+            try:
+                result = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
+                return result
+            except FuturesTimeoutError:
+                logger.error(
+                    f"Download timed out after {DOWNLOAD_TIMEOUT_SECONDS}s for "
+                    f"'{song.name}' - likely rate-limited by YouTube"
+                )
+                raise DownloadTimeoutError(
+                    f"Download timed out for '{song.name}' after {DOWNLOAD_TIMEOUT_SECONDS}s. "
+                    f"YouTube may be rate-limiting requests."
+                )
     except RuntimeError:
         # No running loop - proceed normally
         pass
@@ -116,7 +147,25 @@ def download_song(self: "Downloader", song: Song) -> Tuple[Song, Optional[Path]]
 
     self.progress_handler.set_song_count(1)
 
-    results = self.download_multiple_songs([song])
+    # For non-threaded case, we use asyncio timeout
+    # Run with timeout to detect rate limiting
+    try:
+        loop = asyncio.get_event_loop()
+        results = loop.run_until_complete(
+            asyncio.wait_for(
+                asyncio.to_thread(self.download_multiple_songs, [song]),
+                timeout=DOWNLOAD_TIMEOUT_SECONDS,
+            )
+        )
+    except asyncio.TimeoutError:
+        logger.error(
+            f"Download timed out after {DOWNLOAD_TIMEOUT_SECONDS}s for "
+            f"'{song.name}' - likely rate-limited by YouTube"
+        )
+        raise DownloadTimeoutError(
+            f"Download timed out for '{song.name}' after {DOWNLOAD_TIMEOUT_SECONDS}s. "
+            f"YouTube may be rate-limiting requests."
+        )
 
     # Type cast to match expected return type
     result = results[0]
