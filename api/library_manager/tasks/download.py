@@ -6,6 +6,7 @@ from typing import Any, Optional
 from django.db.models.functions import Now
 
 from celery_app import app as celery_app
+from downloader.spotdl_wrapper import YouTubeRateLimitError
 from downloader.utils import sanitize_and_strip_url
 from lib.config_class import Config
 
@@ -25,7 +26,6 @@ from .core import (
     create_task_history,
     logger,
     require_download_capability,
-    require_download_lock,
     spotdl_wrapper,
     update_task_progress,
 )
@@ -34,7 +34,6 @@ from .core import (
 @celery_app.task(
     bind=True, name="library_manager.tasks.download_missing_albums_for_artist"
 )
-@require_download_lock()
 def download_missing_albums_for_artist(
     self: Any, artist_id: int, delay: int = 0
 ) -> None:
@@ -139,6 +138,25 @@ def download_missing_albums_for_artist(
                     task_history.error_message = "Cancelled by user"
                     task_history.save()
                 return
+            except YouTubeRateLimitError as rate_limit_error:
+                # YouTube rate limit - reschedule task for later
+                retry_after = rate_limit_error.retry_after_seconds
+                logger.warning(
+                    f"YouTube rate limit hit for artist {artist.name}, "
+                    f"rescheduling in {retry_after}s"
+                )
+                if task_history:
+                    task_history.status = "PENDING"
+                    task_history.add_log_message(
+                        f"Rate limited by YouTube, rescheduling in {retry_after // 60} minutes"
+                    )
+                    task_history.save()
+                # Reschedule the task - this will release the lock first
+                raise self.retry(
+                    exc=rate_limit_error,
+                    countdown=retry_after,
+                    max_retries=3,
+                )
         else:
             logger.info(
                 f"missing albums search for artist {artist.gid} is skipping since there are none missing"
@@ -160,6 +178,9 @@ def download_missing_albums_for_artist(
         if task_history:
             complete_task(task_history, success=True)
 
+    except YouTubeRateLimitError:
+        # Already handled above with self.retry - just re-raise
+        raise
     except Exception as e:
         logger.error("Error in sync_tracked_playlist_internal: %s", e, exc_info=True)
         if task_history:
@@ -168,7 +189,6 @@ def download_missing_albums_for_artist(
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_single_album")
-@require_download_lock()
 def download_single_album(self: Any, album_id: int) -> None:
     """Download a single specific album by ID."""
     task_history = None
@@ -238,6 +258,23 @@ def download_single_album(self: Any, album_id: int) -> None:
         complete_task(task_history, success=True)
         logger.info(f"Successfully downloaded album: {album.name}")
 
+    except YouTubeRateLimitError as rate_limit_error:
+        # YouTube rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"YouTube rate limit hit for album {album_id}, rescheduling in {retry_after}s"
+        )
+        if task_history:
+            task_history.status = "PENDING"
+            task_history.add_log_message(
+                f"Rate limited by YouTube, rescheduling in {retry_after // 60} minutes"
+            )
+            task_history.save()
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=3,
+        )
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
         logger.error(error_msg)
@@ -247,7 +284,6 @@ def download_single_album(self: Any, album_id: int) -> None:
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_playlist")
-@require_download_lock()
 def download_playlist(
     self: Any,
     playlist_url: str,
@@ -326,6 +362,24 @@ def download_playlist(
                 task_history.error_message = "Cancelled by user"
                 task_history.save()
             return
+        except YouTubeRateLimitError as rate_limit_error:
+            # YouTube rate limit - reschedule task for later
+            retry_after = rate_limit_error.retry_after_seconds
+            logger.warning(
+                f"YouTube rate limit hit for playlist {playlist_url}, "
+                f"rescheduling in {retry_after}s"
+            )
+            if task_history:
+                task_history.status = "PENDING"
+                task_history.add_log_message(
+                    f"Rate limited by YouTube, rescheduling in {retry_after // 60} minutes"
+                )
+                task_history.save()
+            raise self.retry(
+                exc=rate_limit_error,
+                countdown=retry_after,
+                max_retries=3,
+            )
 
         # Final cancellation check
         if check_task_cancellation(task_history):
@@ -336,6 +390,9 @@ def download_playlist(
 
         complete_task(task_history, success=True)
 
+    except YouTubeRateLimitError:
+        # Already handled above with self.retry - just re-raise
+        raise
     except Exception as e:
         if task_history:
             complete_task(task_history, success=False, error_message=str(e))
@@ -345,7 +402,6 @@ def download_playlist(
 @celery_app.task(
     bind=True, name="library_manager.tasks.download_extra_album_types_for_artist"
 )
-@require_download_lock()
 def download_extra_album_types_for_artist(
     self: Any, artist_id: int, task_id: Optional[str] = None
 ) -> None:
@@ -393,7 +449,20 @@ def download_extra_album_types_for_artist(
 
                 task_progress_callback = update_task_progress_callback
 
-        spotdl_wrapper.execute(downloader_config, task_progress_callback)
+        try:
+            spotdl_wrapper.execute(downloader_config, task_progress_callback)
+        except YouTubeRateLimitError as rate_limit_error:
+            # YouTube rate limit - reschedule task for later
+            retry_after = rate_limit_error.retry_after_seconds
+            logger.warning(
+                f"YouTube rate limit hit for artist {artist_id} extra albums, "
+                f"rescheduling in {retry_after}s"
+            )
+            raise self.retry(
+                exc=rate_limit_error,
+                countdown=retry_after,
+                max_retries=3,
+            )
     else:
         logger.info(
             f"extra album missing albums search for artist {artist.gid} is skipping since there are none missing"
@@ -404,7 +473,6 @@ def download_extra_album_types_for_artist(
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_album_by_spotify_id")
-@require_download_lock()
 def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
     """
     Download an album by its Spotify ID (not database ID).
@@ -517,6 +585,24 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
         complete_task(task_history, success=True)
         logger.info(f"Successfully downloaded album: {album.name}")
 
+    except YouTubeRateLimitError as rate_limit_error:
+        # YouTube rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"YouTube rate limit hit for album {spotify_album_id}, "
+            f"rescheduling in {retry_after}s"
+        )
+        if task_history:
+            task_history.status = "PENDING"
+            task_history.add_log_message(
+                f"Rate limited by YouTube, rescheduling in {retry_after // 60} minutes"
+            )
+            task_history.save()
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=3,
+        )
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
         logger.error(error_msg)
@@ -526,7 +612,6 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_single_track")
-@require_download_lock()
 def download_single_track(self: Any, track_id: str) -> None:
     """
     Download a single track by its Spotify ID.
@@ -574,6 +659,23 @@ def download_single_track(self: Any, track_id: str) -> None:
         complete_task(task_history, success=True)
         logger.info(f"Successfully downloaded track: {track_id}")
 
+    except YouTubeRateLimitError as rate_limit_error:
+        # YouTube rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"YouTube rate limit hit for track {track_id}, rescheduling in {retry_after}s"
+        )
+        if task_history:
+            task_history.status = "PENDING"
+            task_history.add_log_message(
+                f"Rate limited by YouTube, rescheduling in {retry_after // 60} minutes"
+            )
+            task_history.save()
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=3,
+        )
     except Exception as e:
         error_msg = f"Error downloading track: {str(e)}"
         logger.error(error_msg)

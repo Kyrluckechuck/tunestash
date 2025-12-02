@@ -7,6 +7,7 @@ from django.db.models.functions import Now
 from django.utils import timezone
 
 from celery_app import app as celery_app
+from downloader.spotdl_wrapper import YouTubeRateLimitError
 from lib.config_class import Config
 
 from .. import helpers
@@ -25,14 +26,12 @@ from .core import (
     create_task_history,
     logger,
     require_download_capability,
-    require_download_lock,
     spotdl_wrapper,
     update_task_progress,
 )
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.fetch_all_albums_for_artist")
-@require_download_lock()  # Lock required: this task makes heavy Spotify API calls, not just YouTube
 def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
     task_history = None
     try:
@@ -100,8 +99,38 @@ def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
                     task_history.error_message = "Cancelled by user"
                     task_history.save()
                 return
+            except YouTubeRateLimitError as rate_limit_error:
+                # YouTube rate limit - reschedule task for later
+                retry_after = rate_limit_error.retry_after_seconds
+                logger.warning(
+                    f"YouTube rate limit hit for artist {artist.name}, "
+                    f"rescheduling in {retry_after}s"
+                )
+                if task_history:
+                    task_history.status = "PENDING"
+                    task_history.add_log_message(
+                        f"Rate limited by YouTube, rescheduling in {retry_after // 60} minutes"
+                    )
+                    task_history.save()
+                raise self.retry(
+                    exc=rate_limit_error,
+                    countdown=retry_after,
+                    max_retries=3,
+                )
         else:
-            spotdl_wrapper.execute(downloader_config)
+            try:
+                spotdl_wrapper.execute(downloader_config)
+            except YouTubeRateLimitError as rate_limit_error:
+                retry_after = rate_limit_error.retry_after_seconds
+                logger.warning(
+                    f"YouTube rate limit hit for artist {artist_id}, "
+                    f"rescheduling in {retry_after}s"
+                )
+                raise self.retry(
+                    exc=rate_limit_error,
+                    countdown=retry_after,
+                    max_retries=3,
+                )
 
         # Final cancellation check before completion
         if check_task_cancellation(task_history):
@@ -114,6 +143,9 @@ def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
 
         complete_task(task_history, success=True)
 
+    except YouTubeRateLimitError:
+        # Already handled above with self.retry - just re-raise
+        raise
     except Exception as e:
         if task_history:
             complete_task(task_history, success=False, error_message=str(e))

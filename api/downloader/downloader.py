@@ -1,7 +1,11 @@
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 from library_manager.models import Album, Artist
+
+# Rate limiting: delay between Spotify API calls (in seconds)
+_API_CALL_DELAY_SECONDS = 0.5
 
 
 class Downloader:
@@ -64,6 +68,8 @@ class Downloader:
 
                 albums_to_create_or_update.append(new_or_updated_album_data)
 
+            # Rate limiting: delay between paginated API calls
+            time.sleep(_API_CALL_DELAY_SECONDS)
             album_iterator = self.public_client.next(album_iterator)
 
         if len(albums_to_create_or_update) == 0:
@@ -109,6 +115,9 @@ class Downloader:
             if result and "tracks" in result:
                 # Filter out None values (tracks that don't exist)
                 all_tracks.extend([t for t in result["tracks"] if t is not None])
+            # Rate limiting: delay between batch API calls
+            if i + batch_size < len(track_ids):
+                time.sleep(_API_CALL_DELAY_SECONDS)
 
         return all_tracks
 
@@ -130,6 +139,8 @@ class Downloader:
 
         while album_track_iterator is not None:
             album["tracks"]["items"].extend(album_track_iterator["items"])
+            # Rate limiting: delay between paginated API calls
+            time.sleep(_API_CALL_DELAY_SECONDS)
             album_track_iterator = self.public_client.next(album_track_iterator)
         return album
 
@@ -162,6 +173,8 @@ class Downloader:
         playlist_iterator = used_client.next(playlist["tracks"])
         while playlist_iterator is not None:
             playlist["tracks"]["items"].extend(playlist_iterator["items"])
+            # Rate limiting: delay between paginated API calls
+            time.sleep(_API_CALL_DELAY_SECONDS)
             playlist_iterator = used_client.next(playlist_iterator)
 
         return playlist

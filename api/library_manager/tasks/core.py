@@ -5,17 +5,14 @@ This module contains shared utilities used across all task modules:
 - Progress tracking and cancellation checks
 - Memory usage logging
 - Download capability validation
-- Download lock management (prevents concurrent Spotify API calls)
 """
 
 import os
 import uuid
-from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Generator, Optional, cast
+from typing import Any, Callable, Optional, cast
 
 from django.conf import settings
-from django.db import connection
 
 import psutil
 from celery.utils.log import get_task_logger
@@ -28,110 +25,6 @@ from ..models import TaskHistory
 
 class TaskCancelledException(Exception):
     """Raised when a task has been cancelled and should stop execution."""
-
-
-class DownloadLockUnavailable(Exception):
-    """Raised when the download lock cannot be acquired (another download is running)."""
-
-
-# Advisory lock ID for download tasks (arbitrary but consistent number)
-# Using a fixed ID means all download tasks compete for the same lock
-DOWNLOAD_LOCK_ID = 8675309  # Unique identifier for download lock
-
-
-@contextmanager
-def try_download_lock() -> Generator[bool, None, None]:
-    """
-    Try to acquire a PostgreSQL advisory lock for downloads.
-
-    This is a non-blocking lock - if another process holds it, we fail immediately.
-    Uses pg_try_advisory_lock which returns true/false instead of blocking.
-
-    Yields:
-        bool: True if lock was acquired, False if not
-
-    Example:
-        with try_download_lock() as acquired:
-            if acquired:
-                # Do download work
-            else:
-                # Lock not available, retry later
-    """
-    acquired = False
-    try:
-        with connection.cursor() as cursor:
-            # pg_try_advisory_lock returns true if lock acquired, false if not
-            # This is session-level lock, released when connection closes or explicitly
-            cursor.execute("SELECT pg_try_advisory_lock(%s)", [DOWNLOAD_LOCK_ID])
-            result = cursor.fetchone()
-            acquired = result[0] if result else False
-
-        yield acquired
-    finally:
-        if acquired:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_unlock(%s)", [DOWNLOAD_LOCK_ID])
-
-
-def require_download_lock(
-    retry_delay: int = 10,
-    max_delay: int = 60,
-    jitter: bool = True,
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """
-    Decorator that requires a download lock before executing a task.
-
-    If the lock is unavailable (another download is running), the task is retried
-    after a delay. These retries do NOT count toward the task's max_retries limit
-    because they're not failures - just contention.
-
-    Args:
-        retry_delay: Base delay in seconds before retry (default: 10)
-        max_delay: Maximum delay in seconds (default: 60)
-        jitter: Add randomness to delay to prevent thundering herd (default: True)
-
-    Usage:
-        @celery_app.task(bind=True)
-        @require_download_lock()
-        def download_single_album(self, album_id):
-            # This code only runs when lock is acquired
-            ...
-    """
-
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        @wraps(func)
-        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-            with try_download_lock() as acquired:
-                if acquired:
-                    logger.debug(f"Download lock acquired for task {self.request.id}")
-                    return func(self, *args, **kwargs)
-
-            # Lock not available - another download is running
-            # Calculate retry delay with optional jitter
-            import random
-
-            delay = retry_delay
-            if jitter:
-                # Add up to 50% jitter to prevent synchronized retries
-                delay = int(delay * (1 + random.random() * 0.5))
-            delay = min(delay, max_delay)
-
-            logger.info(
-                f"Download lock unavailable for task {self.request.id}, "
-                f"retrying in {delay}s (another download is in progress)"
-            )
-
-            # Use Celery's retry mechanism but don't count toward max_retries
-            # by raising Retry directly with throw=False behavior
-            raise self.retry(
-                exc=DownloadLockUnavailable("Download lock unavailable"),
-                countdown=delay,
-                max_retries=None,  # Unlimited retries for lock contention
-            )
-
-        return wrapper
-
-    return decorator
 
 
 # Initialize SpotdlWrapper

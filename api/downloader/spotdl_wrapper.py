@@ -12,6 +12,7 @@ from __future__ import annotations, division
 
 import asyncio
 import logging
+import time
 import traceback
 from argparse import Namespace
 from typing import Any
@@ -43,10 +44,16 @@ from . import __version__, spotdl_override, utils
 from .default_download_settings import DEFAULT_DOWNLOAD_SETTINGS
 from .downloader import Downloader
 from .premium_detector import PremiumDetector, PremiumStatus
+from .spotdl_override import DownloadTimeoutError
+from .spotipy_tasks import SpotifyRateLimitError
 
 # Memory management thresholds (in MB) - must match celery_app.py
 _MEMORY_WARNING_THRESHOLD_MB = 600
 _MEMORY_CHECK_INTERVAL_TRACKS = 25  # Check memory every N tracks
+
+# Rate limiting: delay between consecutive song downloads (in seconds)
+# This helps avoid hitting Spotify/YouTube rate limits during bulk operations
+_DOWNLOAD_DELAY_SECONDS = 1.0
 
 
 def _check_and_release_memory(logger: logging.Logger, track_index: int) -> None:
@@ -132,6 +139,19 @@ class PlaylistSyncError(Exception):
     def __init__(self, message: str, status_code: int | None = None):
         super().__init__(message)
         self.status_code = status_code
+
+
+class YouTubeRateLimitError(Exception):
+    """Raised when YouTube rate-limits download requests.
+
+    This error signals that the download task should release its lock and
+    reschedule itself for later. YouTube rate limits are typically long
+    (hours), so holding resources while waiting is wasteful.
+    """
+
+    def __init__(self, message: str, retry_after_seconds: int = 1800):
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 def _is_fail_fast_error(exception: Exception) -> tuple[bool, int | None]:
@@ -1068,6 +1088,42 @@ class SpotdlWrapper:
                 except PremiumExpiredException:
                     # Re-raise to abort the entire download task
                     raise
+                except DownloadTimeoutError as timeout_error:
+                    # YouTube rate limit detected - fail fast and reschedule
+                    # Don't increment failed_count as this is a transient issue
+                    self.logger.error(
+                        f"({current_track}) YouTube rate limit detected: {timeout_error}"
+                    )
+                    self.logger.warning(
+                        "Aborting download task to release resources. "
+                        "Task will be rescheduled automatically."
+                    )
+                    # Wrap in YouTubeRateLimitError with retry suggestion
+                    raise YouTubeRateLimitError(
+                        f"YouTube rate limit hit at track {track_index}/{len(queue_item)}. "
+                        f"Task should be rescheduled.",
+                        retry_after_seconds=1800,  # 30 minutes
+                    ) from timeout_error
+                except SpotifyRateLimitError as rate_limit_error:
+                    # Spotify rate limit exceeded our max wait threshold
+                    self.logger.error(
+                        f"({current_track}) Spotify rate limit exceeded threshold: "
+                        f"{rate_limit_error}"
+                    )
+                    self.logger.warning(
+                        "Aborting download task to release resources. "
+                        "Task will be rescheduled automatically."
+                    )
+                    # Re-raise wrapped in YouTubeRateLimitError for consistent handling
+                    # (despite the name, this handles both YouTube and Spotify rate limits)
+                    raise YouTubeRateLimitError(
+                        f"Spotify rate limit ({rate_limit_error.retry_after_seconds}s) "
+                        f"hit at track {track_index}/{len(queue_item)}. "
+                        f"Task should be rescheduled.",
+                        retry_after_seconds=min(
+                            rate_limit_error.retry_after_seconds, 3600
+                        ),  # Cap at 1 hour
+                    ) from rate_limit_error
                 except SpotifyException as spotify_exception:
                     # Check if this is a 401 Unauthorized error (expired token)
                     if (
@@ -1207,6 +1263,11 @@ class SpotdlWrapper:
                     # Clear any errors from the persisted object, otherwise it will continue printing old failures
                     if len(self.spotdl.downloader.errors) > 0:
                         self.spotdl.downloader.errors.clear()
+
+                    # Rate limiting: add delay between downloads to avoid hitting API limits
+                    # This runs after every track attempt (success or failure)
+                    if _DOWNLOAD_DELAY_SECONDS > 0:
+                        time.sleep(_DOWNLOAD_DELAY_SECONDS)
 
                 if track_index == len(queue_item):
                     download_queue_item.completed_at = Now()
