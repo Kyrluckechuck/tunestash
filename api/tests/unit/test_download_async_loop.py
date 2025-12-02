@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from downloader.spotdl_override import (
-    DOWNLOAD_TIMEOUT_SECONDS,
     DownloadTimeoutError,
     _download_song_sync,
+    download_multiple_songs,
     download_song,
 )
 from spotdl.download.downloader import Downloader
@@ -146,21 +146,18 @@ class TestDownloadAsyncLoop:
     def test_download_song_timeout(self, mock_downloader, mock_song):
         """Test that download_song raises DownloadTimeoutError on timeout."""
 
-        def slow_download(*args, **kwargs):
-            import time
-
-            time.sleep(DOWNLOAD_TIMEOUT_SECONDS + 1)
-            return (Mock(), "/fake/path")
-
-        # Make pool_download block forever
+        # Use a fixed sleep that's longer than the patched timeout but still
+        # short enough to not block the test for too long.
+        # The ThreadPoolExecutor will timeout after 0.1s, but the thread
+        # continues running. It will complete in ~0.5s.
         async def blocking_pool_download(song):
-            await asyncio.sleep(DOWNLOAD_TIMEOUT_SECONDS + 10)
+            await asyncio.sleep(0.5)
             return (Mock(), "/fake/path")
 
         mock_downloader.pool_download = blocking_pool_download
 
-        # Patch DOWNLOAD_TIMEOUT_SECONDS to a small value for testing
-        with patch("downloader.spotdl_override.DOWNLOAD_TIMEOUT_SECONDS", 1):
+        # Patch DOWNLOAD_TIMEOUT_SECONDS to a very small value for testing
+        with patch("downloader.spotdl_override.DOWNLOAD_TIMEOUT_SECONDS", 0.1):
             with pytest.raises(DownloadTimeoutError) as exc_info:
                 download_song(mock_downloader, mock_song)
 
@@ -278,4 +275,155 @@ class TestDownloadSongSyncHelper:
 
         # Verify downloader's loop was restored
         assert downloader.loop == original_loop
+        original_loop.close()
+
+
+class TestBatchDownload:
+    """Test batch download functionality."""
+
+    @pytest.fixture
+    def mock_songs(self):
+        """Create multiple mock songs for testing."""
+        songs = []
+        for i in range(3):
+            song = Mock(spec=Song)
+            song.name = f"Test Song {i}"
+            song.artists = [f"Test Artist {i}"]
+            songs.append(song)
+        return songs
+
+    @pytest.fixture
+    def mock_downloader(self):
+        """Create a mock downloader with pool_download method."""
+        downloader = Mock(spec=Downloader)
+        downloader.loop = asyncio.new_event_loop()
+        downloader.progress_handler = Mock()
+        downloader.progress_handler.set_song_count = Mock()
+        # pool_download is an async method that returns (song, path) tuple
+        downloader.pool_download = AsyncMock(
+            side_effect=lambda song: (song, f"/fake/path/{song.name}")
+        )
+        return downloader
+
+    def test_download_multiple_songs_basic(self, mock_downloader, mock_songs):
+        """Test basic batch download functionality."""
+
+        def worker_task():
+            result = download_multiple_songs(mock_downloader, mock_songs)
+            assert len(result) == 3
+            # Each result should be a (song, path) tuple
+            for song, path in result:
+                assert song in mock_songs
+                assert path is not None
+
+        thread = threading.Thread(target=worker_task)
+        thread.start()
+        thread.join()
+
+        # Verify pool_download was called for each song
+        assert mock_downloader.pool_download.call_count == 3
+        mock_downloader.progress_handler.set_song_count.assert_called_with(3)
+
+        mock_downloader.loop.close()
+
+    def test_download_multiple_songs_empty_list(self, mock_downloader):
+        """Test batch download with empty list returns empty list."""
+        result = download_multiple_songs(mock_downloader, [])
+        assert result == []
+        mock_downloader.loop.close()
+
+    def test_download_multiple_songs_with_failures(self, mock_downloader, mock_songs):
+        """Test batch download handles individual song failures gracefully."""
+
+        async def partial_failure(song):
+            if "Song 1" in song.name:
+                raise Exception("Download failed for song 1")
+            return (song, f"/fake/path/{song.name}")
+
+        mock_downloader.pool_download = partial_failure
+
+        def worker_task():
+            result = download_multiple_songs(mock_downloader, mock_songs)
+            assert len(result) == 3
+            # Song 1 should have None path
+            for song, path in result:
+                if "Song 1" in song.name:
+                    assert path is None
+                else:
+                    assert path is not None
+
+        thread = threading.Thread(target=worker_task)
+        thread.start()
+        thread.join()
+
+        mock_downloader.loop.close()
+
+    def test_download_multiple_songs_timeout(self, mock_downloader, mock_songs):
+        """Test that batch download raises DownloadTimeoutError on timeout."""
+
+        # Sleep longer than the patched timeout (0.3s for 3 songs) but short
+        # enough to not block the test. The thread will finish in ~0.5s.
+        async def slow_download(song):
+            await asyncio.sleep(0.5)
+            return (song, f"/fake/path/{song.name}")
+
+        mock_downloader.pool_download = slow_download
+
+        # Patch timeout to small value for testing
+        with (
+            patch("downloader.spotdl_override.BATCH_TIMEOUT_PER_SONG_SECONDS", 0.1),
+            patch("downloader.spotdl_override.DOWNLOAD_TIMEOUT_SECONDS", 0.1),
+        ):
+            with pytest.raises(DownloadTimeoutError) as exc_info:
+                download_multiple_songs(mock_downloader, mock_songs)
+
+            assert "timed out" in str(exc_info.value).lower()
+            assert "3 songs" in str(exc_info.value)
+
+        mock_downloader.loop.close()
+
+    def test_download_multiple_songs_with_running_event_loop(
+        self, mock_downloader, mock_songs
+    ):
+        """Test batch download works when called from async context."""
+
+        async def async_caller():
+            result = download_multiple_songs(mock_downloader, mock_songs)
+            assert len(result) == 3
+            return result
+
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(async_caller())
+            assert result is not None
+        finally:
+            loop.close()
+
+        mock_downloader.pool_download.assert_called()
+        mock_downloader.loop.close()
+
+    def test_download_multiple_songs_restores_loop_on_exception(
+        self, mock_downloader, mock_songs
+    ):
+        """Test that original loop is restored even if batch fails."""
+        original_loop = mock_downloader.loop
+
+        async def all_fail(song):
+            raise RuntimeError("All downloads fail")
+
+        mock_downloader.pool_download = all_fail
+
+        def worker():
+            # Even with failures, should not raise (failures are converted to None paths)
+            result = download_multiple_songs(mock_downloader, mock_songs)
+            # All should have None paths
+            for song, path in result:
+                assert path is None
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+
+        # Loop should be restored
+        assert mock_downloader.loop == original_loop
         original_loop.close()

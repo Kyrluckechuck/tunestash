@@ -23,7 +23,6 @@ from lib.config_class import Config
 from pymediainfo import MediaInfo
 from spotdl import Spotdl
 from spotdl.download.downloader import Downloader as SpotdlDownloader
-from spotdl.types.song import Song as SpotdlSong
 from spotdl.utils.config import create_settings
 from spotdl.utils.logging import init_logging
 from spotdl.utils.spotify import SpotifyClient
@@ -44,7 +43,7 @@ from . import __version__, spotdl_override, utils
 from .default_download_settings import DEFAULT_DOWNLOAD_SETTINGS
 from .downloader import Downloader
 from .premium_detector import PremiumDetector, PremiumStatus
-from .spotdl_override import DownloadTimeoutError
+from .spotdl_override import DownloadTimeoutError, song_from_track_data
 from .spotipy_tasks import SpotifyRateLimitError
 
 # Memory management thresholds (in MB) - must match celery_app.py
@@ -193,6 +192,7 @@ def _is_fail_fast_error(exception: Exception) -> tuple[bool, int | None]:
 # See spotdl_override module for more information
 Spotdl.__init__ = spotdl_override.__init__
 SpotdlDownloader.download_song = spotdl_override.download_song
+SpotdlDownloader.download_multiple_songs = spotdl_override.download_multiple_songs
 
 
 def generate_spotdl_settings(config: Config) -> Any:
@@ -351,8 +351,8 @@ class SpotdlWrapper:
 
             self.logger.info("Attempting to refresh Spotify OAuth token...")
 
-            # Force refresh by checking token expiration and refreshing if needed
-            oauth_creds = get_spotify_oauth_credentials()
+            # Force refresh - we got a 401 so the token is invalid regardless of expiration time
+            oauth_creds = get_spotify_oauth_credentials(force_refresh=True)
 
             if not oauth_creds:
                 self.logger.error(
@@ -792,6 +792,23 @@ class SpotdlWrapper:
                         self.logger.warning(f"Song not found in database: {song_gid}")
                         continue
 
+        # Enrich track metadata with genres, publisher, copyright before downloading
+        # This batch-fetches album and artist data efficiently (~5 API calls for 100 tracks)
+        if download_queue:
+            all_tracks = [
+                track for queue_item in download_queue for track in queue_item
+            ]
+            if all_tracks:
+                self.logger.info(
+                    f"Enriching metadata for {len(all_tracks)} tracks (batch fetching genres, etc.)"
+                )
+                try:
+                    self.downloader.enrich_tracks_metadata(all_tracks)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to enrich track metadata (will continue without): {e}"
+                    )
+
         if len(download_queue) > 0:
             one_queue_increment = (1 / len(download_queue)) * 1000
 
@@ -997,9 +1014,10 @@ class SpotdlWrapper:
                             artist=artist, song=db_song
                         )
 
-                    song_success, output_path = self.spotdl.download(
-                        SpotdlSong.from_url(track["external_urls"]["spotify"])
-                    )
+                    # Use song_from_track_data() to avoid 3 extra API calls per song
+                    # that SpotdlSong.from_url() would make (track, artist, album)
+                    spotdl_song = song_from_track_data(track)
+                    song_success, output_path = self.spotdl.download(spotdl_song)
                     if song_success is None or output_path is None:
                         self.logger.debug(song_success)
                         self.logger.debug(f"output_path: {output_path}")
@@ -1141,10 +1159,9 @@ class SpotdlWrapper:
                                 self.logger.info(
                                     f'({current_track}) Retrying download after token refresh: "{track["name"]}"'
                                 )
+                                # Reuse the spotdl_song we already created
                                 song_success, output_path = self.spotdl.download(
-                                    SpotdlSong.from_url(
-                                        track["external_urls"]["spotify"]
-                                    )
+                                    spotdl_song
                                 )
                                 if song_success is None or output_path is None:
                                     spotdl_errors = list(self.spotdl.downloader.errors)

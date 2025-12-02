@@ -121,6 +121,132 @@ class Downloader:
 
         return all_tracks
 
+    def get_albums_batch(self, album_ids: List[str]) -> List[Any]:
+        """Batch fetch multiple albums in a single API call.
+
+        Uses Spotify's "Get Several Albums" endpoint which supports up to 20 albums
+        per request, useful for enriching track metadata with full album details.
+
+        Args:
+            album_ids: List of Spotify album IDs (max 20 per call, will batch if more)
+
+        Returns:
+            List of album objects from the API
+        """
+        if not album_ids:
+            return []
+
+        all_albums = []
+        batch_size = 20  # Spotify limit for albums endpoint
+
+        for i in range(0, len(album_ids), batch_size):
+            batch = album_ids[i : i + batch_size]
+            result = self.public_client.albums(batch)
+            if result and "albums" in result:
+                all_albums.extend([a for a in result["albums"] if a is not None])
+            if i + batch_size < len(album_ids):
+                time.sleep(_API_CALL_DELAY_SECONDS)
+
+        return all_albums
+
+    def get_artists_batch(self, artist_ids: List[str]) -> List[Any]:
+        """Batch fetch multiple artists in a single API call.
+
+        Uses Spotify's "Get Several Artists" endpoint which supports up to 50 artists
+        per request, useful for fetching artist genres.
+
+        Args:
+            artist_ids: List of Spotify artist IDs (max 50 per call, will batch if more)
+
+        Returns:
+            List of artist objects from the API
+        """
+        if not artist_ids:
+            return []
+
+        all_artists = []
+        batch_size = 50  # Spotify limit for artists endpoint
+
+        for i in range(0, len(artist_ids), batch_size):
+            batch = artist_ids[i : i + batch_size]
+            result = self.public_client.artists(batch)
+            if result and "artists" in result:
+                all_artists.extend([a for a in result["artists"] if a is not None])
+            if i + batch_size < len(artist_ids):
+                time.sleep(_API_CALL_DELAY_SECONDS)
+
+        return all_artists
+
+    def enrich_tracks_metadata(
+        self, tracks: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Enrich track metadata with full album and artist details.
+
+        Efficiently batch-fetches album and artist data to add genres, publisher,
+        copyright, and other metadata that isn't included in playlist/album track
+        listings.
+
+        For a playlist with 100 tracks from ~80 artists and ~60 albums, this uses
+        ~5 API calls instead of 200 (2 per track for artist+album).
+
+        Args:
+            tracks: List of track dicts from playlist/album fetch
+
+        Returns:
+            List of tracks with enriched metadata in '_enriched' key
+        """
+        if not tracks:
+            return tracks
+
+        # Collect unique album and artist IDs
+        album_ids = set()
+        artist_ids = set()
+
+        for track in tracks:
+            album = track.get("album", {})
+            if album.get("id"):
+                album_ids.add(album["id"])
+            artists = track.get("artists", [])
+            if artists and artists[0].get("id"):
+                artist_ids.add(artists[0]["id"])
+
+        # Batch fetch albums and artists
+        albums_data = self.get_albums_batch(list(album_ids))
+        artists_data = self.get_artists_batch(list(artist_ids))
+
+        # Build lookup dicts
+        albums_by_id = {a["id"]: a for a in albums_data}
+        artists_by_id = {a["id"]: a for a in artists_data}
+
+        # Enrich each track
+        for track in tracks:
+            album_id = track.get("album", {}).get("id")
+            artist_id = (
+                track.get("artists", [{}])[0].get("id")
+                if track.get("artists")
+                else None
+            )
+
+            enriched = {}
+            if album_id and album_id in albums_by_id:
+                full_album = albums_by_id[album_id]
+                enriched["album_genres"] = full_album.get("genres", [])
+                enriched["publisher"] = full_album.get("label", "")
+                enriched["copyrights"] = full_album.get("copyrights", [])
+                enriched["disc_count"] = (
+                    int(full_album["tracks"]["items"][-1]["disc_number"])
+                    if full_album.get("tracks", {}).get("items")
+                    else 1
+                )
+
+            if artist_id and artist_id in artists_by_id:
+                full_artist = artists_by_id[artist_id]
+                enriched["artist_genres"] = full_artist.get("genres", [])
+
+            track["_enriched"] = enriched
+
+        return tracks
+
     def create_album(self, album_id: str, artist: Artist) -> Album:
         album_details = self.get_album(album_id)
         album = Album.objects.create(

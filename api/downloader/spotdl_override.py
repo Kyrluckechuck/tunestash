@@ -1,9 +1,11 @@
 import asyncio
+import gc
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from downloader.spotify_auth_helper import get_spotify_oauth_credentials
 from spotdl.download.downloader import Downloader
@@ -17,11 +19,82 @@ logger = logging.getLogger(__name__)
 # If exceeded, assume we're rate-limited and fail fast to release resources
 DOWNLOAD_TIMEOUT_SECONDS = 300  # 5 minutes per song
 
+# Timeout multiplier for batch downloads (per song in batch)
+# Batches get more time since multiple songs download in parallel
+BATCH_TIMEOUT_PER_SONG_SECONDS = 180  # 3 minutes per song in batch
+
 
 class DownloadTimeoutError(Exception):
     """Raised when a song download takes too long, likely due to rate limiting."""
 
     pass
+
+
+def song_from_track_data(track: Dict[str, Any]) -> Song:
+    """
+    Create a SpotDL Song object from Spotify track data without additional API calls.
+
+    This avoids the 3 API calls that Song.from_url() makes (track, artist, album)
+    by using the track data we already have from playlist/album fetches.
+
+    If the track has been enriched via Downloader.enrich_tracks_metadata(), the
+    '_enriched' key contains additional data (genres, publisher, copyright, disc_count).
+
+    Args:
+        track: Spotify track dict from playlist/album fetch, optionally with '_enriched'
+
+    Returns:
+        SpotDL Song object ready for download
+    """
+    album = track.get("album", {})
+    release_date = album.get("release_date", "1970-01-01")
+    enriched = track.get("_enriched", {})
+
+    # Get the best quality cover image
+    cover_url = None
+    if album.get("images"):
+        images = album["images"]
+        if images:
+            cover_url = max(
+                images,
+                key=lambda i: i.get("width", 0) * i.get("height", 0),
+            ).get("url")
+
+    # Combine album + artist genres (same as Song.from_url does)
+    genres = enriched.get("album_genres", []) + enriched.get("artist_genres", [])
+
+    # Get copyright text from enriched data
+    copyright_text = None
+    copyrights = enriched.get("copyrights", [])
+    if copyrights:
+        copyright_text = copyrights[0].get("text")
+
+    return Song(
+        name=track.get("name", ""),
+        artists=[a["name"] for a in track.get("artists", [])],
+        artist=track["artists"][0]["name"] if track.get("artists") else "",
+        artist_id=track["artists"][0]["id"] if track.get("artists") else None,
+        genres=genres,
+        disc_number=track.get("disc_number", 1),
+        disc_count=enriched.get("disc_count", 1),
+        album_name=album.get("name", ""),
+        album_artist=album["artists"][0]["name"] if album.get("artists") else "",
+        album_id=album.get("id"),
+        album_type=album.get("album_type"),
+        duration=int(track.get("duration_ms", 0) / 1000),
+        year=int(release_date[:4]) if release_date else 1970,
+        date=release_date or "1970-01-01",
+        track_number=track.get("track_number", 1),
+        tracks_count=album.get("total_tracks", 1),
+        song_id=track.get("id", ""),
+        explicit=track.get("explicit", False),
+        publisher=enriched.get("publisher", ""),
+        url=track.get("external_urls", {}).get("spotify", ""),
+        isrc=track.get("external_ids", {}).get("isrc"),
+        cover_url=cover_url,
+        copyright_text=copyright_text,
+        popularity=track.get("popularity"),
+    )
 
 
 # Class SpotDl
@@ -161,3 +234,123 @@ def _download_song_sync(
         # Restore original loop reference and clean up
         downloader.loop = original_loop
         loop.close()
+
+        # Clear accumulated memory from yt-dlp and regex caches
+        _cleanup_download_memory(downloader)
+
+
+def _cleanup_download_memory(downloader: "Downloader") -> None:
+    """
+    Clean up memory accumulated during download to prevent OOM over many downloads.
+
+    yt-dlp accumulates memory through:
+    - Lazy-loaded extractor instances (_ies_instances dict)
+    - Compiled regex patterns (Python's re module cache)
+    - Internal caches in extractors
+
+    This should be called after each download to prevent memory growth.
+    """
+    # Clear yt-dlp's lazy-loaded extractor instances
+    audio_providers = getattr(downloader, "audio_providers", None)
+    if audio_providers:
+        for audio_provider in audio_providers:
+            audio_handler = getattr(audio_provider, "audio_handler", None)
+            if audio_handler:
+                ies_instances = getattr(audio_handler, "_ies_instances", None)
+                if ies_instances is not None:
+                    ies_instances.clear()
+
+    # Clear Python's compiled regex cache (yt-dlp uses many regex patterns)
+    re.purge()
+
+    # Force garbage collection to reclaim memory
+    gc.collect()
+
+
+def download_multiple_songs(
+    self: "Downloader", songs: List[Song]
+) -> List[Tuple[Song, Optional[Path]]]:
+    """
+    Download multiple songs in a batch with timeout protection.
+
+    This is more efficient than downloading songs one at a time because:
+    - Single event loop creation for the entire batch
+    - asyncio.gather runs downloads concurrently
+    - Memory cleanup happens once per batch instead of per song
+
+    If the batch download takes too long, raises DownloadTimeoutError.
+
+    ### Arguments
+    - songs: List of songs to download.
+
+    ### Returns
+    - List of tuples with (song, path) for each song (path is None if failed).
+
+    ### Raises
+    - DownloadTimeoutError: If batch download exceeds timeout
+    """
+    if not songs:
+        return []
+
+    # Calculate timeout based on batch size
+    batch_timeout = max(
+        DOWNLOAD_TIMEOUT_SECONDS,
+        len(songs) * BATCH_TIMEOUT_PER_SONG_SECONDS,
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_download_multiple_songs_sync, self, songs)
+        try:
+            results = future.result(timeout=batch_timeout)
+            return results
+        except FuturesTimeoutError:
+            logger.error(
+                f"Batch download timed out after {batch_timeout}s for "
+                f"{len(songs)} songs - likely rate-limited by YouTube"
+            )
+            raise DownloadTimeoutError(
+                f"Batch download of {len(songs)} songs timed out after {batch_timeout}s. "
+                f"YouTube may be rate-limiting requests."
+            )
+
+
+def _download_multiple_songs_sync(
+    downloader: "Downloader", songs: List[Song]
+) -> List[Tuple[Song, Optional[Path]]]:
+    """
+    Helper function to download multiple songs synchronously in a separate thread.
+    This avoids event loop conflicts when called from an async context.
+
+    Uses asyncio.gather to download songs concurrently within a single event loop.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    original_loop = downloader.loop
+    downloader.loop = loop
+
+    try:
+        downloader.progress_handler.set_song_count(len(songs))
+
+        # Create download tasks for all songs
+        async def download_batch():
+            tasks = [downloader.pool_download(song) for song in songs]
+            return await asyncio.gather(*tasks, return_exceptions=True)
+
+        results = loop.run_until_complete(download_batch())
+
+        # Process results - convert exceptions to (song, None) tuples
+        processed_results = []
+        for song, result in zip(songs, results):
+            if isinstance(result, Exception):
+                logger.warning(f"Failed to download '{song.name}': {result}")
+                processed_results.append((song, None))
+            else:
+                processed_results.append(result)
+
+        return processed_results
+    finally:
+        downloader.loop = original_loop
+        loop.close()
+
+        _cleanup_download_memory(downloader)
