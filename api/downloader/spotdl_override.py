@@ -110,66 +110,24 @@ def download_song(self: "Downloader", song: Song) -> Tuple[Song, Optional[Path]]
     ### Raises
     - DownloadTimeoutError: If download exceeds timeout (likely rate-limited)
     """
-    # Check if there's already a running event loop
-    try:
-        asyncio.get_running_loop()
-        # There's a running loop - we need to run download in a separate thread
-        # to avoid "this event loop is already running" error
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_download_song_sync, self, song)
-            try:
-                result = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
-                return result
-            except FuturesTimeoutError:
-                logger.error(
-                    f"Download timed out after {DOWNLOAD_TIMEOUT_SECONDS}s for "
-                    f"'{song.name}' - likely rate-limited by YouTube"
-                )
-                raise DownloadTimeoutError(
-                    f"Download timed out for '{song.name}' after {DOWNLOAD_TIMEOUT_SECONDS}s. "
-                    f"YouTube may be rate-limiting requests."
-                )
-    except RuntimeError:
-        # No running loop - proceed normally
-        pass
-
-    # Ensure we have a valid event loop in this thread
-    try:
-        current_loop = asyncio.get_event_loop()
-        if current_loop.is_closed():
-            raise RuntimeError("Current event loop is closed")
-        # Check if the loop belongs to this thread
-        if current_loop != self.loop:
-            asyncio.set_event_loop(self.loop)
-    except RuntimeError:
-        # No event loop exists in this thread, set our loop
-        asyncio.set_event_loop(self.loop)
-
-    self.progress_handler.set_song_count(1)
-
-    # For non-threaded case, we use asyncio timeout
-    # Run with timeout to detect rate limiting
-    try:
-        loop = asyncio.get_event_loop()
-        results = loop.run_until_complete(
-            asyncio.wait_for(
-                asyncio.to_thread(self.download_multiple_songs, [song]),
-                timeout=DOWNLOAD_TIMEOUT_SECONDS,
+    # Always run the download in a separate thread with its own event loop.
+    # This is required for Python 3.13+ compatibility where asyncio.gather()
+    # fails if called before run_until_complete() starts the loop.
+    # Using a thread pool also provides clean timeout handling.
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_download_song_sync, self, song)
+        try:
+            result = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
+            return result
+        except FuturesTimeoutError:
+            logger.error(
+                f"Download timed out after {DOWNLOAD_TIMEOUT_SECONDS}s for "
+                f"'{song.name}' - likely rate-limited by YouTube"
             )
-        )
-    except asyncio.TimeoutError:
-        logger.error(
-            f"Download timed out after {DOWNLOAD_TIMEOUT_SECONDS}s for "
-            f"'{song.name}' - likely rate-limited by YouTube"
-        )
-        raise DownloadTimeoutError(
-            f"Download timed out for '{song.name}' after {DOWNLOAD_TIMEOUT_SECONDS}s. "
-            f"YouTube may be rate-limiting requests."
-        )
-
-    # Type cast to match expected return type
-    result = results[0]
-    return result  # type: ignore
+            raise DownloadTimeoutError(
+                f"Download timed out for '{song.name}' after {DOWNLOAD_TIMEOUT_SECONDS}s. "
+                f"YouTube may be rate-limiting requests."
+            )
 
 
 def _download_song_sync(
@@ -178,9 +136,28 @@ def _download_song_sync(
     """
     Helper function to download a song synchronously in a separate thread.
     This avoids event loop conflicts when called from an async context.
+
+    In Python 3.13+, asyncio.gather() requires a running event loop in the
+    current thread. We create a fresh event loop for this thread and call
+    pool_download directly within a running loop context.
     """
-    # In this new thread, there's no event loop yet
-    asyncio.set_event_loop(downloader.loop)
-    downloader.progress_handler.set_song_count(1)
-    results = downloader.download_multiple_songs([song])
-    return results[0]  # type: ignore
+    # Create a fresh event loop for this thread (Python 3.13+ requirement)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Update downloader's loop reference so internal async code uses our loop
+    original_loop = downloader.loop
+    downloader.loop = loop
+
+    try:
+        downloader.progress_handler.set_song_count(1)
+
+        # Call pool_download directly within a running event loop
+        # This avoids the Python 3.13 issue where asyncio.gather() fails
+        # because it's called before run_until_complete starts the loop
+        result = loop.run_until_complete(downloader.pool_download(song))
+        return result
+    finally:
+        # Restore original loop reference and clean up
+        downloader.loop = original_loop
+        loop.close()
