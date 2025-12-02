@@ -419,12 +419,12 @@ jobs:
               --jq '.[].name' > /tmp/current_branches.txt
 
             # Extract branch images from package versions (both branch-* and direct branch names)
-            # Excludes: latest, sha-*, buildcache tags
+            # Excludes: latest, sha-*, buildcache, cache tags
             cat /tmp/all_versions.json | jq -r '
               .[] |
-              select(.metadata.container.tags[]? | test("^branch-") or (test("^[a-z0-9._-]+$") and (. != "latest") and (test("^sha-") | not) and (. != "buildcache"))) |
+              select(.metadata.container.tags[]? | test("^branch-") or (test("^[a-z0-9._-]+$") and (. != "latest") and (test("^sha-") | not) and (. != "buildcache") and (. != "cache"))) |
               .metadata.container.tags[] |
-              select(test("^branch-") or (test("^[a-z0-9._-]+$") and (. != "latest") and (test("^sha-") | not) and (. != "buildcache"))) |
+              select(test("^branch-") or (test("^[a-z0-9._-]+$") and (. != "latest") and (test("^sha-") | not) and (. != "buildcache") and (. != "cache"))) |
               if test("^branch-") then sub("^branch-"; "") else . end
             ' | sort | uniq > /tmp/image_branches.txt
 
