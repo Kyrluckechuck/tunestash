@@ -134,11 +134,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        # BuildKit automatically uses GitHub Actions cache via docker-bake.hcl
-        # Caching strategy (configured in docker-bake.hcl):
-        # 1. GitHub Actions cache (type=gha) - Fast, 10GB limit per repo
-        # 2. Registry cache (type=registry) - No limits, persists across workflows
-        # This caches yarn/pip dependencies, reducing build time significantly
 
       - name: Lowercase repo owner
         id: owner
@@ -150,30 +145,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create temp dirs for volumes
-        id: mktemp
-        run: |
-          CONFIG_DIR="${RUNNER_TEMP}/slm_config"
-          MUSIC_DIR="${RUNNER_TEMP}/slm_music"
-          mkdir -p "$CONFIG_DIR/db" "$MUSIC_DIR"
-
-          # Create minimal settings.yaml for CI
-          cat > "$CONFIG_DIR/settings.yaml" << 'EOF'
-          # Minimal CI configuration
-          default:
-            cookies_location: "/config/youtube_music_cookies.txt"
-            final_path: "/mnt/music_spotify"
-            ALBUM_TYPES_TO_DOWNLOAD:
-              - single
-              - album
-              - compilation
-            ALBUM_GROUPS_TO_IGNORE:
-              - appears_on
-          EOF
-
-          echo "config-dir=$CONFIG_DIR" >> "$GITHUB_OUTPUT"
-          echo "music-dir=$MUSIC_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Extract branch name
         id: branch
@@ -188,30 +159,19 @@ jobs:
           echo "name=$SAFE_BRANCH" >> "$GITHUB_OUTPUT"
           echo "original=$BRANCH" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push images in parallel using docker-bake
-        run: |
-          # Set variables for docker-bake
-          export REGISTRY="ghcr.io"
-          export REPO_OWNER="${{ steps.owner.outputs.value }}"
-          export SHA="${{ github.sha }}"
-          export PLATFORMS="linux/amd64,linux/arm64"
-
-          # Determine branch name for tagging
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            export BRANCH="main"
-            echo "🚀 Main branch push - building production images"
-          else
-            export BRANCH="${{ steps.branch.outputs.name }}"
-            echo "🔨 Building images for branch: $BRANCH"
-          fi
-
-          # Build and push both images in parallel using docker-bake
-          echo "🚀 Building backend and frontend in parallel with docker-bake..."
-          docker buildx bake --push
-
-          echo "✅ Multi-arch images built and pushed successfully"
-          echo "::notice title=Images Built::Backend: ghcr.io/$REPO_OWNER/tunestash:sha-$SHA"
-          echo "::notice title=Images Built::Frontend: ghcr.io/$REPO_OWNER/tunestash-frontend:sha-$SHA"
+      - name: Build and push images
+        uses: docker/bake-action@v5
+        env:
+          REGISTRY: ghcr.io
+          REPO_OWNER: ${{ steps.owner.outputs.value }}
+          SHA: ${{ github.sha }}
+          PLATFORMS: linux/amd64,linux/arm64
+          BRANCH: ${{ github.ref == 'refs/heads/main' && 'main' || steps.branch.outputs.name }}
+        with:
+          push: true
+          # Cache configuration is in docker-bake.hcl with per-target settings
+          # GHA cache: type=gha,scope=backend/frontend (fast, per-branch)
+          # Registry cache: tunestash:cache / tunestash-frontend:cache (fallback)
 
   # =============================================================================
   # Job 5: Docker integration test (runs after tests AND build complete)
@@ -237,27 +197,19 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract branch name
-        id: branch
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BRANCH="${{ github.head_ref }}"
-          else
-            BRANCH=${GITHUB_REF#refs/heads/}
-          fi
-          SAFE_BRANCH=$(echo "$BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g' | tr '[:upper:]' '[:lower:]')
-          echo "name=$SAFE_BRANCH" >> "$GITHUB_OUTPUT"
-
       - name: Load pre-built images locally for testing
+        uses: docker/bake-action@v5
+        env:
+          REGISTRY: ghcr.io
+          REPO_OWNER: ${{ steps.owner.outputs.value }}
+          SHA: ${{ github.sha }}
+        with:
+          targets: local
+          load: true
+          # Uses GHA cache from docker-build job (same workflow, same branch)
+
+      - name: Verify images loaded
         run: |
-          # Set variables for docker-bake
-          export REGISTRY="ghcr.io"
-          export REPO_OWNER="${{ steps.owner.outputs.value }}"
-          export SHA="${{ github.sha }}"
-
-          echo "📦 Loading pre-built images from cache for testing..."
-          docker buildx bake local
-
           echo "✅ Images loaded for testing:"
           docker images | grep -E "(local-backend|local-frontend)"
 
