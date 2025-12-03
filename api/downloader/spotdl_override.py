@@ -250,7 +250,19 @@ def _cleanup_download_memory(downloader: "Downloader") -> None:
 
     This should be called after each download to prevent memory growth.
     """
+    import os
+
+    import psutil
+
+    process = psutil.Process(os.getpid())
+
+    def get_rss_mb():
+        return process.memory_info().rss / 1024 / 1024
+
+    initial_rss = get_rss_mb()
+
     # Clear yt-dlp's lazy-loaded extractor instances
+    ies_count = 0
     audio_providers = getattr(downloader, "audio_providers", None)
     if audio_providers:
         for audio_provider in audio_providers:
@@ -258,13 +270,29 @@ def _cleanup_download_memory(downloader: "Downloader") -> None:
             if audio_handler:
                 ies_instances = getattr(audio_handler, "_ies_instances", None)
                 if ies_instances is not None:
+                    ies_count = len(ies_instances)
                     ies_instances.clear()
+
+    after_ies_clear = get_rss_mb()
 
     # Clear Python's compiled regex cache (yt-dlp uses many regex patterns)
     re.purge()
 
+    after_re_purge = get_rss_mb()
+
     # Force garbage collection to reclaim memory
     gc.collect()
+
+    after_gc = get_rss_mb()
+
+    # Log breakdown of what each step released (only if significant)
+    total_released = initial_rss - after_gc
+    if total_released > 1 or ies_count > 0:  # Log if released >1MB or had extractors
+        logger.info(
+            f"[MEMORY DOWNLOAD] ies_clear: {initial_rss - after_ies_clear:.1f}MB "
+            f"({ies_count} extractors), re.purge: {after_ies_clear - after_re_purge:.1f}MB, "
+            f"gc: {after_re_purge - after_gc:.1f}MB, total: {total_released:.1f}MB"
+        )
 
 
 def download_multiple_songs(

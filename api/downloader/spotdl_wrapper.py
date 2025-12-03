@@ -44,7 +44,11 @@ from . import __version__, spotdl_override, utils
 from .default_download_settings import DEFAULT_DOWNLOAD_SETTINGS
 from .downloader import Downloader
 from .premium_detector import PremiumDetector, PremiumStatus
-from .spotdl_override import DownloadTimeoutError, song_from_track_data
+from .spotdl_override import (
+    DownloadTimeoutError,
+    _cleanup_download_memory,
+    song_from_track_data,
+)
 from .spotipy_tasks import SpotifyRateLimitError
 
 # Memory management thresholds (in MB) - must match celery_app.py
@@ -56,16 +60,22 @@ _MEMORY_CHECK_INTERVAL_TRACKS = 25  # Check memory every N tracks
 _DOWNLOAD_DELAY_SECONDS = 1.0
 
 
-def _check_and_release_memory(logger: logging.Logger, track_index: int) -> None:
+def _check_and_release_memory(
+    logger: logging.Logger,
+    track_index: int,
+    spotdl_downloader: SpotdlDownloader | None = None,
+) -> None:
     """
     Periodically check memory usage and attempt to release memory during long downloads.
 
     This function is called during long-running download operations to prevent OOM kills.
-    It uses malloc_trim() on Linux to return freed memory to the OS.
+    It clears yt-dlp's internal caches and uses malloc_trim() on Linux to return freed
+    memory to the OS.
 
     Args:
         logger: Logger instance for output
         track_index: Current track number (used for periodic check interval)
+        spotdl_downloader: Optional SpotDL downloader instance for clearing yt-dlp caches
     """
     # Only check every N tracks to avoid overhead
     if track_index % _MEMORY_CHECK_INTERVAL_TRACKS != 0:
@@ -81,8 +91,17 @@ def _check_and_release_memory(logger: logging.Logger, track_index: int) -> None:
         rss_mb = process.memory_info().rss / 1024 / 1024
 
         if rss_mb >= _MEMORY_WARNING_THRESHOLD_MB:
-            # Run garbage collection
-            gc.collect()
+            initial_rss = rss_mb
+
+            # Clear yt-dlp's internal caches (extractors, regex patterns)
+            # This is the key to preventing memory growth during long downloads
+            if spotdl_downloader is not None:
+                _cleanup_download_memory(spotdl_downloader)
+            else:
+                # Fallback: just run gc if no downloader provided
+                gc.collect()
+
+            after_cleanup = process.memory_info().rss / 1024 / 1024
 
             # Try malloc_trim on Linux to release memory to OS
             try:
@@ -93,19 +112,18 @@ def _check_and_release_memory(logger: logging.Logger, track_index: int) -> None:
             except (OSError, AttributeError):
                 pass  # Not on Linux/glibc
 
-            # Check if we released anything
-            new_rss_mb = process.memory_info().rss / 1024 / 1024
-            released = rss_mb - new_rss_mb
+            after_malloc_trim = process.memory_info().rss / 1024 / 1024
 
-            if released > 5:  # Only log if we released >5MB
-                logger.info(
-                    f"[MEMORY] Released {released:.1f} MB during download "
-                    f"({rss_mb:.1f} -> {new_rss_mb:.1f} MB) at track {track_index}"
-                )
-            elif rss_mb >= _MEMORY_WARNING_THRESHOLD_MB:
-                logger.warning(
-                    f"[MEMORY] High memory usage: {rss_mb:.1f} MB at track {track_index}"
-                )
+            # Log breakdown of what each step released
+            cleanup_released = initial_rss - after_cleanup
+            malloc_trim_released = after_cleanup - after_malloc_trim
+            total_released = initial_rss - after_malloc_trim
+
+            logger.info(
+                f"[MEMORY MID-TASK] Track {track_index}: "
+                f"cleanup: {cleanup_released:.1f}MB, malloc_trim: {malloc_trim_released:.1f}MB, "
+                f"total: {total_released:.1f}MB ({initial_rss:.1f} -> {after_malloc_trim:.1f}MB)"
+            )
     except Exception:
         pass  # Don't let memory checks break downloads
 
@@ -998,7 +1016,10 @@ class SpotdlWrapper:
                     )
 
                 # Periodic memory management to prevent OOM during long downloads
-                _check_and_release_memory(self.logger, track_index)
+                # Pass the SpotDL downloader to clear yt-dlp's internal caches
+                _check_and_release_memory(
+                    self.logger, track_index, self.spotdl.downloader
+                )
 
                 # Initialize db_song to None so exception handlers can check if it was created
                 db_song = None
