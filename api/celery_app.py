@@ -306,10 +306,10 @@ def _log_memory_profile(context: str = "unknown") -> None:
             logger.info(
                 f"[MEMORY PROFILE] Top memory growth since last check ({context}):"
             )
-            for stat in growth:
+            for diff in growth:
                 logger.info(
-                    f"  +{stat.size_diff / 1024 / 1024:.1f}MB "
-                    f"(total: {stat.size / 1024 / 1024:.1f}MB) - {stat.traceback}"
+                    f"  +{diff.size_diff / 1024 / 1024:.1f}MB "
+                    f"(total: {diff.size / 1024 / 1024:.1f}MB) - {diff.traceback}"
                 )
 
     _last_tracemalloc_snapshot = snapshot
