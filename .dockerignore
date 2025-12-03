@@ -83,6 +83,7 @@ Spotify/
 temp/
 *.log
 logs/
+api/.cache
 
 # TanStack Router generated files
 frontend/.tanstack/
