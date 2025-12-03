@@ -361,6 +361,19 @@ class Downloader:
 
         if "album" in url:
             album = self.get_album(uri)
+            # Album tracks are "simplified" and don't include album data.
+            # Inject album metadata so song_from_track_data() has complete info.
+            album_info = {
+                "id": album.get("id"),
+                "name": album.get("name"),
+                "artists": album.get("artists", []),
+                "images": album.get("images", []),
+                "release_date": album.get("release_date"),
+                "total_tracks": album.get("total_tracks"),
+                "album_type": album.get("album_type"),
+            }
+            for track in album["tracks"]["items"]:
+                track["album"] = album_info
             download_queue.extend(album["tracks"]["items"])
             if include_metadata:
                 return download_queue, {"type": "album", "id": uri}

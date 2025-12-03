@@ -79,7 +79,7 @@ def song_from_track_data(track: Dict[str, Any]) -> Song:
         disc_count=enriched.get("disc_count", 1),
         album_name=album.get("name", ""),
         album_artist=album["artists"][0]["name"] if album.get("artists") else "",
-        album_id=album.get("id"),
+        album_id=album.get("id", ""),
         album_type=album.get("album_type"),
         duration=int(track.get("duration_ms", 0) / 1000),
         year=int(release_date[:4]) if release_date else 1970,
