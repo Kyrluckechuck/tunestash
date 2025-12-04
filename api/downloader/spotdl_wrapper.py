@@ -53,7 +53,9 @@ from .spotipy_tasks import SpotifyRateLimitError
 
 # Memory management thresholds (in MB) - must match celery_app.py
 _MEMORY_WARNING_THRESHOLD_MB = 600
-_MEMORY_CHECK_INTERVAL_TRACKS = 25  # Check memory every N tracks
+_MEMORY_CHECK_INTERVAL_TRACKS = (
+    10  # Check memory every N tracks (reduced for better visibility)
+)
 
 # Rate limiting: delay between consecutive song downloads (in seconds)
 # This helps avoid hitting Spotify/YouTube rate limits during bulk operations
@@ -81,17 +83,25 @@ def _check_and_release_memory(
         process = psutil.Process(os.getpid())
         rss_mb = process.memory_info().rss / 1024 / 1024
 
-        if rss_mb >= _MEMORY_WARNING_THRESHOLD_MB:
-            initial_rss = rss_mb
-            _malloc_trim()
-            final_rss = process.memory_info().rss / 1024 / 1024
-            released = initial_rss - final_rss
+        # Always log memory status at checkpoints for visibility
+        initial_rss = rss_mb
 
-            if released > 1:  # Only log if meaningful release
-                logger.info(
-                    f"[MEMORY MID-TASK] Track {track_index}: "
-                    f"released {released:.1f}MB ({initial_rss:.1f} -> {final_rss:.1f}MB)"
-                )
+        # Always try to release memory, not just when above threshold
+        _malloc_trim()
+        final_rss = process.memory_info().rss / 1024 / 1024
+        released = initial_rss - final_rss
+
+        # Determine log level based on memory usage
+        if final_rss >= _MEMORY_WARNING_THRESHOLD_MB:
+            logger.warning(
+                f"[MEMORY MID-TASK] Track {track_index}: {final_rss:.0f}MB "
+                f"(released {released:.1f}MB) ⚠️ ABOVE THRESHOLD"
+            )
+        else:
+            logger.info(
+                f"[MEMORY MID-TASK] Track {track_index}: {final_rss:.0f}MB "
+                f"(released {released:.1f}MB)"
+            )
     except Exception:
         pass  # Don't let memory checks break downloads
 
