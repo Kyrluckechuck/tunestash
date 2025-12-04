@@ -46,7 +46,7 @@ from .downloader import Downloader
 from .premium_detector import PremiumDetector, PremiumStatus
 from .spotdl_override import (
     DownloadTimeoutError,
-    _cleanup_download_memory,
+    _malloc_trim,
     song_from_track_data,
 )
 from .spotipy_tasks import SpotifyRateLimitError
@@ -63,26 +63,17 @@ _DOWNLOAD_DELAY_SECONDS = 1.0
 def _check_and_release_memory(
     logger: logging.Logger,
     track_index: int,
-    spotdl_downloader: SpotdlDownloader | None = None,
 ) -> None:
     """
-    Periodically check memory usage and attempt to release memory during long downloads.
+    Periodically release memory back to OS during long downloads.
 
-    This function is called during long-running download operations to prevent OOM kills.
-    It clears yt-dlp's internal caches and uses malloc_trim() on Linux to return freed
-    memory to the OS.
-
-    Args:
-        logger: Logger instance for output
-        track_index: Current track number (used for periodic check interval)
-        spotdl_downloader: Optional SpotDL downloader instance for clearing yt-dlp caches
+    Uses malloc_trim() on Linux to return freed memory to the OS.
+    Only runs every _MEMORY_CHECK_INTERVAL_TRACKS tracks to minimize overhead.
     """
-    # Only check every N tracks to avoid overhead
     if track_index % _MEMORY_CHECK_INTERVAL_TRACKS != 0:
         return
 
     try:
-        import gc
         import os
 
         import psutil
@@ -92,38 +83,15 @@ def _check_and_release_memory(
 
         if rss_mb >= _MEMORY_WARNING_THRESHOLD_MB:
             initial_rss = rss_mb
+            _malloc_trim()
+            final_rss = process.memory_info().rss / 1024 / 1024
+            released = initial_rss - final_rss
 
-            # Clear yt-dlp's internal caches (extractors, regex patterns)
-            # This is the key to preventing memory growth during long downloads
-            if spotdl_downloader is not None:
-                _cleanup_download_memory(spotdl_downloader)
-            else:
-                # Fallback: just run gc if no downloader provided
-                gc.collect()
-
-            after_cleanup = process.memory_info().rss / 1024 / 1024
-
-            # Try malloc_trim on Linux to release memory to OS
-            try:
-                import ctypes
-
-                libc = ctypes.CDLL("libc.so.6")
-                libc.malloc_trim(0)
-            except (OSError, AttributeError):
-                pass  # Not on Linux/glibc
-
-            after_malloc_trim = process.memory_info().rss / 1024 / 1024
-
-            # Log breakdown of what each step released
-            cleanup_released = initial_rss - after_cleanup
-            malloc_trim_released = after_cleanup - after_malloc_trim
-            total_released = initial_rss - after_malloc_trim
-
-            logger.info(
-                f"[MEMORY MID-TASK] Track {track_index}: "
-                f"cleanup: {cleanup_released:.1f}MB, malloc_trim: {malloc_trim_released:.1f}MB, "
-                f"total: {total_released:.1f}MB ({initial_rss:.1f} -> {after_malloc_trim:.1f}MB)"
-            )
+            if released > 1:  # Only log if meaningful release
+                logger.info(
+                    f"[MEMORY MID-TASK] Track {track_index}: "
+                    f"released {released:.1f}MB ({initial_rss:.1f} -> {final_rss:.1f}MB)"
+                )
     except Exception:
         pass  # Don't let memory checks break downloads
 
@@ -1015,11 +983,8 @@ class SpotdlWrapper:
                         f"Downloaded {track_index}/{len(queue_item)} songs from queue {queue_item_index}/{len(download_queue)}",
                     )
 
-                # Periodic memory management to prevent OOM during long downloads
-                # Pass the SpotDL downloader to clear yt-dlp's internal caches
-                _check_and_release_memory(
-                    self.logger, track_index, self.spotdl.downloader
-                )
+                # Periodic memory release to prevent OOM during long downloads
+                _check_and_release_memory(self.logger, track_index)
 
                 # Initialize db_song to None so exception handlers can check if it was created
                 db_song = None
