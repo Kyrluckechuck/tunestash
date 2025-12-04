@@ -1,7 +1,5 @@
 import asyncio
-import gc
 import logging
-import re
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
@@ -235,64 +233,27 @@ def _download_song_sync(
         downloader.loop = original_loop
         loop.close()
 
-        # Clear accumulated memory from yt-dlp and regex caches
-        _cleanup_download_memory(downloader)
+        # Release memory back to OS
+        _malloc_trim()
 
 
-def _cleanup_download_memory(downloader: "Downloader") -> None:
+def _malloc_trim() -> None:
     """
-    Clean up memory accumulated during download to prevent OOM over many downloads.
+    Release memory back to the OS using malloc_trim().
 
-    yt-dlp accumulates memory through:
-    - Lazy-loaded extractor instances (_ies_instances dict)
-    - Compiled regex patterns (Python's re module cache)
-    - Internal caches in extractors
+    Python's allocator (pymalloc) doesn't normally return memory to the OS.
+    On Linux with glibc, malloc_trim() forces this.
 
-    This should be called after each download to prevent memory growth.
+    Note: ies_clear, re.purge(), and gc.collect() were tested and found to
+    release 0MB in production - malloc_trim does all the actual work.
     """
-    import os
+    try:
+        import ctypes
 
-    import psutil
-
-    process = psutil.Process(os.getpid())
-
-    def get_rss_mb():
-        return process.memory_info().rss / 1024 / 1024
-
-    initial_rss = get_rss_mb()
-
-    # Clear yt-dlp's lazy-loaded extractor instances
-    ies_count = 0
-    audio_providers = getattr(downloader, "audio_providers", None)
-    if audio_providers:
-        for audio_provider in audio_providers:
-            audio_handler = getattr(audio_provider, "audio_handler", None)
-            if audio_handler:
-                ies_instances = getattr(audio_handler, "_ies_instances", None)
-                if ies_instances is not None:
-                    ies_count = len(ies_instances)
-                    ies_instances.clear()
-
-    after_ies_clear = get_rss_mb()
-
-    # Clear Python's compiled regex cache (yt-dlp uses many regex patterns)
-    re.purge()
-
-    after_re_purge = get_rss_mb()
-
-    # Force garbage collection to reclaim memory
-    gc.collect()
-
-    after_gc = get_rss_mb()
-
-    # Log breakdown of what each step released (only if significant)
-    total_released = initial_rss - after_gc
-    if total_released > 1 or ies_count > 0:  # Log if released >1MB or had extractors
-        logger.info(
-            f"[MEMORY DOWNLOAD] ies_clear: {initial_rss - after_ies_clear:.1f}MB "
-            f"({ies_count} extractors), re.purge: {after_ies_clear - after_re_purge:.1f}MB, "
-            f"gc: {after_re_purge - after_gc:.1f}MB, total: {total_released:.1f}MB"
-        )
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+    except (OSError, AttributeError):
+        pass  # Not on Linux/glibc
 
 
 def download_multiple_songs(
@@ -381,4 +342,4 @@ def _download_multiple_songs_sync(
         downloader.loop = original_loop
         loop.close()
 
-        _cleanup_download_memory(downloader)
+        _malloc_trim()
