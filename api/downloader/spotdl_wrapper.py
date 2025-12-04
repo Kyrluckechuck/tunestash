@@ -57,9 +57,12 @@ _MEMORY_CHECK_INTERVAL_TRACKS = (
     10  # Check memory every N tracks (reduced for better visibility)
 )
 
-# Reinitialize spotdl every N songs to release yt-dlp native memory leaks
+# Reinitialize spotdl every N songs as a fallback for any remaining yt-dlp leaks
+# The primary fix is AudioProvider.close() patch in spotdl_override.py
 # See: https://github.com/yt-dlp/yt-dlp/issues/1949
-_SPOTDL_REINIT_INTERVAL_TRACKS = 50
+_SPOTDL_REINIT_INTERVAL_TRACKS = (
+    200  # Increased since AudioProvider patch handles most cleanup
+)
 
 # Rate limiting: delay between consecutive song downloads (in seconds)
 # This helps avoid hitting Spotify/YouTube rate limits during bulk operations

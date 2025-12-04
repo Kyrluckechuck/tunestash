@@ -348,3 +348,50 @@ def _download_multiple_songs_sync(
         loop.close()
 
         _malloc_trim()
+
+
+# =============================================================================
+# AudioProvider Cleanup Patch
+# =============================================================================
+# SpotDL creates a new AudioProvider (with a new YoutubeDL) for every download
+# in pool_download(), but never calls close() on the YoutubeDL. This causes
+# memory to leak because yt-dlp holds native resources that gc.collect() can't
+# free. See: https://github.com/yt-dlp/yt-dlp/issues/1949
+#
+# This patch wraps AudioProvider to auto-close the YoutubeDL after use.
+# =============================================================================
+
+
+def _patch_audio_provider_cleanup() -> None:
+    """
+    Patch AudioProvider to properly close YoutubeDL after downloads.
+
+    SpotDL's pool_download creates a fresh AudioProvider for each song but never
+    closes the YoutubeDL instance, causing memory leaks. This patch wraps the
+    get_download_metadata method to ensure cleanup happens.
+    """
+    from spotdl.providers.audio.base import AudioProvider
+
+    _original_get_download_metadata = AudioProvider.get_download_metadata
+
+    def _get_download_metadata_with_cleanup(
+        self: AudioProvider, url: str, download: bool = False
+    ) -> Dict[str, Any]:
+        """Wrapped get_download_metadata that closes YoutubeDL after use."""
+        try:
+            return _original_get_download_metadata(self, url, download)
+        finally:
+            # Close the YoutubeDL to release native resources
+            if hasattr(self, "audio_handler") and self.audio_handler is not None:
+                try:
+                    self.audio_handler.close()
+                except Exception:
+                    pass  # Don't let cleanup errors break downloads
+
+    # Apply the patch
+    AudioProvider.get_download_metadata = _get_download_metadata_with_cleanup
+    logger.debug("Patched AudioProvider.get_download_metadata for YoutubeDL cleanup")
+
+
+# Apply the patch when this module is imported
+_patch_audio_provider_cleanup()
