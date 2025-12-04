@@ -1,18 +1,8 @@
-"""
-Celery Beat schedule configuration for periodic tasks.
-
-Priority values use TaskPriority constants from library_manager.tasks.core:
-  PLAYLIST_DOWNLOAD = 1  (highest - user-initiated)
-  ALBUM_DOWNLOAD = 3
-  TRACK_DOWNLOAD = 3
-  ARTIST_SYNC = 5
-  ARTIST_DOWNLOAD = 6
-  MAINTENANCE = 10       (lowest - background cleanup)
-"""
+"""Celery Beat schedule configuration for periodic tasks."""
 
 from celery.schedules import crontab
 
-from library_manager.tasks.core import TaskPriority
+from library_manager.task_priorities import TaskPriority
 
 CELERY_BEAT_SCHEDULE = {
     "sync-all-playlists": {
