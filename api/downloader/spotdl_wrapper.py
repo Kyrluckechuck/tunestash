@@ -57,6 +57,10 @@ _MEMORY_CHECK_INTERVAL_TRACKS = (
     10  # Check memory every N tracks (reduced for better visibility)
 )
 
+# Reinitialize spotdl every N songs to release yt-dlp native memory leaks
+# See: https://github.com/yt-dlp/yt-dlp/issues/1949
+_SPOTDL_REINIT_INTERVAL_TRACKS = 50
+
 # Rate limiting: delay between consecutive song downloads (in seconds)
 # This helps avoid hitting Spotify/YouTube rate limits during bulk operations
 _DOWNLOAD_DELAY_SECONDS = 1.0
@@ -329,6 +333,9 @@ def initiate_logger(app_log_level: str, spotdl_log_level: str) -> logging.Logger
 
 class SpotdlWrapper:
     def __init__(self, config: Config):
+        # Store config for potential reinitialization
+        self._config = config
+
         app_log_level = config.log_level or "INFO"
         spotdl_log_level = config.spotdl_log_level or "INFO"
         self.logger = initiate_logger(app_log_level, spotdl_log_level)
@@ -463,6 +470,113 @@ class SpotdlWrapper:
         except Exception as e:
             self.logger.error(f"Failed to refresh Spotify OAuth token: {e}")
             return False
+
+    def reinitialize_spotdl(self) -> bool:
+        """
+        Reinitialize the Spotdl instance to release yt-dlp native memory.
+
+        yt-dlp has known memory leaks (https://github.com/yt-dlp/yt-dlp/issues/1949)
+        that can't be freed by Python's garbage collector. The only reliable way
+        to release this memory is to destroy the entire Spotdl instance and create
+        a new one.
+
+        This method:
+        1. Logs memory before reinitialization
+        2. Destroys the old Spotdl instance
+        3. Forces garbage collection and malloc_trim
+        4. Creates a fresh Spotdl instance
+        5. Logs memory after to verify release
+
+        Returns:
+            bool: True if reinitialization succeeded, False otherwise
+        """
+        import gc
+        import os
+
+        import psutil
+
+        try:
+            process = psutil.Process(os.getpid())
+            memory_before = process.memory_info().rss / 1024 / 1024
+
+            self.logger.info(
+                f"[SPOTDL REINIT] Starting reinitialization... "
+                f"Memory before: {memory_before:.0f}MB"
+            )
+
+            # Destroy the old spotdl instance
+            old_spotdl = self.spotdl
+            self.spotdl = None
+
+            # Try to close/cleanup the old downloader if it has cleanup methods
+            if hasattr(old_spotdl, "downloader"):
+                if hasattr(old_spotdl.downloader, "audio_providers"):
+                    # Clear audio providers which hold YoutubeDL instances
+                    old_spotdl.downloader.audio_providers.clear()
+                if hasattr(old_spotdl.downloader, "progress_handler"):
+                    old_spotdl.downloader.progress_handler = None
+
+            # Delete references
+            del old_spotdl
+
+            # Force garbage collection
+            gc.collect()
+
+            # Release memory to OS
+            _malloc_trim()
+
+            memory_after_gc = process.memory_info().rss / 1024 / 1024
+
+            # Reinitialize spotdl with stored config
+            spotdl_settings = generate_spotdl_settings(self._config)
+
+            # Get or create event loop
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                try:
+                    import warnings
+
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", DeprecationWarning)
+                        loop = asyncio.get_event_loop_policy().get_event_loop()
+                    if loop.is_closed():
+                        raise RuntimeError("Event loop is closed")
+                except Exception:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+            spotdl_settings["loop"] = loop
+            self.spotdl = Spotdl(**spotdl_settings)
+
+            memory_after = process.memory_info().rss / 1024 / 1024
+            released = memory_before - memory_after_gc
+            new_overhead = memory_after - memory_after_gc
+
+            self.logger.info(
+                f"[SPOTDL REINIT] ✓ Complete! "
+                f"Released: {released:.0f}MB, "
+                f"New instance: +{new_overhead:.0f}MB, "
+                f"Net: {memory_before - memory_after:.0f}MB freed "
+                f"({memory_before:.0f}MB → {memory_after:.0f}MB)"
+            )
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"[SPOTDL REINIT] Failed to reinitialize: {e}")
+            # Try to recover by creating a new instance anyway
+            try:
+                spotdl_settings = generate_spotdl_settings(self._config)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                spotdl_settings["loop"] = loop
+                self.spotdl = Spotdl(**spotdl_settings)
+                self.logger.info("[SPOTDL REINIT] Recovery successful")
+                return True
+            except Exception as recovery_error:
+                self.logger.error(f"[SPOTDL REINIT] Recovery failed: {recovery_error}")
+                return False
 
     def _update_playlist_status_on_error(self, url: str) -> None:
         """
@@ -995,6 +1109,14 @@ class SpotdlWrapper:
 
                 # Periodic memory release to prevent OOM during long downloads
                 _check_and_release_memory(self.logger, track_index)
+
+                # Periodically reinitialize spotdl to release yt-dlp native memory leaks
+                # This is the only reliable way to free memory held by yt-dlp's C libraries
+                if (
+                    track_index > 0
+                    and track_index % _SPOTDL_REINIT_INTERVAL_TRACKS == 0
+                ):
+                    self.reinitialize_spotdl()
 
                 # Initialize db_song to None so exception handlers can check if it was created
                 db_song = None
