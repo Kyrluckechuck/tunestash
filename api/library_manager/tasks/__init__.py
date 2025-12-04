@@ -21,6 +21,7 @@ from .artist import (
 
 # Re-export core utilities
 from .core import (
+    TaskPriority,
     celery_app,
     check_and_update_progress,
     check_task_cancellation,
@@ -76,6 +77,7 @@ from .playlist import (
 
 __all__ = [
     # Core utilities
+    "TaskPriority",
     "celery_app",
     "check_and_update_progress",
     "check_task_cancellation",

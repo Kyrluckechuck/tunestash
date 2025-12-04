@@ -346,10 +346,10 @@ class Mutation:  # pylint: disable=too-many-public-methods
                 )
 
             # Enqueue download tasks for all tracked artists
+            # (uses TaskPriority.ARTIST_DOWNLOAD by default)
             await sync_to_async(download_missing_tracked_artists)(
                 already_enqueued_artists=[],
                 artists_to_enqueue=tracked_artists,
-                priority=None,
             )
 
             return MutationResult(
@@ -378,8 +378,9 @@ class Mutation:  # pylint: disable=too-many-public-methods
                 )
 
             # Enqueue download tasks for all enabled playlists
+            # (uses TaskPriority.PLAYLIST_DOWNLOAD by default - higher priority)
             await sync_to_async(enqueue_playlists)(
-                playlists_to_enqueue=enabled_playlists, priority=None
+                playlists_to_enqueue=enabled_playlists
             )
 
             return MutationResult(

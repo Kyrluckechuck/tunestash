@@ -1,45 +1,55 @@
 """
 Celery Beat schedule configuration for periodic tasks.
+
+Priority values use TaskPriority constants from library_manager.tasks.core:
+  PLAYLIST_DOWNLOAD = 1  (highest - user-initiated)
+  ALBUM_DOWNLOAD = 3
+  TRACK_DOWNLOAD = 3
+  ARTIST_SYNC = 5
+  ARTIST_DOWNLOAD = 6
+  MAINTENANCE = 10       (lowest - background cleanup)
 """
 
 from celery.schedules import crontab
+
+from library_manager.tasks.core import TaskPriority
 
 CELERY_BEAT_SCHEDULE = {
     "sync-all-playlists": {
         "task": "library_manager.tasks.sync_tracked_playlists",
         "schedule": crontab(minute=0, hour="*/8"),  # Every 8 hours
-        "options": {"priority": 1},
+        "options": {"priority": TaskPriority.PLAYLIST_DOWNLOAD},
     },
     "validate-undownloaded-songs": {
         "task": "library_manager.tasks.validate_undownloaded_songs",
         "schedule": crontab(minute=0, hour="*/12"),  # Every 12 hours
-        "options": {"priority": 1},
+        "options": {"priority": TaskPriority.ALBUM_DOWNLOAD},
     },
     "retry-failed-songs": {
         "task": "library_manager.tasks.retry_failed_songs",
         "schedule": crontab(
             minute=0, hour=4, day_of_week="1,3,5"
         ),  # Mon/Wed/Fri at 4 AM
-        "options": {"priority": 2},
+        "options": {"priority": TaskPriority.TRACK_DOWNLOAD},
     },
     "queue-missing-albums-for-tracked-artists": {
         "task": "library_manager.tasks.queue_missing_albums_for_tracked_artists",
         "schedule": crontab(minute=0),  # Every hour
-        "options": {"priority": 3},
+        "options": {"priority": TaskPriority.ARTIST_DOWNLOAD},
     },
     "cleanup-celery-history": {
         "task": "library_manager.tasks.cleanup_celery_history",
         "schedule": crontab(minute=0, hour=6),  # Daily at 6 AM
-        "options": {"priority": 10},
+        "options": {"priority": TaskPriority.MAINTENANCE},
     },
     "cleanup-stale-tasks": {
         "task": "library_manager.tasks.cleanup_stuck_tasks_periodic",
         "schedule": crontab(minute="*/5"),  # Every 5 minutes
-        "options": {"priority": 5},
+        "options": {"priority": TaskPriority.MAINTENANCE},
     },
     "memory-health-check": {
         "task": "library_manager.tasks.periodic_memory_health_check",
         "schedule": crontab(minute="*/10"),  # Every 10 minutes
-        "options": {"priority": 10},  # Low priority - don't block real work
+        "options": {"priority": TaskPriority.MAINTENANCE},
     },
 }
