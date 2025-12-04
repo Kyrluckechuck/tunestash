@@ -112,11 +112,16 @@ target "frontend" {
 }
 
 # Local testing targets (single platform, loadable)
+# These are used in docker-test for integration testing
+# IMPORTANT: cache-to is explicitly disabled to prevent overwriting
+# the multi-platform cache from docker-build with single-platform data
 target "backend-local" {
   inherits = ["backend"]
   platforms = ["linux/amd64"]
   tags = ["local-backend:latest"]
   output = ["type=docker"]
+  # Disable cache export to prevent overwriting multi-platform cache
+  cache-to = []
 }
 
 target "frontend-local" {
@@ -124,6 +129,8 @@ target "frontend-local" {
   platforms = ["linux/amd64"]
   tags = ["local-frontend:latest"]
   output = ["type=docker"]
+  # Disable cache export to prevent overwriting multi-platform cache
+  cache-to = []
 }
 
 group "local" {
