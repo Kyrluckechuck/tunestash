@@ -244,9 +244,14 @@ def _malloc_trim() -> None:
     Python's allocator (pymalloc) doesn't normally return memory to the OS.
     On Linux with glibc, malloc_trim() forces this.
 
-    Note: ies_clear, re.purge(), and gc.collect() were tested and found to
-    release 0MB in production - malloc_trim does all the actual work.
+    We also run gc.collect() to ensure Python objects are freed before
+    malloc_trim releases the underlying memory.
     """
+    import gc
+
+    # Force garbage collection first to free Python objects
+    gc.collect()
+
     try:
         import ctypes
 
