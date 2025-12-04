@@ -196,9 +196,7 @@ _register_signal_handlers()
 
 @worker_process_init.connect  # type: ignore[misc]
 def worker_process_init_handler(sender: Any = None, **kwargs: Any) -> None:
-    """Log when worker process starts and optionally init memory profiling."""
-    global _memory_profiling_enabled
-
+    """Log when worker process starts."""
     from django.conf import settings
 
     diagnostics_enabled = getattr(settings, "worker_diagnostics_enabled", False)
@@ -208,9 +206,6 @@ def worker_process_init_handler(sender: Any = None, **kwargs: Any) -> None:
             f"Parent PID: {os.getppid()}"
         )
         log_process_state("Worker process initialization")
-
-    # Initialize memory profiling if enabled
-    _memory_profiling_enabled = _init_memory_profiling()
 
 
 @worker_process_shutdown.connect  # type: ignore[misc]
@@ -251,68 +246,6 @@ MEMORY_RECYCLE_THRESHOLD_MB = 800
 
 # Track peak memory per worker for reporting
 _worker_peak_memory_mb: float = 0.0
-
-# Track if memory profiling is enabled (set in worker_process_init)
-_memory_profiling_enabled: bool = False
-_last_tracemalloc_snapshot: Any = None
-
-
-def _init_memory_profiling() -> bool:
-    """Initialize tracemalloc for memory profiling if enabled in settings."""
-    from django.conf import settings
-
-    if not getattr(settings, "memory_profiling_enabled", False):
-        return False
-
-    import tracemalloc
-
-    tracemalloc.start(25)  # Store 25 frames for detailed tracebacks
-    logger.info("[MEMORY PROFILE] tracemalloc started - will log top memory allocators")
-    return True
-
-
-def _log_memory_profile(context: str = "unknown") -> None:
-    """Log top memory allocators using tracemalloc."""
-    global _last_tracemalloc_snapshot
-
-    if not _memory_profiling_enabled:
-        return
-
-    import tracemalloc
-
-    if not tracemalloc.is_tracing():
-        return
-
-    snapshot = tracemalloc.take_snapshot()
-    snapshot = snapshot.filter_traces(
-        [
-            tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
-            tracemalloc.Filter(False, "<frozen importlib._bootstrap_external>"),
-        ]
-    )
-
-    # Log top allocations by size
-    top_stats = snapshot.statistics("lineno")[:10]
-    if top_stats:
-        logger.info(f"[MEMORY PROFILE] Top 10 allocations ({context}):")
-        for idx, stat in enumerate(top_stats, 1):
-            logger.info(f"  #{idx}: {stat.size / 1024 / 1024:.1f}MB - {stat.traceback}")
-
-    # If we have a previous snapshot, show what grew
-    if _last_tracemalloc_snapshot is not None:
-        diff_stats = snapshot.compare_to(_last_tracemalloc_snapshot, "lineno")[:5]
-        growth = [s for s in diff_stats if s.size_diff > 1024 * 1024]  # >1MB growth
-        if growth:
-            logger.info(
-                f"[MEMORY PROFILE] Top memory growth since last check ({context}):"
-            )
-            for diff in growth:
-                logger.info(
-                    f"  +{diff.size_diff / 1024 / 1024:.1f}MB "
-                    f"(total: {diff.size / 1024 / 1024:.1f}MB) - {diff.traceback}"
-                )
-
-    _last_tracemalloc_snapshot = snapshot
 
 
 def try_release_memory() -> tuple[bool, float, float]:
@@ -403,26 +336,20 @@ def task_postrun_memory_check(
             _worker_peak_memory_mb = rss_mb
 
         # Try to release memory if above warning threshold
-        memory_released = False
         if rss_mb >= MEMORY_WARNING_THRESHOLD_MB:
-            memory_released, gc_released, malloc_trim_released = try_release_memory()
-            if memory_released:
-                # Re-check memory after release attempt
-                new_memory = get_memory_info()
-                if "error" not in new_memory:
-                    total_released = rss_mb - new_memory["rss_mb"]
-                    if total_released > 1:  # Only log if meaningful release
-                        logger.info(
-                            f"[MEMORY POST-TASK] gc: {gc_released:.1f}MB, "
-                            f"malloc_trim: {malloc_trim_released:.1f}MB, "
-                            f"total: {total_released:.1f}MB "
-                            f"({rss_mb:.1f} -> {new_memory['rss_mb']:.1f} MB)"
-                        )
-                    rss_mb = new_memory["rss_mb"]
-
-        # Log memory profile if enabled and memory is elevated
-        if _memory_profiling_enabled and rss_mb >= MEMORY_WARNING_THRESHOLD_MB:
-            _log_memory_profile(f"after {task_name}")
+            _, gc_released, malloc_trim_released = try_release_memory()
+            # Re-check memory after release attempt
+            new_memory = get_memory_info()
+            if "error" not in new_memory:
+                total_released = rss_mb - new_memory["rss_mb"]
+                if total_released > 1:  # Only log if meaningful release
+                    logger.info(
+                        f"[MEMORY POST-TASK] gc: {gc_released:.1f}MB, "
+                        f"malloc_trim: {malloc_trim_released:.1f}MB, "
+                        f"total: {total_released:.1f}MB "
+                        f"({rss_mb:.1f} -> {new_memory['rss_mb']:.1f} MB)"
+                    )
+                rss_mb = new_memory["rss_mb"]
 
         # Determine log level and action based on memory usage
         if rss_mb >= MEMORY_RECYCLE_THRESHOLD_MB:

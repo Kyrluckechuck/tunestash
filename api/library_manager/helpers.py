@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 from django.db.models import QuerySet
 
 from .models import Artist, TrackedPlaylist
+from .tasks.core import TaskPriority
 
 # Celery Task Deduplication Utilities
 
@@ -83,6 +84,9 @@ def update_tracked_artists_albums(
     # Local import to avoid circular import during module initialization
     from .tasks import fetch_all_albums_for_artist
 
+    # Use background priority for artist sync if not specified
+    effective_priority = priority if priority is not None else TaskPriority.ARTIST_SYNC
+
     for artist in artists_to_enqueue:
         # Use database ID for internal operations
         if artist.id in already_enqueued_artists:
@@ -97,13 +101,9 @@ def update_tracked_artists_albums(
         if is_task_pending_or_running(task_id):
             continue
 
-        extra_args = {}
-        if priority is not None:
-            extra_args["priority"] = priority
-
         # Queue task asynchronously with deterministic ID for deduplication
         fetch_all_albums_for_artist.apply_async(
-            args=[artist.id], task_id=task_id, **extra_args
+            args=[artist.id], task_id=task_id, priority=effective_priority
         )
 
 
@@ -114,6 +114,11 @@ def download_missing_tracked_artists(
 ) -> None:
     # Local import to avoid circular import during module initialization
     from .tasks import download_missing_albums_for_artist
+
+    # Use background priority for artist downloads if not specified
+    effective_priority = (
+        priority if priority is not None else TaskPriority.ARTIST_DOWNLOAD
+    )
 
     for artist in artists_to_enqueue:
         # Use database ID for internal operations
@@ -131,13 +136,12 @@ def download_missing_tracked_artists(
         if is_task_pending_or_running(task_id):
             continue
 
-        extra_args = {}
-        if priority is not None:
-            extra_args["priority"] = priority
-
         # Queue the task asynchronously with deterministic ID for deduplication
         download_missing_albums_for_artist.apply_async(
-            args=[artist.id], kwargs={"delay": 5}, task_id=task_id, **extra_args
+            args=[artist.id],
+            kwargs={"delay": 5},
+            task_id=task_id,
+            priority=effective_priority,
         )
 
 
@@ -149,6 +153,11 @@ def download_non_enqueued_playlists(
     # Local import to avoid circular import during module initialization
     from .models import PlaylistStatus
     from .tasks import download_playlist
+
+    # Use high priority for playlists if not specified
+    effective_priority = (
+        priority if priority is not None else TaskPriority.PLAYLIST_DOWNLOAD
+    )
 
     for playlist in playlists_to_enqueue:
         if playlist.url in already_enqueued_playlists:
@@ -172,10 +181,6 @@ def download_non_enqueued_playlists(
         if is_task_pending_or_running(task_id):
             continue
 
-        extra_args = {}
-        if priority is not None:
-            extra_args["priority"] = priority
-
         # Queue the task asynchronously with deterministic ID for deduplication
         download_playlist.apply_async(
             kwargs={
@@ -183,7 +188,7 @@ def download_non_enqueued_playlists(
                 "tracked": playlist.auto_track_artists,
             },
             task_id=task_id,
-            **extra_args,
+            priority=effective_priority,
         )
 
 

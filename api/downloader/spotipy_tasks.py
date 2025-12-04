@@ -101,9 +101,21 @@ class PublicSpotifyClient:
             return
         self._initialized = True
 
+        client_id = getattr(settings, "SPOTIPY_CLIENT_ID", "") or ""
+        client_secret = getattr(settings, "SPOTIPY_CLIENT_SECRET", "") or ""
+
+        # Only initialize if credentials are available
+        if not client_id or not client_secret:
+            logger.warning(
+                "SPOTIPY_CLIENT_ID or SPOTIPY_CLIENT_SECRET not configured - "
+                "PublicSpotifyClient will not be functional"
+            )
+            self.sp = None
+            return
+
         client_credentials_manager = SpotifyClientCredentials(
-            client_id=getattr(settings, "SPOTIPY_CLIENT_ID", ""),
-            client_secret=getattr(settings, "SPOTIPY_CLIENT_SECRET", ""),
+            client_id=client_id,
+            client_secret=client_secret,
             cache_handler=MemoryCacheHandler(),
         )
         # Use custom session with rate-limit-aware retry
