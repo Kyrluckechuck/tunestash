@@ -22,24 +22,7 @@ from downloader.spotdl_wrapper import SpotdlWrapper
 from lib.config_class import Config
 
 from ..models import TaskHistory
-
-
-# Task Priority Constants (lower number = higher priority)
-# Use these when queuing tasks to ensure consistent priority handling
-class TaskPriority:
-    """Celery task priority levels. Lower values = higher priority."""
-
-    # User-initiated immediate operations
-    PLAYLIST_DOWNLOAD = 1  # Playlist syncs - user expects these to complete first
-    ALBUM_DOWNLOAD = 3  # Individual album downloads
-    TRACK_DOWNLOAD = 3  # Individual track downloads
-
-    # Background operations
-    ARTIST_SYNC = 5  # Fetching album metadata from Spotify
-    ARTIST_DOWNLOAD = 6  # Downloading missing albums for tracked artists
-
-    # Maintenance and cleanup
-    MAINTENANCE = 10  # Cleanup, validation, retry tasks
+from ..task_priorities import TaskPriority  # noqa: F401 - re-exported
 
 
 class TaskCancelledException(Exception):
