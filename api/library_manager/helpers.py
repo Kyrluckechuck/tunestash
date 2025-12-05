@@ -1,10 +1,13 @@
 import hashlib
+import logging
 from typing import Dict, List, Optional
 
 from django.db.models import QuerySet
 
 from .models import Artist, TrackedPlaylist
 from .tasks.core import TaskPriority
+
+logger = logging.getLogger(__name__)
 
 # Celery Task Deduplication Utilities
 
@@ -154,13 +157,25 @@ def download_non_enqueued_playlists(
     from .models import PlaylistStatus
     from .tasks import download_playlist
 
+    logger.info(
+        f"[ENQUEUE] download_non_enqueued_playlists called with "
+        f"{len(playlists_to_enqueue)} playlists, "
+        f"{len(already_enqueued_playlists)} already enqueued"
+    )
+
     # Use high priority for playlists if not specified
     effective_priority = (
         priority if priority is not None else TaskPriority.PLAYLIST_DOWNLOAD
     )
 
     for playlist in playlists_to_enqueue:
+        logger.info(
+            f"[ENQUEUE] Processing playlist: {playlist.name} (id={playlist.id}, "
+            f"url={playlist.url}, status={playlist.status})"
+        )
+
         if playlist.url in already_enqueued_playlists:
+            logger.info(f"[ENQUEUE] SKIP: {playlist.name} - already in enqueued list")
             continue
 
         # Skip playlists with problematic statuses to avoid hitting rate limits
@@ -168,6 +183,9 @@ def download_non_enqueued_playlists(
             PlaylistStatus.SPOTIFY_API_RESTRICTED,
             PlaylistStatus.NOT_FOUND,
         ):
+            logger.info(
+                f"[ENQUEUE] SKIP: {playlist.name} - problematic status: {playlist.status}"
+            )
             continue
 
         # Generate deterministic task ID for deduplication
@@ -176,12 +194,18 @@ def download_non_enqueued_playlists(
             playlist.url,
             tracked=playlist.auto_track_artists,
         )
+        logger.info(f"[ENQUEUE] Generated task_id: {task_id}")
 
         # Skip if task is already queued or running
         if is_task_pending_or_running(task_id):
+            logger.info(f"[ENQUEUE] SKIP: {playlist.name} - task pending/running")
             continue
 
         # Queue the task asynchronously with deterministic ID for deduplication
+        logger.info(
+            f"[ENQUEUE] Queuing download_playlist for {playlist.name} "
+            f"with task_id={task_id}, priority={effective_priority}"
+        )
         download_playlist.apply_async(
             kwargs={
                 "playlist_url": playlist.url,
@@ -190,6 +214,7 @@ def download_non_enqueued_playlists(
             task_id=task_id,
             priority=effective_priority,
         )
+        logger.info(f"[ENQUEUE] Successfully queued: {playlist.name}")
 
 
 def enqueue_playlists(
