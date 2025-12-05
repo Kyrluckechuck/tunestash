@@ -182,6 +182,14 @@ def _check_and_release_memory(
         final_rss = process.memory_info().rss / 1024 / 1024
         released = initial_rss - final_rss
 
+        # Get parent (main Celery) process memory to track the leak
+        parent_rss_mb = 0.0
+        try:
+            parent = psutil.Process(os.getppid())
+            parent_rss_mb = parent.memory_info().rss / 1024 / 1024
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
         # Get container-level memory (all processes in cgroup)
         container_mb, limit_mb = _get_container_memory_mb()
         limit_str = f"/{limit_mb:.0f}MB" if limit_mb > 0 else ""
@@ -191,14 +199,16 @@ def _check_and_release_memory(
         if final_rss >= _MEMORY_WARNING_THRESHOLD_MB:
             logger.warning(
                 f"[MEMORY MID-TASK] Track {track_index}: "
-                f"worker={final_rss:.0f}MB (released {released:.1f}MB), "
+                f"worker={final_rss:.0f}MB (freed {released:.1f}MB), "
+                f"parent={parent_rss_mb:.0f}MB, "
                 f"container={container_mb:.0f}MB{limit_str} ({container_percent:.0f}%) "
                 f"⚠️ ABOVE THRESHOLD"
             )
         else:
             logger.info(
                 f"[MEMORY MID-TASK] Track {track_index}: "
-                f"worker={final_rss:.0f}MB (released {released:.1f}MB), "
+                f"worker={final_rss:.0f}MB (freed {released:.1f}MB), "
+                f"parent={parent_rss_mb:.0f}MB, "
                 f"container={container_mb:.0f}MB{limit_str} ({container_percent:.0f}%)"
             )
 
