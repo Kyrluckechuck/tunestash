@@ -274,42 +274,46 @@ jobs:
 
           # Start postgres and wait for healthy
           docker compose up -d postgres
-          echo "Waiting for postgres..."
-          for i in {1..30}; do
-            if docker compose ps postgres | grep -iq "healthy"; then
-              echo "✅ Postgres is healthy"
+          echo "⏰ Waiting for PostgreSQL to be healthy..."
+          for i in {1..45}; do
+            if docker compose ps postgres | grep -q "healthy"; then
+              echo "✅ PostgreSQL is healthy after ${i} attempts"
               break
             fi
-            if [ $i -eq 30 ]; then
-              echo "❌ Postgres failed to become healthy"
-              docker compose ps postgres
-              docker compose logs postgres
-              exit 1
-            fi
-            sleep 2
-          done
-
-          # Start web and wait for healthy
-          docker compose up -d web
-          echo "Waiting for web..."
-          for i in {1..60}; do
-            STATUS=$(docker compose ps web --format json | jq -r '.[0].Health // .Health // "unknown"' 2>/dev/null || echo "unknown")
-            echo "  Attempt $i/60: status=$STATUS"
-            if [ "$STATUS" = "healthy" ]; then
-              echo "✅ Web is healthy"
-              break
-            fi
-            if [ $i -eq 60 ]; then
-              echo "❌ Web failed to become healthy"
-              docker compose ps web
-              docker compose logs web
-              exit 1
-            fi
+            echo "⏳ PostgreSQL not ready yet (attempt $i/45)..."
             sleep 3
           done
 
+          if ! docker compose ps postgres | grep -q "healthy"; then
+            echo "❌ PostgreSQL never became healthy"
+            docker compose ps postgres
+            docker compose logs postgres
+            exit 1
+          fi
+
+          # Start web and wait for healthy
+          docker compose up -d web
+          echo "⏰ Waiting for web container to be healthy..."
+          for i in {1..45}; do
+            if docker compose ps web --format json | jq -r '.Status' | grep -q "healthy"; then
+              echo "✅ Web container is healthy after ${i} attempts"
+              break
+            fi
+            echo "⏳ Web container not ready yet (attempt $i/45)..."
+            sleep 3
+          done
+
+          if ! docker compose ps web --format json | jq -r '.Status' | grep -q "healthy"; then
+            echo "❌ Web container never became healthy"
+            docker compose ps web
+            docker compose logs web
+            exit 1
+          fi
+
           # Test health endpoint
+          echo "Testing API health endpoint..."
           curl -f http://localhost:5000/healthz
+          echo ""
           echo "✅ API health check passed"
 
       - name: Show logs on failure
