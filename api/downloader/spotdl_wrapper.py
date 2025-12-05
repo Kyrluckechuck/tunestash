@@ -12,6 +12,8 @@ from __future__ import annotations, division
 
 import asyncio
 import logging
+import os
+import signal
 import time
 import traceback
 from argparse import Namespace
@@ -57,6 +59,11 @@ _MEMORY_CHECK_INTERVAL_TRACKS = (
     10  # Check memory every N tracks (reduced for better visibility)
 )
 
+# Container-level memory threshold for requesting restart (percentage of cgroup limit)
+# When container memory exceeds this, request graceful shutdown so Docker restarts us
+# This catches main Celery process memory leaks that --max-tasks-per-child doesn't fix
+_CONTAINER_RESTART_PERCENT = 85
+
 # Reinitialize spotdl every N songs as a fallback for any remaining yt-dlp leaks
 # The primary fix is AudioProvider.close() patch in spotdl_override.py
 # See: https://github.com/yt-dlp/yt-dlp/issues/1949
@@ -81,13 +88,13 @@ def _get_container_memory_mb() -> tuple[float, float]:
     """
     try:
         # Try cgroup v2 first (modern Docker)
-        with open("/sys/fs/cgroup/memory.current", "r") as f:
+        with open("/sys/fs/cgroup/memory.current", encoding="utf-8") as f:
             container_bytes = int(f.read().strip())
         container_mb = container_bytes / 1024 / 1024
 
         # Get cgroup limit
         try:
-            with open("/sys/fs/cgroup/memory.max", "r") as f:
+            with open("/sys/fs/cgroup/memory.max", encoding="utf-8") as f:
                 limit_str = f.read().strip()
                 limit_mb = int(limit_str) / 1024 / 1024 if limit_str != "max" else 0
         except Exception:
@@ -99,12 +106,14 @@ def _get_container_memory_mb() -> tuple[float, float]:
 
     try:
         # Try cgroup v1 (older Docker)
-        with open("/sys/fs/cgroup/memory/memory.usage_in_bytes", "r") as f:
+        with open("/sys/fs/cgroup/memory/memory.usage_in_bytes", encoding="utf-8") as f:
             container_bytes = int(f.read().strip())
         container_mb = container_bytes / 1024 / 1024
 
         try:
-            with open("/sys/fs/cgroup/memory/memory.limit_in_bytes", "r") as f:
+            with open(
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes", encoding="utf-8"
+            ) as f:
                 limit_mb = int(f.read().strip()) / 1024 / 1024
         except Exception:
             limit_mb = 0
@@ -123,6 +132,29 @@ def _get_container_memory_mb() -> tuple[float, float]:
         return 0, 0
 
 
+def _request_main_process_shutdown(logger: logging.Logger) -> bool:
+    """
+    Request graceful shutdown of the main Celery process.
+
+    Sends SIGTERM to the parent process (main Celery process in Docker), triggering
+    a graceful shutdown. Docker's restart policy will then restart the container
+    with fresh memory.
+
+    Returns:
+        True if signal was sent, False otherwise
+    """
+    try:
+        parent_pid = os.getppid()
+        logger.warning(
+            f"[MEMORY] Requesting main process shutdown (parent PID: {parent_pid})"
+        )
+        os.kill(parent_pid, signal.SIGTERM)
+        return True
+    except Exception as e:
+        logger.error(f"[MEMORY] Failed to signal parent process: {e}")
+        return False
+
+
 def _check_and_release_memory(
     logger: logging.Logger,
     track_index: int,
@@ -137,8 +169,6 @@ def _check_and_release_memory(
         return
 
     try:
-        import os
-
         import psutil
 
         process = psutil.Process(os.getpid())
@@ -155,20 +185,31 @@ def _check_and_release_memory(
         # Get container-level memory (all processes in cgroup)
         container_mb, limit_mb = _get_container_memory_mb()
         limit_str = f"/{limit_mb:.0f}MB" if limit_mb > 0 else ""
+        container_percent = (container_mb / limit_mb * 100) if limit_mb > 0 else 0
 
         # Determine log level based on memory usage
         if final_rss >= _MEMORY_WARNING_THRESHOLD_MB:
             logger.warning(
                 f"[MEMORY MID-TASK] Track {track_index}: "
                 f"worker={final_rss:.0f}MB (released {released:.1f}MB), "
-                f"container={container_mb:.0f}MB{limit_str} ⚠️ ABOVE THRESHOLD"
+                f"container={container_mb:.0f}MB{limit_str} ({container_percent:.0f}%) "
+                f"⚠️ ABOVE THRESHOLD"
             )
         else:
             logger.info(
                 f"[MEMORY MID-TASK] Track {track_index}: "
                 f"worker={final_rss:.0f}MB (released {released:.1f}MB), "
-                f"container={container_mb:.0f}MB{limit_str}"
+                f"container={container_mb:.0f}MB{limit_str} ({container_percent:.0f}%)"
             )
+
+        # Check container memory and request restart if critical
+        if limit_mb > 0 and container_percent >= _CONTAINER_RESTART_PERCENT:
+            logger.critical(
+                f"[MEMORY MID-TASK] CONTAINER CRITICAL - "
+                f"{container_mb:.0f}/{limit_mb:.0f}MB ({container_percent:.0f}%). "
+                f"Requesting main process restart to prevent OOM kill."
+            )
+            _request_main_process_shutdown(logger)
     except Exception:
         pass  # Don't let memory checks break downloads
 
