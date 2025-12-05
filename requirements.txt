@@ -6,6 +6,7 @@
 
 # Django and related packages
 django==5.2.8
+django-extensions>=3.2.0  # Provides shell_plus for easier debugging
 # Celery with database broker (PostgreSQL)
 celery>=5.6.0
 django-celery-beat>=2.5.0

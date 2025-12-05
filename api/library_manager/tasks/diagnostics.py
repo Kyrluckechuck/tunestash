@@ -49,13 +49,13 @@ def _get_container_memory() -> Tuple[float, float]:
     """
     # Try cgroup v2 first (modern Docker/containerd)
     try:
-        with open("/sys/fs/cgroup/memory.current", "r") as f:
+        with open("/sys/fs/cgroup/memory.current", encoding="utf-8") as f:
             container_bytes = int(f.read().strip())
         container_mb = container_bytes / 1024 / 1024
 
         limit_mb = 0.0
         try:
-            with open("/sys/fs/cgroup/memory.max", "r") as f:
+            with open("/sys/fs/cgroup/memory.max", encoding="utf-8") as f:
                 limit_str = f.read().strip()
                 if limit_str != "max":
                     limit_mb = int(limit_str) / 1024 / 1024
@@ -68,13 +68,15 @@ def _get_container_memory() -> Tuple[float, float]:
 
     # Try cgroup v1 (older Docker)
     try:
-        with open("/sys/fs/cgroup/memory/memory.usage_in_bytes", "r") as f:
+        with open("/sys/fs/cgroup/memory/memory.usage_in_bytes", encoding="utf-8") as f:
             container_bytes = int(f.read().strip())
         container_mb = container_bytes / 1024 / 1024
 
         limit_mb = 0.0
         try:
-            with open("/sys/fs/cgroup/memory/memory.limit_in_bytes", "r") as f:
+            with open(
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes", encoding="utf-8"
+            ) as f:
                 limit_bytes = int(f.read().strip())
                 # Check if it's a real limit or effectively unlimited
                 if limit_bytes < 9223372036854771712:  # Not near max int64
@@ -428,7 +430,7 @@ def periodic_memory_health_check(self: Any) -> Dict[str, Any]:
             results["restart_requested"] = _request_main_process_shutdown()
             return results
 
-        elif container_percent >= CONTAINER_WARNING_PERCENT:
+        if container_percent >= CONTAINER_WARNING_PERCENT:
             results["status"] = "CONTAINER_WARNING"
             results["message"] = (
                 f"Container memory at {container_percent:.0f}% "
