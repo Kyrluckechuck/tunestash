@@ -220,13 +220,14 @@ jobs:
 
       - name: Pull images for testing
         run: |
-          # Pull the SHA-tagged images we just built
-          docker pull ghcr.io/${{ steps.owner.outputs.value }}/tunestash:sha-${{ github.sha }}
-          docker pull ghcr.io/${{ steps.owner.outputs.value }}/tunestash-frontend:sha-${{ github.sha }}
+          # Pull the SHA-tagged images we just built (short SHA format)
+          SHORT_SHA=${GITHUB_SHA::7}
+          docker pull ghcr.io/${{ steps.owner.outputs.value }}/tunestash:sha-${SHORT_SHA}
+          docker pull ghcr.io/${{ steps.owner.outputs.value }}/tunestash-frontend:sha-${SHORT_SHA}
 
           # Tag them for local use
-          docker tag ghcr.io/${{ steps.owner.outputs.value }}/tunestash:sha-${{ github.sha }} local-backend:latest
-          docker tag ghcr.io/${{ steps.owner.outputs.value }}/tunestash-frontend:sha-${{ github.sha }} local-frontend:latest
+          docker tag ghcr.io/${{ steps.owner.outputs.value }}/tunestash:sha-${SHORT_SHA} local-backend:latest
+          docker tag ghcr.io/${{ steps.owner.outputs.value }}/tunestash-frontend:sha-${SHORT_SHA} local-frontend:latest
 
       - name: Verify images loaded
         run: |
