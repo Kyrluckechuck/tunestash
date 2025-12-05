@@ -507,6 +507,7 @@ class TaskHistory(models.Model):
 
     def update_heartbeat(self) -> None:
         """Update the last heartbeat timestamp (no log message added)"""
+        self.last_heartbeat = timezone.now()
         self.save(update_fields=["last_heartbeat"])
 
     def get_expected_duration_minutes(self) -> int:
