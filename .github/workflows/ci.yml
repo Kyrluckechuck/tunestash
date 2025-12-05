@@ -310,7 +310,26 @@ jobs:
             exit 1
           fi
 
-          # Test health endpoint
+          # Start frontend (nginx proxy that exposes port 5000)
+          docker compose up -d frontend
+          echo "⏰ Waiting for frontend container to be healthy..."
+          for i in {1..30}; do
+            if docker compose ps frontend --format json | jq -r '.Status' | grep -q "healthy"; then
+              echo "✅ Frontend container is healthy after ${i} attempts"
+              break
+            fi
+            echo "⏳ Frontend container not ready yet (attempt $i/30)..."
+            sleep 2
+          done
+
+          if ! docker compose ps frontend --format json | jq -r '.Status' | grep -q "healthy"; then
+            echo "❌ Frontend container never became healthy"
+            docker compose ps frontend
+            docker compose logs frontend
+            exit 1
+          fi
+
+          # Test health endpoint (through nginx proxy on port 5000)
           echo "Testing API health endpoint..."
           curl -f http://localhost:5000/healthz
           echo ""
