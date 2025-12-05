@@ -272,18 +272,37 @@ jobs:
         run: |
           mkdir -p "${SLM_CONFIG_DIR}/db/data"
 
-          # Start postgres
+          # Start postgres and wait for healthy
           docker compose up -d postgres
+          echo "Waiting for postgres..."
           for i in {1..30}; do
-            docker compose ps postgres | grep -q "healthy" && break
+            if docker compose ps postgres | grep -q "healthy"; then
+              echo "✅ Postgres is healthy"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Postgres failed to become healthy"
+              docker compose logs postgres
+              exit 1
+            fi
             sleep 2
           done
 
-          # Start web
+          # Start web and wait for healthy
           docker compose up -d web
-          for i in {1..30}; do
-            docker compose ps web --format json | jq -r '.Status' | grep -q "healthy" && break
-            sleep 2
+          echo "Waiting for web..."
+          for i in {1..45}; do
+            if docker compose ps web | grep -q "healthy"; then
+              echo "✅ Web is healthy"
+              break
+            fi
+            if [ $i -eq 45 ]; then
+              echo "❌ Web failed to become healthy"
+              docker compose logs web
+              exit 1
+            fi
+            echo "  Attempt $i/45..."
+            sleep 3
           done
 
           # Test health endpoint
