@@ -276,12 +276,13 @@ jobs:
           docker compose up -d postgres
           echo "Waiting for postgres..."
           for i in {1..30}; do
-            if docker compose ps postgres | grep -q "healthy"; then
+            if docker compose ps postgres | grep -iq "healthy"; then
               echo "✅ Postgres is healthy"
               break
             fi
             if [ $i -eq 30 ]; then
               echo "❌ Postgres failed to become healthy"
+              docker compose ps postgres
               docker compose logs postgres
               exit 1
             fi
@@ -291,17 +292,19 @@ jobs:
           # Start web and wait for healthy
           docker compose up -d web
           echo "Waiting for web..."
-          for i in {1..45}; do
-            if docker compose ps web | grep -q "healthy"; then
+          for i in {1..60}; do
+            STATUS=$(docker compose ps web --format json | jq -r '.[0].Health // .Health // "unknown"' 2>/dev/null || echo "unknown")
+            echo "  Attempt $i/60: status=$STATUS"
+            if [ "$STATUS" = "healthy" ]; then
               echo "✅ Web is healthy"
               break
             fi
-            if [ $i -eq 45 ]; then
+            if [ $i -eq 60 ]; then
               echo "❌ Web failed to become healthy"
+              docker compose ps web
               docker compose logs web
               exit 1
             fi
-            echo "  Attempt $i/45..."
             sleep 3
           done
 
