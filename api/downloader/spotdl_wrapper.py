@@ -69,6 +69,60 @@ _SPOTDL_REINIT_INTERVAL_TRACKS = (
 _DOWNLOAD_DELAY_SECONDS = 1.0
 
 
+def _get_container_memory_mb() -> tuple[float, float]:
+    """
+    Get total memory usage for all processes in the container.
+
+    In Docker, /sys/fs/cgroup/memory.current shows total cgroup memory usage.
+    Falls back to summing all process RSS if cgroup info unavailable.
+
+    Returns:
+        Tuple of (container_memory_mb, cgroup_limit_mb or 0 if unknown)
+    """
+    try:
+        # Try cgroup v2 first (modern Docker)
+        with open("/sys/fs/cgroup/memory.current", "r") as f:
+            container_bytes = int(f.read().strip())
+        container_mb = container_bytes / 1024 / 1024
+
+        # Get cgroup limit
+        try:
+            with open("/sys/fs/cgroup/memory.max", "r") as f:
+                limit_str = f.read().strip()
+                limit_mb = int(limit_str) / 1024 / 1024 if limit_str != "max" else 0
+        except Exception:
+            limit_mb = 0
+
+        return container_mb, limit_mb
+    except FileNotFoundError:
+        pass
+
+    try:
+        # Try cgroup v1 (older Docker)
+        with open("/sys/fs/cgroup/memory/memory.usage_in_bytes", "r") as f:
+            container_bytes = int(f.read().strip())
+        container_mb = container_bytes / 1024 / 1024
+
+        try:
+            with open("/sys/fs/cgroup/memory/memory.limit_in_bytes", "r") as f:
+                limit_mb = int(f.read().strip()) / 1024 / 1024
+        except Exception:
+            limit_mb = 0
+
+        return container_mb, limit_mb
+    except FileNotFoundError:
+        pass
+
+    # Fallback: sum all process memory (less accurate but works outside containers)
+    try:
+        import psutil
+
+        total_mb = sum(p.memory_info().rss for p in psutil.process_iter()) / 1024 / 1024
+        return total_mb, 0
+    except Exception:
+        return 0, 0
+
+
 def _check_and_release_memory(
     logger: logging.Logger,
     track_index: int,
@@ -98,16 +152,22 @@ def _check_and_release_memory(
         final_rss = process.memory_info().rss / 1024 / 1024
         released = initial_rss - final_rss
 
+        # Get container-level memory (all processes in cgroup)
+        container_mb, limit_mb = _get_container_memory_mb()
+        limit_str = f"/{limit_mb:.0f}MB" if limit_mb > 0 else ""
+
         # Determine log level based on memory usage
         if final_rss >= _MEMORY_WARNING_THRESHOLD_MB:
             logger.warning(
-                f"[MEMORY MID-TASK] Track {track_index}: {final_rss:.0f}MB "
-                f"(released {released:.1f}MB) ⚠️ ABOVE THRESHOLD"
+                f"[MEMORY MID-TASK] Track {track_index}: "
+                f"worker={final_rss:.0f}MB (released {released:.1f}MB), "
+                f"container={container_mb:.0f}MB{limit_str} ⚠️ ABOVE THRESHOLD"
             )
         else:
             logger.info(
-                f"[MEMORY MID-TASK] Track {track_index}: {final_rss:.0f}MB "
-                f"(released {released:.1f}MB)"
+                f"[MEMORY MID-TASK] Track {track_index}: "
+                f"worker={final_rss:.0f}MB (released {released:.1f}MB), "
+                f"container={container_mb:.0f}MB{limit_str}"
             )
     except Exception:
         pass  # Don't let memory checks break downloads
@@ -1195,6 +1255,25 @@ class SpotdlWrapper:
                     # that SpotdlSong.from_url() would make (track, artist, album)
                     spotdl_song = song_from_track_data(track)
                     song_success, output_path = self.spotdl.download(spotdl_song)
+
+                    # Log memory after each download to catch spikes during yt-dlp processing
+                    try:
+                        import os
+
+                        import psutil
+
+                        rss_mb = (
+                            psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+                        )
+                        container_mb, limit_mb = _get_container_memory_mb()
+                        limit_str = f"/{limit_mb:.0f}" if limit_mb > 0 else ""
+                        self.logger.info(
+                            f"[MEMORY POST-DOWNLOAD] Track {track_index}: "
+                            f"worker={rss_mb:.0f}MB, container={container_mb:.0f}{limit_str}MB"
+                        )
+                    except Exception:
+                        pass
+
                     if song_success is None or output_path is None:
                         self.logger.debug(song_success)
                         self.logger.debug(f"output_path: {output_path}")
