@@ -41,6 +41,9 @@ def is_task_pending_or_running(task_id: str) -> tuple[bool, str]:
     Checks both TaskResult (Celery's result backend) and TaskHistory (app tracking)
     to catch tasks at any stage of execution.
 
+    If a task exists but is in a terminal state (SUCCESS, FAILURE, etc.), the old
+    records are deleted to allow re-queuing with the same deterministic task ID.
+
     Args:
         task_id: The Celery task ID to check
 
@@ -52,19 +55,35 @@ def is_task_pending_or_running(task_id: str) -> tuple[bool, str]:
 
     from .models import TaskHistory
 
+    # Active states that should block re-queuing
+    task_result_active_states = {"PENDING", "STARTED", "RETRY"}
+    task_history_active_states = {"PENDING", "RUNNING"}
+
     # Check TaskResult (Celery's result backend) - tracks tasks that have started
     try:
         task_result = TaskResult.objects.get(task_id=task_id)
-        if task_result.status in ["PENDING", "STARTED", "RETRY"]:
+        if task_result.status in task_result_active_states:
             return True, f"TaskResult.status={task_result.status}"
+        # Terminal state - delete so we can re-queue with same task_id
+        logger.info(
+            f"[DEDUP] Clearing stale TaskResult for {task_id} "
+            f"(status={task_result.status})"
+        )
+        task_result.delete()
     except TaskResult.DoesNotExist:
         pass
 
     # Check TaskHistory (app tracking) - tracks tasks from when they begin executing
     try:
         task_history = TaskHistory.objects.get(task_id=task_id)
-        if task_history.status in ["PENDING", "RUNNING"]:
+        if task_history.status in task_history_active_states:
             return True, f"TaskHistory.status={task_history.status}"
+        # Terminal state - delete so we can re-queue with same task_id
+        logger.info(
+            f"[DEDUP] Clearing stale TaskHistory for {task_id} "
+            f"(status={task_history.status})"
+        )
+        task_history.delete()
     except TaskHistory.DoesNotExist:
         pass
 

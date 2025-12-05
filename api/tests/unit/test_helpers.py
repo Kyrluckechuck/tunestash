@@ -323,8 +323,10 @@ class TestTaskDeduplication(TestCase):
         assert is_pending is True
         assert "TaskResult.status=PENDING" in reason
 
-    def test_is_task_pending_or_running_returns_false_for_completed_task(self):
-        """is_task_pending_or_running should return False for completed tasks."""
+    def test_is_task_pending_or_running_returns_false_and_cleans_up_completed_task(
+        self,
+    ):
+        """is_task_pending_or_running should return False and delete completed tasks."""
         from django_celery_results.models import TaskResult
 
         # Create a completed task in the results database
@@ -344,6 +346,9 @@ class TestTaskDeduplication(TestCase):
         is_pending, reason = is_task_pending_or_running(task_id)
         assert is_pending is False
         assert reason == ""
+
+        # The completed TaskResult should have been deleted to allow re-queuing
+        assert not TaskResult.objects.filter(task_id=task_id).exists()
 
     def test_is_task_pending_or_running_checks_task_history(self):
         """is_task_pending_or_running should also check TaskHistory for running tasks."""
@@ -368,3 +373,30 @@ class TestTaskDeduplication(TestCase):
         is_pending, reason = is_task_pending_or_running(task_id)
         assert is_pending is True
         assert "TaskHistory.status=RUNNING" in reason
+
+    def test_is_task_pending_or_running_cleans_up_failed_task_history(self):
+        """is_task_pending_or_running should delete failed TaskHistory to allow re-queuing."""
+        from library_manager.models import TaskHistory
+
+        # Create a failed task in TaskHistory
+        task_id = generate_task_id(
+            "library_manager.tasks.download_playlist",
+            playlist_url="spotify:playlist:testfailed",
+            tracked=False,
+        )
+
+        TaskHistory.objects.create(
+            task_id=task_id,
+            type="DOWNLOAD",
+            entity_id="testfailed",
+            entity_type="PLAYLIST",
+            status="FAILED",
+        )
+
+        # Should return (False, "") and clean up the failed record
+        is_pending, reason = is_task_pending_or_running(task_id)
+        assert is_pending is False
+        assert reason == ""
+
+        # The failed TaskHistory should have been deleted to allow re-queuing
+        assert not TaskHistory.objects.filter(task_id=task_id).exists()
