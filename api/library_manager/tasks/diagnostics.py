@@ -36,6 +36,101 @@ def _get_process_memory() -> Dict[str, Any]:
     }
 
 
+def _get_parent_process_memory() -> Dict[str, Any]:
+    """
+    Get memory statistics for the parent (main Celery) process.
+
+    This allows workers to monitor the parent process's memory, which
+    is where the memory leak actually occurs in Celery's prefork pool.
+    """
+    try:
+        parent_pid = os.getppid()
+        parent = psutil.Process(parent_pid)
+        mem_info = parent.memory_info()
+
+        # Get memory maps summary (shows where memory is allocated)
+        memory_maps_summary: Dict[str, float] = {}
+        try:
+            for mmap in parent.memory_maps(grouped=True):
+                # Group by path type
+                path = mmap.path
+                if path.startswith("["):
+                    key = path  # [heap], [stack], [anon], etc.
+                elif path.startswith("/"):
+                    # Simplify library paths
+                    if "python" in path.lower():
+                        key = "[python-libs]"
+                    elif ".so" in path:
+                        key = "[shared-libs]"
+                    else:
+                        key = "[mapped-files]"
+                else:
+                    key = "[other]"
+                memory_maps_summary[key] = memory_maps_summary.get(key, 0) + mmap.rss
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            pass
+
+        # Convert to MB
+        maps_mb = {k: round(v / 1024 / 1024, 2) for k, v in memory_maps_summary.items()}
+
+        return {
+            "rss_mb": round(mem_info.rss / 1024 / 1024, 2),
+            "vms_mb": round(mem_info.vms / 1024 / 1024, 2),
+            "percent": round(parent.memory_percent(), 2),
+            "pid": parent_pid,
+            "num_threads": parent.num_threads(),
+            "num_fds": parent.num_fds(),
+            "memory_maps": maps_mb,
+        }
+    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+        return {"error": str(e), "pid": os.getppid()}
+
+
+def _get_all_celery_processes() -> List[Dict[str, Any]]:
+    """
+    Get memory info for all Celery-related processes in the container.
+
+    This helps understand where memory is distributed across main + workers.
+    """
+    processes = []
+    current_pid = os.getpid()
+    parent_pid = os.getppid()
+
+    for proc in psutil.process_iter(["pid", "ppid", "name", "cmdline", "memory_info"]):
+        try:
+            info = proc.info
+            cmdline = " ".join(info.get("cmdline") or [])
+
+            # Only include celery-related processes
+            if "celery" not in cmdline.lower():
+                continue
+
+            mem = info.get("memory_info")
+            if not mem:
+                continue
+
+            role = "unknown"
+            if info["pid"] == parent_pid:
+                role = "main"
+            elif info["pid"] == current_pid:
+                role = "this-worker"
+            elif info.get("ppid") == parent_pid:
+                role = "sibling-worker"
+
+            processes.append(
+                {
+                    "pid": info["pid"],
+                    "role": role,
+                    "rss_mb": round(mem.rss / 1024 / 1024, 2),
+                    "vms_mb": round(mem.vms / 1024 / 1024, 2),
+                }
+            )
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    return sorted(processes, key=lambda x: x["rss_mb"], reverse=True)
+
+
 def _get_container_memory() -> Tuple[float, float]:
     """
     Get total memory usage for all processes in the container.
@@ -494,5 +589,66 @@ def periodic_memory_health_check(self: Any) -> Dict[str, Any]:
         }
     except Exception:
         pass
+
+    return results
+
+
+@celery_app.task(bind=True, name="library_manager.tasks.profile_parent_process")
+def profile_parent_process(self: Any) -> Dict[str, Any]:
+    """
+    Profile the PARENT (main Celery) process memory from a worker.
+
+    This task runs in a worker but inspects the parent process to understand
+    where memory is being used. Useful for debugging the main Celery process
+    memory leak issue.
+
+    Returns:
+        Dictionary with parent process memory breakdown and all Celery processes
+    """
+    results: Dict[str, Any] = {
+        "task_id": self.request.id,
+        "worker_pid": os.getpid(),
+        "parent_pid": os.getppid(),
+    }
+
+    # Get parent process detailed memory info
+    results["parent_memory"] = _get_parent_process_memory()
+
+    # Get this worker's memory for comparison
+    results["worker_memory"] = _get_process_memory()
+
+    # Get container-level memory
+    container_mb, limit_mb = _get_container_memory()
+    results["container_memory"] = {
+        "current_mb": round(container_mb, 1),
+        "limit_mb": round(limit_mb, 1) if limit_mb > 0 else None,
+        "percent": round(container_mb / limit_mb * 100, 1) if limit_mb > 0 else None,
+    }
+
+    # Get all Celery processes for a complete picture
+    results["all_celery_processes"] = _get_all_celery_processes()
+
+    # Calculate where the memory is
+    parent_rss = results["parent_memory"].get("rss_mb", 0)
+    worker_rss = results["worker_memory"].get("rss_mb", 0)
+    total_processes = parent_rss + worker_rss
+
+    results["analysis"] = {
+        "parent_rss_mb": parent_rss,
+        "worker_rss_mb": worker_rss,
+        "total_celery_processes_mb": total_processes,
+        "container_mb": round(container_mb, 1),
+        "unaccounted_mb": round(container_mb - total_processes, 1),
+        "parent_percent_of_container": (
+            round(parent_rss / container_mb * 100, 1) if container_mb > 0 else None
+        ),
+    }
+
+    # Log summary
+    logger.info(
+        f"[PARENT PROFILE] Parent={parent_rss:.0f}MB, Worker={worker_rss:.0f}MB, "
+        f"Container={container_mb:.0f}MB, "
+        f"Parent is {results['analysis']['parent_percent_of_container']:.0f}% of container"
+    )
 
     return results
