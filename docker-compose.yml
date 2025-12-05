@@ -106,9 +106,9 @@ services:
           memory: 2G
         reservations:
           memory: 512M
-# For debug tracing
-    # cap_add:
-    #   - SYS_PTRACE
+    # SYS_ADMIN allows dropping page cache to prevent OOM from cached audio files
+    cap_add:
+      - SYS_ADMIN
   beat:
     image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash:latest}
     environment:
