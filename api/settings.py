@@ -120,18 +120,18 @@ settings = dynaconf.DjangoDynaconf(
 )
 
 
-# Internal IPs for development
+# Add django_extensions if available (useful for shell_plus in prod debugging)
+_installed_apps = list(settings.INSTALLED_APPS)
+try:
+    import django_extensions  # noqa: F401
+
+    _installed_apps.append("django_extensions")
+except ImportError:
+    pass
+
+# Internal IPs and dev-only apps
 if settings.DEBUG:  # type: ignore[name-defined]
     INTERNAL_IPS = ["127.0.0.1", "10.0.2.2"]  # For Docker, VMs
-
-    # Add dev-only apps if available (use settings.set() for dynaconf compatibility)
-    _installed_apps = list(settings.INSTALLED_APPS)
-    try:
-        import django_extensions  # noqa: F401
-
-        _installed_apps.append("django_extensions")
-    except ImportError:
-        pass
 
     try:
         import django_stubs_ext  # noqa: F401
@@ -140,7 +140,7 @@ if settings.DEBUG:  # type: ignore[name-defined]
     except ImportError:
         pass
 
-    settings.set("INSTALLED_APPS", _installed_apps)
+settings.set("INSTALLED_APPS", _installed_apps)
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"

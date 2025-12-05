@@ -33,6 +33,3 @@ mypy==1.18.2
 
 # File system monitoring for development
 watchdog>=2.1.0
-
-# Django development tools
-django-extensions>=3.2.0  # Provides shell_plus, show_urls, and other useful commands
