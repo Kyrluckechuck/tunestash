@@ -34,31 +34,41 @@ def generate_task_id(task_name: str, *args, **kwargs) -> str:
     return f"{task_name}-{task_hash[:12]}"
 
 
-def is_task_pending_or_running(task_id: str) -> bool:
+def is_task_pending_or_running(task_id: str) -> tuple[bool, str]:
     """
     Check if a task with the given ID is currently pending or running.
+
+    Checks both TaskResult (Celery's result backend) and TaskHistory (app tracking)
+    to catch tasks at any stage of execution.
 
     Args:
         task_id: The Celery task ID to check
 
     Returns:
-        True if task is PENDING or STARTED, False otherwise
-
-    Note:
-        Celery's AsyncResult.state returns "PENDING" for both queued tasks AND
-        unknown task IDs. We must check django_celery_results to determine if
-        the task actually exists before trusting the "PENDING" state.
+        Tuple of (is_pending_or_running: bool, reason: str)
+        - reason explains why it was considered pending/running, or empty if not
     """
     from django_celery_results.models import TaskResult
 
-    # Check if task result exists in database
+    from .models import TaskHistory
+
+    # Check TaskResult (Celery's result backend) - tracks tasks that have started
     try:
         task_result = TaskResult.objects.get(task_id=task_id)
-        # Task exists - check if it's in a pending/running state
-        return task_result.status in ["PENDING", "STARTED", "RETRY"]
+        if task_result.status in ["PENDING", "STARTED", "RETRY"]:
+            return True, f"TaskResult.status={task_result.status}"
     except TaskResult.DoesNotExist:
-        # Task doesn't exist in results DB - not queued yet
-        return False
+        pass
+
+    # Check TaskHistory (app tracking) - tracks tasks from when they begin executing
+    try:
+        task_history = TaskHistory.objects.get(task_id=task_id)
+        if task_history.status in ["PENDING", "RUNNING"]:
+            return True, f"TaskHistory.status={task_history.status}"
+    except TaskHistory.DoesNotExist:
+        pass
+
+    return False, ""
 
 
 # Original Huey implementations (commented out)
@@ -101,7 +111,12 @@ def update_tracked_artists_albums(
         )
 
         # Skip if task is already queued or running
-        if is_task_pending_or_running(task_id):
+        is_pending, reason = is_task_pending_or_running(task_id)
+        if is_pending:
+            logger.info(
+                f"[DEDUP] Skipping fetch_all_albums_for_artist for artist {artist.id}: "
+                f"task_id={task_id}, reason={reason}"
+            )
             continue
 
         # Queue task asynchronously with deterministic ID for deduplication
@@ -136,7 +151,12 @@ def download_missing_tracked_artists(
         )
 
         # Skip if task is already queued or running
-        if is_task_pending_or_running(task_id):
+        is_pending, reason = is_task_pending_or_running(task_id)
+        if is_pending:
+            logger.info(
+                f"[DEDUP] Skipping download_missing_albums_for_artist for artist {artist.id}: "
+                f"task_id={task_id}, reason={reason}"
+            )
             continue
 
         # Queue the task asynchronously with deterministic ID for deduplication
@@ -197,8 +217,12 @@ def download_non_enqueued_playlists(
         logger.info(f"[ENQUEUE] Generated task_id: {task_id}")
 
         # Skip if task is already queued or running
-        if is_task_pending_or_running(task_id):
-            logger.info(f"[ENQUEUE] SKIP: {playlist.name} - task pending/running")
+        is_pending, reason = is_task_pending_or_running(task_id)
+        if is_pending:
+            logger.info(
+                f"[DEDUP] Skipping download_playlist for '{playlist.name}': "
+                f"task_id={task_id}, reason={reason}"
+            )
             continue
 
         # Queue the task asynchronously with deterministic ID for deduplication

@@ -73,7 +73,9 @@ class TestHelpers(TestCase):
         mock_download.delay.assert_has_calls(expected_calls, any_order=True)
         assert mock_download.delay.call_count == 2
 
-    @patch("library_manager.helpers.is_task_pending_or_running", return_value=False)
+    @patch(
+        "library_manager.helpers.is_task_pending_or_running", return_value=(False, "")
+    )
     @patch("library_manager.tasks.fetch_all_albums_for_artist")
     def test_update_tracked_artists_albums_uses_database_ids(
         self, mock_fetch, mock_is_pending
@@ -96,7 +98,9 @@ class TestHelpers(TestCase):
             # Verify task_id is set for deduplication
             assert "task_id" in kwargs
 
-    @patch("library_manager.helpers.is_task_pending_or_running", return_value=False)
+    @patch(
+        "library_manager.helpers.is_task_pending_or_running", return_value=(False, "")
+    )
     @patch("library_manager.tasks.download_missing_albums_for_artist")
     def test_download_missing_tracked_artists_uses_database_ids(
         self, mock_download, mock_is_pending
@@ -124,7 +128,7 @@ class TestHelpers(TestCase):
 
     @patch("library_manager.tasks.fetch_all_albums_for_artist")
     def test_enqueue_fetch_all_albums_for_artists_with_extra_args(self, mock_fetch):
-        """Test that enqueue_fetch_all_albums_for_artists ignores extra args (task doesn't support them)."""
+        """Test enqueue_fetch_all_albums_for_artists ignores extra args."""
         from unittest.mock import call
 
         artists = Artist.objects.filter(tracked=True)
@@ -289,12 +293,13 @@ class TestTaskDeduplication(TestCase):
             tracked=False,
         )
 
-        # Should return False since task doesn't exist
-        result = is_task_pending_or_running(fake_task_id)
-        assert result is False, (
+        # Should return (False, "") since task doesn't exist
+        is_pending, reason = is_task_pending_or_running(fake_task_id)
+        assert is_pending is False, (
             "is_task_pending_or_running should return False for non-existent tasks. "
             "If this fails, playlist syncing will be broken - tasks won't queue!"
         )
+        assert reason == ""
 
     def test_is_task_pending_or_running_returns_true_for_pending_task(self):
         """is_task_pending_or_running should return True for tasks that are actually pending."""
@@ -313,9 +318,10 @@ class TestTaskDeduplication(TestCase):
             status="PENDING",
         )
 
-        # Should return True since task exists and is pending
-        result = is_task_pending_or_running(task_id)
-        assert result is True
+        # Should return (True, reason) since task exists and is pending
+        is_pending, reason = is_task_pending_or_running(task_id)
+        assert is_pending is True
+        assert "TaskResult.status=PENDING" in reason
 
     def test_is_task_pending_or_running_returns_false_for_completed_task(self):
         """is_task_pending_or_running should return False for completed tasks."""
@@ -334,6 +340,31 @@ class TestTaskDeduplication(TestCase):
             status="SUCCESS",
         )
 
-        # Should return False since task is completed
-        result = is_task_pending_or_running(task_id)
-        assert result is False
+        # Should return (False, "") since task is completed
+        is_pending, reason = is_task_pending_or_running(task_id)
+        assert is_pending is False
+        assert reason == ""
+
+    def test_is_task_pending_or_running_checks_task_history(self):
+        """is_task_pending_or_running should also check TaskHistory for running tasks."""
+        from library_manager.models import TaskHistory
+
+        # Create a running task in TaskHistory (but not in TaskResult)
+        task_id = generate_task_id(
+            "library_manager.tasks.download_playlist",
+            playlist_url="spotify:playlist:test789",
+            tracked=False,
+        )
+
+        TaskHistory.objects.create(
+            task_id=task_id,
+            type="DOWNLOAD",
+            entity_id="test789",
+            entity_type="PLAYLIST",
+            status="RUNNING",
+        )
+
+        # Should return (True, reason) since task is in TaskHistory as RUNNING
+        is_pending, reason = is_task_pending_or_running(task_id)
+        assert is_pending is True
+        assert "TaskHistory.status=RUNNING" in reason
