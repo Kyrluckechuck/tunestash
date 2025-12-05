@@ -391,31 +391,17 @@ See `api/src/services/album.py` for examples:
 
 ### CI/CD and Docker Build Caching
 
-The CI workflow (`.github/workflows/ci.yml`) uses **dual-layer caching** for Docker builds to significantly reduce build times:
-
-**Caching Strategy** (configured in `docker-bake.hcl`):
-1. **GitHub Actions Cache** (`type=gha`): Fast in-runner cache with 10GB limit per repository
-2. **Registry Cache** (`type=registry`): Persistent cache stored in GHCR with no size limits
+The CI workflow uses `docker/build-push-action` with GitHub Actions cache for fast Docker builds:
 
 **How it works:**
-- BuildKit automatically caches Docker layers including yarn and pip package installations
-- First build after cache clear: ~5-10 minutes
-- Subsequent builds with warm cache: ~1-2 minutes
-- Multi-platform builds (amd64, arm64) share cache across architectures
-
-**Cache scope:**
-- Backend: `backend-app` scope + registry cache at `ghcr.io/.../tunestash:buildcache`
-- Frontend: `frontend-app` scope + registry cache at `ghcr.io/.../tunestash-frontend:buildcache`
+- Uses `type=gha` cache backend with separate scopes for backend/frontend
+- BuildKit caches Docker layers including yarn and pip installations
+- Multi-platform builds (amd64, arm64) are cached per-scope
+- First build: ~10-15 minutes, cached builds: ~2-3 minutes
 
 **Local development caching:**
-- Local Docker builds also benefit from BuildKit cache mounts
-- Yarn cache is shared between frontend Dockerfile and backend Dockerfile via named cache mount (`id=yarn-cache`)
-- Pip cache is stored in `/root/.cache/pip` via cache mount
-
-**Cache management:**
-- GHA cache is automatically managed (LRU eviction after 10GB)
-- Registry cache persists until manually deleted
-- Local cache survives `docker system prune` (uses BuildKit cache, not image layers)
+- Dockerfiles use BuildKit cache mounts for yarn and pip
+- Cache survives `docker system prune` (BuildKit cache, not image layers)
 
 ## Debugging Worker Issues
 
