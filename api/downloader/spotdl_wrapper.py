@@ -155,6 +155,27 @@ def _request_main_process_shutdown(logger: logging.Logger) -> bool:
         return False
 
 
+def _drop_page_cache(logger: logging.Logger) -> bool:
+    """
+    Attempt to drop Linux page cache to free memory.
+
+    Downloaded audio files get cached by the kernel, consuming cgroup memory budget.
+    The OOM killer can target the worker process even though the memory is just cache.
+
+    Returns:
+        True if cache was dropped, False otherwise
+    """
+    try:
+        # sync first to flush dirty pages
+        os.sync()
+        # Drop page cache (requires root or CAP_SYS_ADMIN)
+        with open("/proc/sys/vm/drop_caches", "w", encoding="utf-8") as f:
+            f.write("1")  # 1 = page cache only, 2 = dentries/inodes, 3 = both
+        return True
+    except (PermissionError, FileNotFoundError, OSError):
+        return False
+
+
 def _check_and_release_memory(
     logger: logging.Logger,
     track_index: int,
@@ -212,7 +233,25 @@ def _check_and_release_memory(
                 f"container={container_mb:.0f}MB{limit_str} ({container_percent:.0f}%)"
             )
 
-        # Check container memory and request restart if critical
+        # Try to drop page cache when container memory is elevated (>70%)
+        # Page cache from downloaded files consumes cgroup memory and can trigger OOM
+        cache_dropped = False
+        if limit_mb > 0 and container_percent >= 70:
+            pre_drop = container_mb
+            cache_dropped = _drop_page_cache(logger)
+            if cache_dropped:
+                # Re-read container memory after dropping cache
+                container_mb, _ = _get_container_memory_mb()
+                dropped_mb = pre_drop - container_mb
+                container_percent = (
+                    (container_mb / limit_mb * 100) if limit_mb > 0 else 0
+                )
+                logger.info(
+                    f"[MEMORY MID-TASK] Dropped {dropped_mb:.0f}MB page cache, "
+                    f"container now {container_mb:.0f}MB ({container_percent:.0f}%)"
+                )
+
+        # Check container memory and request restart if still critical after cache drop
         if limit_mb > 0 and container_percent >= _CONTAINER_RESTART_PERCENT:
             logger.critical(
                 f"[MEMORY MID-TASK] CONTAINER CRITICAL - "
