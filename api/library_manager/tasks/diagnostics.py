@@ -6,15 +6,17 @@ memory issues without impacting normal operation.
 Includes:
 - On-demand memory profiling tasks (tracemalloc, object counts, etc.)
 - Periodic memory health check task for early warning of memory issues
+- Container-level memory monitoring to detect main process leaks
 """
 
 import gc
 import linecache
 import logging
 import os
+import signal
 import sys
 import tracemalloc
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import psutil
 from celery_app import app as celery_app
@@ -32,6 +34,92 @@ def _get_process_memory() -> Dict[str, Any]:
         "percent": round(process.memory_percent(), 2),
         "pid": os.getpid(),
     }
+
+
+def _get_container_memory() -> Tuple[float, float]:
+    """
+    Get total memory usage for all processes in the container.
+
+    The main Celery process (parent) leaks memory over time, but worker tasks
+    only see their own process memory. This function reads cgroup stats to get
+    the total container memory, which includes the leaking parent process.
+
+    Returns:
+        Tuple of (current_mb, limit_mb). limit_mb is 0 if no limit detected.
+    """
+    # Try cgroup v2 first (modern Docker/containerd)
+    try:
+        with open("/sys/fs/cgroup/memory.current", "r") as f:
+            container_bytes = int(f.read().strip())
+        container_mb = container_bytes / 1024 / 1024
+
+        limit_mb = 0.0
+        try:
+            with open("/sys/fs/cgroup/memory.max", "r") as f:
+                limit_str = f.read().strip()
+                if limit_str != "max":
+                    limit_mb = int(limit_str) / 1024 / 1024
+        except Exception:
+            pass
+
+        return container_mb, limit_mb
+    except FileNotFoundError:
+        pass
+
+    # Try cgroup v1 (older Docker)
+    try:
+        with open("/sys/fs/cgroup/memory/memory.usage_in_bytes", "r") as f:
+            container_bytes = int(f.read().strip())
+        container_mb = container_bytes / 1024 / 1024
+
+        limit_mb = 0.0
+        try:
+            with open("/sys/fs/cgroup/memory/memory.limit_in_bytes", "r") as f:
+                limit_bytes = int(f.read().strip())
+                # Check if it's a real limit or effectively unlimited
+                if limit_bytes < 9223372036854771712:  # Not near max int64
+                    limit_mb = limit_bytes / 1024 / 1024
+        except Exception:
+            pass
+
+        return container_mb, limit_mb
+    except FileNotFoundError:
+        pass
+
+    # Fallback: sum all process memory (less accurate, doesn't catch shared pages)
+    try:
+        total_rss = 0
+        for proc in psutil.process_iter(["memory_info"]):
+            try:
+                total_rss += proc.info["memory_info"].rss
+            except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
+                continue
+        return total_rss / 1024 / 1024, 0.0
+    except Exception:
+        return 0.0, 0.0
+
+
+def _request_main_process_shutdown() -> bool:
+    """
+    Request graceful shutdown of the main Celery process.
+
+    This sends SIGTERM to PID 1 (the main Celery process in Docker), which
+    triggers a graceful shutdown. Docker's restart policy will then restart
+    the container with fresh memory.
+
+    Returns:
+        True if signal was sent, False otherwise
+    """
+    try:
+        parent_pid = os.getppid()
+        logger.warning(
+            f"[MEMORY] Requesting main process shutdown (parent PID: {parent_pid})"
+        )
+        os.kill(parent_pid, signal.SIGTERM)
+        return True
+    except Exception as e:
+        logger.error(f"[MEMORY] Failed to signal parent process: {e}")
+        return False
 
 
 def _get_top_malloc_stats(
@@ -270,64 +358,131 @@ def memory_compare_before_after(
 # ============================================================================
 
 # Thresholds for periodic health check (in MB)
+# Worker process thresholds
 MEMORY_HEALTHY_THRESHOLD_MB = 600
 MEMORY_WARNING_THRESHOLD_MB = 800
 MEMORY_CRITICAL_THRESHOLD_MB = 1200
+
+# Container-level thresholds (detects main Celery process memory leaks)
+# Celery's main process leaks ~150-200MB per worker cycle - this is a known issue
+# See: https://github.com/celery/celery/issues/4843
+CONTAINER_WARNING_PERCENT = 70  # Warn at 70% of container limit
+CONTAINER_RESTART_PERCENT = 85  # Request restart at 85% of limit
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.periodic_memory_health_check")
 def periodic_memory_health_check(self: Any) -> Dict[str, Any]:
     """
-    Periodic task to check memory health of workers.
+    Periodic task to check memory health of workers and container.
 
-    This task is designed to run every 10-15 minutes to provide early
-    warning of memory issues before they cause OOM kills.
+    This task monitors both:
+    1. Worker process memory (via psutil) - stable due to --max-tasks-per-child
+    2. Container memory (via cgroup) - catches main Celery process leaks
+
+    The main Celery process leaks memory over time (known Celery issue #4843).
+    This task detects when container memory is approaching the limit and
+    requests a graceful restart before OOM kills occur.
 
     Returns:
         Dictionary with memory health status and recommendations
     """
     results: Dict[str, Any] = {
         "worker_pid": os.getpid(),
+        "parent_pid": os.getppid(),
         "task_id": self.request.id,
     }
 
     gc.collect()
-    memory = _get_process_memory()
-    results["memory"] = memory
 
-    rss_mb = memory["rss_mb"]
+    # Worker process memory (this worker only)
+    worker_memory = _get_process_memory()
+    results["worker_memory"] = worker_memory
 
-    # Determine health status
+    # Container-level memory (all processes including leaking main process)
+    container_mb, limit_mb = _get_container_memory()
+    results["container_memory"] = {
+        "current_mb": round(container_mb, 1),
+        "limit_mb": round(limit_mb, 1) if limit_mb > 0 else None,
+        "percent": round(container_mb / limit_mb * 100, 1) if limit_mb > 0 else None,
+    }
+
+    rss_mb = worker_memory["rss_mb"]
+
+    # Check container memory first (catches main process leaks)
+    if limit_mb > 0:
+        container_percent = (container_mb / limit_mb) * 100
+
+        if container_percent >= CONTAINER_RESTART_PERCENT:
+            results["status"] = "CONTAINER_CRITICAL"
+            results["message"] = (
+                f"Container memory at {container_percent:.0f}% "
+                f"({container_mb:.0f}/{limit_mb:.0f} MB). "
+                f"Main Celery process may be leaking. Requesting graceful restart."
+            )
+            logger.critical(
+                f"[MEMORY HEALTH] CONTAINER CRITICAL - "
+                f"{container_mb:.0f}/{limit_mb:.0f} MB ({container_percent:.0f}%). "
+                f"Requesting main process restart."
+            )
+            # Request main process shutdown - Docker will restart the container
+            results["restart_requested"] = _request_main_process_shutdown()
+            return results
+
+        elif container_percent >= CONTAINER_WARNING_PERCENT:
+            results["status"] = "CONTAINER_WARNING"
+            results["message"] = (
+                f"Container memory at {container_percent:.0f}% "
+                f"({container_mb:.0f}/{limit_mb:.0f} MB). "
+                f"Main process may be accumulating memory."
+            )
+            logger.warning(
+                f"[MEMORY HEALTH] CONTAINER WARNING - "
+                f"{container_mb:.0f}/{limit_mb:.0f} MB ({container_percent:.0f}%). "
+                f"Worker={rss_mb:.0f}MB, PID={os.getpid()}"
+            )
+            return results
+
+    # Worker process memory checks (fallback if container checks pass)
     if rss_mb >= MEMORY_CRITICAL_THRESHOLD_MB:
-        results["status"] = "CRITICAL"
+        results["status"] = "WORKER_CRITICAL"
         results["message"] = (
-            f"Memory usage critical ({rss_mb:.1f} MB). "
-            f"Worker may be killed by OOM soon. Consider restarting workers."
+            f"Worker memory critical ({rss_mb:.1f} MB). "
+            f"Worker may be killed by OOM soon."
         )
         logger.critical(
-            f"[MEMORY HEALTH] CRITICAL - {rss_mb:.1f} MB on PID {os.getpid()}. "
-            f"OOM risk is high!"
+            f"[MEMORY HEALTH] WORKER CRITICAL - {rss_mb:.1f} MB on PID {os.getpid()}. "
+            f"Container: {container_mb:.0f} MB"
         )
     elif rss_mb >= MEMORY_WARNING_THRESHOLD_MB:
-        results["status"] = "WARNING"
+        results["status"] = "WORKER_WARNING"
         results["message"] = (
-            f"Memory usage elevated ({rss_mb:.1f} MB). "
+            f"Worker memory elevated ({rss_mb:.1f} MB). "
             f"Worker recycling should occur soon via --max-tasks-per-child."
         )
         logger.warning(
-            f"[MEMORY HEALTH] WARNING - {rss_mb:.1f} MB on PID {os.getpid()}. "
-            f"Elevated but not critical."
+            f"[MEMORY HEALTH] WORKER WARNING - {rss_mb:.1f} MB on PID {os.getpid()}. "
+            f"Container: {container_mb:.0f} MB"
         )
     elif rss_mb >= MEMORY_HEALTHY_THRESHOLD_MB:
         results["status"] = "OK"
-        results["message"] = f"Memory usage normal ({rss_mb:.1f} MB)."
-        logger.info(f"[MEMORY HEALTH] OK - {rss_mb:.1f} MB on PID {os.getpid()}")
+        results["message"] = (
+            f"Memory usage normal (worker={rss_mb:.1f} MB, container={container_mb:.0f} MB)."
+        )
+        logger.info(
+            f"[MEMORY HEALTH] OK - worker={rss_mb:.1f}MB, container={container_mb:.0f}MB, "
+            f"PID={os.getpid()}"
+        )
     else:
         results["status"] = "HEALTHY"
-        results["message"] = f"Memory usage healthy ({rss_mb:.1f} MB)."
-        logger.info(f"[MEMORY HEALTH] HEALTHY - {rss_mb:.1f} MB on PID {os.getpid()}")
+        results["message"] = (
+            f"Memory usage healthy (worker={rss_mb:.1f} MB, container={container_mb:.0f} MB)."
+        )
+        logger.info(
+            f"[MEMORY HEALTH] HEALTHY - worker={rss_mb:.1f}MB, container={container_mb:.0f}MB, "
+            f"PID={os.getpid()}"
+        )
 
-    # Include some context about the worker
+    # Include worker context
     try:
         process = psutil.Process(os.getpid())
         results["worker_info"] = {
