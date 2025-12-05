@@ -1,4 +1,4 @@
-name: CI Optimized
+name: CI
 
 on:
   push:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   # =============================================================================
-  # Job 1: Backend tests (runs in parallel with frontend)
+  # Job 1: Backend tests
   # =============================================================================
   backend:
     name: Backend (lint + tests) • Python ${{ matrix.python-version }}
@@ -80,7 +80,7 @@ jobs:
           make test-api
 
   # =============================================================================
-  # Job 2: Frontend tests (runs in parallel with backend)
+  # Job 2: Frontend tests
   # =============================================================================
   frontend:
     name: Frontend (lint + tests) • Node 20
@@ -108,7 +108,7 @@ jobs:
         run: yarn test:run
 
   # =============================================================================
-  # Job 3: Code quality checks (runs in parallel)
+  # Job 3: Code quality checks
   # =============================================================================
   code-quality:
     name: Code quality checks
@@ -123,21 +123,22 @@ jobs:
         run: python scripts/check-repo-newlines.py check
 
   # =============================================================================
-  # Job 4: Docker build and publish (runs in parallel with tests!)
+  # Job 4: Docker build and publish
   # =============================================================================
   docker-build:
     name: Docker build and publish
     runs-on: ubuntu-latest
-    # No dependencies - starts immediately in parallel with tests
+    outputs:
+      backend-image: ${{ steps.backend-meta.outputs.tags }}
+      frontend-image: ${{ steps.frontend-meta.outputs.tags }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Lowercase repo owner
-        id: owner
-        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -146,35 +147,54 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract branch name
-        id: branch
-        run: |
-          # Get branch name and make it safe for Docker tags
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BRANCH="${{ github.head_ref }}"
-          else
-            BRANCH=${GITHUB_REF#refs/heads/}
-          fi
-          SAFE_BRANCH=$(echo "$BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g' | tr '[:upper:]' '[:lower:]')
-          echo "name=$SAFE_BRANCH" >> "$GITHUB_OUTPUT"
-          echo "original=$BRANCH" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push images
-        uses: docker/bake-action@v5
-        env:
-          REGISTRY: ghcr.io
-          REPO_OWNER: ${{ steps.owner.outputs.value }}
-          SHA: ${{ github.sha }}
-          PLATFORMS: linux/amd64,linux/arm64
-          BRANCH: ${{ github.ref == 'refs/heads/main' && 'main' || steps.branch.outputs.name }}
+      - name: Backend image metadata
+        id: backend-meta
+        uses: docker/metadata-action@v5
         with:
+          images: ghcr.io/${{ github.repository_owner }}/tunestash
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Frontend image metadata
+        id: frontend-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/tunestash-frontend
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: backend-prod
+          platforms: linux/amd64,linux/arm64
           push: true
-          # Cache configuration is in docker-bake.hcl with per-target settings
-          # GHA cache: type=gha,scope=backend/frontend (fast, per-branch)
-          # Registry cache: tunestash:cache / tunestash-frontend:cache (fallback)
+          tags: ${{ steps.backend-meta.outputs.tags }}
+          labels: ${{ steps.backend-meta.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.frontend-meta.outputs.tags }}
+          labels: ${{ steps.frontend-meta.outputs.labels }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
   # =============================================================================
-  # Job 5: Docker integration test (runs after tests AND build complete)
+  # Job 5: Docker integration test
   # =============================================================================
   docker-test:
     name: Docker integration test
@@ -183,13 +203,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Lowercase repo owner
-        id: owner
-        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
-
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -197,16 +210,15 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Load pre-built images locally for testing
-        uses: docker/bake-action@v5
-        env:
-          REGISTRY: ghcr.io
-          REPO_OWNER: ${{ steps.owner.outputs.value }}
-          SHA: ${{ github.sha }}
-        with:
-          targets: local
-          load: true
-          # Uses GHA cache from docker-build job (same workflow, same branch)
+      - name: Pull images for testing
+        run: |
+          # Pull the SHA-tagged images we just built
+          docker pull ghcr.io/${{ github.repository_owner }}/tunestash:sha-${{ github.sha }}
+          docker pull ghcr.io/${{ github.repository_owner }}/tunestash-frontend:sha-${{ github.sha }}
+
+          # Tag them for local use
+          docker tag ghcr.io/${{ github.repository_owner }}/tunestash:sha-${{ github.sha }} local-backend:latest
+          docker tag ghcr.io/${{ github.repository_owner }}/tunestash-frontend:sha-${{ github.sha }} local-frontend:latest
 
       - name: Verify images loaded
         run: |
@@ -220,9 +232,7 @@ jobs:
           MUSIC_DIR="${RUNNER_TEMP}/slm_music"
           mkdir -p "$CONFIG_DIR/db" "$MUSIC_DIR"
 
-          # Create minimal settings.yaml for CI
           cat > "$CONFIG_DIR/settings.yaml" << 'EOF'
-          # Minimal CI configuration
           default:
             cookies_location: "/config/youtube_music_cookies.txt"
             final_path: "/mnt/music_spotify"
@@ -237,7 +247,7 @@ jobs:
           echo "config-dir=$CONFIG_DIR" >> "$GITHUB_OUTPUT"
           echo "music-dir=$MUSIC_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Build and start stack
+      - name: Start stack and test
         env:
           CI: "true"
           SLM_CONFIG_DIR: ${{ steps.mktemp.outputs.config-dir }}
@@ -251,200 +261,62 @@ jobs:
           POSTGRES_USER: "slm_user"
           POSTGRES_PASSWORD: "slm_dev_password"
         run: |
-          echo "Using backend image: $BACKEND_IMAGE"
-          echo "Using frontend image: $FRONTEND_IMAGE"
-          echo "Config dir: $SLM_CONFIG_DIR"
-          echo "Music dir: $MUSIC_DIR"
-
-          echo "=== Creating required directories ==="
           mkdir -p "${SLM_CONFIG_DIR}/db/data"
-          echo "✅ Created PostgreSQL data directory"
 
-          echo "=== Starting PostgreSQL first ==="
+          # Start postgres
           docker compose up -d postgres
-          echo "⏰ Waiting for PostgreSQL to be healthy..."
-
-          for i in {1..45}; do
-            if docker compose ps postgres | grep -q "healthy"; then
-              echo "✅ PostgreSQL is healthy after ${i} attempts"
-              break
-            fi
-            echo "⏳ PostgreSQL not ready yet (attempt $i/45)..."
-            if [ $i -eq 20 ]; then
-              echo "=== PostgreSQL Debug Info ==="
-              docker compose ps postgres
-              docker compose logs postgres
-            fi
-            sleep 3
+          for i in {1..30}; do
+            docker compose ps postgres | grep -q "healthy" && break
+            sleep 2
           done
 
-          if ! docker compose ps postgres | grep -q "healthy"; then
-            echo "❌ PostgreSQL never became healthy"
-            echo "=== Final PostgreSQL Debug Info ==="
-            docker compose ps postgres
-            docker compose logs postgres
-            exit 1
-          fi
-
-          echo "=== Starting web container ==="
+          # Start web
           docker compose up -d web
-
-          echo "⏰ Waiting for web container to become healthy..."
-          for i in {1..45}; do
-            if docker compose ps web --format json | jq -r '.Status' | grep -q "healthy"; then
-              echo "✅ Web container is healthy after ${i} attempts"
-              break
-            fi
-            if [ $i -eq 45 ]; then
-              echo "❌ Web container failed to become healthy after 45 attempts"
-              echo "=== Container logs ==="
-              docker compose logs web
-              exit 1
-            fi
-            echo "⏳ Web container not ready yet (attempt $i/45)..."
-            sleep 3
+          for i in {1..30}; do
+            docker compose ps web --format json | jq -r '.Status' | grep -q "healthy" && break
+            sleep 2
           done
 
-          echo "=== Starting frontend container ==="
-          docker compose up -d frontend
+          # Test health endpoint
+          curl -f http://localhost:5000/healthz
+          echo "✅ API health check passed"
 
-          echo "⏰ Waiting for frontend container to become healthy..."
-          for i in {1..45}; do
-            if docker compose ps frontend --format json | jq -r '.Status' | grep -q "healthy"; then
-              echo "✅ Frontend container is healthy after ${i} attempts"
-              break
-            fi
-            if [ $i -eq 45 ]; then
-              echo "❌ Frontend container failed to become healthy after 45 attempts"
-              echo "=== Container logs ==="
-              docker compose logs frontend
-              exit 1
-            fi
-            echo "⏳ Frontend container not ready yet (attempt $i/45)..."
-            sleep 3
-          done
-
-      - name: Test API health endpoint
-        run: |
-          echo "Testing API health endpoint..."
-          if curl -f http://localhost:5000/healthz; then
-            echo "✅ API health endpoint is responding"
-          else
-            echo "❌ API health endpoint failed"
-            exit 1
-          fi
-
-      - name: Show docker compose logs on failure
+      - name: Show logs on failure
         if: failure()
         run: docker compose logs --no-color --timestamps || true
 
-      - name: Tear down stack
+      - name: Tear down
         if: always()
         run: docker compose down -v
 
-      - name: Cleanup old branch images
+      - name: Cleanup old images
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🧹 Cleaning up images for merged/deleted branches..."
+          # Simple cleanup: delete images for branches that no longer exist
+          for pkg in tunestash tunestash-frontend; do
+            echo "Cleaning $pkg..."
 
-          # Function to cleanup old images for a given package
-          cleanup_package() {
-            local PACKAGE_NAME=$1
-            local IMAGE_TYPE=$2
+            # Get current branches
+            gh api "/repos/${{ github.repository }}/branches" --jq '.[].name' > /tmp/branches.txt
 
-            echo "📦 Cleaning up $IMAGE_TYPE images for package: $PACKAGE_NAME"
+            # Get package versions and delete orphaned branch tags
+            gh api "/user/packages/container/$pkg/versions" --paginate 2>/dev/null | \
+              jq -r '.[] | select(.metadata.container.tags | length > 0) |
+                .metadata.container.tags[] | select(. != "latest" and (startswith("sha-") | not) and (. != "cache"))' | \
+              sort -u > /tmp/image_tags.txt || true
 
-            # Get all package versions
-            gh api \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "/user/packages/container/$PACKAGE_NAME/versions" \
-              --paginate > /tmp/all_versions.json
-
-            # Get all current branch names from the repository
-            gh api \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "/repos/${{ github.repository }}/branches" \
-              --jq '.[].name' > /tmp/current_branches.txt
-
-            # Extract branch images from package versions (both branch-* and direct branch names)
-            # Excludes: latest, sha-*, buildcache, cache tags
-            cat /tmp/all_versions.json | jq -r '
-              .[] |
-              select(.metadata.container.tags[]? | test("^branch-") or (test("^[a-z0-9._-]+$") and (. != "latest") and (test("^sha-") | not) and (. != "buildcache") and (. != "cache"))) |
-              .metadata.container.tags[] |
-              select(test("^branch-") or (test("^[a-z0-9._-]+$") and (. != "latest") and (test("^sha-") | not) and (. != "buildcache") and (. != "cache"))) |
-              if test("^branch-") then sub("^branch-"; "") else . end
-            ' | sort | uniq > /tmp/image_branches.txt
-
-            # Find branches that have images but no longer exist in the repo
-            comm -23 /tmp/image_branches.txt /tmp/current_branches.txt > /tmp/deleted_branches.txt
-
-            # Clean up images for deleted branches
-            while IFS= read -r branch_name; do
-              if [ -n "$branch_name" ]; then
-                echo "🗑️ Cleaning up images for deleted branch: $branch_name"
-
-                # Get all image IDs for this deleted branch (check both branch-* and direct branch names)
-                cat /tmp/all_versions.json | jq -r --arg branch "$branch_name" '
-                  .[] |
-                  select(.metadata.container.tags[]? == $branch or .metadata.container.tags[]? == ("branch-" + $branch)) |
-                  .id
-                ' > /tmp/to_delete.txt
-
-                # Delete all images for this deleted branch
-                while IFS= read -r image_id; do
-                  if [ -n "$image_id" ]; then
-                    echo "  🗑️ Deleting image ID: $image_id"
-                    gh api \
-                      -X DELETE \
-                      -H "Accept: application/vnd.github+json" \
-                      -H "X-GitHub-Api-Version: 2022-11-28" \
-                      "/user/packages/container/$PACKAGE_NAME/versions/$image_id" || echo "Failed to delete image $image_id"
-                  fi
-                done < /tmp/to_delete.txt
+            while read -r tag; do
+              if ! grep -qx "$tag" /tmp/branches.txt 2>/dev/null; then
+                echo "Deleting orphaned tag: $tag"
+                # Find and delete the version with this tag
+                gh api "/user/packages/container/$pkg/versions" --paginate 2>/dev/null | \
+                  jq -r --arg tag "$tag" '.[] | select(.metadata.container.tags[] == $tag) | .id' | \
+                  while read -r id; do
+                    gh api -X DELETE "/user/packages/container/$pkg/versions/$id" 2>/dev/null || true
+                  done
               fi
-            done < /tmp/deleted_branches.txt
-
-            # Note: We intentionally don't clean up sha-* or latest tags here.
-            # Those are managed by keeping the most recent builds.
-            # This section only cleans up branch-specific images for active branches.
-            while IFS= read -r branch_name; do
-              if [ -n "$branch_name" ]; then
-                echo "🔍 Cleaning up old images for active branch: $branch_name (keeping last 3)"
-
-                # Get image IDs for this branch, sorted by creation date (oldest first)
-                cat /tmp/all_versions.json | jq -r --arg branch "$branch_name" '
-                  .[] |
-                  select(.metadata.container.tags[]? == $branch or .metadata.container.tags[]? == ("branch-" + $branch)) |
-                  .id as $id |
-                  .created_at as $date |
-                  [$date, $id] |
-                  @tsv
-                ' | sort | head -n -3 | cut -f2 > /tmp/to_delete.txt
-
-                # Delete old images for this active branch
-                while IFS= read -r image_id; do
-                  if [ -n "$image_id" ]; then
-                    echo "  🗑️ Deleting old image ID: $image_id"
-                    gh api \
-                      -X DELETE \
-                      -H "Accept: application/vnd.github+json" \
-                      -H "X-GitHub-Api-Version: 2022-11-28" \
-                      "/user/packages/container/$PACKAGE_NAME/versions/$image_id" || echo "Failed to delete image $image_id"
-                  fi
-                done < /tmp/to_delete.txt
-              fi
-            done < /tmp/current_branches.txt
-
-            rm -f /tmp/all_versions.json /tmp/current_branches.txt /tmp/image_branches.txt /tmp/deleted_branches.txt /tmp/to_delete.txt
-          }
-
-          # Cleanup both backend and frontend packages
-          cleanup_package "tunestash" "backend"
-          cleanup_package "tunestash-frontend" "frontend"
-
-          echo "✅ Cleanup completed"
+            done < /tmp/image_tags.txt
+          done
+          echo "✅ Cleanup done"
