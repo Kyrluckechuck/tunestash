@@ -172,7 +172,8 @@ def _drop_page_cache(logger: logging.Logger) -> bool:
         with open("/proc/sys/vm/drop_caches", "w", encoding="utf-8") as f:
             f.write("1")  # 1 = page cache only, 2 = dentries/inodes, 3 = both
         return True
-    except (PermissionError, FileNotFoundError, OSError):
+    except (PermissionError, FileNotFoundError, OSError) as e:
+        logger.warning(f"[MEMORY] Failed to drop page cache: {e}")
         return False
 
 
