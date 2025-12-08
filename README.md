@@ -16,11 +16,10 @@ This started as a simple want to mass-download songs for specific artists since 
 - Download playlists/albums directly
   - Can choose to auto mark all artists on given playlists as "Tracked", useful for "favourites" playlists
 - Tracked playlist syncing
- - Can continuously refresh and sync (every 4 hours)
+ - Automatically refreshes and syncs (every 8 hours)
  - Can include auto-tracking new artists (such as tracking a "favourites" playlist)
 - Artist tracking supporting auto-downloading newly released albums (including tracks)
- - Can continuously refresh and sync (every 6 hours)
- - Will download missing releases (every 6 hours, offset by 45 minutes)
+ - Automatically checks for and queues missing albums (hourly)
 
 Features from spotify-aac-downloader:
 * Download songs in 128kbps AAC or 256kbps AAC with a premium account
@@ -143,7 +142,7 @@ An example compose setup is included. Follow these steps:
    ```bash
    docker compose logs -f                # tail all services
    docker compose logs -f web            # API logs
-   docker compose logs -f frontend       # Frontend logs
+   docker compose logs -f frontend-dev   # Frontend dev server logs (use 'frontend' in production)
    docker compose logs -f worker         # Worker logs
    docker compose down -v                # stop and remove volumes
    ```
@@ -175,74 +174,39 @@ An example compose setup is included. Follow these steps:
    - **Frontend Server** (http://localhost:3000)
    - **Celery Worker** (background task processing)
 
-3. **Test the setup:**
-   ```bash
-   python test_dev_setup.py
-   ```
+### Development Commands
 
-### Development Commands (All Run From Root)
+All commands can be run from the root directory. See the `Makefile` for additional targets.
 
-All commands can be run from the root directory without any `cd` commands. All configuration and dependency files have been moved to the root for a cleaner structure:
+**Getting Started:**
+- `make setup` - Install all dependencies (API + frontend) and git hooks
+- `make dev-container` - Start full Docker stack (recommended)
+- `make dev` - Start all services locally (requires local PostgreSQL)
 
-**Main Development:**
-- `make dev` - Start all services (API, Frontend, Worker)
-- `make dev-api` - Start only the API server
-- `make dev-frontend` - Start only the frontend dev server
-- `make dev-worker` - Start only the Celery worker
-
-**Installation:**
-- `make install` - Install both API and frontend dependencies
-- `make install-api` - Install only API dependencies
-- `make install-frontend` - Install only frontend dependencies
+**Docker Development:**
+- `make dev-container` - Start full stack in Docker (API, Frontend, Worker, Beat, PostgreSQL)
+- `make dev-container-update` - Rebuild app containers without restarting Postgres
+- `make dev-container-down` - Stop all Docker services
+- `make dev-container-logs` - Tail logs from all services
 
 **Testing & Quality:**
 - `make test` - Run tests for both API and frontend
-- `make lint` - Run linting for both API and frontend
-- `make build` - Build the frontend
-
-**Database:**
-- `make migrate` - Run Django migrations
-- `make createsuperuser` - Create Django superuser
-
-**Docker:**
-- `make docker-build` - Build Docker image
-- `make docker-run` - Run with docker-compose
-- `make docker-stop` - Stop docker-compose
-
-**Utilities:**
-- `make clean` - Clean build artifacts
-- `make setup` - Original setup command
+- `make lint-all` - Run all linters (API + frontend)
+- `make fix-lint` - Auto-fix formatting issues
 
 ### Development Features
 
-#### ✅ **Optimized Async Processing**
-- Background tasks are properly queued and processed
-- Non-blocking UI operations
-- Real-time task progress updates
-- Multiple worker threads for parallel processing
-
-#### ✅ **Enhanced Monitoring**
-- Color-coded service logs: `[WEB]`, `[FRONTEND-DEV]`, `[WORKER]`, `[BEAT]`, `[POSTGRES]`
-- Service health checks and validation
-- Background task indicators in the UI
-- Graceful error handling and recovery
-
-#### ✅ **Performance Optimizations**
-- Celery workers for parallel task processing
-- PostgreSQL-backed task queue for reliability
-- Faster task execution and reduced latency
-- Higher concurrency limits for the API server
+- **Async task processing** - Background tasks (downloads, syncing) are queued via Celery with PostgreSQL as the broker
+- **Real-time monitoring** - Task progress visible in the UI, color-coded service logs in Docker
+- **Reliable queue** - PostgreSQL-backed task queue survives restarts; pending tasks resume automatically
 
 ### Configuration
 
-For development, you can customize the Celery settings in `api/settings.py`:
+Application settings can be configured via:
+- **`/config/settings.yaml`** - Primary configuration file (see `api/settings.yaml.example`)
+- **Environment variables** - Override any setting at runtime (useful for secrets like `DJANGO_SECRET_KEY`)
 
-```python
-CELERY_BROKER_URL = 'db+postgresql://...'  # PostgreSQL as message broker
-CELERY_RESULT_BACKEND = 'db+postgresql://...'  # Results stored in PostgreSQL
-CELERY_WORKER_CONCURRENCY = 4  # Number of worker processes
-CELERY_TASK_ALWAYS_EAGER = False  # Async task execution
-```
+Database and Celery broker settings are configured via environment variables in `.env` (see `.env.example`).
 
 **Periodic Task Management:**
 - **Docker mode**: Access Django admin via shell: `docker compose exec web python manage.py shell`
@@ -267,15 +231,6 @@ If you encounter issues:
    make setup
    make dev
    ```
-
-### Development Notes
-
-- The system now properly handles async operations with real background task processing
-- Tasks like artist sync, playlist downloads, and album fetching are processed asynchronously
-- The UI remains responsive during background operations
-- All services are monitored and will restart automatically if they fail
-
-For more details on the optimizations, see [DEVELOPMENT_OPTIMIZATIONS.md](DEVELOPMENT_OPTIMIZATIONS.md).
 
 ## Upgrading from the legacy Django app
 
