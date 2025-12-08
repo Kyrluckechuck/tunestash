@@ -10,6 +10,7 @@ from ..graphql_types.models import (
     AuthenticationStatus,
     HistoryConnection,
     HistoryEdge,
+    OneOffTask,
     PageInfo,
     PendingTask,
     PeriodicTask,
@@ -320,6 +321,11 @@ class Query:
         if enabled_only:
             return await services.periodic_task.get_enabled()
         return await services.periodic_task.get_all()
+
+    @strawberry.field
+    def one_off_tasks(self) -> List[OneOffTask]:
+        """Get all available one-off maintenance tasks."""
+        return services.one_off_task.get_all()
 
     @strawberry.field
     async def system_health(self) -> SystemHealth:

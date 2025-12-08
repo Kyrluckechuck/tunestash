@@ -296,6 +296,16 @@ class PeriodicTask:
 
 
 @strawberry.type
+class OneOffTask:
+    """A one-off maintenance task that can be triggered manually."""
+
+    id: str
+    name: str
+    description: str
+    category: str  # e.g., "maintenance", "data-migration", "cleanup"
+
+
+@strawberry.type
 class AuthenticationStatus:
     """Authentication status for YouTube Music Premium downloads and Spotify access."""
 

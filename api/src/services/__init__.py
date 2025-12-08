@@ -5,6 +5,7 @@ from .album import AlbumService
 from .artist import ArtistService
 from .downloader import DownloaderService
 from .history import DownloadHistoryService
+from .one_off_task import OneOffTaskService
 from .periodic_task import PeriodicTaskService
 from .playlist import PlaylistService
 from .song import SongService
@@ -60,6 +61,10 @@ class ServiceRegistry:
     @cached_property
     def spotify_search(self) -> SpotifySearchService:
         return SpotifySearchService()
+
+    @cached_property
+    def one_off_task(self) -> OneOffTaskService:
+        return OneOffTaskService()
 
 
 services = ServiceRegistry()
