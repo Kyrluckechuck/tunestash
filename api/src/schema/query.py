@@ -40,27 +40,46 @@ class Query:
         first: Optional[int] = 20,
         after: Optional[str] = None,
         is_tracked: Optional[bool] = None,
+        has_undownloaded: Optional[bool] = None,
         sort_by: Optional[str] = None,
         sort_direction: Optional[str] = None,
         search: Optional[str] = None,
     ) -> ArtistConnection:
+        from ..services.artist import ArtistConnectionResult
+
         first_int: int = int(first or 20)
-        items, has_next_page, total_count = await services.artist.get_connection(
+        result = await services.artist.get_connection(
             first=first_int,
             after=after,
             is_tracked=is_tracked,
+            has_undownloaded=has_undownloaded,
             sort_by=sort_by,
             sort_direction=sort_direction,
             search=search,
         )
 
-        edges = items
+        # Handle both return types (tuple for ID sorting, dataclass for custom)
+        end_cursor: Optional[str] = None
+        if isinstance(result, ArtistConnectionResult):
+            edges = result.items
+            has_next_page = result.has_next_page
+            total_count = result.total_count
+            # For offset-based pagination, encode the offset as the cursor
+            if result.end_cursor_offset is not None:
+                end_cursor = services.artist.create_cursor_from_offset(
+                    result.end_cursor_offset
+                )
+            elif edges:
+                end_cursor = services.artist.create_cursor(edges[-1])
+        else:
+            edges, has_next_page, total_count = result
+            end_cursor = services.artist.create_cursor(edges[-1]) if edges else None
 
         page_info = PageInfo(
             has_next_page=has_next_page,
             has_previous_page=after is not None,
             start_cursor=services.artist.create_cursor(edges[0]) if edges else None,
-            end_cursor=services.artist.create_cursor(edges[-1]) if edges else None,
+            end_cursor=end_cursor,
         )
 
         return ArtistConnection(

@@ -19,10 +19,12 @@ interface ArtistsTableProps {
   onTrackToggle: (artist: Artist) => void;
   onSyncArtist: (artistId: number) => void;
   onDownloadArtist: (artistId: number) => void;
+  onRetryFailedSongs: (artistId: number) => void;
   loading?: boolean;
   mutatingIds?: Set<number>;
   syncMutatingIds?: Set<number>;
   downloadMutatingIds?: Set<number>;
+  retryMutatingIds?: Set<number>;
   errorById?: Record<number, string>;
   pulseIds?: Set<number>;
 }
@@ -35,10 +37,12 @@ export function ArtistsTable({
   onTrackToggle,
   onSyncArtist,
   onDownloadArtist,
+  onRetryFailedSongs,
   loading = false,
   mutatingIds,
   syncMutatingIds,
   downloadMutatingIds,
+  retryMutatingIds,
   errorById,
   pulseIds,
 }: ArtistsTableProps) {
@@ -193,6 +197,23 @@ export function ArtistsTable({
                       `⬇️ Download (${artist.undownloadedCount})`
                     )}
                   </button>
+                  {artist.failedSongCount > 0 && (
+                    <button
+                      onClick={() => onRetryFailedSongs(artist.id)}
+                      disabled={retryMutatingIds?.has(artist.id)}
+                      className='px-3 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors disabled:opacity-60'
+                      title={`Retry ${artist.failedSongCount} failed songs (ignores backoff)`}
+                    >
+                      {retryMutatingIds?.has(artist.id) ? (
+                        <span className='inline-flex items-center gap-2'>
+                          <span className='w-3 h-3 border-2 border-gray-300 border-t-amber-500 rounded-full animate-spin' />
+                          <span>Retrying…</span>
+                        </span>
+                      ) : (
+                        `🔄 Retry (${artist.failedSongCount})`
+                      )}
+                    </button>
+                  )}
                   <Link
                     to='/artists/$artistId'
                     params={{ artistId: artist.id.toString() }}

@@ -53,6 +53,7 @@ class Artist:
     album_count: int = 0
     downloaded_album_count: int = 0
     song_count: int = 0
+    failed_song_count: int = 0
 
 
 @strawberry.type

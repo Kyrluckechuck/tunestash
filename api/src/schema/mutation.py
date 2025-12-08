@@ -164,6 +164,11 @@ class Mutation:  # pylint: disable=too-many-public-methods
         return await services.artist.download_artist(artist_id)
 
     @strawberry.mutation
+    async def retry_failed_songs(self, artist_id: str) -> "MutationResult":
+        """Retry downloading failed songs for an artist, ignoring backoff periods."""
+        return await services.artist.retry_failed_songs(artist_id)
+
+    @strawberry.mutation
     async def sync_playlist(
         self, playlist_id: int, force: bool = False, recheck: bool = False
     ) -> "MutationResult":

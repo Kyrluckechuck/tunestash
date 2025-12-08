@@ -38,6 +38,9 @@ class TestArtistService:
             patch.object(
                 artist_service, "_get_song_count", new_callable=AsyncMock
             ) as mock_song_count,
+            patch.object(
+                artist_service, "_get_failed_song_count", new_callable=AsyncMock
+            ) as mock_failed_song_count,
         ):
             mock_artist = Mock()
             mock_artist.gid = "test123"
@@ -51,6 +54,7 @@ class TestArtistService:
             mock_album_count.return_value = 10
             mock_downloaded_album_count.return_value = 8
             mock_song_count.return_value = 50
+            mock_failed_song_count.return_value = 0
 
             result = await artist_service.get_by_id("test123")
 
@@ -82,6 +86,9 @@ class TestArtistService:
             patch.object(
                 artist_service, "_get_undownloaded_count", new_callable=AsyncMock
             ) as mock_undownloaded_count,
+            patch.object(
+                artist_service, "_get_failed_song_count", new_callable=AsyncMock
+            ) as mock_failed_song_count,
         ):
             mock_queryset = Mock()
             mock_queryset.filter.return_value = mock_queryset
@@ -104,6 +111,7 @@ class TestArtistService:
             mock_undownloaded_count.return_value = (
                 2  # Mock undownloaded count for each artist
             )
+            mock_failed_song_count.return_value = 0
 
             items, has_next, total = await artist_service.get_connection(
                 first=3, is_tracked=True, search="Artist"

@@ -27,6 +27,7 @@ export const createMockArtist = (overrides = {}) => ({
   lastSynced: '2024-01-01T00:00:00Z',
   lastDownloaded: '2024-01-01T00:00:00Z',
   undownloadedCount: 0,
+  failedSongCount: 0,
   ...overrides,
 });
 

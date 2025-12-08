@@ -38,6 +38,9 @@ async def test_get_by_id(
             artist_service, "_get_undownloaded_count", new_callable=AsyncMock
         ) as mock_undownloaded_count,
         patch.object(
+            artist_service, "_get_failed_song_count", new_callable=AsyncMock
+        ) as mock_failed_song_count,
+        patch.object(
             artist_service, "_get_album_count", new_callable=AsyncMock
         ) as mock_album_count,
         patch.object(
@@ -49,6 +52,7 @@ async def test_get_by_id(
     ):
         mock_aget.return_value = mock_django_artist
         mock_undownloaded_count.return_value = 5
+        mock_failed_song_count.return_value = 0
         mock_album_count.return_value = 10
         mock_downloaded_album_count.return_value = 8
         mock_song_count.return_value = 50
@@ -82,6 +86,9 @@ async def test_get_connection(
         patch.object(
             artist_service, "_get_undownloaded_count", new_callable=AsyncMock
         ) as mock_undownloaded_count,
+        patch.object(
+            artist_service, "_get_failed_song_count", new_callable=AsyncMock
+        ) as mock_failed_song_count,
     ):
         mock_queryset = Mock()
         mock_queryset.filter.return_value = mock_queryset
@@ -91,6 +98,7 @@ async def test_get_connection(
 
         mock_all.return_value = mock_queryset
         mock_undownloaded_count.return_value = 3
+        mock_failed_song_count.return_value = 0
 
         items, has_next, total = await artist_service.get_connection(
             first=10, is_tracked=True
@@ -107,10 +115,16 @@ async def test_to_graphql_type_includes_timestamp_fields(
     artist_service: ArtistService, mock_django_artist: Mock
 ) -> None:
     """Test that GraphQL type conversion includes both timestamp fields."""
-    with patch.object(
-        artist_service, "_get_undownloaded_count", new_callable=AsyncMock
-    ) as mock_count:
+    with (
+        patch.object(
+            artist_service, "_get_undownloaded_count", new_callable=AsyncMock
+        ) as mock_count,
+        patch.object(
+            artist_service, "_get_failed_song_count", new_callable=AsyncMock
+        ) as mock_failed,
+    ):
         mock_count.return_value = 0
+        mock_failed.return_value = 0
 
         result = await artist_service._to_graphql_type_async(mock_django_artist)
 
@@ -137,10 +151,16 @@ async def test_to_graphql_type_handles_null_timestamps(
     mock_artist.added_at = datetime.now()
     mock_artist.spotify_uri = "spotify:artist:test_id"
 
-    with patch.object(
-        artist_service, "_get_undownloaded_count", new_callable=AsyncMock
-    ) as mock_count:
+    with (
+        patch.object(
+            artist_service, "_get_undownloaded_count", new_callable=AsyncMock
+        ) as mock_count,
+        patch.object(
+            artist_service, "_get_failed_song_count", new_callable=AsyncMock
+        ) as mock_failed,
+    ):
         mock_count.return_value = 10
+        mock_failed.return_value = 0
 
         result = await artist_service._to_graphql_type_async(mock_artist)
 

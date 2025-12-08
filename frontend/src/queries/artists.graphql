@@ -33,6 +33,7 @@ query GetAlbum($id: String!) {
 
 query GetArtists(
   $isTracked: Boolean
+  $hasUndownloaded: Boolean
   $first: Int = 20
   $after: String
   $sortBy: String
@@ -41,6 +42,7 @@ query GetArtists(
 ) {
   artists(
     isTracked: $isTracked
+    hasUndownloaded: $hasUndownloaded
     first: $first
     after: $after
     sortBy: $sortBy
@@ -64,6 +66,7 @@ query GetArtists(
       lastSynced
       lastDownloaded
       undownloadedCount
+      failedSongCount
     }
   }
 }
@@ -162,6 +165,13 @@ mutation SyncArtist($artistId: String!) {
 
 mutation DownloadArtist($artistId: String!) {
   downloadArtist(artistId: $artistId) {
+    success
+    message
+  }
+}
+
+mutation RetryFailedSongs($artistId: String!) {
+  retryFailedSongs(artistId: $artistId) {
     success
     message
   }

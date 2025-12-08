@@ -29,6 +29,7 @@ function Artists() {
 
     // Filters & sorting
     filter,
+    hasUndownloadedFilter,
     searchQuery,
     pageSize,
     sortField,
@@ -40,15 +41,18 @@ function Artists() {
     errorById,
     syncMutatingIds,
     downloadMutatingIds,
+    retryMutatingIds,
 
     // Handlers
     handleFilterChange,
+    setHasUndownloadedFilter,
     setSearchQuery,
     setPageSize,
     handleSort,
     handleTrackToggle,
     handleSyncArtist,
     handleDownloadArtist,
+    handleRetryFailedSongs,
     handleSyncAllTrackedArtists,
     handleDownloadAllTrackedArtists,
     handleLoadMore,
@@ -105,6 +109,8 @@ function Artists() {
       <ArtistFilters
         currentFilter={filter}
         onFilterChange={handleFilterChange}
+        hasUndownloadedFilter={hasUndownloadedFilter}
+        onHasUndownloadedChange={setHasUndownloadedFilter}
       />
 
       <DataTable
@@ -127,10 +133,12 @@ function Artists() {
           onTrackToggle={handleTrackToggle}
           onSyncArtist={handleSyncArtist}
           onDownloadArtist={handleDownloadArtist}
+          onRetryFailedSongs={handleRetryFailedSongs}
           loading={loading}
           mutatingIds={mutatingIds}
           syncMutatingIds={syncMutatingIds}
           downloadMutatingIds={downloadMutatingIds}
+          retryMutatingIds={retryMutatingIds}
           errorById={errorById}
           pulseIds={pulseIds}
         />

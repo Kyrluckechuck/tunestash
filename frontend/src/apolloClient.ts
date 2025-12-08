@@ -40,7 +40,13 @@ export const apolloClient = new ApolloClient({
       Query: {
         fields: {
           artists: {
-            keyArgs: ['isTracked', 'search', 'sortBy', 'sortDirection'],
+            keyArgs: [
+              'isTracked',
+              'hasUndownloaded',
+              'search',
+              'sortBy',
+              'sortDirection',
+            ],
             merge(existing, incoming) {
               // Handle pagination merging
               // Always merge edges if we have existing data (indicates pagination)

@@ -420,6 +420,33 @@ For detailed debugging instructions, crash analysis, and troubleshooting guides,
 
 ## Frontend React Patterns
 
+### Apollo Client Cache keyArgs - CRITICAL
+
+When adding new filter/query parameters to GraphQL queries, you **MUST** add them to the `keyArgs` array in `frontend/src/apolloClient.ts`. Without this, Apollo will return cached results from queries with different filter values.
+
+**Example bug**: Adding `hasUndownloaded` filter to artists query but forgetting to add it to `keyArgs` caused filtered queries to return unfiltered cached results.
+
+```typescript
+// frontend/src/apolloClient.ts
+artists: {
+  keyArgs: [
+    'isTracked',
+    'hasUndownloaded',  // ← MUST add new filter params here
+    'search',
+    'sortBy',
+    'sortDirection',
+  ],
+  // ...
+}
+```
+
+**How keyArgs works**: Apollo uses these fields to generate unique cache keys. Queries with different values for `keyArgs` fields are cached separately. Fields NOT in `keyArgs` (like `first`, `after` for pagination) share the same cache entry.
+
+**When adding a new query parameter**:
+1. Add it to the GraphQL schema and query
+2. Add it to `keyArgs` in `apolloClient.ts`
+3. Test by toggling the filter and verifying the UI updates correctly
+
 ### Function Props in Effects - Use Ref Pattern
 When a component receives a function prop that will be called inside a `useEffect`, ALWAYS use the ref pattern to avoid requiring the parent to memoize. This makes components robust and defensive.
 
