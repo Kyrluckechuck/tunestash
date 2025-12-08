@@ -436,3 +436,10 @@ class Mutation:  # pylint: disable=too-many-public-methods
         return MutationResult(
             success=False, message="Task not found or could not be queued"
         )
+
+    @strawberry.mutation
+    async def run_one_off_task(self, task_id: str) -> MutationResult:
+        """Queue a one-off maintenance task for execution."""
+        if not task_id or not task_id.strip():
+            return MutationResult(success=False, message="Task ID cannot be empty")
+        return await services.one_off_task.run_task(task_id.strip())

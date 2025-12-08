@@ -22,6 +22,7 @@ import { QueueManagementSection } from '../components/tasks/QueueManagementSecti
 import { ActiveTasksSection } from '../components/tasks/ActiveTasksSection';
 import { TaskHistorySection } from '../components/tasks/TaskHistorySection';
 import { ScheduledTasksSection } from '../components/tasks/ScheduledTasksSection';
+import { OneOffTasksSection } from '../components/tasks/OneOffTasksSection';
 import type { TaskStatus, TaskType, EntityType } from '../types/shared';
 
 function Tasks() {
@@ -318,6 +319,8 @@ function Tasks() {
         tasks={periodicData?.periodicTasks || []}
         loading={periodicLoading}
       />
+
+      <OneOffTasksSection />
 
       <ActiveTasksSection
         runningTasks={runningTasks}

@@ -103,3 +103,23 @@ export const RunPeriodicTaskNowDocument = gql`
     }
   }
 `;
+
+export const GetOneOffTasksDocument = gql`
+  query GetOneOffTasks {
+    oneOffTasks {
+      id
+      name
+      description
+      category
+    }
+  }
+`;
+
+export const RunOneOffTaskDocument = gql`
+  mutation RunOneOffTask($taskId: String!) {
+    runOneOffTask(taskId: $taskId) {
+      success
+      message
+    }
+  }
+`;
