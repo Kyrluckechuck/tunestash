@@ -3,6 +3,7 @@
 from typing import Any, Optional
 
 from celery_app import app as celery_app
+from downloader.downloader import Downloader
 from downloader.spotdl_wrapper import YouTubeRateLimitError
 from lib.config_class import Config
 
@@ -409,4 +410,74 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
             task_history.status = "FAILED"
             task_history.add_log_message(str(e))
             task_history.save()
+        raise
+
+
+@celery_app.task(bind=True, name="library_manager.tasks.backfill_song_isrc")
+def backfill_song_isrc(self: Any, batch_size: int = 50) -> None:
+    """
+    Backfill ISRC codes for existing songs that don't have them.
+
+    Uses Spotify's batch track endpoint to fetch up to 50 tracks per API call,
+    minimizing API usage. Processes songs in batches and chains to the next
+    batch until all songs are processed.
+
+    Args:
+        batch_size: Number of songs to process per batch (max 50 due to Spotify limit)
+    """
+    import time
+
+    # Cap batch size at Spotify's limit
+    batch_size = min(batch_size, 50)
+
+    # Find songs without ISRC
+    songs_without_isrc = Song.objects.filter(isrc__isnull=True).values_list(
+        "gid", flat=True
+    )[:batch_size]
+
+    song_gids = list(songs_without_isrc)
+
+    if not song_gids:
+        logger.info("ISRC backfill complete - no more songs without ISRC")
+        return
+
+    logger.info(f"Backfilling ISRC for {len(song_gids)} songs")
+
+    try:
+        spotify_client = spotdl_wrapper.spotipy_client
+        downloader = Downloader(spotify_client)
+        tracks = downloader.get_tracks_batch(song_gids)
+
+        # Build a map of track_id -> isrc
+        isrc_map = {}
+        for track in tracks:
+            if track and track.get("id"):
+                isrc = track.get("external_ids", {}).get("isrc")
+                if isrc:
+                    isrc_map[track["id"]] = isrc
+
+        # Update songs with their ISRCs
+        updated_count = 0
+        for gid in song_gids:
+            if gid in isrc_map:
+                Song.objects.filter(gid=gid).update(isrc=isrc_map[gid])
+                updated_count += 1
+
+        logger.info(
+            f"Updated {updated_count}/{len(song_gids)} songs with ISRC "
+            f"({len(song_gids) - updated_count} tracks had no ISRC in Spotify)"
+        )
+
+        # Check if there are more songs to process
+        remaining = Song.objects.filter(isrc__isnull=True).count()
+        if remaining > 0:
+            logger.info(f"{remaining} songs still need ISRC, scheduling next batch")
+            # Small delay to avoid hammering the API
+            time.sleep(1)
+            backfill_song_isrc.delay(batch_size=batch_size)
+        else:
+            logger.info("ISRC backfill complete - all songs processed")
+
+    except Exception as e:
+        logger.error(f"Error during ISRC backfill: {e}", exc_info=True)
         raise

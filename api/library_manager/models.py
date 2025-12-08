@@ -184,6 +184,9 @@ class Song(models.Model):
         gid: Spotify Track ID (22-character base62 string, e.g., "6rqhFgbbKwnb9MLmUQDhG6")
              IMPORTANT: This MUST be a valid Spotify ID, not a UUID or hex-encoded GID.
              Use this field for all Spotify API calls.
+        isrc: International Standard Recording Code (e.g., "USRC11234567")
+              Identifies the specific recording. Same recording on different albums
+              will have the same ISRC. Not unique in DB since we track per-album copies.
         primary_artist: Main artist for this track
         created_at: When the song was first added
         failed_count: Number of failed download attempts
@@ -202,6 +205,13 @@ class Song(models.Model):
         max_length=120,
         unique=True,
         help_text="Spotify Track ID (22-char base62, e.g., '6rqhFgbbKwnb9MLmUQDhG6')",
+    )
+    isrc: models.CharField = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="International Standard Recording Code (e.g., 'USRC11234567')",
     )
     primary_artist: models.ForeignKey = models.ForeignKey(
         Artist, on_delete=models.CASCADE

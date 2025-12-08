@@ -1324,17 +1324,21 @@ class SpotdlWrapper:
 
                     # Get or create song
                     song_gid = song["song_gid"]
+                    song_isrc = song.get("isrc")
                     try:
                         db_song = Song.objects.get(gid=song_gid)
-                        # Update existing song
+                        # Update existing song (including ISRC if we have it now)
                         db_song.primary_artist = db_artist
                         db_song.name = song["song_name"]
+                        if song_isrc and not db_song.isrc:
+                            db_song.isrc = song_isrc
                         db_song.save()
                     except Song.DoesNotExist:
                         db_song = Song.objects.create(
                             gid=song_gid,
                             primary_artist=db_artist,
                             name=song["song_name"],
+                            isrc=song_isrc,
                         )
 
                     for artist in db_extra_artists:

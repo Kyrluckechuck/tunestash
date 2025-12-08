@@ -55,6 +55,7 @@ from .download import (
 
 # Re-export maintenance tasks
 from .maintenance import (
+    backfill_song_isrc,
     cleanup_celery_history,
     cleanup_stuck_tasks_periodic,
     retry_all_missing_known_songs,
@@ -107,6 +108,7 @@ __all__ = [
     "download_single_album",
     "download_single_track",
     # Maintenance tasks
+    "backfill_song_isrc",
     "cleanup_celery_history",
     "cleanup_stuck_tasks_periodic",
     "retry_all_missing_known_songs",
