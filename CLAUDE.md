@@ -24,6 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Primary Development (Docker-based)
 - `make dev-container` - **Main development command** - Start full stack (API, Frontend, Worker, Beat, PostgreSQL)
+- `make dev-container-update` - Rebuild and restart app containers (keeps Postgres running for speed)
 - `make dev-container-down` - Stop all Docker services
 - `make dev-container-logs` - Tail logs from all services
 - `make dev-container-logs-web` - Tail API server logs only
@@ -44,11 +45,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make test-frontend-docker` - Run frontend tests in Docker container
 
 #### Linting Commands
-- **`make lint-all`** - **RECOMMENDED: Run ALL linters (API + Frontend) without stopping on first failure** - Shows all issues at once for easier fixing
-- **`make lint-api-all`** - **RECOMMENDED: Run ALL API linters without stopping on first failure** - Shows all API issues at once
-- `make lint-api` - Run comprehensive API linting (stops on first failure)
+- **`make lint-all`** - **RECOMMENDED: Run ALL linters (API + Frontend) in parallel** - Shows all issues at once for easier fixing
+- **`make lint-api`** - Run all API linters in parallel (flake8, black, isort, mypy, bandit, pylint)
 - `make lint-frontend` - Run frontend linting using ESLint
 - `make format` - Format code for both API and frontend (local tools required)
+- `make fix-lint` - Auto-fix linting issues where possible (black, isort, eslint --fix)
 
 ### GraphQL Type Generation
 - **`make graphql-generate`** - **RECOMMENDED: Generate types from local schema** (fast, no server needed)
@@ -114,7 +115,7 @@ This is a **full-stack music library sync application** (TuneStash) with the fol
 ### Required Configuration
 - `.env` - Docker environment variables
 - `./config/settings.yaml` - Application settings (mounted volume)
-- `./config/youtube_music_cookies.txt` - Spotify authentication cookies
+- `./config/youtube_music_cookies.txt` - YouTube Music cookies (used by spotdl for audio sourcing)
 - `docker-compose.override.yml` - Local Docker overrides (auto-created)
 
 ### Testing Configuration
@@ -160,10 +161,10 @@ This is a **full-stack music library sync application** (TuneStash) with the fol
 4. Update any affected GraphQL types (see GraphQL Operations section)
 
 ### Adding Background Tasks
-1. Create task function in appropriate service module
-2. Decorate with `@celery.task`
-3. Queue via `task_name.delay(args)`
-4. Monitor via Django admin or task status endpoints
+1. Create task function in `api/library_manager/tasks.py`
+2. Decorate with `@shared_task` (from `celery import shared_task`)
+3. Queue via `task_name.delay(args)` - **never call directly!**
+4. Monitor via the Tasks page in the UI or Django admin
 
 ## Code Style & Quality Standards
 
@@ -195,22 +196,17 @@ This is a **full-stack music library sync application** (TuneStash) with the fol
 
 ### Linting Workflow
 
-**For Claude Code users:** When fixing linting issues, use `make lint-all` or `make lint-api-all` instead of the standard `make lint-api` command. This runs all linters without stopping on the first failure, allowing you to see and fix all issues at once.
-
-**Standard linting commands** (`make lint-api`, `make lint-frontend`) stop at the first failure, requiring multiple iterations to fix all issues.
-
-**Comprehensive linting commands** (`make lint-all`, `make lint-api-all`) continue through all checks even if some fail, showing you the complete list of issues. This is especially useful when:
-- Making changes that affect multiple files
-- Fixing linting issues reported by CI/CD
-- Reviewing code quality before committing
+**For Claude Code users:** Use `make lint-all` when fixing linting issues. This runs all linters (API + Frontend) in parallel and shows all issues at once, rather than stopping at the first failure.
 
 **What each linter checks:**
 - **flake8**: PEP 8 style violations, unused imports, complexity
 - **black**: Code formatting (88 char line length)
 - **isort**: Import statement ordering
 - **mypy**: Type annotations and type safety
-- **bandit**: Security vulnerabilities (always passes, generates report)
+- **bandit**: Security vulnerabilities (generates report in `reports/`)
 - **pylint**: Code quality, potential bugs, code smells
+
+**Auto-fixing:** Use `make fix-lint` to automatically fix formatting issues (black, isort, eslint --fix).
 
 ## Important Development Patterns
 
@@ -247,8 +243,6 @@ fetch_all_albums_for_artist.delay(artist_id)  # Properly queued
 - Any mutation in `api/src/schema/mutation.py` calling tasks
 - Any service calling background operations
 
-**Reference fix:** See `api/library_manager/helpers.py:207`, `helpers.py:229`, `helpers.py:268`, `helpers.py:274`
-
 #### Periodic Tasks (Celery Beat Schedule)
 
 The following tasks run automatically via Celery Beat (`api/celery_beat_schedule.py`):
@@ -256,14 +250,29 @@ The following tasks run automatically via Celery Beat (`api/celery_beat_schedule
 | Task | Schedule | Purpose |
 |------|----------|---------|
 | `sync-all-playlists` | Every 8 hours | Syncs all tracked playlists to detect new songs |
-| `retry-failed-playlist-songs` | Weekly (Sunday 3 AM) | Retries downloading songs that failed previously |
+| `validate-undownloaded-songs` | Every 12 hours | Validates songs marked as undownloaded |
+| `retry-failed-songs` | Mon/Wed/Fri at 4 AM | Retries downloading songs that failed previously |
+| `queue-missing-albums-for-tracked-artists` | Hourly | Queues downloads for new albums from tracked artists |
 | `cleanup-celery-history` | Daily (6 AM) | Removes old task history records (older than 30 days) |
 | `cleanup-stale-tasks` | Every 5 minutes | Marks stuck/stale tasks as failed |
+| `memory-health-check` | Every 10 minutes | Monitors worker memory usage |
 
 **Note**: Celery Beat uses `DatabaseScheduler` which stores schedules in PostgreSQL. To manage schedules:
 - **Docker mode**: Use Django shell: `docker compose exec web python manage.py shell`
 - **Local mode**: Django Admin at http://localhost:5000/admin/django_celery_beat/
 - **Alternative**: Edit schedules directly in `api/celery_beat_schedule.py`
+
+#### One-Off Tasks
+
+For maintenance tasks that need to be triggered manually (not on a schedule), use the One-Off Tasks system:
+
+- **Service**: `api/src/services/one_off_task.py` - Register new tasks in `_register_tasks()`
+- **UI**: Tasks page has a "One-Off Tasks" section with "Run Now" buttons
+- **GraphQL**: `oneOffTasks` query and `runOneOffTask` mutation
+
+To add a new one-off task:
+1. Create the Celery task in `api/library_manager/tasks.py`
+2. Register it in `OneOffTaskService._register_tasks()` with id, name, description, and category
 
 ### Async/Sync Boundaries - CRITICAL PATTERN
 
