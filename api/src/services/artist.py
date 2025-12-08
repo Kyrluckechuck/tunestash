@@ -1,8 +1,9 @@
 # mypy: disable-error-code=attr-defined
-from typing import Any, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, List, Optional, Tuple, Union
 
 from django.conf import settings
-from django.db.models import F, Q
+from django.db.models import Exists, F, OuterRef, Q
 
 from asgiref.sync import sync_to_async
 
@@ -12,6 +13,18 @@ from library_manager.models import Song
 
 from ..graphql_types.models import Artist, MutationResult
 from .base import BaseService
+
+
+@dataclass
+class ArtistConnectionResult:
+    """Result of get_connection with cursor info for pagination."""
+
+    items: List[Artist]
+    has_next_page: bool
+    total_count: int
+    # For offset-based pagination (custom sorting), this is the next offset
+    # For cursor-based (ID sorting), this is None and item IDs are used
+    end_cursor_offset: Optional[int] = None
 
 
 class ArtistService(BaseService[Artist]):
@@ -41,9 +54,10 @@ class ArtistService(BaseService[Artist]):
         first: int = 20,
         after: Optional[str] = None,
         **filters: Any,
-    ) -> Tuple[List[Artist], bool, int]:
+    ) -> Union[Tuple[List[Artist], bool, int], ArtistConnectionResult]:
         is_tracked: Optional[bool] = filters.get("is_tracked")
         search: Optional[str] = filters.get("search")
+        has_undownloaded: Optional[bool] = filters.get("has_undownloaded")
         sort_by = (
             filters.get("sort_by") if isinstance(filters.get("sort_by"), str) else None
         )
@@ -63,6 +77,46 @@ class ArtistService(BaseService[Artist]):
                 Q(name__icontains=search) | Q(gid__icontains=search)
             )
 
+        # Apply has_undownloaded filter at database level using subqueries
+        # This ensures proper pagination counts
+        if has_undownloaded is not None:
+            # Get settings for album type filtering (must match _get_undownloaded_count)
+            album_types_to_download = getattr(
+                settings, "ALBUM_TYPES_TO_DOWNLOAD", ["single", "album", "compilation"]
+            )
+            album_groups_to_ignore = getattr(
+                settings, "ALBUM_GROUPS_TO_IGNORE", ["appears_on"]
+            )
+
+            # Subquery: artist has at least one undownloaded wanted album
+            # Note: Album.artist FK uses to_field="gid", so we match on gid
+            # Must match filters in _get_undownloaded_count (album_type, album_group)
+            has_undownloaded_album = Exists(
+                Album.objects.filter(
+                    artist__gid=OuterRef("gid"),
+                    wanted=True,
+                    downloaded=False,
+                    album_type__in=album_types_to_download,
+                ).exclude(album_group__in=album_groups_to_ignore)
+            )
+            # Subquery: artist has at least one failed (but retryable) song
+            # Note: Song.primary_artist FK uses default (id)
+            has_failed_song = Exists(
+                Song.objects.filter(
+                    primary_artist_id=OuterRef("pk"),
+                    failed_count__gt=0,
+                    unavailable=False,
+                    downloaded=False,
+                )
+            )
+
+            if has_undownloaded:
+                # Filter to artists with undownloaded albums OR failed songs
+                queryset = queryset.filter(has_undownloaded_album | has_failed_song)
+            else:
+                # Filter to artists with NO undownloaded albums AND NO failed songs
+                queryset = queryset.exclude(has_undownloaded_album | has_failed_song)
+
         # Apply sorting
         sort_field_map: dict[str, str] = {
             "name": "name",
@@ -76,6 +130,8 @@ class ArtistService(BaseService[Artist]):
         timestamp_fields = {"last_synced_at", "last_downloaded_at", "added_at"}
 
         order_expressions: List[Any] = ["id"]  # default
+        uses_custom_sort = sort_by is not None and sort_by != "id"
+
         if isinstance(sort_by, str):
             mapped_field = sort_field_map.get(sort_by)
             if mapped_field is not None:
@@ -103,13 +159,26 @@ class ArtistService(BaseService[Artist]):
 
         total_count = await queryset.acount()
 
-        # Apply cursor-based pagination
+        # Apply pagination - use offset for custom sorting, cursor for ID sorting
+        # Cursor-based pagination (id__gt) only works when sorting by ID
+        offset = 0
         if after:
-            id_after = self.decode_cursor(after)
-            queryset = queryset.filter(id__gt=id_after)
+            if uses_custom_sort:
+                # Custom sorting: decode cursor as offset
+                decoded = self.decode_cursor(after)
+                offset = int(decoded) if isinstance(decoded, (int, str)) else 0
+            else:
+                # ID sorting: use cursor-based filtering
+                id_after = self.decode_cursor(after)
+                queryset = queryset.filter(id__gt=id_after)
 
         # Get one extra item to determine if there are more pages
         def fetch_items() -> List[DjangoArtist]:
+            if uses_custom_sort:
+                # Offset-based: skip `offset` items, take `first + 1`
+                return list(
+                    queryset.order_by(*order_expressions)[offset : offset + first + 1]
+                )
             return list(queryset.order_by(*order_expressions)[: first + 1])
 
         items: List[DjangoArtist] = await sync_to_async(fetch_items)()
@@ -118,10 +187,23 @@ class ArtistService(BaseService[Artist]):
         items = items[:first]  # Remove the extra item
 
         # Convert items to GraphQL types with async undownloaded counts
-        graphql_items = []
+        graphql_items: List[Artist] = []
         for item in items:
             graphql_item = await self._to_graphql_type_async(item)
             graphql_items.append(graphql_item)
+
+        # Note: has_undownloaded filtering is now done at database level (above)
+        # using Exists subqueries for proper pagination
+
+        # For custom sorting, return the next offset as cursor info
+        if uses_custom_sort:
+            next_offset = offset + len(items) if has_next_page else None
+            return ArtistConnectionResult(
+                items=graphql_items,
+                has_next_page=has_next_page,
+                total_count=total_count,
+                end_cursor_offset=next_offset,
+            )
 
         return (
             graphql_items,
@@ -245,6 +327,40 @@ class ArtistService(BaseService[Artist]):
                 success=False, message=f"Error starting download for artist: {str(e)}"
             )
 
+    async def retry_failed_songs(self, artist_id: str) -> MutationResult:
+        try:
+            artist_db_id = int(artist_id)
+            django_artist = await self.model.objects.aget(id=artist_db_id)
+
+            # Check if there are any failed songs to retry
+            failed_count = await self._get_failed_song_count(django_artist)
+            if failed_count == 0:
+                return MutationResult(
+                    success=False,
+                    message=f"No failed songs to retry for {django_artist.name}",
+                )
+
+            from library_manager.tasks import retry_failed_songs_for_artist
+
+            await sync_to_async(retry_failed_songs_for_artist.delay)(django_artist.id)
+
+            return MutationResult(
+                success=True,
+                message=f"Retrying {failed_count} failed songs for {django_artist.name}",
+            )
+        except ValueError:
+            return MutationResult(
+                success=False, message=f"Invalid artist ID format: {artist_id}"
+            )
+        except self.model.DoesNotExist:
+            return MutationResult(
+                success=False, message=f"Artist with ID {artist_id} not found"
+            )
+        except Exception as e:
+            return MutationResult(
+                success=False, message=f"Error retrying failed songs: {str(e)}"
+            )
+
     async def _get_undownloaded_count(self, django_artist: DjangoArtist) -> int:
         """Calculate undownloaded count for an artist asynchronously."""
         album_types_to_download = getattr(
@@ -279,6 +395,15 @@ class ArtistService(BaseService[Artist]):
         """Get total song count for an artist."""
         return await Song.objects.filter(primary_artist=django_artist).acount()
 
+    async def _get_failed_song_count(self, django_artist: DjangoArtist) -> int:
+        """Get count of songs that have failed downloads but aren't permanently unavailable."""
+        return await Song.objects.filter(
+            primary_artist=django_artist,
+            failed_count__gt=0,
+            unavailable=False,
+            downloaded=False,
+        ).acount()
+
     async def _to_graphql_type_async(
         self, django_artist: DjangoArtist, include_full_counts: bool = False
     ) -> Artist:
@@ -295,6 +420,7 @@ class ArtistService(BaseService[Artist]):
         spotify_uri = django_artist.spotify_uri
 
         undownloaded_count = await self._get_undownloaded_count(django_artist)
+        failed_song_count = await self._get_failed_song_count(django_artist)
 
         album_count = 0
         downloaded_album_count = 0
@@ -332,6 +458,7 @@ class ArtistService(BaseService[Artist]):
             album_count=album_count,
             downloaded_album_count=downloaded_album_count,
             song_count=song_count,
+            failed_song_count=failed_song_count,
         )
 
     def _to_graphql_type(self, django_artist: DjangoArtist) -> Artist:
@@ -366,4 +493,5 @@ class ArtistService(BaseService[Artist]):
             album_count=0,
             downloaded_album_count=0,
             song_count=0,
+            failed_song_count=0,
         )

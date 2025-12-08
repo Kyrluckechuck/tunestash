@@ -7,6 +7,7 @@ import {
   UntrackArtistDocument,
   SyncArtistDocument,
   DownloadArtistDocument,
+  RetryFailedSongsDocument,
   SyncAllTrackedArtistsDocument,
   DownloadAllTrackedArtistsDocument,
   type Artist,
@@ -39,14 +40,18 @@ export function useArtistsPage() {
   });
 
   const [filter, setFilter] = useState<'all' | 'tracked' | 'untracked'>('all');
+  const [hasUndownloadedFilter, setHasUndownloadedFilter] = useState<
+    boolean | undefined
+  >(undefined);
 
   // Memoize query variables with filter
   const queryVariablesWithFilter = useMemo(
     () => ({
       ...queryVariables,
       isTracked: filter === 'all' ? undefined : filter === 'tracked',
+      hasUndownloaded: hasUndownloadedFilter,
     }),
-    [queryVariables, filter]
+    [queryVariables, filter, hasUndownloadedFilter]
   );
 
   // Query for running artist tasks to enable smart polling
@@ -116,6 +121,7 @@ export function useArtistsPage() {
   const [untrackArtist] = useMutation(UntrackArtistDocument);
   const [syncArtist] = useMutation(SyncArtistDocument);
   const [downloadArtist] = useMutation(DownloadArtistDocument);
+  const [retryFailedSongs] = useMutation(RetryFailedSongsDocument);
   const [syncAllTrackedArtists] = useMutation(SyncAllTrackedArtistsDocument);
   const [downloadAllTrackedArtists] = useMutation(
     DownloadAllTrackedArtistsDocument
@@ -135,6 +141,12 @@ export function useArtistsPage() {
     loadingIds: downloadMutatingIds,
     startLoading: startDownload,
     stopLoading: stopDownload,
+  } = useMutationLoadingState();
+
+  const {
+    loadingIds: retryMutatingIds,
+    startLoading: startRetry,
+    stopLoading: stopRetry,
   } = useMutationLoadingState();
 
   // Handlers
@@ -212,6 +224,32 @@ export function useArtistsPage() {
     }
   };
 
+  const handleRetryFailedSongs = async (artistId: number) => {
+    try {
+      startRetry(artistId);
+      const result = await retryFailedSongs({
+        variables: { artistId: artistId.toString() },
+      });
+
+      if (result.data?.retryFailedSongs?.success) {
+        toast.success(
+          result.data.retryFailedSongs.message ||
+            'Retry started for failed songs'
+        );
+      } else {
+        const errorMessage =
+          result.data?.retryFailedSongs?.message || 'Retry failed';
+        toast.error(errorMessage);
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Retry failed';
+      toast.error(errorMessage);
+    } finally {
+      stopRetry(artistId);
+    }
+  };
+
   const handleSyncAllTrackedArtists = async () => {
     try {
       const result = await syncAllTrackedArtists();
@@ -284,6 +322,7 @@ export function useArtistsPage() {
 
     // Filters & sorting
     filter,
+    hasUndownloadedFilter,
     searchQuery,
     pageSize,
     sortField,
@@ -295,15 +334,18 @@ export function useArtistsPage() {
     errorById,
     syncMutatingIds,
     downloadMutatingIds,
+    retryMutatingIds,
 
     // Handlers
     handleFilterChange,
+    setHasUndownloadedFilter,
     setSearchQuery,
     setPageSize,
     handleSort,
     handleTrackToggle,
     handleSyncArtist,
     handleDownloadArtist,
+    handleRetryFailedSongs,
     handleSyncAllTrackedArtists,
     handleDownloadAllTrackedArtists,
     handleLoadMore,

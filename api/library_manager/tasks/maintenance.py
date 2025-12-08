@@ -6,8 +6,15 @@ from celery_app import app as celery_app
 from downloader.spotdl_wrapper import YouTubeRateLimitError
 from lib.config_class import Config
 
-from ..models import Song, TaskHistory
-from .core import logger, require_download_capability, spotdl_wrapper
+from ..models import Artist, Song, TaskHistory
+from .core import (
+    complete_task,
+    create_task_history,
+    logger,
+    require_download_capability,
+    spotdl_wrapper,
+    update_task_progress,
+)
 
 
 @celery_app.task(
@@ -324,3 +331,82 @@ def retry_failed_songs(self: Any) -> None:
         )
     except Exception as e:
         logger.error(f"Error in retry_failed_songs: {e}", exc_info=True)
+
+
+@celery_app.task(bind=True, name="library_manager.tasks.retry_failed_songs_for_artist")
+def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
+    """
+    Retry downloading failed songs for a specific artist.
+
+    Unlike the global retry_failed_songs task, this:
+    - Ignores backoff periods (forces immediate retry)
+    - Only processes songs for the specified artist
+    - Still respects the max 10 failure limit
+    """
+    task_history = None
+    try:
+        artist = Artist.objects.get(id=artist_id)
+
+        task_history = create_task_history(
+            task_id=self.request.id,
+            task_type="DOWNLOAD",
+            entity_id=artist.gid,
+            entity_type="ARTIST",
+        )
+        update_task_progress(
+            task_history, 0.0, f"Retrying failed songs for {artist.name}"
+        )
+
+        require_download_capability(task_history)
+
+        # Find failed songs for this artist (ignoring backoff)
+        failed_songs = Song.objects.filter(
+            primary_artist=artist,
+            downloaded=False,
+            failed_count__gt=0,
+            failed_count__lte=10,
+            unavailable=False,
+        ).order_by("failed_count", "created_at")[:100]
+
+        if not failed_songs.exists():
+            task_history.add_log_message("No failed songs to retry")
+            complete_task(task_history, success=True)
+            return
+
+        song_count = failed_songs.count()
+        update_task_progress(
+            task_history, 25.0, f"Found {song_count} failed songs to retry"
+        )
+
+        song_uris = [song.spotify_uri for song in failed_songs]
+
+        downloader_config = Config(urls=song_uris, track_artists=False)
+
+        def task_callback(progress_pct: float, message: str) -> None:
+            update_task_progress(task_history, 25.0 + (progress_pct * 0.70), message)
+
+        logger.info(f"Retrying {song_count} failed songs for artist {artist.name}")
+        spotdl_wrapper.execute(downloader_config, task_callback)
+
+        task_history.add_log_message(f"Retried {song_count} failed songs")
+        complete_task(task_history, success=True)
+
+    except YouTubeRateLimitError as rate_limit_error:
+        if task_history:
+            task_history.status = "FAILED"
+            task_history.add_log_message(
+                f"Rate limited - retry in {rate_limit_error.retry_after_seconds}s"
+            )
+            task_history.save()
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=rate_limit_error.retry_after_seconds,
+            max_retries=3,
+        )
+    except Exception as e:
+        logger.error(f"Error retrying failed songs for artist {artist_id}: {e}")
+        if task_history:
+            task_history.status = "FAILED"
+            task_history.add_log_message(str(e))
+            task_history.save()
+        raise

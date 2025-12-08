@@ -22,6 +22,7 @@ type Artist {
   addedAt: DateTime
   albumCount: Int!
   downloadedAlbumCount: Int!
+  failedSongCount: Int!
   gid: String!
   id: Int!
   isTracked: Boolean!
@@ -118,6 +119,7 @@ type Mutation {
   downloadAllPlaylists: MutationResult!
   downloadAllTrackedArtists: MutationResult!
   downloadArtist(artistId: String!): MutationResult!
+  retryFailedSongs(artistId: String!): MutationResult!
   downloadUrl(autoTrackArtists: Boolean! = false, url: String!): MutationResult!
   runPeriodicTaskNow(taskId: Int!): MutationResult!
   savePlaylist(autoTrackArtists: Boolean! = false, spotifyId: String!): Playlist!
@@ -184,7 +186,7 @@ type Query {
   album(id: String!): Album
   albums(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, wanted: Boolean = null): AlbumConnection!
   artist(id: String!): Artist
-  artists(after: String = null, first: Int = 20, isTracked: Boolean = null, search: String = null, sortBy: String = null, sortDirection: String = null): ArtistConnection!
+  artists(after: String = null, first: Int = 20, hasUndownloaded: Boolean = null, isTracked: Boolean = null, search: String = null, sortBy: String = null, sortDirection: String = null): ArtistConnection!
   downloadHistory(after: String = null, entityType: String = null, first: Int = 20, status: String = null): HistoryConnection!
   periodicTasks(enabledOnly: Boolean = false): [PeriodicTask!]!
   playlist(id: String!): Playlist

@@ -11,9 +11,8 @@
 
 services:
   web:
-    # Use GHCR image by default, build locally when needed (docker compose build)
-    # Set BACKEND_IMAGE_TAG env var to use branch-specific image (e.g., overhual-frontend-tanstack)
-    image: ghcr.io/kyrluckechuck/tunestash:${BACKEND_IMAGE_TAG:-latest}
+    # Always build locally for dev to get backend-dev target with pip and dev deps
+    # The base docker-compose.yml 'image:' is overridden by specifying 'build:' only
     build:
       context: .
       target: backend-dev
@@ -90,9 +89,7 @@ services:
     restart: unless-stopped
 
   worker:
-    # Use GHCR image by default, build locally when needed (docker compose build)
-    # Set BACKEND_IMAGE_TAG env var to use branch-specific image (e.g., overhual-frontend-tanstack)
-    image: ghcr.io/kyrluckechuck/tunestash:${BACKEND_IMAGE_TAG:-latest}
+    # Always build locally for dev to get backend-dev target with pip and dev deps
     build:
       context: .
       target: backend-dev
@@ -126,9 +123,7 @@ services:
       - pip_cache:/root/.cache/pip
 
   beat:
-    # Use GHCR image by default, build locally when needed (docker compose build)
-    # Set BACKEND_IMAGE_TAG env var to use branch-specific image (e.g., overhual-frontend-tanstack)
-    image: ghcr.io/kyrluckechuck/tunestash:${BACKEND_IMAGE_TAG:-latest}
+    # Always build locally for dev to get backend-dev target with pip and dev deps
     build:
       context: .
       target: backend-dev

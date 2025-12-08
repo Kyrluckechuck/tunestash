@@ -17,9 +17,10 @@ class BaseService(Generic[T]):
 
     async def get_connection(
         self, first: int = 20, after: Optional[str] = None, **filters: Any
-    ) -> Tuple[List[T], bool, int]:
+    ) -> Union[Tuple[List[T], bool, int], Any]:
         """
         Returns a tuple of (items, has_next_page, total_count)
+        or a specialized result type for complex pagination needs.
         """
         raise NotImplementedError
 
@@ -31,6 +32,13 @@ class BaseService(Generic[T]):
         if hasattr(item, "id"):
             return encode_cursor_value(getattr(item, "id"))
         raise NotImplementedError("Item lacks an 'id' for cursor generation")
+
+    def create_cursor_from_offset(self, offset: int) -> str:
+        """
+        Creates a cursor for offset-based pagination.
+        Used when sorting by non-ID fields where cursor-based pagination won't work.
+        """
+        return encode_cursor_value(offset)
 
     def decode_cursor(self, cursor: str) -> Union[int, str]:
         """

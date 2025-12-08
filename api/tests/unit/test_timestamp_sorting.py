@@ -59,8 +59,12 @@ async def test_artist_sorting_last_synced_ascending_nulls_first(
         patch.object(
             artist_service, "_get_undownloaded_count", new_callable=AsyncMock
         ) as mock_undownloaded,
+        patch.object(
+            artist_service, "_get_failed_song_count", new_callable=AsyncMock
+        ) as mock_failed,
     ):
         mock_undownloaded.return_value = 0
+        mock_failed.return_value = 0
         mock_queryset = Mock()
         mock_queryset.filter.return_value = mock_queryset
         mock_queryset.acount = AsyncMock(return_value=3)
@@ -78,9 +82,12 @@ async def test_artist_sorting_last_synced_ascending_nulls_first(
         mock_queryset.order_by = order_by_mock
         mock_all.return_value = mock_queryset
 
-        items, has_next, total = await artist_service.get_connection(
+        result = await artist_service.get_connection(
             first=10, sort_by="lastSynced", sort_direction="asc"
         )
+
+        # Result is an ArtistConnectionResult dataclass for custom sorting
+        items = result.items
 
         # Verify nulls come first
         assert items[0].name == "Never Synced"
@@ -107,8 +114,12 @@ async def test_artist_sorting_last_synced_descending_nulls_last(
         patch.object(
             artist_service, "_get_undownloaded_count", new_callable=AsyncMock
         ) as mock_undownloaded,
+        patch.object(
+            artist_service, "_get_failed_song_count", new_callable=AsyncMock
+        ) as mock_failed,
     ):
         mock_undownloaded.return_value = 0
+        mock_failed.return_value = 0
         mock_queryset = Mock()
         mock_queryset.filter.return_value = mock_queryset
         mock_queryset.acount = AsyncMock(return_value=3)
@@ -126,9 +137,12 @@ async def test_artist_sorting_last_synced_descending_nulls_last(
         mock_queryset.order_by = order_by_mock
         mock_all.return_value = mock_queryset
 
-        items, has_next, total = await artist_service.get_connection(
+        result = await artist_service.get_connection(
             first=10, sort_by="lastSynced", sort_direction="desc"
         )
+
+        # Result is an ArtistConnectionResult dataclass for custom sorting
+        items = result.items
 
         # Verify newest first, nulls last
         assert items[0].name == "Synced Recently"
@@ -153,8 +167,12 @@ async def test_artist_sorting_last_downloaded_nulls_handling(
         patch.object(
             artist_service, "_get_undownloaded_count", new_callable=AsyncMock
         ) as mock_undownloaded,
+        patch.object(
+            artist_service, "_get_failed_song_count", new_callable=AsyncMock
+        ) as mock_failed,
     ):
         mock_undownloaded.return_value = 0
+        mock_failed.return_value = 0
         mock_queryset = Mock()
         mock_queryset.filter.return_value = mock_queryset
         mock_queryset.acount = AsyncMock(return_value=2)
@@ -168,9 +186,12 @@ async def test_artist_sorting_last_downloaded_nulls_handling(
         mock_queryset.order_by = order_by_asc
         mock_all.return_value = mock_queryset
 
-        items, _, _ = await artist_service.get_connection(
+        result = await artist_service.get_connection(
             first=10, sort_by="lastDownloaded", sort_direction="asc"
         )
+
+        # Result is an ArtistConnectionResult dataclass for custom sorting
+        items = result.items
 
         assert items[0].name == "Never Downloaded"
         assert items[1].name == "Downloaded Recently"

@@ -59,6 +59,7 @@ from .maintenance import (
     cleanup_stuck_tasks_periodic,
     retry_all_missing_known_songs,
     retry_failed_songs,
+    retry_failed_songs_for_artist,
     validate_undownloaded_songs,
 )
 
@@ -110,6 +111,7 @@ __all__ = [
     "cleanup_stuck_tasks_periodic",
     "retry_all_missing_known_songs",
     "retry_failed_songs",
+    "retry_failed_songs_for_artist",
     "validate_undownloaded_songs",
     # Periodic tasks
     "queue_missing_albums_for_tracked_artists",

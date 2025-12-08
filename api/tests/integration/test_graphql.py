@@ -219,6 +219,216 @@ class TestArtistQueries(TransactionTestCase):
         )  # 1 wanted, not downloaded
 
 
+class TestArtistHasUndownloadedFilter(TransactionTestCase):
+    """Test hasUndownloaded filter for artists query.
+
+    This filter uses database-level Exists subqueries to ensure proper pagination.
+    It must match the same logic as _get_undownloaded_count (album_type, album_group filters).
+    """
+
+    async def test_has_undownloaded_filter_with_undownloaded_albums(self):
+        """Test hasUndownloaded=true returns artists with undownloaded wanted albums."""
+        # Artist WITH undownloaded albums (should be included)
+        artist_with_undownloaded = await sync_to_async(Artist.objects.create)(
+            name="Has Undownloaded", gid="hasundownloaded123", tracked=True
+        )
+        await sync_to_async(Album.objects.create)(
+            name="Pending Album",
+            spotify_gid="pending123",
+            artist=artist_with_undownloaded,
+            total_tracks=10,
+            wanted=True,
+            downloaded=False,
+            album_type="album",
+            album_group="album",
+        )
+
+        # Artist WITHOUT undownloaded albums (should be excluded)
+        artist_all_downloaded = await sync_to_async(Artist.objects.create)(
+            name="All Downloaded", gid="alldownloaded123", tracked=True
+        )
+        await sync_to_async(Album.objects.create)(
+            name="Downloaded Album",
+            spotify_gid="downloaded123",
+            artist=artist_all_downloaded,
+            total_tracks=10,
+            wanted=True,
+            downloaded=True,
+            album_type="album",
+            album_group="album",
+        )
+
+        query = """
+        query Artists($hasUndownloaded: Boolean) {
+            artists(hasUndownloaded: $hasUndownloaded) {
+                edges {
+                    id
+                    name
+                    undownloadedCount
+                }
+                totalCount
+            }
+        }
+        """
+
+        result = await schema.execute(query, variable_values={"hasUndownloaded": True})
+
+        assert result.errors is None
+        artist_names = [a["name"] for a in result.data["artists"]["edges"]]
+        assert "Has Undownloaded" in artist_names
+        assert "All Downloaded" not in artist_names
+
+    async def test_has_undownloaded_filter_excludes_appears_on_albums(self):
+        """Test hasUndownloaded filter respects album_group exclusions (appears_on)."""
+        # Artist with ONLY "appears_on" albums (should be excluded from hasUndownloaded)
+        artist_appears_on = await sync_to_async(Artist.objects.create)(
+            name="Only Appears On", gid="appearson123", tracked=True
+        )
+        await sync_to_async(Album.objects.create)(
+            name="Compilation Appearance",
+            spotify_gid="compilation123",
+            artist=artist_appears_on,
+            total_tracks=20,
+            wanted=True,
+            downloaded=False,
+            album_type="compilation",
+            album_group="appears_on",  # This should be excluded
+        )
+
+        query = """
+        query Artists($hasUndownloaded: Boolean) {
+            artists(hasUndownloaded: $hasUndownloaded) {
+                edges {
+                    id
+                    name
+                    undownloadedCount
+                }
+                totalCount
+            }
+        }
+        """
+
+        result = await schema.execute(query, variable_values={"hasUndownloaded": True})
+
+        assert result.errors is None
+        artist_names = [a["name"] for a in result.data["artists"]["edges"]]
+        # Should NOT appear because all undownloaded albums are "appears_on"
+        assert "Only Appears On" not in artist_names
+
+    async def test_has_undownloaded_filter_includes_failed_songs(self):
+        """Test hasUndownloaded=true includes artists with failed (retryable) songs."""
+        # Artist with failed songs but no undownloaded albums
+        artist_failed_songs = await sync_to_async(Artist.objects.create)(
+            name="Has Failed Songs", gid="failedsongs123", tracked=True
+        )
+        await sync_to_async(Song.objects.create)(
+            name="Failed Song",
+            gid="failedsong123",
+            primary_artist=artist_failed_songs,
+            failed_count=3,
+            unavailable=False,
+            downloaded=False,
+        )
+
+        query = """
+        query Artists($hasUndownloaded: Boolean) {
+            artists(hasUndownloaded: $hasUndownloaded) {
+                edges {
+                    id
+                    name
+                    failedSongCount
+                    undownloadedCount
+                }
+                totalCount
+            }
+        }
+        """
+
+        result = await schema.execute(query, variable_values={"hasUndownloaded": True})
+
+        assert result.errors is None
+        artist_names = [a["name"] for a in result.data["artists"]["edges"]]
+        # Should appear because of failed songs
+        assert "Has Failed Songs" in artist_names
+
+    async def test_has_undownloaded_filter_excludes_unavailable_songs(self):
+        """Test hasUndownloaded filter excludes permanently unavailable songs."""
+        # Artist with unavailable (not retryable) songs
+        artist_unavailable = await sync_to_async(Artist.objects.create)(
+            name="Has Unavailable Songs", gid="unavailable123", tracked=True
+        )
+        await sync_to_async(Song.objects.create)(
+            name="Unavailable Song",
+            gid="unavailablesong123",
+            primary_artist=artist_unavailable,
+            failed_count=5,
+            unavailable=True,  # Marked as unavailable - should NOT count
+            downloaded=False,
+        )
+
+        query = """
+        query Artists($hasUndownloaded: Boolean) {
+            artists(hasUndownloaded: $hasUndownloaded) {
+                edges {
+                    id
+                    name
+                }
+                totalCount
+            }
+        }
+        """
+
+        result = await schema.execute(query, variable_values={"hasUndownloaded": True})
+
+        assert result.errors is None
+        artist_names = [a["name"] for a in result.data["artists"]["edges"]]
+        # Should NOT appear because failed songs are marked unavailable
+        assert "Has Unavailable Songs" not in artist_names
+
+    async def test_has_undownloaded_total_count_matches_edges(self):
+        """Test that totalCount matches the actual number of filtered results."""
+        # Create multiple artists with various states
+        for i in range(3):
+            artist = await sync_to_async(Artist.objects.create)(
+                name=f"Artist With Albums {i}", gid=f"withalbums{i}", tracked=True
+            )
+            await sync_to_async(Album.objects.create)(
+                name=f"Undownloaded Album {i}",
+                spotify_gid=f"undownloaded{i}",
+                artist=artist,
+                total_tracks=10,
+                wanted=True,
+                downloaded=False,
+                album_type="album",
+                album_group="album",
+            )
+
+        # Artist without undownloaded content
+        await sync_to_async(Artist.objects.create)(
+            name="No Undownloaded", gid="noundownloaded123", tracked=True
+        )
+
+        query = """
+        query Artists($hasUndownloaded: Boolean) {
+            artists(hasUndownloaded: $hasUndownloaded) {
+                edges {
+                    id
+                    name
+                }
+                totalCount
+            }
+        }
+        """
+
+        result = await schema.execute(query, variable_values={"hasUndownloaded": True})
+
+        assert result.errors is None
+        # totalCount should match actual edges returned
+        assert result.data["artists"]["totalCount"] == len(
+            result.data["artists"]["edges"]
+        )
+
+
 class TestAlbumQueries(TransactionTestCase):
     """Test album-related queries."""
 
