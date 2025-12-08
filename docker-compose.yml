@@ -90,7 +90,7 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - HOME=/config
-    command: celery -A celery_app worker --loglevel=info --queues=downloads,spotify,celery --concurrency=1 --max-tasks-per-child=50
+    command: celery -A celery_app worker --loglevel=info --queues=downloads,spotify,celery --concurrency=1 --max-tasks-per-child=500
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,9 +106,8 @@ services:
           memory: 2.5G
         reservations:
           memory: 2G
-    # SYS_ADMIN allows dropping page cache to prevent OOM from cached audio files
-    cap_add:
-      - SYS_ADMIN
+    # privileged required to write to /proc/sys/vm/drop_caches for clearing page cache
+    privileged: true
   beat:
     image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash:latest}
     environment:
