@@ -468,7 +468,7 @@ class Downloader:
 
         return download_queues, metadata_map
 
-    def get_song_core_info(self, metadata: Dict[str, Any]) -> Dict[str, str]:
+    def get_song_core_info(self, metadata: Dict[str, Any]) -> Dict[str, Optional[str]]:
         from library_manager.validators import extract_spotify_id_from_uri
 
         # Extract base62 Spotify ID from URI/URL (avoids hex encoding)
@@ -479,7 +479,11 @@ class Downloader:
                 f"Expected Spotify URI, URL, or base62 ID."
             )
 
+        # Extract ISRC from external_ids (may not be present for all tracks)
+        isrc = metadata.get("external_ids", {}).get("isrc")
+
         return {
             "song_gid": song_id,
             "song_name": metadata["name"],
+            "isrc": isrc,
         }
