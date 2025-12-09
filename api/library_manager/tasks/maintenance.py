@@ -444,8 +444,10 @@ def backfill_song_isrc(self: Any, batch_size: int = 50) -> None:
     logger.info(f"Backfilling ISRC for {len(song_gids)} songs")
 
     try:
-        spotify_client = spotdl_wrapper.spotipy_client
-        downloader = Downloader(spotify_client)
+        from downloader.spotipy_tasks import PublicSpotifyClient
+
+        public_client = PublicSpotifyClient()
+        downloader = Downloader(public_client.sp)
         tracks = downloader.get_tracks_batch(song_gids)
 
         # Build a map of track_id -> isrc
