@@ -431,8 +431,8 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
 
     from downloader.spotipy_tasks import PublicSpotifyClient
 
-    SPOTIFY_BATCH_SIZE = 50  # Spotify API limit
-    songs_per_task = SPOTIFY_BATCH_SIZE * batches_per_task
+    spotify_batch_size = 50  # Spotify API limit
+    songs_per_task = spotify_batch_size * batches_per_task
 
     # Find songs without ISRC
     songs_without_isrc = Song.objects.filter(isrc__isnull=True).values_list(
@@ -447,24 +447,27 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
 
     logger.info(
         f"Backfilling ISRC for {len(song_gids)} songs "
-        f"({batches_per_task} batches of {SPOTIFY_BATCH_SIZE})"
+        f"({batches_per_task} batches of {spotify_batch_size})"
     )
 
     try:
         public_client = PublicSpotifyClient()
+        if public_client.sp is None:
+            logger.error("Failed to initialize Spotify client")
+            return
 
         total_updated = 0
         total_no_isrc = 0
 
         # Process in batches of 50 (Spotify's limit)
-        for batch_num in range(0, len(song_gids), SPOTIFY_BATCH_SIZE):
-            batch_gids = song_gids[batch_num : batch_num + SPOTIFY_BATCH_SIZE]
+        for batch_num in range(0, len(song_gids), spotify_batch_size):
+            batch_gids = song_gids[batch_num : batch_num + spotify_batch_size]
 
             # Fetch tracks from Spotify
             result = public_client.sp.tracks(batch_gids)
             if not result or "tracks" not in result:
                 logger.warning(
-                    f"No results for batch {batch_num // SPOTIFY_BATCH_SIZE + 1}"
+                    f"No results for batch {batch_num // spotify_batch_size + 1}"
                 )
                 continue
 
@@ -489,7 +492,7 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
                 total_updated += len(updates)
 
             # Small delay between API calls to respect rate limits
-            if batch_num + SPOTIFY_BATCH_SIZE < len(song_gids):
+            if batch_num + spotify_batch_size < len(song_gids):
                 time.sleep(0.3)
 
         logger.info(
