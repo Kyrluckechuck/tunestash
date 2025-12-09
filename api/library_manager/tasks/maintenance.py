@@ -414,7 +414,9 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.backfill_song_isrc")
-def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
+def backfill_song_isrc(
+    self: Any, batches_per_task: int = 10, last_song_id: int = 0
+) -> None:
     """
     Backfill ISRC codes for existing songs that don't have them.
 
@@ -425,6 +427,8 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
     Args:
         batches_per_task: Number of 50-track API batches to process per task.
                          Default 10 = 500 songs per task invocation.
+        last_song_id: ID of the last song processed in the previous task.
+                      Used for pagination to avoid re-querying songs without ISRC.
     """
     import time
 
@@ -433,16 +437,21 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
     spotify_batch_size = 50  # Spotify API limit
     songs_per_task = spotify_batch_size * batches_per_task
 
-    # Find songs without ISRC
-    songs_without_isrc = Song.objects.filter(isrc__isnull=True).values_list(
-        "gid", flat=True
-    )[:songs_per_task]
+    # Find songs without ISRC, ordered by ID for consistent pagination
+    # Filter by id > last_song_id to skip songs we've already attempted
+    songs_without_isrc = list(
+        Song.objects.filter(isrc__isnull=True, id__gt=last_song_id)
+        .order_by("id")
+        .values_list("id", "gid")[:songs_per_task]
+    )
 
-    song_gids = list(songs_without_isrc)
-
-    if not song_gids:
+    if not songs_without_isrc:
         logger.info("ISRC backfill complete - no more songs without ISRC")
         return
+
+    # Extract just the GIDs for API calls, track max ID for pagination
+    song_gids = [gid for _, gid in songs_without_isrc]
+    max_song_id = songs_without_isrc[-1][0]  # Last (highest) song ID in batch
 
     logger.info(
         f"Backfilling ISRC for {len(song_gids)} songs "
@@ -497,17 +506,33 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
             f"({total_no_isrc} tracks had no ISRC in Spotify)"
         )
 
-        # Check if there are more songs to process
-        remaining = Song.objects.filter(isrc__isnull=True).count()
-        if remaining > 0:
-            logger.info(f"{remaining} songs still need ISRC, scheduling next batch")
+        # Check if there are more songs to process beyond our current position
+        remaining_after = Song.objects.filter(
+            isrc__isnull=True, id__gt=max_song_id
+        ).count()
+
+        if remaining_after > 0:
+            logger.info(
+                f"{remaining_after} songs still need ISRC, scheduling next batch"
+            )
             # 10s cooldown between chained tasks to avoid rate limit pressure
             backfill_song_isrc.apply_async(
-                kwargs={"batches_per_task": batches_per_task},
+                kwargs={
+                    "batches_per_task": batches_per_task,
+                    "last_song_id": max_song_id,
+                },
                 countdown=10,
             )
         else:
-            logger.info("ISRC backfill complete - all songs processed")
+            # Log final stats
+            total_without_isrc = Song.objects.filter(isrc__isnull=True).count()
+            if total_without_isrc > 0:
+                logger.info(
+                    f"ISRC backfill complete - {total_without_isrc} songs remain "
+                    f"without ISRC (not available in Spotify)"
+                )
+            else:
+                logger.info("ISRC backfill complete - all songs have ISRC")
 
     except SpotifyRateLimitError as rate_limit_error:
         # Spotify rate limit - reschedule task for later
@@ -527,7 +552,9 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.backfill_song_album")
-def backfill_song_album(self: Any, batches_per_task: int = 10) -> None:
+def backfill_song_album(
+    self: Any, batches_per_task: int = 10, last_song_id: int = 0
+) -> None:
     """
     Backfill album associations for existing songs that don't have them.
 
@@ -538,6 +565,8 @@ def backfill_song_album(self: Any, batches_per_task: int = 10) -> None:
     Args:
         batches_per_task: Number of 50-track API batches to process per task.
                          Default 10 = 500 songs per task invocation.
+        last_song_id: ID of the last song processed in the previous task.
+                      Used for pagination to avoid re-querying unlinkable songs.
     """
     import time
 
@@ -546,16 +575,21 @@ def backfill_song_album(self: Any, batches_per_task: int = 10) -> None:
     spotify_batch_size = 50  # Spotify API limit
     songs_per_task = spotify_batch_size * batches_per_task
 
-    # Find songs without album link
-    songs_without_album = Song.objects.filter(album__isnull=True).values_list(
-        "gid", flat=True
-    )[:songs_per_task]
+    # Find songs without album link, ordered by ID for consistent pagination
+    # Filter by id > last_song_id to skip songs we've already attempted
+    songs_without_album = list(
+        Song.objects.filter(album__isnull=True, id__gt=last_song_id)
+        .order_by("id")
+        .values_list("id", "gid")[:songs_per_task]
+    )
 
-    song_gids = list(songs_without_album)
-
-    if not song_gids:
+    if not songs_without_album:
         logger.info("Album backfill complete - no more songs without album link")
         return
+
+    # Extract just the GIDs for API calls, track max ID for pagination
+    song_gids = [gid for _, gid in songs_without_album]
+    max_song_id = songs_without_album[-1][0]  # Last (highest) song ID in batch
 
     logger.info(
         f"Backfilling album links for {len(song_gids)} songs "
@@ -633,19 +667,33 @@ def backfill_song_album(self: Any, batches_per_task: int = 10) -> None:
             f"{total_no_album_data} tracks had no album data)"
         )
 
-        # Check if there are more songs to process
-        remaining = Song.objects.filter(album__isnull=True).count()
-        if remaining > 0:
+        # Check if there are more songs to process beyond our current position
+        remaining_after = Song.objects.filter(
+            album__isnull=True, id__gt=max_song_id
+        ).count()
+
+        if remaining_after > 0:
             logger.info(
-                f"{remaining} songs still need album link, scheduling next batch"
+                f"{remaining_after} songs still need album link, scheduling next batch"
             )
             # 10s cooldown between chained tasks to avoid rate limit pressure
             backfill_song_album.apply_async(
-                kwargs={"batches_per_task": batches_per_task},
+                kwargs={
+                    "batches_per_task": batches_per_task,
+                    "last_song_id": max_song_id,
+                },
                 countdown=10,
             )
         else:
-            logger.info("Album backfill complete - all songs processed")
+            # Log final stats
+            total_unlinked = Song.objects.filter(album__isnull=True).count()
+            if total_unlinked > 0:
+                logger.info(
+                    f"Album backfill complete - {total_unlinked} songs remain "
+                    f"unlinked (their albums are not in the database)"
+                )
+            else:
+                logger.info("Album backfill complete - all songs linked to albums")
 
     except SpotifyRateLimitError as rate_limit_error:
         # Spotify rate limit - reschedule task for later
