@@ -105,6 +105,25 @@ type HistoryEdge {
   node: DownloadHistory!
 }
 
+type LibraryStats {
+  albumCompletionPercentage: Float!
+  desiredCompletionPercentage: Float!
+  desiredDownloaded: Int!
+  desiredSongs: Int!
+  downloadedAlbums: Int!
+  downloadedSongs: Int!
+  failedSongs: Int!
+  missingAlbums: Int!
+  missingSongs: Int!
+  partialAlbums: Int!
+  songCompletionPercentage: Float!
+  totalAlbums: Int!
+  totalArtists: Int!
+  totalSongs: Int!
+  trackedArtists: Int!
+  unavailableSongs: Int!
+}
+
 type Mutation {
   batchArtistOperations(artistIds: [Int!]!, operations: [String!] = null): MutationResult!
   cancelAllPendingTasks: MutationResult!
@@ -207,6 +226,7 @@ type Query {
   artist(id: String!): Artist
   artists(after: String = null, first: Int = 20, hasUndownloaded: Boolean = null, isTracked: Boolean = null, search: String = null, sortBy: String = null, sortDirection: String = null): ArtistConnection!
   downloadHistory(after: String = null, entityType: String = null, first: Int = 20, status: String = null): HistoryConnection!
+  libraryStats: LibraryStats!
   oneOffTasks: [OneOffTask!]!
   periodicTasks(enabledOnly: Boolean = false): [PeriodicTask!]!
   playlist(id: String!): Playlist

@@ -4,6 +4,7 @@ import { useSpotifySearch } from './ui/useSpotifySearch';
 
 const navLinks = [
   { to: '/', label: 'Home' },
+  { to: '/dashboard', label: 'Dashboard' },
   { to: '/artists', label: 'Artists' },
   { to: '/albums', label: 'Albums' },
   { to: '/playlists', label: 'Playlists' },

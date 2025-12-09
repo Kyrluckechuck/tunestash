@@ -50,7 +50,7 @@ describe('Navbar', () => {
 
     // Check that nav links are anchor elements (6 links + 1 title link)
     const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(7); // Title + 6 nav links (Home, Artists, Albums, Songs, Playlists, Tasks)
+    expect(links).toHaveLength(8); // Title + 7 nav links (Home, Dashboard, Artists, Albums, Songs, Playlists, Tasks)
 
     // Check that search and download buttons exist
     const searchButton = screen.getByRole('button', { name: /search/i });
