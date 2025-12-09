@@ -1,0 +1,20 @@
+query GetLibraryStats {
+  libraryStats {
+    totalSongs
+    downloadedSongs
+    missingSongs
+    failedSongs
+    unavailableSongs
+    totalAlbums
+    downloadedAlbums
+    partialAlbums
+    missingAlbums
+    totalArtists
+    trackedArtists
+    songCompletionPercentage
+    albumCompletionPercentage
+    desiredSongs
+    desiredDownloaded
+    desiredCompletionPercentage
+  }
+}

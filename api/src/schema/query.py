@@ -10,6 +10,7 @@ from ..graphql_types.models import (
     AuthenticationStatus,
     HistoryConnection,
     HistoryEdge,
+    LibraryStats,
     OneOffTask,
     PageInfo,
     PendingTask,
@@ -474,4 +475,33 @@ class Query:
             owner_name=result.get("owner_name"),
             track_count=result.get("track_count", 0),
             image_url=result.get("image_url"),
+        )
+
+    @strawberry.field
+    async def library_stats(self) -> LibraryStats:
+        """
+        Get aggregate statistics for the music library.
+
+        Returns counts of songs, albums, and artists with download completion metrics.
+        Includes "desired" metrics based on tracked artists.
+        """
+        stats = await services.library_stats.get_stats()
+
+        return LibraryStats(
+            total_songs=stats.total_songs,
+            downloaded_songs=stats.downloaded_songs,
+            missing_songs=stats.missing_songs,
+            failed_songs=stats.failed_songs,
+            unavailable_songs=stats.unavailable_songs,
+            total_albums=stats.total_albums,
+            downloaded_albums=stats.downloaded_albums,
+            partial_albums=stats.partial_albums,
+            missing_albums=stats.missing_albums,
+            total_artists=stats.total_artists,
+            tracked_artists=stats.tracked_artists,
+            song_completion_percentage=stats.song_completion_percentage,
+            album_completion_percentage=stats.album_completion_percentage,
+            desired_songs=stats.desired_songs,
+            desired_downloaded=stats.desired_downloaded,
+            desired_completion_percentage=stats.desired_completion_percentage,
         )

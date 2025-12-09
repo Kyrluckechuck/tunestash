@@ -29,7 +29,7 @@ class OneOffTaskService:
     def _register_tasks(self) -> None:
         """Register all available one-off tasks."""
         # Import tasks here to avoid circular imports
-        from library_manager.tasks import backfill_song_isrc
+        from library_manager.tasks import backfill_song_album, backfill_song_isrc
 
         self._tasks["backfill_song_isrc"] = OneOffTaskDefinition(
             id="backfill_song_isrc",
@@ -41,6 +41,18 @@ class OneOffTaskService:
             ),
             category="data-migration",
             task_func=backfill_song_isrc,
+        )
+
+        self._tasks["backfill_song_album"] = OneOffTaskDefinition(
+            id="backfill_song_album",
+            name="Backfill Song Album Links",
+            description=(
+                "Link existing songs to their albums using Spotify track metadata. "
+                "Processes 500 songs per task (10 batches of 50) and chains "
+                "until complete. Songs whose albums aren't in the database are skipped."
+            ),
+            category="data-migration",
+            task_func=backfill_song_album,
         )
 
     def get_all(self) -> List[OneOffTask]:

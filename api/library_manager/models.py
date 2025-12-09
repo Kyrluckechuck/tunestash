@@ -188,6 +188,7 @@ class Song(models.Model):
               Identifies the specific recording. Same recording on different albums
               will have the same ISRC. Not unique in DB since we track per-album copies.
         primary_artist: Main artist for this track
+        album: Album this song belongs to (FK to Album, nullable for legacy data)
         created_at: When the song was first added
         failed_count: Number of failed download attempts
         bitrate: Audio bitrate of downloaded file
@@ -215,6 +216,14 @@ class Song(models.Model):
     )
     primary_artist: models.ForeignKey = models.ForeignKey(
         Artist, on_delete=models.CASCADE
+    )
+    album: models.ForeignKey = models.ForeignKey(
+        "Album",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="songs",
+        help_text="Album this song belongs to (nullable for legacy songs pending backfill)",
     )
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
     failed_count: models.IntegerField = models.IntegerField(default=0)

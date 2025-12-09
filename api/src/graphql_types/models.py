@@ -425,3 +425,34 @@ class SpotifyPlaylistInfo:
     owner_name: Optional[str]
     track_count: int
     image_url: Optional[str]
+
+
+@strawberry.type
+class LibraryStats:
+    """Aggregate statistics for the music library."""
+
+    # Song counts
+    total_songs: int
+    downloaded_songs: int
+    missing_songs: int  # Not downloaded and not failed
+    failed_songs: int
+    unavailable_songs: int
+
+    # Album counts
+    total_albums: int
+    downloaded_albums: int  # All songs downloaded
+    partial_albums: int  # Some songs downloaded
+    missing_albums: int  # No songs downloaded
+
+    # Artist counts
+    total_artists: int
+    tracked_artists: int
+
+    # Completion percentages (rounded to 1 decimal)
+    song_completion_percentage: float
+    album_completion_percentage: float
+
+    # "Desired" = songs from tracked artists
+    desired_songs: int
+    desired_downloaded: int
+    desired_completion_percentage: float

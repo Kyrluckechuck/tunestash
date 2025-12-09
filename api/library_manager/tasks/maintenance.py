@@ -4,9 +4,10 @@ from typing import Any, Optional
 
 from celery_app import app as celery_app
 from downloader.spotdl_wrapper import YouTubeRateLimitError
+from downloader.spotipy_tasks import SpotifyRateLimitError
 from lib.config_class import Config
 
-from ..models import Artist, Song, TaskHistory
+from ..models import Album, Artist, Song, TaskHistory
 from .core import (
     complete_task,
     create_task_history,
@@ -487,9 +488,9 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
                 Song.objects.bulk_update(songs_to_update, ["isrc"])
                 total_updated += len(songs_to_update)
 
-            # Small delay between API calls to respect rate limits
+            # Delay between API calls to respect rate limits
             if batch_num + spotify_batch_size < len(song_gids):
-                time.sleep(0.3)
+                time.sleep(0.5)
 
         logger.info(
             f"Updated {total_updated}/{len(song_gids)} songs with ISRC "
@@ -500,10 +501,164 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
         remaining = Song.objects.filter(isrc__isnull=True).count()
         if remaining > 0:
             logger.info(f"{remaining} songs still need ISRC, scheduling next batch")
-            backfill_song_isrc.delay(batches_per_task=batches_per_task)
+            # 10s cooldown between chained tasks to avoid rate limit pressure
+            backfill_song_isrc.apply_async(
+                kwargs={"batches_per_task": batches_per_task},
+                countdown=10,
+            )
         else:
             logger.info("ISRC backfill complete - all songs processed")
 
+    except SpotifyRateLimitError as rate_limit_error:
+        # Spotify rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"Spotify rate limit hit during ISRC backfill, "
+            f"rescheduling in {retry_after}s"
+        )
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=10,  # Allow more retries since backfill may take a while
+        )
     except Exception as e:
         logger.error(f"Error during ISRC backfill: {e}", exc_info=True)
+        raise
+
+
+@celery_app.task(bind=True, name="library_manager.tasks.backfill_song_album")
+def backfill_song_album(self: Any, batches_per_task: int = 10) -> None:
+    """
+    Backfill album associations for existing songs that don't have them.
+
+    Uses Spotify's batch track endpoint to fetch track metadata including album ID.
+    Links songs to existing Album records in the database. Songs whose albums
+    don't exist locally are skipped (they'll be linked when the album is synced).
+
+    Args:
+        batches_per_task: Number of 50-track API batches to process per task.
+                         Default 10 = 500 songs per task invocation.
+    """
+    import time
+
+    from downloader.spotipy_tasks import PublicSpotifyClient
+
+    spotify_batch_size = 50  # Spotify API limit
+    songs_per_task = spotify_batch_size * batches_per_task
+
+    # Find songs without album link
+    songs_without_album = Song.objects.filter(album__isnull=True).values_list(
+        "gid", flat=True
+    )[:songs_per_task]
+
+    song_gids = list(songs_without_album)
+
+    if not song_gids:
+        logger.info("Album backfill complete - no more songs without album link")
+        return
+
+    logger.info(
+        f"Backfilling album links for {len(song_gids)} songs "
+        f"({batches_per_task} batches of {spotify_batch_size})"
+    )
+
+    try:
+        public_client = PublicSpotifyClient()
+        if public_client.sp is None:
+            logger.error("Failed to initialize Spotify client")
+            return
+
+        total_linked = 0
+        total_album_not_found = 0
+        total_no_album_data = 0
+
+        # Build a cache of album GIDs to Album objects for this batch
+        # This reduces repeated DB queries
+        album_cache: dict[str, Album] = {}
+
+        # Process in batches of 50 (Spotify's limit)
+        for batch_num in range(0, len(song_gids), spotify_batch_size):
+            batch_gids = song_gids[batch_num : batch_num + spotify_batch_size]
+
+            # Fetch tracks from Spotify
+            result = public_client.sp.tracks(batch_gids)
+            if not result or "tracks" not in result:
+                logger.warning(
+                    f"No results for batch {batch_num // spotify_batch_size + 1}"
+                )
+                continue
+
+            # Build a map of song_gid -> album_gid
+            song_album_map: dict[str, str] = {}
+            album_gids_needed: set[str] = set()
+
+            for track in result["tracks"]:
+                if not track or not track.get("id"):
+                    continue
+                album_gid = track.get("album", {}).get("id")
+                if not album_gid:
+                    total_no_album_data += 1
+                    continue
+                song_album_map[track["id"]] = album_gid
+                if album_gid not in album_cache:
+                    album_gids_needed.add(album_gid)
+
+            # Bulk fetch albums we don't have cached yet
+            if album_gids_needed:
+                albums = Album.objects.filter(spotify_gid__in=album_gids_needed)
+                for album in albums:
+                    album_cache[album.spotify_gid] = album
+
+            # Link songs to albums
+            songs_to_update = []
+            for song in Song.objects.filter(gid__in=song_album_map.keys()):
+                album_gid = song_album_map.get(song.gid)
+                if album_gid and album_gid in album_cache:
+                    song.album = album_cache[album_gid]
+                    songs_to_update.append(song)
+                elif album_gid:
+                    total_album_not_found += 1
+
+            if songs_to_update:
+                Song.objects.bulk_update(songs_to_update, ["album"])
+                total_linked += len(songs_to_update)
+
+            # Delay between API calls to respect rate limits
+            if batch_num + spotify_batch_size < len(song_gids):
+                time.sleep(0.5)
+
+        logger.info(
+            f"Linked {total_linked}/{len(song_gids)} songs to albums "
+            f"({total_album_not_found} albums not in DB, "
+            f"{total_no_album_data} tracks had no album data)"
+        )
+
+        # Check if there are more songs to process
+        remaining = Song.objects.filter(album__isnull=True).count()
+        if remaining > 0:
+            logger.info(
+                f"{remaining} songs still need album link, scheduling next batch"
+            )
+            # 10s cooldown between chained tasks to avoid rate limit pressure
+            backfill_song_album.apply_async(
+                kwargs={"batches_per_task": batches_per_task},
+                countdown=10,
+            )
+        else:
+            logger.info("Album backfill complete - all songs processed")
+
+    except SpotifyRateLimitError as rate_limit_error:
+        # Spotify rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"Spotify rate limit hit during album backfill, "
+            f"rescheduling in {retry_after}s"
+        )
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=10,  # Allow more retries since backfill may take a while
+        )
+    except Exception as e:
+        logger.error(f"Error during album backfill: {e}", exc_info=True)
         raise

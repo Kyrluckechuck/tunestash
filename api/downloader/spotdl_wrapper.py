@@ -1325,18 +1325,29 @@ class SpotdlWrapper:
                     # Get or create song
                     song_gid = song["song_gid"]
                     song_isrc = song.get("isrc")
+
+                    # Look up album from track metadata (may not exist in DB yet)
+                    db_album = None
+                    track_album = track.get("album", {})
+                    album_gid = track_album.get("id")
+                    if album_gid:
+                        db_album = Album.objects.filter(spotify_gid=album_gid).first()
+
                     try:
                         db_song = Song.objects.get(gid=song_gid)
-                        # Update existing song (including ISRC if we have it now)
+                        # Update existing song (including ISRC and album if we have them)
                         db_song.primary_artist = db_artist
                         db_song.name = song["song_name"]
                         if song_isrc and not db_song.isrc:
                             db_song.isrc = song_isrc
+                        if db_album and not db_song.album:
+                            db_song.album = db_album
                         db_song.save()
                     except Song.DoesNotExist:
                         db_song = Song.objects.create(
                             gid=song_gid,
                             primary_artist=db_artist,
+                            album=db_album,
                             name=song["song_name"],
                             isrc=song_isrc,
                         )
