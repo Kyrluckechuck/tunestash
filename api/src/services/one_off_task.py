@@ -36,7 +36,8 @@ class OneOffTaskService:
             name="Backfill Song ISRC",
             description=(
                 "Fetch ISRC codes from Spotify for songs that don't have them. "
-                "Processes 50 songs per batch and continues until all are done."
+                "Processes 500 songs per task (10 batches of 50) and chains "
+                "until complete."
             ),
             category="data-migration",
             task_func=backfill_song_isrc,

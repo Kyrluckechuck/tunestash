@@ -3,7 +3,6 @@
 from typing import Any, Optional
 
 from celery_app import app as celery_app
-from downloader.downloader import Downloader
 from downloader.spotdl_wrapper import YouTubeRateLimitError
 from lib.config_class import Config
 
@@ -414,26 +413,31 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.backfill_song_isrc")
-def backfill_song_isrc(self: Any, batch_size: int = 50) -> None:
+def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
     """
     Backfill ISRC codes for existing songs that don't have them.
 
-    Uses Spotify's batch track endpoint to fetch up to 50 tracks per API call,
-    minimizing API usage. Processes songs in batches and chains to the next
-    batch until all songs are processed.
+    Uses Spotify's batch track endpoint to fetch up to 50 tracks per API call.
+    Processes multiple batches per task to reduce Celery overhead, then chains
+    to the next task until all songs are processed.
 
     Args:
-        batch_size: Number of songs to process per batch (max 50 due to Spotify limit)
+        batches_per_task: Number of 50-track API batches to process per task.
+                         Default 10 = 500 songs per task invocation.
     """
     import time
 
-    # Cap batch size at Spotify's limit
-    batch_size = min(batch_size, 50)
+    from django.db import connection
+
+    from downloader.spotipy_tasks import PublicSpotifyClient
+
+    SPOTIFY_BATCH_SIZE = 50  # Spotify API limit
+    songs_per_task = SPOTIFY_BATCH_SIZE * batches_per_task
 
     # Find songs without ISRC
     songs_without_isrc = Song.objects.filter(isrc__isnull=True).values_list(
         "gid", flat=True
-    )[:batch_size]
+    )[:songs_per_task]
 
     song_gids = list(songs_without_isrc)
 
@@ -441,42 +445,63 @@ def backfill_song_isrc(self: Any, batch_size: int = 50) -> None:
         logger.info("ISRC backfill complete - no more songs without ISRC")
         return
 
-    logger.info(f"Backfilling ISRC for {len(song_gids)} songs")
+    logger.info(
+        f"Backfilling ISRC for {len(song_gids)} songs "
+        f"({batches_per_task} batches of {SPOTIFY_BATCH_SIZE})"
+    )
 
     try:
-        from downloader.spotipy_tasks import PublicSpotifyClient
-
         public_client = PublicSpotifyClient()
-        downloader = Downloader(public_client.sp)
-        tracks = downloader.get_tracks_batch(song_gids)
 
-        # Build a map of track_id -> isrc
-        isrc_map = {}
-        for track in tracks:
-            if track and track.get("id"):
-                isrc = track.get("external_ids", {}).get("isrc")
-                if isrc:
-                    isrc_map[track["id"]] = isrc
+        total_updated = 0
+        total_no_isrc = 0
 
-        # Update songs with their ISRCs
-        updated_count = 0
-        for gid in song_gids:
-            if gid in isrc_map:
-                Song.objects.filter(gid=gid).update(isrc=isrc_map[gid])
-                updated_count += 1
+        # Process in batches of 50 (Spotify's limit)
+        for batch_num in range(0, len(song_gids), SPOTIFY_BATCH_SIZE):
+            batch_gids = song_gids[batch_num : batch_num + SPOTIFY_BATCH_SIZE]
+
+            # Fetch tracks from Spotify
+            result = public_client.sp.tracks(batch_gids)
+            if not result or "tracks" not in result:
+                logger.warning(
+                    f"No results for batch {batch_num // SPOTIFY_BATCH_SIZE + 1}"
+                )
+                continue
+
+            # Build update data for bulk update
+            updates = []
+            for track in result["tracks"]:
+                if track and track.get("id"):
+                    isrc = track.get("external_ids", {}).get("isrc")
+                    if isrc:
+                        updates.append((isrc, track["id"]))
+                    else:
+                        total_no_isrc += 1
+
+            # Bulk update using raw SQL for maximum speed
+            if updates:
+                with connection.cursor() as cursor:
+                    # Use executemany for batch update
+                    cursor.executemany(
+                        "UPDATE library_manager_song SET isrc = %s WHERE gid = %s",
+                        updates,
+                    )
+                total_updated += len(updates)
+
+            # Small delay between API calls to respect rate limits
+            if batch_num + SPOTIFY_BATCH_SIZE < len(song_gids):
+                time.sleep(0.3)
 
         logger.info(
-            f"Updated {updated_count}/{len(song_gids)} songs with ISRC "
-            f"({len(song_gids) - updated_count} tracks had no ISRC in Spotify)"
+            f"Updated {total_updated}/{len(song_gids)} songs with ISRC "
+            f"({total_no_isrc} tracks had no ISRC in Spotify)"
         )
 
         # Check if there are more songs to process
         remaining = Song.objects.filter(isrc__isnull=True).count()
         if remaining > 0:
             logger.info(f"{remaining} songs still need ISRC, scheduling next batch")
-            # Small delay to avoid hammering the API
-            time.sleep(1)
-            backfill_song_isrc.delay(batch_size=batch_size)
+            backfill_song_isrc.delay(batches_per_task=batches_per_task)
         else:
             logger.info("ISRC backfill complete - all songs processed")
 
