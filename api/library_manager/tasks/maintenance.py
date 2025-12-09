@@ -427,8 +427,6 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
     """
     import time
 
-    from django.db import connection
-
     from downloader.spotipy_tasks import PublicSpotifyClient
 
     spotify_batch_size = 50  # Spotify API limit
@@ -471,25 +469,23 @@ def backfill_song_isrc(self: Any, batches_per_task: int = 10) -> None:
                 )
                 continue
 
-            # Build update data for bulk update
-            updates = []
+            # Build a map of gid -> isrc
+            isrc_map = {}
             for track in result["tracks"]:
                 if track and track.get("id"):
                     isrc = track.get("external_ids", {}).get("isrc")
                     if isrc:
-                        updates.append((isrc, track["id"]))
+                        isrc_map[track["id"]] = isrc
                     else:
                         total_no_isrc += 1
 
-            # Bulk update using raw SQL for maximum speed
-            if updates:
-                with connection.cursor() as cursor:
-                    # Use executemany for batch update
-                    cursor.executemany(
-                        "UPDATE library_manager_song SET isrc = %s WHERE gid = %s",
-                        updates,
-                    )
-                total_updated += len(updates)
+            # Bulk update using Django ORM
+            if isrc_map:
+                songs_to_update = list(Song.objects.filter(gid__in=isrc_map.keys()))
+                for song in songs_to_update:
+                    song.isrc = isrc_map[song.gid]
+                Song.objects.bulk_update(songs_to_update, ["isrc"])
+                total_updated += len(songs_to_update)
 
             # Small delay between API calls to respect rate limits
             if batch_num + spotify_batch_size < len(song_gids):
