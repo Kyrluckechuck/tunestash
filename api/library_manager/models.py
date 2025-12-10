@@ -947,3 +947,72 @@ class SpotifyRateLimitState(models.Model):
             instance.window_call_count = 0
             instance.window_start_at = timezone.now()
             instance.save()
+
+    @classmethod
+    def get_status(cls) -> dict:
+        """
+        Get current rate limit status for display purposes.
+
+        Returns:
+            Dict with rate limit information:
+            - is_rate_limited: bool - Whether currently rate limited
+            - rate_limited_until: Optional[datetime] - When rate limit expires
+            - seconds_until_clear: Optional[int] - Seconds until rate limit clears
+            - window_call_count: int - API calls in current window
+            - window_max_calls: int - Max calls allowed per window
+            - window_usage_percent: float - Percentage of window used
+        """
+        try:
+            instance = cls.objects.filter(key="spotify_rate_limit").first()
+            if not instance:
+                return {
+                    "is_rate_limited": False,
+                    "rate_limited_until": None,
+                    "seconds_until_clear": None,
+                    "window_call_count": 0,
+                    "window_max_calls": cls.MAX_CALLS_PER_WINDOW,
+                    "window_usage_percent": 0.0,
+                }
+
+            now = timezone.now()
+
+            # Check if actively rate limited
+            is_rate_limited = bool(
+                instance.rate_limited_until and instance.rate_limited_until > now
+            )
+            seconds_until_clear = None
+            if is_rate_limited and instance.rate_limited_until:
+                seconds_until_clear = int(
+                    (instance.rate_limited_until - now).total_seconds()
+                )
+
+            # Check if window has elapsed
+            window_elapsed = (now - instance.window_start_at).total_seconds()
+            if window_elapsed >= cls.WINDOW_SECONDS:
+                # Window has reset
+                window_call_count = 0
+            else:
+                window_call_count = instance.window_call_count
+
+            window_usage_percent = (window_call_count / cls.MAX_CALLS_PER_WINDOW) * 100
+
+            return {
+                "is_rate_limited": is_rate_limited,
+                "rate_limited_until": (
+                    instance.rate_limited_until if is_rate_limited else None
+                ),
+                "seconds_until_clear": seconds_until_clear,
+                "window_call_count": window_call_count,
+                "window_max_calls": cls.MAX_CALLS_PER_WINDOW,
+                "window_usage_percent": round(window_usage_percent, 1),
+            }
+        except Exception:
+            # Return safe defaults if anything goes wrong
+            return {
+                "is_rate_limited": False,
+                "rate_limited_until": None,
+                "seconds_until_clear": None,
+                "window_call_count": 0,
+                "window_max_calls": cls.MAX_CALLS_PER_WINDOW,
+                "window_usage_percent": 0.0,
+            }

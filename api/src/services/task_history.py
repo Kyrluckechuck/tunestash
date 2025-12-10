@@ -112,10 +112,9 @@ class TaskHistoryService(BaseService[TaskHistory]):
                     | models.Q(started_at=cursor_item["started_at"], id__lt=cursor_id)
                 )
 
-        # Skip expensive COUNT(*) - estimate from page size instead
-        # The frontend doesn't really need exact total for infinite scroll
-        # We'll return -1 to indicate "unknown" and let frontend handle it
-        total_count = -1
+        # Count query is acceptable since we have the 7-day time-based filter
+        # limiting the dataset size. The index on (-started_at, -id) helps here.
+        total_count: int = await sync_to_async(queryset.count)()
 
         # Get one extra item to determine if there are more pages
         def fetch_items() -> List[DjangoTaskHistory]:

@@ -10,6 +10,13 @@ query GetSystemStatus {
       spotifyUserAuthEnabled
       spotifyAuthMode
     }
+    spotifyRateLimit {
+      isRateLimited
+      secondsUntilClear
+      windowCallCount
+      windowMaxCalls
+      windowUsagePercent
+    }
   }
   queueStatus {
     totalPendingTasks

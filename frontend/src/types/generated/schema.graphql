@@ -276,6 +276,14 @@ type SpotifyPlaylistInfo {
   trackCount: Int!
 }
 
+type SpotifyRateLimitStatus {
+  isRateLimited: Boolean!
+  secondsUntilClear: Int
+  windowCallCount: Int!
+  windowMaxCalls: Int!
+  windowUsagePercent: Float!
+}
+
 type SpotifySearchAlbum {
   albumType: String!
   artistId: String!
@@ -343,6 +351,7 @@ type SystemHealth {
   authentication: AuthenticationStatus!
   canDownload: Boolean!
   downloadBlockerReason: String
+  spotifyRateLimit: SpotifyRateLimitStatus!
 }
 
 type TaskCount {
