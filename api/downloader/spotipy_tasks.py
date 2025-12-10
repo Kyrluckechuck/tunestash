@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Optional
 
 from django.conf import settings
@@ -16,6 +17,9 @@ from .downloader import Downloader
 from .spotify_auth_helper import get_spotify_oauth_credentials
 
 logger = logging.getLogger(__name__)
+
+# Global flag to enable/disable rate limiting (can be disabled for testing)
+RATE_LIMITING_ENABLED = True
 
 # Maximum time (in seconds) to wait for a Spotify rate limit retry
 # If Spotify asks for longer, we fail fast and let the task reschedule
@@ -47,16 +51,101 @@ class LimitedRetry(Retry):
                 f"Spotify rate limit requests {retry_after}s wait, "
                 f"exceeds max of {MAX_RATE_LIMIT_WAIT_SECONDS}s - failing fast"
             )
+            # Record the rate limit in our global state
+            try:
+                from library_manager.models import SpotifyRateLimitState
+
+                SpotifyRateLimitState.set_rate_limited(int(retry_after))
+            except Exception as e:
+                logger.warning(f"Failed to record rate limit state: {e}")
+
             raise SpotifyRateLimitError(
                 f"Spotify rate limit ({retry_after}s) exceeds maximum wait "
                 f"({MAX_RATE_LIMIT_WAIT_SECONDS}s)",
-                retry_after_seconds=retry_after,
+                retry_after_seconds=int(retry_after),
             )
         return retry_after
 
 
+class RateLimitedHTTPAdapter(HTTPAdapter):
+    """HTTP adapter that enforces global Spotify API rate limits.
+
+    Before each request, checks the global rate limit state and waits if
+    necessary. After each request, records the call for tracking.
+
+    This ensures all Spotify API calls across all workers respect a shared
+    rate limit, preventing the aggressive rate limiting that results in
+    multi-hour bans.
+    """
+
+    def send(self, request, *args, **kwargs):
+        """Send a request, respecting global rate limits."""
+        if RATE_LIMITING_ENABLED and "api.spotify.com" in request.url:
+            self._wait_for_rate_limit()
+
+        response = super().send(request, *args, **kwargs)
+
+        if RATE_LIMITING_ENABLED and "api.spotify.com" in request.url:
+            self._record_call(response)
+
+        return response
+
+    def _wait_for_rate_limit(self) -> None:
+        """Wait if we're approaching rate limits."""
+        try:
+            from library_manager.models import SpotifyRateLimitState
+
+            delay = SpotifyRateLimitState.get_delay_seconds()
+            if delay > 0:
+                # Cap the wait at 60 seconds - if longer, let task reschedule
+                if delay > 60:
+                    logger.warning(
+                        f"Rate limit delay {delay:.1f}s exceeds 60s, failing fast"
+                    )
+                    raise SpotifyRateLimitError(
+                        f"Global rate limit requires {delay:.1f}s wait",
+                        retry_after_seconds=int(delay),
+                    )
+                logger.debug(f"Rate limit: waiting {delay:.2f}s before API call")
+                time.sleep(delay)
+        except SpotifyRateLimitError:
+            raise
+        except Exception as e:
+            # If rate limit check fails, proceed anyway to avoid blocking
+            logger.warning(f"Rate limit check failed, proceeding anyway: {e}")
+
+    def _record_call(self, response) -> None:
+        """Record that an API call was made."""
+        try:
+            from library_manager.models import SpotifyRateLimitState
+
+            # Record 429 responses for tracking
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After", "60")
+                try:
+                    retry_seconds = int(retry_after)
+                except ValueError:
+                    retry_seconds = 60
+                SpotifyRateLimitState.set_rate_limited(retry_seconds)
+                logger.warning(
+                    f"Spotify returned 429, rate limited for {retry_seconds}s"
+                )
+            else:
+                # Record successful call
+                SpotifyRateLimitState.record_call()
+        except Exception as e:
+            # Don't fail the request if recording fails
+            logger.warning(f"Failed to record API call: {e}")
+
+
 def create_limited_session() -> requests.Session:
-    """Create a requests session with rate-limit-aware retry configuration."""
+    """Create a requests session with rate-limit-aware retry configuration.
+
+    Uses RateLimitedHTTPAdapter which:
+    1. Enforces global rate limits before each request (shared across workers)
+    2. Records each API call for tracking
+    3. Fails fast if rate limited, allowing tasks to reschedule
+    """
     session = requests.Session()
 
     # Configure retry with our custom LimitedRetry class
@@ -67,7 +156,8 @@ def create_limited_session() -> requests.Session:
         allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
     )
 
-    adapter = HTTPAdapter(max_retries=retry)
+    # Use our rate-limited adapter that enforces global limits
+    adapter = RateLimitedHTTPAdapter(max_retries=retry)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
 

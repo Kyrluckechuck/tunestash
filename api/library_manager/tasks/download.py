@@ -7,6 +7,7 @@ from django.db.models.functions import Now
 
 from celery_app import app as celery_app
 from downloader.spotdl_wrapper import YouTubeRateLimitError
+from downloader.spotipy_tasks import SpotifyRateLimitError
 from downloader.utils import sanitize_and_strip_url
 from lib.config_class import Config
 
@@ -274,6 +275,23 @@ def download_single_album(self: Any, album_id: int) -> None:
             exc=rate_limit_error,
             countdown=retry_after,
             max_retries=3,
+        )
+    except SpotifyRateLimitError as rate_limit_error:
+        # Spotify rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"Spotify rate limit hit for album {album_id}, rescheduling in {retry_after}s"
+        )
+        if task_history:
+            task_history.status = "PENDING"
+            task_history.add_log_message(
+                f"Rate limited by Spotify, rescheduling in {retry_after // 60} minutes"
+            )
+            task_history.save()
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=5,
         )
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
@@ -603,6 +621,24 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
             countdown=retry_after,
             max_retries=3,
         )
+    except SpotifyRateLimitError as rate_limit_error:
+        # Spotify rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"Spotify rate limit hit for album {spotify_album_id}, "
+            f"rescheduling in {retry_after}s"
+        )
+        if task_history:
+            task_history.status = "PENDING"
+            task_history.add_log_message(
+                f"Rate limited by Spotify, rescheduling in {retry_after // 60} minutes"
+            )
+            task_history.save()
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=5,
+        )
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
         logger.error(error_msg)
@@ -675,6 +711,23 @@ def download_single_track(self: Any, track_id: str) -> None:
             exc=rate_limit_error,
             countdown=retry_after,
             max_retries=3,
+        )
+    except SpotifyRateLimitError as rate_limit_error:
+        # Spotify rate limit - reschedule task for later
+        retry_after = rate_limit_error.retry_after_seconds
+        logger.warning(
+            f"Spotify rate limit hit for track {track_id}, rescheduling in {retry_after}s"
+        )
+        if task_history:
+            task_history.status = "PENDING"
+            task_history.add_log_message(
+                f"Rate limited by Spotify, rescheduling in {retry_after // 60} minutes"
+            )
+            task_history.save()
+        raise self.retry(
+            exc=rate_limit_error,
+            countdown=retry_after,
+            max_retries=5,
         )
     except Exception as e:
         error_msg = f"Error downloading track: {str(e)}"

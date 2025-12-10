@@ -415,7 +415,7 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
 
 @celery_app.task(bind=True, name="library_manager.tasks.backfill_song_isrc")
 def backfill_song_isrc(
-    self: Any, batches_per_task: int = 10, last_song_id: int = 0
+    self: Any, batches_per_task: int = 5, last_song_id: int = 0
 ) -> None:
     """
     Backfill ISRC codes for existing songs that don't have them.
@@ -426,7 +426,7 @@ def backfill_song_isrc(
 
     Args:
         batches_per_task: Number of 50-track API batches to process per task.
-                         Default 10 = 500 songs per task invocation.
+                         Default 5 = 250 songs per task invocation.
         last_song_id: ID of the last song processed in the previous task.
                       Used for pagination to avoid re-querying songs without ISRC.
     """
@@ -515,13 +515,13 @@ def backfill_song_isrc(
             logger.info(
                 f"{remaining_after} songs still need ISRC, scheduling next batch"
             )
-            # 10s cooldown between chained tasks to avoid rate limit pressure
+            # 30s cooldown between chained tasks to stay within Spotify rate limits
             backfill_song_isrc.apply_async(
                 kwargs={
                     "batches_per_task": batches_per_task,
                     "last_song_id": max_song_id,
                 },
-                countdown=10,
+                countdown=30,
             )
         else:
             # Log final stats
@@ -553,7 +553,7 @@ def backfill_song_isrc(
 
 @celery_app.task(bind=True, name="library_manager.tasks.backfill_song_album")
 def backfill_song_album(
-    self: Any, batches_per_task: int = 10, last_song_id: int = 0
+    self: Any, batches_per_task: int = 5, last_song_id: int = 0
 ) -> None:
     """
     Backfill album associations for existing songs that don't have them.
@@ -564,7 +564,7 @@ def backfill_song_album(
 
     Args:
         batches_per_task: Number of 50-track API batches to process per task.
-                         Default 10 = 500 songs per task invocation.
+                         Default 5 = 250 songs per task invocation.
         last_song_id: ID of the last song processed in the previous task.
                       Used for pagination to avoid re-querying unlinkable songs.
     """
@@ -676,13 +676,13 @@ def backfill_song_album(
             logger.info(
                 f"{remaining_after} songs still need album link, scheduling next batch"
             )
-            # 10s cooldown between chained tasks to avoid rate limit pressure
+            # 30s cooldown between chained tasks to stay within Spotify rate limits
             backfill_song_album.apply_async(
                 kwargs={
                     "batches_per_task": batches_per_task,
                     "last_song_id": max_song_id,
                 },
-                countdown=10,
+                countdown=30,
             )
         else:
             # Log final stats
