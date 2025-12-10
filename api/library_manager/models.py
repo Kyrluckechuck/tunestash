@@ -803,3 +803,145 @@ class SpotifyOAuthToken(models.Model):
     class Meta(TypedModelMeta):
         app_label = "library_manager"
         db_table = "spotify_oauth_tokens"
+
+
+class SpotifyRateLimitState(models.Model):
+    """
+    Tracks Spotify API rate limit state across all workers.
+
+    Uses a sliding window approach: tracks when the last N API calls were made,
+    and ensures we don't exceed the configured rate. This model acts as shared
+    state between Celery workers to coordinate API usage.
+
+    Spotify's rate limits are complex and not publicly documented, but empirically:
+    - ~180 requests/minute for most endpoints is safe
+    - Exceeding this leads to 429 responses with Retry-After headers
+    - Severe violations can result in multi-hour bans
+
+    We use a conservative limit of 150 requests/minute with a 30-second window.
+    """
+
+    id: models.BigAutoField = models.BigAutoField(primary_key=True)
+
+    # Singleton key - only one row should exist
+    key: models.CharField = models.CharField(
+        max_length=50, unique=True, default="spotify_rate_limit"
+    )
+
+    # Timestamp of last API call (used for calculating delays)
+    last_call_at: models.DateTimeField = models.DateTimeField(default=timezone.now)
+
+    # Count of calls in current window
+    window_call_count: models.IntegerField = models.IntegerField(default=0)
+
+    # Start of current tracking window
+    window_start_at: models.DateTimeField = models.DateTimeField(default=timezone.now)
+
+    # If rate limited, when we can resume
+    rate_limited_until: models.DateTimeField = models.DateTimeField(
+        null=True, blank=True
+    )
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "spotify_rate_limit_state"
+
+    def __str__(self) -> str:
+        return f"Spotify Rate Limit State (calls in window: {self.window_call_count})"
+
+    # Configuration constants
+    WINDOW_SECONDS = 30  # Rolling window duration
+    MAX_CALLS_PER_WINDOW = 75  # ~150/min, conservative to avoid bans
+    MIN_DELAY_BETWEEN_CALLS_MS = 100  # Minimum 100ms between any two calls
+
+    @classmethod
+    def get_instance(cls) -> "SpotifyRateLimitState":
+        """Get or create the singleton rate limit state."""
+        instance, _ = cls.objects.get_or_create(key="spotify_rate_limit")
+        return instance
+
+    @classmethod
+    def record_call(cls) -> None:
+        """
+        Record that an API call was made.
+
+        Should be called AFTER each successful Spotify API call.
+        Uses database-level locking to ensure accurate counts across workers.
+        """
+        from django.db import transaction
+
+        with transaction.atomic():
+            instance = cls.objects.select_for_update().get_or_create(
+                key="spotify_rate_limit"
+            )[0]
+            now = timezone.now()
+
+            # Reset window if it has elapsed
+            window_elapsed = (now - instance.window_start_at).total_seconds()
+            if window_elapsed >= cls.WINDOW_SECONDS:
+                instance.window_start_at = now
+                instance.window_call_count = 1
+            else:
+                instance.window_call_count += 1
+
+            instance.last_call_at = now
+            instance.save()
+
+    @classmethod
+    def get_delay_seconds(cls) -> float:
+        """
+        Calculate how long to wait before the next API call.
+
+        Returns 0 if we can proceed immediately, otherwise the number of
+        seconds to wait. Uses pessimistic locking to read consistent state.
+        """
+        from django.db import transaction
+
+        with transaction.atomic():
+            instance = cls.objects.select_for_update().get_or_create(
+                key="spotify_rate_limit"
+            )[0]
+            now = timezone.now()
+
+            # If we're rate limited, return time until we can resume
+            if instance.rate_limited_until and instance.rate_limited_until > now:
+                return float((instance.rate_limited_until - now).total_seconds())
+
+            # Check if window has elapsed - if so, we can proceed
+            window_elapsed: float = (now - instance.window_start_at).total_seconds()
+            if window_elapsed >= cls.WINDOW_SECONDS:
+                return 0.0
+
+            # Check if we've exceeded calls in this window
+            if instance.window_call_count >= cls.MAX_CALLS_PER_WINDOW:
+                # Wait until window resets
+                return float(cls.WINDOW_SECONDS) - window_elapsed
+
+            # Enforce minimum delay between calls
+            time_since_last: float = (now - instance.last_call_at).total_seconds()
+            min_delay = cls.MIN_DELAY_BETWEEN_CALLS_MS / 1000.0
+            if time_since_last < min_delay:
+                return min_delay - time_since_last
+
+            return 0.0
+
+    @classmethod
+    def set_rate_limited(cls, retry_after_seconds: int) -> None:
+        """
+        Record that we've been rate limited by Spotify.
+
+        Called when we receive a 429 response with Retry-After header.
+        """
+        from django.db import transaction
+
+        with transaction.atomic():
+            instance = cls.objects.select_for_update().get_or_create(
+                key="spotify_rate_limit"
+            )[0]
+            instance.rate_limited_until = timezone.now() + timezone.timedelta(
+                seconds=retry_after_seconds
+            )
+            # Reset window to be safe
+            instance.window_call_count = 0
+            instance.window_start_at = timezone.now()
+            instance.save()

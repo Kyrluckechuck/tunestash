@@ -1068,6 +1068,10 @@ class SpotdlWrapper:
                 # Re-raise fail-fast errors
                 raise
 
+            except SpotifyRateLimitError:
+                # Re-raise Spotify rate limit errors so tasks can reschedule
+                raise
+
             except Exception as general_exception:
                 is_fail_fast, status_code = _is_fail_fast_error(general_exception)
                 is_playlist_url = (
