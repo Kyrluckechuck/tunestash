@@ -1,7 +1,9 @@
 # mypy: disable-error-code=attr-defined
+from datetime import timedelta
 from typing import Any, List, Optional, Tuple
 
 from django.db import models
+from django.utils import timezone
 
 from asgiref.sync import sync_to_async
 
@@ -10,6 +12,9 @@ from library_manager.models import TaskHistory as DjangoTaskHistory
 from ..graphql_types.models import EntityType, TaskHistory, TaskStatus, TaskType
 from ..types.typing import SupportsId
 from .base import BaseService
+
+# Default to showing tasks from the last 7 days for performance
+DEFAULT_DAYS_LOOKBACK = 7
 
 
 class TaskHistoryService(BaseService[TaskHistory]):
@@ -31,7 +36,17 @@ class TaskHistoryService(BaseService[TaskHistory]):
         type: Optional[TaskType] = filters.get("type")
         entity_type: Optional[EntityType] = filters.get("entity_type")
         search: Optional[str] = filters.get("search")
+        days_lookback: Optional[int] = filters.get(
+            "days_lookback", DEFAULT_DAYS_LOOKBACK
+        )
+
         queryset = self.model.objects.all()
+
+        # Apply time-based filter for performance (unless searching)
+        # This dramatically speeds up queries on large tables
+        if days_lookback and not search:
+            cutoff_date = timezone.now() - timedelta(days=days_lookback)
+            queryset = queryset.filter(started_at__gte=cutoff_date)
 
         # Apply filters
         if status:
@@ -80,17 +95,31 @@ class TaskHistoryService(BaseService[TaskHistory]):
                 | models.Q(entity_id__icontains=search)
             )
 
-        # Apply cursor-based pagination
+        # Apply cursor-based pagination using started_at for consistency with ordering
         if after:
-            id_after = self.decode_cursor(after)
-            queryset = queryset.filter(id__gt=id_after)
+            cursor_id = self.decode_cursor(after)
+            # Get the started_at of the cursor item to paginate correctly
+            cursor_item = await sync_to_async(
+                lambda: self.model.objects.filter(id=cursor_id)
+                .values("started_at")
+                .first()
+            )()
+            if cursor_item:
+                # For descending order, get items with started_at < cursor's started_at
+                # or same started_at but smaller id (for deterministic ordering)
+                queryset = queryset.filter(
+                    models.Q(started_at__lt=cursor_item["started_at"])
+                    | models.Q(started_at=cursor_item["started_at"], id__lt=cursor_id)
+                )
 
-        # Get total count before slicing
-        total_count = await queryset.acount()
+        # Skip expensive COUNT(*) - estimate from page size instead
+        # The frontend doesn't really need exact total for infinite scroll
+        # We'll return -1 to indicate "unknown" and let frontend handle it
+        total_count = -1
 
         # Get one extra item to determine if there are more pages
         def fetch_items() -> List[DjangoTaskHistory]:
-            return list(queryset.order_by("-started_at")[: first + 1])
+            return list(queryset.order_by("-started_at", "-id")[: first + 1])
 
         items: List[DjangoTaskHistory] = await sync_to_async(fetch_items)()
 

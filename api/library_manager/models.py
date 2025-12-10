@@ -475,6 +475,8 @@ class TaskHistory(models.Model):
             models.Index(fields=["type", "-started_at"]),
             models.Index(fields=["entity_type", "-started_at"]),
             models.Index(fields=["completed_at"]),
+            # Index for time-based filtering (recent tasks lookup)
+            models.Index(fields=["-started_at", "-id"]),
         ]
 
     def __str__(self) -> str:
