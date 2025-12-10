@@ -19,217 +19,226 @@ function Home() {
       </div>
 
       {/* System Health Card */}
-      <div className='bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-5'>
-        <div className='flex items-start justify-between'>
-          <div className='flex-1'>
-            <div className='text-gray-900 font-semibold mb-3'>
-              System Status
-            </div>
-            <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4'>
-              {/* YouTube Music Authentication Status */}
-              <div>
-                <div className='text-xs text-gray-600 mb-1'>YouTube Music</div>
-                {loading ? (
-                  <div className='text-sm text-gray-500'>Loading...</div>
-                ) : data?.systemHealth.authentication.cookiesValid ? (
-                  <div className='flex items-center gap-2'>
-                    <svg
-                      className='h-4 w-4 text-green-500'
-                      fill='currentColor'
-                      viewBox='0 0 20 20'
-                    >
-                      <path
-                        fillRule='evenodd'
-                        d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
-                        clipRule='evenodd'
-                      />
-                    </svg>
-                    <span className='text-sm text-green-700 font-medium'>
-                      Valid
-                    </span>
-                    {data.systemHealth.authentication.cookiesExpireInDays !==
-                      null &&
-                      data.systemHealth.authentication.cookiesExpireInDays <
-                        30 && (
-                        <span className='text-xs text-yellow-600'>
-                          (
-                          {data.systemHealth.authentication.cookiesExpireInDays}
-                          d)
-                        </span>
-                      )}
-                  </div>
-                ) : (
-                  <div className='flex items-center gap-2'>
-                    <svg
-                      className='h-4 w-4 text-red-500'
-                      fill='currentColor'
-                      viewBox='0 0 20 20'
-                    >
-                      <path
-                        fillRule='evenodd'
-                        d='M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z'
-                        clipRule='evenodd'
-                      />
-                    </svg>
-                    <span className='text-sm text-red-700 font-medium'>
-                      {data?.systemHealth.authentication.cookiesErrorType ||
-                        'Invalid'}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Spotify Authentication Mode */}
-              <div>
-                <div className='text-xs text-gray-600 mb-1'>Spotify Access</div>
-                {loading ? (
-                  <div className='text-sm text-gray-500'>Loading...</div>
-                ) : data?.systemHealth.authentication.spotifyAuthMode ===
-                  'user-authenticated' ? (
-                  <div className='space-y-2'>
-                    <div className='flex items-center gap-2'>
-                      <svg
-                        className='h-4 w-4 text-green-500'
-                        fill='currentColor'
-                        viewBox='0 0 20 20'
-                      >
-                        <path
-                          fillRule='evenodd'
-                          d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
-                          clipRule='evenodd'
-                        />
-                      </svg>
-                      <span className='text-sm text-green-700 font-medium'>
-                        Private
-                      </span>
-                    </div>
-                    <SpotifyConnectButton />
-                  </div>
-                ) : (
-                  <div className='space-y-2'>
-                    <div className='flex items-center gap-2'>
-                      <svg
-                        className='h-4 w-4 text-blue-500'
-                        fill='currentColor'
-                        viewBox='0 0 20 20'
-                      >
-                        <path
-                          fillRule='evenodd'
-                          d='M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z'
-                          clipRule='evenodd'
-                        />
-                      </svg>
-                      <span className='text-sm text-blue-700 font-medium'>
-                        Public Only
-                      </span>
-                    </div>
-                    <SpotifyConnectButton />
-                  </div>
-                )}
-              </div>
-
-              {/* Download Capability */}
-              <div>
-                <div className='text-xs text-gray-600 mb-1'>Downloads</div>
-                {loading ? (
-                  <div className='text-sm text-gray-500'>Loading...</div>
-                ) : data?.systemHealth.canDownload ? (
-                  <div className='flex items-center gap-2'>
-                    <svg
-                      className='h-4 w-4 text-green-500'
-                      fill='currentColor'
-                      viewBox='0 0 20 20'
-                    >
-                      <path
-                        fillRule='evenodd'
-                        d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
-                        clipRule='evenodd'
-                      />
-                    </svg>
-                    <span className='text-sm text-green-700 font-medium'>
-                      Ready
-                    </span>
-                  </div>
-                ) : (
-                  <div className='flex items-center gap-2'>
-                    <svg
-                      className='h-4 w-4 text-red-500'
-                      fill='currentColor'
-                      viewBox='0 0 20 20'
-                    >
-                      <path
-                        fillRule='evenodd'
-                        d='M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z'
-                        clipRule='evenodd'
-                      />
-                    </svg>
-                    <span className='text-sm text-red-700 font-medium'>
-                      Blocked
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Queue Status */}
-              <div>
-                <div className='text-xs text-gray-600 mb-1'>Task Queue</div>
-                {loading ? (
-                  <div className='text-sm text-gray-500'>Loading...</div>
-                ) : (
-                  <div className='flex items-center gap-2'>
-                    {data?.queueStatus.totalPendingTasks === 0 ? (
-                      <>
-                        <svg
-                          className='h-4 w-4 text-gray-400'
-                          fill='currentColor'
-                          viewBox='0 0 20 20'
-                        >
-                          <path
-                            fillRule='evenodd'
-                            d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
-                            clipRule='evenodd'
-                          />
-                        </svg>
-                        <span className='text-sm text-gray-600'>Idle</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg
-                          className='h-4 w-4 text-blue-500 animate-spin'
-                          fill='none'
-                          viewBox='0 0 24 24'
-                        >
-                          <circle
-                            className='opacity-25'
-                            cx='12'
-                            cy='12'
-                            r='10'
-                            stroke='currentColor'
-                            strokeWidth='4'
-                          />
-                          <path
-                            className='opacity-75'
-                            fill='currentColor'
-                            d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
-                          />
-                        </svg>
-                        <span className='text-sm text-blue-700 font-medium'>
-                          {data?.queueStatus.totalPendingTasks} pending
-                        </span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+      <div className='bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-4'>
+        <div className='flex items-center justify-between mb-3'>
+          <div className='text-gray-900 font-semibold'>System Status</div>
           <Link
             to='/tasks'
             search={{}}
-            className='ml-4 text-sm text-blue-600 hover:text-blue-700 font-medium'
+            className='text-sm text-blue-600 hover:text-blue-700 font-medium'
           >
             View Tasks →
           </Link>
+        </div>
+        <div className='grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2'>
+          {/* Spotify Access */}
+          <div className='flex items-center gap-2'>
+            {loading ? (
+              <span className='text-sm text-gray-500'>Loading...</span>
+            ) : data?.systemHealth.authentication.spotifyAuthMode ===
+              'user-authenticated' ? (
+              <>
+                <svg
+                  className='h-4 w-4 text-green-500 flex-shrink-0'
+                  fill='currentColor'
+                  viewBox='0 0 20 20'
+                >
+                  <path
+                    fillRule='evenodd'
+                    d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
+                    clipRule='evenodd'
+                  />
+                </svg>
+                <span className='text-sm text-gray-700'>
+                  Spotify:{' '}
+                  <span className='text-green-700 font-medium'>Private</span>
+                </span>
+              </>
+            ) : (
+              <>
+                <svg
+                  className='h-4 w-4 text-blue-500 flex-shrink-0'
+                  fill='currentColor'
+                  viewBox='0 0 20 20'
+                >
+                  <path
+                    fillRule='evenodd'
+                    d='M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z'
+                    clipRule='evenodd'
+                  />
+                </svg>
+                <span className='text-sm text-gray-700'>
+                  Spotify:{' '}
+                  <span className='text-blue-700 font-medium'>Public Only</span>
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* YouTube Music Cookies */}
+          <div className='flex items-center gap-2'>
+            {loading ? (
+              <span className='text-sm text-gray-500'>Loading...</span>
+            ) : data?.systemHealth.authentication.cookiesValid ? (
+              <>
+                <svg
+                  className='h-4 w-4 text-green-500 flex-shrink-0'
+                  fill='currentColor'
+                  viewBox='0 0 20 20'
+                >
+                  <path
+                    fillRule='evenodd'
+                    d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
+                    clipRule='evenodd'
+                  />
+                </svg>
+                <span className='text-sm text-gray-700'>
+                  YouTube Music:{' '}
+                  <span className='text-green-700 font-medium'>
+                    Valid
+                    {data.systemHealth.authentication.cookiesExpireInDays !==
+                      null &&
+                      data.systemHealth.authentication.cookiesExpireInDays <
+                        30 &&
+                      ` (${data.systemHealth.authentication.cookiesExpireInDays}d)`}
+                  </span>
+                </span>
+              </>
+            ) : (
+              <>
+                <svg
+                  className='h-4 w-4 text-red-500 flex-shrink-0'
+                  fill='currentColor'
+                  viewBox='0 0 20 20'
+                >
+                  <path
+                    fillRule='evenodd'
+                    d='M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z'
+                    clipRule='evenodd'
+                  />
+                </svg>
+                <span className='text-sm text-gray-700'>
+                  YouTube Music:{' '}
+                  <span className='text-red-700 font-medium'>
+                    {data?.systemHealth.authentication.cookiesErrorType ||
+                      'Invalid'}
+                  </span>
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Spotify Rate Limit */}
+          <div className='flex items-center gap-2'>
+            {loading ? (
+              <span className='text-sm text-gray-500'>Loading...</span>
+            ) : data?.systemHealth.spotifyRateLimit.isRateLimited ? (
+              <>
+                <svg
+                  className='h-4 w-4 text-red-500 flex-shrink-0'
+                  fill='currentColor'
+                  viewBox='0 0 20 20'
+                >
+                  <path
+                    fillRule='evenodd'
+                    d='M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z'
+                    clipRule='evenodd'
+                  />
+                </svg>
+                <span className='text-sm text-gray-700'>
+                  Rate Limit:{' '}
+                  <span className='text-red-700 font-medium'>
+                    Limited
+                    {data.systemHealth.spotifyRateLimit.secondsUntilClear &&
+                      ` (${data.systemHealth.spotifyRateLimit.secondsUntilClear}s)`}
+                  </span>
+                </span>
+              </>
+            ) : (
+              <>
+                <svg
+                  className='h-4 w-4 text-green-500 flex-shrink-0'
+                  fill='currentColor'
+                  viewBox='0 0 20 20'
+                >
+                  <path
+                    fillRule='evenodd'
+                    d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
+                    clipRule='evenodd'
+                  />
+                </svg>
+                <span className='text-sm text-gray-700'>
+                  Rate Limit:{' '}
+                  <span className='text-green-700 font-medium'>OK</span>
+                  {data?.systemHealth.spotifyRateLimit.windowUsagePercent !=
+                    null &&
+                    data.systemHealth.spotifyRateLimit.windowUsagePercent >
+                      50 && (
+                      <span className='text-yellow-600 ml-1'>
+                        ({data.systemHealth.spotifyRateLimit.windowUsagePercent}
+                        %)
+                      </span>
+                    )}
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Task Queue */}
+          <div className='flex items-center gap-2'>
+            {loading ? (
+              <span className='text-sm text-gray-500'>Loading...</span>
+            ) : data?.queueStatus.totalPendingTasks === 0 ? (
+              <>
+                <svg
+                  className='h-4 w-4 text-gray-400 flex-shrink-0'
+                  fill='currentColor'
+                  viewBox='0 0 20 20'
+                >
+                  <path
+                    fillRule='evenodd'
+                    d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
+                    clipRule='evenodd'
+                  />
+                </svg>
+                <span className='text-sm text-gray-700'>
+                  Task Queue: <span className='text-gray-600'>Idle</span>
+                </span>
+              </>
+            ) : (
+              <>
+                <svg
+                  className='h-4 w-4 text-blue-500 animate-spin flex-shrink-0'
+                  fill='none'
+                  viewBox='0 0 24 24'
+                >
+                  <circle
+                    className='opacity-25'
+                    cx='12'
+                    cy='12'
+                    r='10'
+                    stroke='currentColor'
+                    strokeWidth='4'
+                  />
+                  <path
+                    className='opacity-75'
+                    fill='currentColor'
+                    d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
+                  />
+                </svg>
+                <span className='text-sm text-gray-700'>
+                  Task Queue:{' '}
+                  <span className='text-blue-700 font-medium'>
+                    {data?.queueStatus.totalPendingTasks} pending
+                  </span>
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        {/* Spotify Connect Button */}
+        <div className='mt-3'>
+          <SpotifyConnectButton />
         </div>
       </div>
 

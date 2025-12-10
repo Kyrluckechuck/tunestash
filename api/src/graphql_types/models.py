@@ -332,12 +332,24 @@ class AuthenticationStatus:
 
 
 @strawberry.type
+class SpotifyRateLimitStatus:
+    """Spotify API rate limit status."""
+
+    is_rate_limited: bool
+    seconds_until_clear: Optional[int] = None
+    window_call_count: int
+    window_max_calls: int
+    window_usage_percent: float
+
+
+@strawberry.type
 class SystemHealth:
     """Overall system health status."""
 
     can_download: bool
     download_blocker_reason: Optional[str] = None
     authentication: AuthenticationStatus
+    spotify_rate_limit: SpotifyRateLimitStatus
 
 
 # Spotify Search Result Types

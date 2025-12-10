@@ -21,6 +21,7 @@ from ..graphql_types.models import (
     Song,
     SongConnection,
     SpotifyPlaylistInfo,
+    SpotifyRateLimitStatus,
     SpotifySearchAlbum,
     SpotifySearchArtist,
     SpotifySearchPlaylist,
@@ -333,6 +334,8 @@ class Query:
         """Get overall system health including authentication status."""
         from asgiref.sync import sync_to_async
 
+        from library_manager.models import SpotifyRateLimitState
+
         from ..services.system_health import SystemHealthService
 
         # Use thread_sensitive=True to ensure Django ORM access works correctly
@@ -342,6 +345,9 @@ class Query:
         can_download, reason = await sync_to_async(
             SystemHealthService.is_download_capable
         )()
+
+        # Get rate limit status
+        rate_limit_data = await sync_to_async(SpotifyRateLimitState.get_status)()
 
         return SystemHealth(
             can_download=can_download,
@@ -360,6 +366,13 @@ class Query:
                 spotify_token_expired=auth_status.spotify_token_expired,
                 spotify_token_expires_in_hours=auth_status.spotify_token_expires_in_hours,
                 spotify_token_error_message=auth_status.spotify_token_error_message,
+            ),
+            spotify_rate_limit=SpotifyRateLimitStatus(
+                is_rate_limited=rate_limit_data["is_rate_limited"],
+                seconds_until_clear=rate_limit_data["seconds_until_clear"],
+                window_call_count=rate_limit_data["window_call_count"],
+                window_max_calls=rate_limit_data["window_max_calls"],
+                window_usage_percent=rate_limit_data["window_usage_percent"],
             ),
         )
 
