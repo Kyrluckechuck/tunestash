@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 # Global flag to enable/disable rate limiting (can be disabled for testing)
 RATE_LIMITING_ENABLED = True
 
+# Log API call stats every N calls
+_API_CALL_LOG_INTERVAL = 50
+_api_call_count = 0  # Thread-local would be better but this is single-worker
+
 # Maximum time (in seconds) to wait for a Spotify rate limit retry
 # If Spotify asks for longer, we fail fast and let the task reschedule
 MAX_RATE_LIMIT_WAIT_SECONDS = 300  # 5 minutes
@@ -116,6 +120,7 @@ class RateLimitedHTTPAdapter(HTTPAdapter):
 
     def _record_call(self, response) -> None:
         """Record that an API call was made."""
+        global _api_call_count
         try:
             from library_manager.models import SpotifyRateLimitState
 
@@ -128,11 +133,22 @@ class RateLimitedHTTPAdapter(HTTPAdapter):
                     retry_seconds = 60
                 SpotifyRateLimitState.set_rate_limited(retry_seconds)
                 logger.warning(
-                    f"Spotify returned 429, rate limited for {retry_seconds}s"
+                    f"[SPOTIFY API] 429 Rate Limited! Retry-After: {retry_seconds}s, "
+                    f"URL: {response.request.url if response.request else 'unknown'}"
                 )
             else:
                 # Record successful call
                 SpotifyRateLimitState.record_call()
+
+                # Periodic logging of API call stats
+                _api_call_count += 1
+                if _api_call_count % _API_CALL_LOG_INTERVAL == 0:
+                    status = SpotifyRateLimitState.get_status()
+                    logger.info(
+                        f"[SPOTIFY API] {_api_call_count} calls this session, "
+                        f"window: {status['window_call_count']}/{status['window_max_calls']} "
+                        f"({status['window_usage_percent']:.0f}%)"
+                    )
         except Exception as e:
             # Don't fail the request if recording fails
             logger.warning(f"Failed to record API call: {e}")

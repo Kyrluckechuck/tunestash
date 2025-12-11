@@ -853,8 +853,8 @@ class SpotifyRateLimitState(models.Model):
 
     # Configuration constants
     WINDOW_SECONDS = 30  # Rolling window duration
-    MAX_CALLS_PER_WINDOW = 75  # ~150/min, conservative to avoid bans
-    MIN_DELAY_BETWEEN_CALLS_MS = 100  # Minimum 100ms between any two calls
+    MAX_CALLS_PER_WINDOW = 25  # ~50/min
+    MIN_DELAY_BETWEEN_CALLS_MS = 200  # Minimum 200ms between any two calls
 
     @classmethod
     def get_instance(cls) -> "SpotifyRateLimitState":

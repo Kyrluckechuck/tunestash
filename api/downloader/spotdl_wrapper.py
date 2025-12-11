@@ -613,6 +613,11 @@ class SpotdlWrapper:
                 auth_token=oauth_creds["access_token"],
             )
 
+            # Inject rate-limited session into the new client
+            from .spotipy_tasks import create_limited_session
+
+            SpotifyClient._instance._session = create_limited_session()
+
             # Update our reference to the new client instance
             # SpotDL's SpotifyClient is the Spotipy client itself
             self.spotipy_client = SpotifyClient()
