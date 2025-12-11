@@ -616,7 +616,13 @@ class SpotdlWrapper:
             # Inject rate-limited session into the new client
             from .spotipy_tasks import create_limited_session
 
-            SpotifyClient._instance._session = create_limited_session()
+            if SpotifyClient._instance is not None:
+                SpotifyClient._instance._session = create_limited_session()
+            else:
+                self.logger.error(
+                    "SpotifyClient._instance is None after init() - "
+                    "rate-limited session not injected"
+                )
 
             # Update our reference to the new client instance
             # SpotDL's SpotifyClient is the Spotipy client itself
