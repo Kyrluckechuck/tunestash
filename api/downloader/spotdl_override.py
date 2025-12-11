@@ -95,6 +95,24 @@ def song_from_track_data(track: Dict[str, Any]) -> Song:
     )
 
 
+def _inject_rate_limited_session() -> None:
+    """
+    Inject our rate-limited session into spotdl's SpotifyClient singleton.
+
+    SpotDL creates its own internal spotipy.Spotify instance that bypasses our
+    rate limiting. This function replaces its session with our rate-limited one
+    after initialization.
+    """
+    from .spotipy_tasks import create_limited_session
+
+    if SpotifyClient._instance is not None:
+        # Replace the internal session with our rate-limited one
+        SpotifyClient._instance._session = create_limited_session()
+        logger.info(
+            "[SPOTIFY API] Injected rate-limited session into spotdl SpotifyClient"
+        )
+
+
 # Class SpotDl
 # Monkeypatch The Spotdl class to only init SpotifyClient if it doesn't already exist
 def __init__(
@@ -154,6 +172,10 @@ def __init__(
                 no_cache=no_cache,
                 headless=headless,
             )
+
+        # Inject our rate-limited session into spotdl's SpotifyClient
+        # This ensures all spotdl API calls go through our rate limiter
+        _inject_rate_limited_session()
 
     # Initialize downloader
     self.downloader = Downloader(
