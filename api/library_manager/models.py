@@ -1,5 +1,6 @@
+from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 import django.core.validators
 from django.conf import settings
@@ -809,18 +810,25 @@ class SpotifyOAuthToken(models.Model):
 
 class SpotifyRateLimitState(models.Model):
     """
-    Tracks Spotify API rate limit state across all workers.
+    Multi-tier rate limiter for Spotify API with adaptive backoff.
 
-    Uses a sliding window approach: tracks when the last N API calls were made,
-    and ensures we don't exceed the configured rate. This model acts as shared
-    state between Celery workers to coordinate API usage.
+    Implements three tiers of rate limiting to avoid both short-term and long-term bans:
 
-    Spotify's rate limits are complex and not publicly documented, but empirically:
-    - ~180 requests/minute for most endpoints is safe
-    - Exceeding this leads to 429 responses with Retry-After headers
-    - Severe violations can result in multi-hour bans
+    1. BURST (30-second window): Allows short bursts of activity
+       - Max 25 calls per 30 seconds (~50/min)
+       - Prevents immediate 429 responses
 
-    We use a conservative limit of 150 requests/minute with a 30-second window.
+    2. SUSTAINED (5-minute window): Controls medium-term throughput
+       - Max 100 calls per 5 minutes (20/min average)
+       - Prevents accumulation that triggers moderate bans
+
+    3. HOURLY (1-hour window): Guards against long-term quota exhaustion
+       - Max 600 calls per hour (10/min average)
+       - Prevents the multi-hour bans seen with sustained high usage
+
+    Additionally implements exponential backoff: when any tier is exceeded,
+    a "pressure" counter increases, adding progressive delays. This pressure
+    decays over time when usage is low.
     """
 
     id: models.BigAutoField = models.BigAutoField(primary_key=True)
@@ -833,28 +841,86 @@ class SpotifyRateLimitState(models.Model):
     # Timestamp of last API call (used for calculating delays)
     last_call_at: models.DateTimeField = models.DateTimeField(default=timezone.now)
 
-    # Count of calls in current window
-    window_call_count: models.IntegerField = models.IntegerField(default=0)
+    # BURST tier: 30-second window
+    burst_call_count: models.IntegerField = models.IntegerField(default=0)
+    burst_window_start: models.DateTimeField = models.DateTimeField(
+        default=timezone.now
+    )
 
-    # Start of current tracking window
-    window_start_at: models.DateTimeField = models.DateTimeField(default=timezone.now)
+    # SUSTAINED tier: 5-minute window
+    sustained_call_count: models.IntegerField = models.IntegerField(default=0)
+    sustained_window_start: models.DateTimeField = models.DateTimeField(
+        default=timezone.now
+    )
 
-    # If rate limited, when we can resume
+    # HOURLY tier: 1-hour window
+    hourly_call_count: models.IntegerField = models.IntegerField(default=0)
+    hourly_window_start: models.DateTimeField = models.DateTimeField(
+        default=timezone.now
+    )
+
+    # Backoff pressure: increases when limits are hit, decays over time
+    # Each unit adds 100ms delay to all requests
+    backoff_pressure: models.IntegerField = models.IntegerField(default=0)
+    last_pressure_decay: models.DateTimeField = models.DateTimeField(
+        default=timezone.now
+    )
+
+    # If rate limited by Spotify 429, when we can resume
     rate_limited_until: models.DateTimeField = models.DateTimeField(
         null=True, blank=True
     )
+
+    # Legacy field for backwards compatibility (maps to burst_call_count)
+    @property
+    def window_call_count(self) -> int:
+        return int(self.burst_call_count)
+
+    @property
+    def window_start_at(self) -> datetime:
+        return cast(datetime, self.burst_window_start)
 
     class Meta(TypedModelMeta):
         app_label = "library_manager"
         db_table = "spotify_rate_limit_state"
 
     def __str__(self) -> str:
-        return f"Spotify Rate Limit State (calls in window: {self.window_call_count})"
+        return (
+            f"Spotify Rate Limit State "
+            f"(burst: {self.burst_call_count}/{self.BURST_MAX_CALLS}, "
+            f"sustained: {self.sustained_call_count}/{self.SUSTAINED_MAX_CALLS}, "
+            f"hourly: {self.hourly_call_count}/{self.HOURLY_MAX_CALLS}, "
+            f"pressure: {self.backoff_pressure})"
+        )
 
-    # Configuration constants
-    WINDOW_SECONDS = 30  # Rolling window duration
-    MAX_CALLS_PER_WINDOW = 25  # ~50/min
-    MIN_DELAY_BETWEEN_CALLS_MS = 200  # Minimum 200ms between any two calls
+    # ==========================================================================
+    # TIER CONFIGURATION
+    # ==========================================================================
+
+    # BURST tier: prevents immediate 429s
+    BURST_WINDOW_SECONDS = 30
+    BURST_MAX_CALLS = 25  # ~50/min peak
+
+    # SUSTAINED tier: prevents medium-term bans
+    SUSTAINED_WINDOW_SECONDS = 300  # 5 minutes
+    SUSTAINED_MAX_CALLS = 100  # 20/min average
+
+    # HOURLY tier: prevents long-term bans
+    HOURLY_WINDOW_SECONDS = 3600  # 1 hour
+    HOURLY_MAX_CALLS = 600  # 10/min average
+
+    # Minimum delay between any two calls (milliseconds)
+    MIN_DELAY_BETWEEN_CALLS_MS = 200
+
+    # Backoff configuration
+    BACKOFF_DELAY_PER_PRESSURE_MS = 100  # Each pressure unit adds 100ms
+    BACKOFF_MAX_PRESSURE = 50  # Max 5 seconds of backoff delay
+    BACKOFF_DECAY_INTERVAL_SECONDS = 60  # Decay pressure every 60s of low usage
+    BACKOFF_DECAY_AMOUNT = 1  # Reduce pressure by 1 each decay interval
+
+    # Legacy constant for backwards compatibility
+    WINDOW_SECONDS = BURST_WINDOW_SECONDS
+    MAX_CALLS_PER_WINDOW = BURST_MAX_CALLS
 
     @classmethod
     def get_instance(cls) -> "SpotifyRateLimitState":
@@ -867,7 +933,7 @@ class SpotifyRateLimitState(models.Model):
         """
         Record that an API call was made.
 
-        Should be called AFTER each successful Spotify API call.
+        Updates all three tiers and handles window resets.
         Uses database-level locking to ensure accurate counts across workers.
         """
         from django.db import transaction
@@ -878,13 +944,41 @@ class SpotifyRateLimitState(models.Model):
             )[0]
             now = timezone.now()
 
-            # Reset window if it has elapsed
-            window_elapsed = (now - instance.window_start_at).total_seconds()
-            if window_elapsed >= cls.WINDOW_SECONDS:
-                instance.window_start_at = now
-                instance.window_call_count = 1
+            # Reset BURST window if elapsed
+            burst_elapsed = (now - instance.burst_window_start).total_seconds()
+            if burst_elapsed >= cls.BURST_WINDOW_SECONDS:
+                instance.burst_window_start = now
+                instance.burst_call_count = 1
             else:
-                instance.window_call_count += 1
+                instance.burst_call_count += 1
+
+            # Reset SUSTAINED window if elapsed
+            sustained_elapsed = (now - instance.sustained_window_start).total_seconds()
+            if sustained_elapsed >= cls.SUSTAINED_WINDOW_SECONDS:
+                instance.sustained_window_start = now
+                instance.sustained_call_count = 1
+            else:
+                instance.sustained_call_count += 1
+
+            # Reset HOURLY window if elapsed
+            hourly_elapsed = (now - instance.hourly_window_start).total_seconds()
+            if hourly_elapsed >= cls.HOURLY_WINDOW_SECONDS:
+                instance.hourly_window_start = now
+                instance.hourly_call_count = 1
+            else:
+                instance.hourly_call_count += 1
+
+            # Decay backoff pressure if enough time has passed with low usage
+            pressure_decay_elapsed = (
+                now - instance.last_pressure_decay
+            ).total_seconds()
+            if pressure_decay_elapsed >= cls.BACKOFF_DECAY_INTERVAL_SECONDS:
+                # Only decay if we're under 50% of burst limit (low usage)
+                if instance.burst_call_count < cls.BURST_MAX_CALLS // 2:
+                    instance.backoff_pressure = max(
+                        0, instance.backoff_pressure - cls.BACKOFF_DECAY_AMOUNT
+                    )
+                instance.last_pressure_decay = now
 
             instance.last_call_at = now
             instance.save()
@@ -894,8 +988,8 @@ class SpotifyRateLimitState(models.Model):
         """
         Calculate how long to wait before the next API call.
 
-        Returns 0 if we can proceed immediately, otherwise the number of
-        seconds to wait. Uses pessimistic locking to read consistent state.
+        Checks all three tiers and returns the longest required delay.
+        Also applies backoff pressure delay on top of any tier delay.
         """
         from django.db import transaction
 
@@ -905,27 +999,64 @@ class SpotifyRateLimitState(models.Model):
             )[0]
             now = timezone.now()
 
-            # If we're rate limited, return time until we can resume
+            # If we're rate limited by Spotify, return time until we can resume
             if instance.rate_limited_until and instance.rate_limited_until > now:
                 return float((instance.rate_limited_until - now).total_seconds())
 
-            # Check if window has elapsed - if so, we can proceed
-            window_elapsed: float = (now - instance.window_start_at).total_seconds()
-            if window_elapsed >= cls.WINDOW_SECONDS:
-                return 0.0
+            delays: list[float] = []
 
-            # Check if we've exceeded calls in this window
-            if instance.window_call_count >= cls.MAX_CALLS_PER_WINDOW:
-                # Wait until window resets
-                return float(cls.WINDOW_SECONDS) - window_elapsed
+            # Check BURST tier
+            burst_elapsed = (now - instance.burst_window_start).total_seconds()
+            if burst_elapsed < cls.BURST_WINDOW_SECONDS:
+                if instance.burst_call_count >= cls.BURST_MAX_CALLS:
+                    delays.append(cls.BURST_WINDOW_SECONDS - burst_elapsed)
+
+            # Check SUSTAINED tier
+            sustained_elapsed = (now - instance.sustained_window_start).total_seconds()
+            if sustained_elapsed < cls.SUSTAINED_WINDOW_SECONDS:
+                if instance.sustained_call_count >= cls.SUSTAINED_MAX_CALLS:
+                    delays.append(cls.SUSTAINED_WINDOW_SECONDS - sustained_elapsed)
+
+            # Check HOURLY tier
+            hourly_elapsed = (now - instance.hourly_window_start).total_seconds()
+            if hourly_elapsed < cls.HOURLY_WINDOW_SECONDS:
+                if instance.hourly_call_count >= cls.HOURLY_MAX_CALLS:
+                    delays.append(cls.HOURLY_WINDOW_SECONDS - hourly_elapsed)
 
             # Enforce minimum delay between calls
-            time_since_last: float = (now - instance.last_call_at).total_seconds()
+            time_since_last = (now - instance.last_call_at).total_seconds()
             min_delay = cls.MIN_DELAY_BETWEEN_CALLS_MS / 1000.0
             if time_since_last < min_delay:
-                return min_delay - time_since_last
+                delays.append(min_delay - time_since_last)
 
-            return 0.0
+            # Apply backoff pressure delay
+            if instance.backoff_pressure > 0:
+                pressure_delay = (
+                    instance.backoff_pressure
+                    * cls.BACKOFF_DELAY_PER_PRESSURE_MS
+                    / 1000.0
+                )
+                delays.append(pressure_delay)
+
+            return max(delays) if delays else 0.0
+
+    @classmethod
+    def increase_pressure(cls, amount: int = 1) -> None:
+        """
+        Increase backoff pressure when approaching limits.
+
+        Called when we're getting close to any tier's limit to proactively slow down.
+        """
+        from django.db import transaction
+
+        with transaction.atomic():
+            instance = cls.objects.select_for_update().get_or_create(
+                key="spotify_rate_limit"
+            )[0]
+            instance.backoff_pressure = min(
+                cls.BACKOFF_MAX_PRESSURE, instance.backoff_pressure + amount
+            )
+            instance.save()
 
     @classmethod
     def set_rate_limited(cls, retry_after_seconds: int) -> None:
@@ -933,6 +1064,7 @@ class SpotifyRateLimitState(models.Model):
         Record that we've been rate limited by Spotify.
 
         Called when we receive a 429 response with Retry-After header.
+        Also significantly increases backoff pressure since we got caught.
         """
         from django.db import transaction
 
@@ -943,9 +1075,17 @@ class SpotifyRateLimitState(models.Model):
             instance.rate_limited_until = timezone.now() + timezone.timedelta(
                 seconds=retry_after_seconds
             )
-            # Reset window to be safe
-            instance.window_call_count = 0
-            instance.window_start_at = timezone.now()
+            # Significantly increase pressure after a 429
+            instance.backoff_pressure = min(
+                cls.BACKOFF_MAX_PRESSURE, instance.backoff_pressure + 10
+            )
+            # Reset all windows
+            instance.burst_call_count = 0
+            instance.burst_window_start = timezone.now()
+            instance.sustained_call_count = 0
+            instance.sustained_window_start = timezone.now()
+            instance.hourly_call_count = 0
+            instance.hourly_window_start = timezone.now()
             instance.save()
 
     @classmethod
@@ -953,14 +1093,7 @@ class SpotifyRateLimitState(models.Model):
         """
         Get current rate limit status for display purposes.
 
-        Returns:
-            Dict with rate limit information:
-            - is_rate_limited: bool - Whether currently rate limited
-            - rate_limited_until: Optional[datetime] - When rate limit expires
-            - seconds_until_clear: Optional[int] - Seconds until rate limit clears
-            - window_call_count: int - API calls in current window
-            - window_max_calls: int - Max calls allowed per window
-            - window_usage_percent: float - Percentage of window used
+        Returns comprehensive status across all tiers.
         """
         try:
             instance = cls.objects.filter(key="spotify_rate_limit").first()
@@ -970,8 +1103,15 @@ class SpotifyRateLimitState(models.Model):
                     "rate_limited_until": None,
                     "seconds_until_clear": None,
                     "window_call_count": 0,
-                    "window_max_calls": cls.MAX_CALLS_PER_WINDOW,
+                    "window_max_calls": cls.BURST_MAX_CALLS,
                     "window_usage_percent": 0.0,
+                    "burst_calls": 0,
+                    "burst_max": cls.BURST_MAX_CALLS,
+                    "sustained_calls": 0,
+                    "sustained_max": cls.SUSTAINED_MAX_CALLS,
+                    "hourly_calls": 0,
+                    "hourly_max": cls.HOURLY_MAX_CALLS,
+                    "backoff_pressure": 0,
                 }
 
             now = timezone.now()
@@ -986,15 +1126,30 @@ class SpotifyRateLimitState(models.Model):
                     (instance.rate_limited_until - now).total_seconds()
                 )
 
-            # Check if window has elapsed
-            window_elapsed = (now - instance.window_start_at).total_seconds()
-            if window_elapsed >= cls.WINDOW_SECONDS:
-                # Window has reset
-                window_call_count = 0
-            else:
-                window_call_count = instance.window_call_count
+            # Calculate current counts (accounting for window resets)
+            burst_elapsed = (now - instance.burst_window_start).total_seconds()
+            burst_calls = (
+                0
+                if burst_elapsed >= cls.BURST_WINDOW_SECONDS
+                else instance.burst_call_count
+            )
 
-            window_usage_percent = (window_call_count / cls.MAX_CALLS_PER_WINDOW) * 100
+            sustained_elapsed = (now - instance.sustained_window_start).total_seconds()
+            sustained_calls = (
+                0
+                if sustained_elapsed >= cls.SUSTAINED_WINDOW_SECONDS
+                else instance.sustained_call_count
+            )
+
+            hourly_elapsed = (now - instance.hourly_window_start).total_seconds()
+            hourly_calls = (
+                0
+                if hourly_elapsed >= cls.HOURLY_WINDOW_SECONDS
+                else instance.hourly_call_count
+            )
+
+            # Legacy compatibility
+            window_usage_percent = (burst_calls / cls.BURST_MAX_CALLS) * 100
 
             return {
                 "is_rate_limited": is_rate_limited,
@@ -1002,9 +1157,16 @@ class SpotifyRateLimitState(models.Model):
                     instance.rate_limited_until if is_rate_limited else None
                 ),
                 "seconds_until_clear": seconds_until_clear,
-                "window_call_count": window_call_count,
-                "window_max_calls": cls.MAX_CALLS_PER_WINDOW,
+                "window_call_count": burst_calls,
+                "window_max_calls": cls.BURST_MAX_CALLS,
                 "window_usage_percent": round(window_usage_percent, 1),
+                "burst_calls": burst_calls,
+                "burst_max": cls.BURST_MAX_CALLS,
+                "sustained_calls": sustained_calls,
+                "sustained_max": cls.SUSTAINED_MAX_CALLS,
+                "hourly_calls": hourly_calls,
+                "hourly_max": cls.HOURLY_MAX_CALLS,
+                "backoff_pressure": instance.backoff_pressure,
             }
         except Exception:
             # Return safe defaults if anything goes wrong
@@ -1013,6 +1175,13 @@ class SpotifyRateLimitState(models.Model):
                 "rate_limited_until": None,
                 "seconds_until_clear": None,
                 "window_call_count": 0,
-                "window_max_calls": cls.MAX_CALLS_PER_WINDOW,
+                "window_max_calls": cls.BURST_MAX_CALLS,
                 "window_usage_percent": 0.0,
+                "burst_calls": 0,
+                "burst_max": cls.BURST_MAX_CALLS,
+                "sustained_calls": 0,
+                "sustained_max": cls.SUSTAINED_MAX_CALLS,
+                "hourly_calls": 0,
+                "hourly_max": cls.HOURLY_MAX_CALLS,
+                "backoff_pressure": 0,
             }

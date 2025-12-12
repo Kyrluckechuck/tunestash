@@ -145,9 +145,11 @@ class RateLimitedHTTPAdapter(HTTPAdapter):
                 if _api_call_count % _API_CALL_LOG_INTERVAL == 0:
                     status = SpotifyRateLimitState.get_status()
                     logger.info(
-                        f"[SPOTIFY API] {_api_call_count} calls this session, "
-                        f"window: {status['window_call_count']}/{status['window_max_calls']} "
-                        f"({status['window_usage_percent']:.0f}%)"
+                        f"[SPOTIFY API] {_api_call_count} calls this session | "
+                        f"burst: {status['burst_calls']}/{status['burst_max']} | "
+                        f"sustained: {status['sustained_calls']}/{status['sustained_max']} | "
+                        f"hourly: {status['hourly_calls']}/{status['hourly_max']} | "
+                        f"pressure: {status['backoff_pressure']}"
                     )
         except Exception as e:
             # Don't fail the request if recording fails

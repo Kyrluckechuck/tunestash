@@ -1,4 +1,4 @@
-import { useMutation } from '@apollo/client/react';
+import { useMutation, useQuery } from '@apollo/client/react';
 import { useCallback } from 'react';
 import type { PeriodicTask } from '../../types/generated/graphql';
 import {
@@ -7,11 +7,6 @@ import {
   SetPeriodicTaskEnabledDocument,
 } from '../../types/generated/graphql';
 import { useToast } from '../ui/useToast';
-
-interface ScheduledTasksSectionProps {
-  tasks: PeriodicTask[];
-  loading: boolean;
-}
 
 function formatRelativeTime(dateStr: string | null | undefined): string {
   if (!dateStr) return 'Never';
@@ -115,11 +110,14 @@ function TaskToggle({ task, onToggle, isToggling }: TaskToggleProps) {
   );
 }
 
-export function ScheduledTasksSection({
-  tasks,
-  loading,
-}: ScheduledTasksSectionProps) {
+export function ScheduledTasksSection() {
   const toast = useToast();
+
+  const { data, loading } = useQuery(GetPeriodicTasksDocument, {
+    pollInterval: 60000, // Refresh every minute
+  });
+
+  const tasks: PeriodicTask[] = data?.periodicTasks || [];
   const [setTaskEnabled, { loading: isToggling }] = useMutation(
     SetPeriodicTaskEnabledDocument,
     {
