@@ -5,7 +5,7 @@ interface TaskStatsHeaderProps {
   completedTodayCount: number;
   failedTodayCount: number;
   successRate: number;
-  queueLoading: boolean;
+  historyLoading: boolean;
   onRefresh: () => void;
 }
 
@@ -14,7 +14,7 @@ export function TaskStatsHeader({
   completedTodayCount,
   failedTodayCount,
   successRate,
-  queueLoading,
+  historyLoading,
   onRefresh,
 }: TaskStatsHeaderProps) {
   return (
@@ -32,7 +32,7 @@ export function TaskStatsHeader({
               <span className='w-2 h-2 bg-blue-500 rounded-full animate-pulse' />
               {runningTasksCount} active tasks
             </span>
-            {queueLoading && <InlineSpinner label='Refreshing queue…' />}
+            {historyLoading && <InlineSpinner label='Refreshing…' />}
             <span className='text-xs text-gray-500'>
               (auto-refreshing every 5s)
             </span>
