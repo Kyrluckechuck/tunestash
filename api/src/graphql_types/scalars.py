@@ -4,27 +4,27 @@ from typing import Any
 import strawberry
 
 
-@strawberry.scalar(
+def _serialize_datetime(value: Any) -> str:
+    """Serialize datetime to ISO 8601 string."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    raise ValueError(f"Cannot serialize {value} as DateTime")
+
+
+def _parse_datetime(value: Any) -> datetime:
+    """Parse ISO 8601 string to datetime."""
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    raise ValueError(f"Cannot parse {value} as DateTime")
+
+
+DateTime = strawberry.scalar(
+    datetime,
+    name="DateTime",
     description=(
         "The `DateTime` scalar type represents a date and time following the "
         "ISO 8601 standard."
-    )
+    ),
+    serialize=_serialize_datetime,
+    parse_value=_parse_datetime,
 )
-class DateTime:
-    @staticmethod
-    def serialize(value: Any) -> str:
-        if isinstance(value, datetime):
-            return value.isoformat()
-        raise ValueError(f"Cannot serialize {value} as DateTime")
-
-    @staticmethod
-    def parse_value(value: Any) -> datetime:
-        if isinstance(value, str):
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        raise ValueError(f"Cannot parse {value} as DateTime")
-
-    @staticmethod
-    def parse_literal(ast: Any) -> datetime:
-        if hasattr(ast, "value"):
-            return DateTime.parse_value(ast.value)
-        raise ValueError(f"Cannot parse literal {ast} as DateTime")
