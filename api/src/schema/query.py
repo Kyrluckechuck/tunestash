@@ -27,6 +27,7 @@ from ..graphql_types.models import (
     SpotifySearchPlaylist,
     SpotifySearchResults,
     SpotifySearchTrack,
+    StorageStatus,
     SystemHealth,
     TaskCount,
     TaskHistoryConnection,
@@ -349,6 +350,9 @@ class Query:
         # Get rate limit status
         rate_limit_data = await sync_to_async(SpotifyRateLimitState.get_status)()
 
+        # Get storage status
+        storage_data = await sync_to_async(SystemHealthService.check_storage_status)()
+
         return SystemHealth(
             can_download=can_download,
             download_blocker_reason=reason,
@@ -369,10 +373,23 @@ class Query:
             ),
             spotify_rate_limit=SpotifyRateLimitStatus(
                 is_rate_limited=rate_limit_data["is_rate_limited"],
+                rate_limited_until=rate_limit_data["rate_limited_until"],
                 seconds_until_clear=rate_limit_data["seconds_until_clear"],
                 window_call_count=rate_limit_data["window_call_count"],
                 window_max_calls=rate_limit_data["window_max_calls"],
                 window_usage_percent=rate_limit_data["window_usage_percent"],
+            ),
+            storage=StorageStatus(
+                path=storage_data.path,
+                exists=storage_data.exists,
+                is_writable=storage_data.is_writable,
+                total_gb=storage_data.total_gb,
+                used_gb=storage_data.used_gb,
+                available_gb=storage_data.available_gb,
+                usage_percent=storage_data.usage_percent,
+                is_low=storage_data.is_low,
+                is_critically_low=storage_data.is_critically_low,
+                error_message=storage_data.error_message,
             ),
         )
 

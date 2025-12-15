@@ -278,6 +278,7 @@ type SpotifyPlaylistInfo {
 
 type SpotifyRateLimitStatus {
   isRateLimited: Boolean!
+  rateLimitedUntil: DateTime
   secondsUntilClear: Int
   windowCallCount: Int!
   windowMaxCalls: Int!
@@ -347,11 +348,25 @@ type Subscription {
   downloadProgress(entityId: String!): DownloadProgress!
 }
 
+type StorageStatus {
+  availableGb: Float
+  errorMessage: String
+  exists: Boolean!
+  isCriticallyLow: Boolean!
+  isLow: Boolean!
+  isWritable: Boolean!
+  path: String!
+  totalGb: Float
+  usagePercent: Float
+  usedGb: Float
+}
+
 type SystemHealth {
   authentication: AuthenticationStatus!
   canDownload: Boolean!
   downloadBlockerReason: String
   spotifyRateLimit: SpotifyRateLimitStatus!
+  storage: StorageStatus!
 }
 
 type TaskCount {

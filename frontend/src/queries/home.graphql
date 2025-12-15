@@ -12,10 +12,21 @@ query GetSystemStatus {
     }
     spotifyRateLimit {
       isRateLimited
+      rateLimitedUntil
       secondsUntilClear
       windowCallCount
       windowMaxCalls
       windowUsagePercent
+    }
+    storage {
+      path
+      exists
+      isWritable
+      availableGb
+      usagePercent
+      isLow
+      isCriticallyLow
+      errorMessage
     }
   }
   queueStatus {
