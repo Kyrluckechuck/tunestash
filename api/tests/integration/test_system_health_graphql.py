@@ -10,6 +10,7 @@ from downloader.premium_detector import PoTokenValidationResult
 from lib.config_class import Config
 
 from src.schema import schema
+from src.services.system_health import StorageStatus
 
 
 @pytest.mark.django_db
@@ -43,11 +44,28 @@ class TestSystemHealthGraphQL:
                 can_authenticate=True,
             )
 
+            # Mock storage status to return healthy storage
+            mock_storage_status = StorageStatus(
+                path="/mnt/music_spotify",
+                exists=True,
+                is_writable=True,
+                total_gb=100.0,
+                used_gb=50.0,
+                available_gb=50.0,
+                usage_percent=50.0,
+                is_low=False,
+                is_critically_low=False,
+            )
+
             with (
                 patch("src.services.system_health.Config", return_value=mock_config),
                 patch(
                     "src.services.system_health.PremiumDetector.validate_po_token_live",
                     return_value=mock_po_token_result,
+                ),
+                patch(
+                    "src.services.system_health.SystemHealthService.check_storage_status",
+                    return_value=mock_storage_status,
                 ),
             ):
                 query = """
