@@ -193,8 +193,17 @@ def download_non_enqueued_playlists(
     priority: Optional[int] = None,
 ) -> None:
     # Local import to avoid circular import during module initialization
-    from .models import PlaylistStatus
+    from .models import PlaylistStatus, SpotifyRateLimitState
     from .tasks import download_playlist
+
+    # Check rate limit before queuing any tasks
+    rate_status = SpotifyRateLimitState.get_status()
+    if rate_status["is_rate_limited"]:
+        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+        logger.warning(
+            f"[ENQUEUE] Skipping playlist enqueue - rate limited for {seconds_remaining}s"
+        )
+        return
 
     logger.info(
         f"[ENQUEUE] download_non_enqueued_playlists called with "
