@@ -6,7 +6,6 @@ import logging
 import os
 import shutil
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -425,7 +424,6 @@ class SystemHealthService:
             is_low=is_low,
             is_critically_low=is_critically_low,
             error_message=write_error,
-            last_checked=datetime.now(),
         )
 
     @staticmethod
@@ -464,4 +462,3 @@ class StorageStatus:  # pylint: disable=too-many-instance-attributes
     is_low: bool = False  # Warning threshold (90%+)
     is_critically_low: bool = False  # Critical threshold (95%+ or <5GB)
     error_message: Optional[str] = None
-    last_checked: Optional[datetime] = None
