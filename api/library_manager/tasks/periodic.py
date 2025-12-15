@@ -43,6 +43,18 @@ def get_albums_with_pending_tasks() -> Set[str]:
     bind=True, name="library_manager.tasks.sync_tracked_playlists"
 )  # Scheduled via Celery Beat
 def sync_tracked_playlists(self: Any, task_id: Optional[str] = None) -> None:
+    # Check if we're rate-limited before doing any work
+    # This prevents the costly loop of queueing tasks that immediately fail
+    from ..models import SpotifyRateLimitState
+
+    rate_status = SpotifyRateLimitState.get_status()
+    if rate_status["is_rate_limited"]:
+        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+        logger.info(
+            f"Skipping playlist sync - Spotify API rate limited for {seconds_remaining}s"
+        )
+        return
+
     # Only sync playlists that have an active status
     # Skip playlists with spotify_api_restricted, not_found, or disabled_by_user status
     # to avoid hitting rate limits from repeated failed API calls
