@@ -336,10 +336,27 @@ class SpotifyRateLimitStatus:
     """Spotify API rate limit status."""
 
     is_rate_limited: bool
+    rate_limited_until: Optional[DateTime] = None
     seconds_until_clear: Optional[int] = None
     window_call_count: int
     window_max_calls: int
     window_usage_percent: float
+
+
+@strawberry.type
+class StorageStatus:
+    """Storage health status for the music output directory."""
+
+    path: str
+    exists: bool
+    is_writable: bool
+    total_gb: Optional[float] = None
+    used_gb: Optional[float] = None
+    available_gb: Optional[float] = None
+    usage_percent: Optional[float] = None
+    is_low: bool = False
+    is_critically_low: bool = False
+    error_message: Optional[str] = None
 
 
 @strawberry.type
@@ -350,6 +367,7 @@ class SystemHealth:
     download_blocker_reason: Optional[str] = None
     authentication: AuthenticationStatus
     spotify_rate_limit: SpotifyRateLimitStatus
+    storage: StorageStatus
 
 
 # Spotify Search Result Types
