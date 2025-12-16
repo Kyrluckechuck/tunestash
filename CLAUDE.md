@@ -65,6 +65,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docker compose exec web python manage.py createsuperuser` - Create superuser in web container
 - `make dev-db` - Connect to PostgreSQL database directly
 
+**Legacy SQLite Migration**: If you have data from an older SQLite-based setup, the `migrate_from_sqlite` command automatically runs during container startup (via `startup.sh`) when `/config/db/db.sqlite3` is detected. It migrates data to PostgreSQL and can be run manually with `docker compose exec web python manage.py migrate_from_sqlite` if needed.
+
 ## Architecture Overview
 
 This is a **full-stack music library sync application** (TuneStash) with the following key components:
@@ -100,6 +102,7 @@ This is a **full-stack music library sync application** (TuneStash) with the fol
 
 **Development Services** (`docker-compose.override.yml`):
 - `web`: FastAPI with hot-reload (port 5000, internal only)
+- `frontend`: **Disabled** via `profiles: [disabled]` - replaced by `frontend-dev` in development
 - `frontend-dev`: Vite dev server with HMR (port 3000, exposed to host)
 - `worker`: Celery worker with auto-restart on code changes
 - `beat`: Celery beat with auto-restart on code changes
@@ -161,10 +164,11 @@ This is a **full-stack music library sync application** (TuneStash) with the fol
 4. Update any affected GraphQL types (see GraphQL Operations section)
 
 ### Adding Background Tasks
-1. Create task function in `api/library_manager/tasks.py`
+1. Create task function in the `api/library_manager/tasks/` package (organized by domain: `artist.py`, `download.py`, `playlist.py`, etc.)
 2. Decorate with `@shared_task` (from `celery import shared_task`)
-3. Queue via `task_name.delay(args)` - **never call directly!**
-4. Monitor via the Tasks page in the UI or Django admin
+3. Re-export from `api/library_manager/tasks/__init__.py` so it can be imported as `from library_manager.tasks import my_task`
+4. Queue via `task_name.delay(args)` - **never call directly!**
+5. Monitor via the Tasks page in the UI or Django admin
 
 ## Code Style & Quality Standards
 
@@ -234,9 +238,9 @@ fetch_all_albums_for_artist.delay(artist_id)  # Properly queued
 ```
 
 **How to identify Celery tasks:**
-1. Defined in `api/library_manager/tasks.py`
+1. Defined in `api/library_manager/tasks/` package (multiple files organized by domain)
 2. Decorated with `@shared_task` or `@app.task`
-3. Function names in `tasks.py` are tasks - always use `.delay()`
+3. Re-exported from `tasks/__init__.py` - always use `.delay()`
 
 **Common locations to check:**
 - `api/library_manager/helpers.py` - All task calls MUST use `.delay()`
@@ -271,7 +275,7 @@ For maintenance tasks that need to be triggered manually (not on a schedule), us
 - **GraphQL**: `oneOffTasks` query and `runOneOffTask` mutation
 
 To add a new one-off task:
-1. Create the Celery task in `api/library_manager/tasks.py`
+1. Create the Celery task in the appropriate file under `api/library_manager/tasks/` and re-export from `__init__.py`
 2. Register it in `OneOffTaskService._register_tasks()` with id, name, description, and category
 
 ### Async/Sync Boundaries - CRITICAL PATTERN
