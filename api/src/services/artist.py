@@ -439,20 +439,10 @@ class ArtistService(BaseService[Artist]):
             gid=django_artist.gid,
             spotify_uri=spotify_uri,
             is_tracked=django_artist.tracked,
-            last_synced=(
-                django_artist.last_synced_at.isoformat()
-                if django_artist.last_synced_at
-                else None
-            ),
-            last_downloaded=(
-                django_artist.last_downloaded_at.isoformat()
-                if django_artist.last_downloaded_at
-                else None
-            ),
+            last_synced=django_artist.last_synced_at,
+            last_downloaded=django_artist.last_downloaded_at,
             added_at=(
-                django_artist.added_at.isoformat()
-                if hasattr(django_artist, "added_at") and django_artist.added_at
-                else None
+                django_artist.added_at if hasattr(django_artist, "added_at") else None
             ),
             undownloaded_count=undownloaded_count,
             album_count=album_count,
@@ -474,20 +464,10 @@ class ArtistService(BaseService[Artist]):
             gid=django_artist.gid,
             spotify_uri=spotify_uri,
             is_tracked=django_artist.tracked,
-            last_synced=(
-                django_artist.last_synced_at.isoformat()
-                if django_artist.last_synced_at
-                else None
-            ),
-            last_downloaded=(
-                django_artist.last_downloaded_at.isoformat()
-                if django_artist.last_downloaded_at
-                else None
-            ),
+            last_synced=django_artist.last_synced_at,
+            last_downloaded=django_artist.last_downloaded_at,
             added_at=(
-                django_artist.added_at.isoformat()
-                if hasattr(django_artist, "added_at") and django_artist.added_at
-                else None
+                django_artist.added_at if hasattr(django_artist, "added_at") else None
             ),
             undownloaded_count=0,
             album_count=0,

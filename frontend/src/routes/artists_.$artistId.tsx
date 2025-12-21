@@ -32,8 +32,10 @@ function ArtistDetail() {
     handleTrackToggle,
     handleSyncArtist,
     handleDownloadArtist,
+    handleCheckArtistMetadata,
     syncMutatingIds,
     downloadMutatingIds,
+    checkMetadataMutatingIds,
 
     // Albums data
     albums,
@@ -61,6 +63,7 @@ function ArtistDetail() {
     handleAlbumSearch,
     handleAlbumWantedToggle,
     handleDownloadAlbum,
+    handleCheckAlbumMetadata,
     handleLoadMoreAlbums,
 
     // Songs data
@@ -116,6 +119,7 @@ function ArtistDetail() {
 
   const isSyncing = syncMutatingIds.has(artist.id);
   const isDownloading = downloadMutatingIds.has(artist.id);
+  const isCheckingMetadata = checkMetadataMutatingIds.has(artist.id);
 
   return (
     <PageContainer>
@@ -183,6 +187,14 @@ function ArtistDetail() {
               className='px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
             >
               {isDownloading ? 'Starting...' : 'Download'}
+            </button>
+            <button
+              onClick={handleCheckArtistMetadata}
+              disabled={isCheckingMetadata}
+              className='px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+              title="Check if this artist's name has changed on Spotify"
+            >
+              {isCheckingMetadata ? 'Checking...' : 'Check Metadata'}
             </button>
           </div>
         </div>
@@ -270,9 +282,11 @@ function ArtistDetail() {
           onSort={handleAlbumSort}
           onToggleWanted={handleAlbumWantedToggle}
           onDownloadAlbum={handleDownloadAlbum}
+          onCheckMetadata={handleCheckAlbumMetadata}
           loading={albumsLoading}
           mutatingIds={albumMutatingIds}
           pulseIds={albumPulseIds}
+          checkingMetadataIds={checkMetadataMutatingIds}
         />
 
         <LoadMoreButton

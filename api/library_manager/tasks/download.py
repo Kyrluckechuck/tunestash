@@ -22,6 +22,7 @@ from .core import (
     TaskCancelledException,
     check_and_update_progress,
     check_if_cancelled,
+    check_spotify_rate_limit,
     check_task_cancellation,
     complete_task,
     create_task_history,
@@ -39,6 +40,22 @@ def download_missing_albums_for_artist(
     self: Any, artist_id: int, delay: int = 0
 ) -> None:
     # pylint: disable=too-many-return-statements
+
+    # Check rate limit FIRST, before creating task history or doing any work.
+    rate_limit_delay = check_spotify_rate_limit()
+    if rate_limit_delay is not None:
+        logger.info(
+            f"Skipping artist {artist_id} download - rate limited, "
+            f"rescheduling in {rate_limit_delay}s"
+        )
+        raise self.retry(
+            exc=SpotifyRateLimitError(
+                f"Rate limited for {rate_limit_delay}s", rate_limit_delay
+            ),
+            countdown=rate_limit_delay,
+            max_retries=5,
+        )
+
     task_history = None
     try:
         # Add delay (if applicable) to reduce chance of flagging when backfilling library
@@ -192,6 +209,23 @@ def download_missing_albums_for_artist(
 @celery_app.task(bind=True, name="library_manager.tasks.download_single_album")
 def download_single_album(self: Any, album_id: int) -> None:
     """Download a single specific album by ID."""
+    # Check rate limit FIRST, before creating task history or doing any work.
+    # This prevents the "hammering" pattern where many queued tasks all start
+    # and immediately fail when rate limited.
+    rate_limit_delay = check_spotify_rate_limit()
+    if rate_limit_delay is not None:
+        logger.info(
+            f"Skipping album {album_id} download - rate limited, "
+            f"rescheduling in {rate_limit_delay}s"
+        )
+        raise self.retry(
+            exc=SpotifyRateLimitError(
+                f"Rate limited for {rate_limit_delay}s", rate_limit_delay
+            ),
+            countdown=rate_limit_delay,
+            max_retries=5,
+        )
+
     task_history = None
     try:
         # Check if album exists before proceeding
@@ -309,6 +343,21 @@ def download_playlist(
     force_playlist_resync: bool = False,
     task_id: Optional[str] = None,
 ) -> None:
+    # Check rate limit FIRST, before creating task history or doing any work.
+    rate_limit_delay = check_spotify_rate_limit()
+    if rate_limit_delay is not None:
+        logger.info(
+            f"Skipping playlist {playlist_url} download - rate limited, "
+            f"rescheduling in {rate_limit_delay}s"
+        )
+        raise self.retry(
+            exc=SpotifyRateLimitError(
+                f"Rate limited for {rate_limit_delay}s", rate_limit_delay
+            ),
+            countdown=rate_limit_delay,
+            max_retries=5,
+        )
+
     task_history = None
     try:
         # Use the Celery task ID if no task_id is provided
@@ -423,6 +472,21 @@ def download_playlist(
 def download_extra_album_types_for_artist(
     self: Any, artist_id: int, task_id: Optional[str] = None
 ) -> None:
+    # Check rate limit FIRST, before creating task history or doing any work.
+    rate_limit_delay = check_spotify_rate_limit()
+    if rate_limit_delay is not None:
+        logger.info(
+            f"Skipping artist {artist_id} extra albums - rate limited, "
+            f"rescheduling in {rate_limit_delay}s"
+        )
+        raise self.retry(
+            exc=SpotifyRateLimitError(
+                f"Rate limited for {rate_limit_delay}s", rate_limit_delay
+            ),
+            countdown=rate_limit_delay,
+            max_retries=5,
+        )
+
     # Check authentication before proceeding with any DB queries
     require_download_capability()
 
@@ -498,6 +562,21 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
     This task fetches album metadata from Spotify if needed, creates/gets the album
     in the database, and then queues the actual download.
     """
+    # Check rate limit FIRST, before creating task history or doing any work.
+    rate_limit_delay = check_spotify_rate_limit()
+    if rate_limit_delay is not None:
+        logger.info(
+            f"Skipping album {spotify_album_id} download - rate limited, "
+            f"rescheduling in {rate_limit_delay}s"
+        )
+        raise self.retry(
+            exc=SpotifyRateLimitError(
+                f"Rate limited for {rate_limit_delay}s", rate_limit_delay
+            ),
+            countdown=rate_limit_delay,
+            max_retries=5,
+        )
+
     task_history = None
     try:
         from downloader.downloader import Downloader
@@ -654,6 +733,21 @@ def download_single_track(self: Any, track_id: str) -> None:
 
     Downloads only the requested track, not the entire album.
     """
+    # Check rate limit FIRST, before creating task history or doing any work.
+    rate_limit_delay = check_spotify_rate_limit()
+    if rate_limit_delay is not None:
+        logger.info(
+            f"Skipping track {track_id} download - rate limited, "
+            f"rescheduling in {rate_limit_delay}s"
+        )
+        raise self.retry(
+            exc=SpotifyRateLimitError(
+                f"Rate limited for {rate_limit_delay}s", rate_limit_delay
+            ),
+            countdown=rate_limit_delay,
+            max_retries=5,
+        )
+
     task_history = None
     try:
         # Create task history record

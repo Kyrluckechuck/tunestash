@@ -12,15 +12,27 @@ import {
 import EnhancedEntityDisplay from '../components/EnhancedEntityDisplay';
 import { useToast } from '../components/ui/useToast';
 import { useConfirm } from '../hooks/useConfirm';
+import { Tabs } from '../components/ui/Tabs';
 import { TaskStatsHeader } from '../components/tasks/TaskStatsHeader';
 import { QueueManagementSection } from '../components/tasks/QueueManagementSection';
 import { ActiveTasksSection } from '../components/tasks/ActiveTasksSection';
 import { TaskHistorySection } from '../components/tasks/TaskHistorySection';
 import { ScheduledTasksSection } from '../components/tasks/ScheduledTasksSection';
 import { OneOffTasksSection } from '../components/tasks/OneOffTasksSection';
+import { MetadataChangesSection } from '../components/tasks/MetadataChangesSection';
 import type { TaskStatus, TaskType, EntityType } from '../types/shared';
 
+type TasksTab = 'active' | 'history' | 'scheduled' | 'metadata';
+
+const TABS = [
+  { id: 'active' as TasksTab, label: 'Active' },
+  { id: 'history' as TasksTab, label: 'History' },
+  { id: 'scheduled' as TasksTab, label: 'Scheduled' },
+  { id: 'metadata' as TasksTab, label: 'Metadata Changes' },
+];
+
 function Tasks() {
+  const [activeTab, setActiveTab] = useState<TasksTab>('active');
   const [activeTasksFilter, setActiveTasksFilter] = useState<TaskType>('all');
   const [activeTasksEntityFilter, setActiveTasksEntityFilter] =
     useState<EntityType>('all');
@@ -208,130 +220,147 @@ function Tasks() {
 
       <QueueManagementSection />
 
-      <ScheduledTasksSection />
+      <Tabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
 
-      <OneOffTasksSection />
+      {activeTab === 'active' && (
+        <ActiveTasksSection
+          runningTasks={runningTasks}
+          completedTasks={completedTasks}
+          failedTasks={failedTasks}
+          activeTasksFilter={activeTasksFilter}
+          activeTasksEntityFilter={activeTasksEntityFilter}
+          onActiveTasksFilterChange={setActiveTasksFilter}
+          onActiveTasksEntityFilterChange={setActiveTasksEntityFilter}
+          onCancelRunningTasksByName={handleCancelRunningTasksByName}
+        />
+      )}
 
-      <ActiveTasksSection
-        runningTasks={runningTasks}
-        completedTasks={completedTasks}
-        failedTasks={failedTasks}
-        activeTasksFilter={activeTasksFilter}
-        activeTasksEntityFilter={activeTasksEntityFilter}
-        onActiveTasksFilterChange={setActiveTasksFilter}
-        onActiveTasksEntityFilterChange={setActiveTasksEntityFilter}
-        onCancelRunningTasksByName={handleCancelRunningTasksByName}
-      />
+      {activeTab === 'history' && (
+        <>
+          <TaskHistorySection
+            data={historyData}
+            loading={historyLoading}
+            error={historyError}
+            isRefreshing={isHistoryRefreshing}
+            lastUpdated={lastUpdated}
+            statusFilter={historyFilter}
+            typeFilter={historyTypeFilter}
+            entityFilter={historyEntityFilter}
+            searchQuery={searchQuery}
+            pageSize={pageSize}
+            onStatusFilterChange={setHistoryFilter}
+            onTypeFilterChange={setHistoryTypeFilter}
+            onEntityFilterChange={setHistoryEntityFilter}
+            onSearchChange={setSearchQuery}
+            onPageSizeChange={setPageSize}
+            onLoadMore={() =>
+              fetchMore({
+                variables: {
+                  after: historyData?.taskHistory?.pageInfo?.endCursor,
+                },
+              })
+            }
+          />
 
-      <TaskHistorySection
-        data={historyData}
-        loading={historyLoading}
-        error={historyError}
-        isRefreshing={isHistoryRefreshing}
-        lastUpdated={lastUpdated}
-        statusFilter={historyFilter}
-        typeFilter={historyTypeFilter}
-        entityFilter={historyEntityFilter}
-        searchQuery={searchQuery}
-        pageSize={pageSize}
-        onStatusFilterChange={setHistoryFilter}
-        onTypeFilterChange={setHistoryTypeFilter}
-        onEntityFilterChange={setHistoryEntityFilter}
-        onSearchChange={setSearchQuery}
-        onPageSizeChange={setPageSize}
-        onLoadMore={() =>
-          fetchMore({
-            variables: {
-              after: historyData?.taskHistory?.pageInfo?.endCursor,
-            },
-          })
-        }
-      />
+          <div className='bg-white rounded-lg shadow-sm border border-gray-200'>
+            <div className='px-6 py-4 border-b border-gray-200'>
+              <h2 className='text-lg font-semibold text-gray-900'>Task Logs</h2>
+            </div>
 
-      <div className='bg-white rounded-lg shadow-sm border border-gray-200'>
-        <div className='px-6 py-4 border-b border-gray-200'>
-          <h2 className='text-lg font-semibold text-gray-900'>Task Logs</h2>
-        </div>
-
-        <div className='p-6'>
-          {historyData?.taskHistory?.edges?.some(
-            (edge: TaskHistoryEdge) => (edge.node.logMessages?.length ?? 0) > 0
-          ) ? (
-            <div className='space-y-1'>
-              {historyData.taskHistory.edges
-                .filter(
-                  (edge: TaskHistoryEdge) =>
-                    (edge.node.logMessages?.length ?? 0) > 0
-                )
-                .map((edge: TaskHistoryEdge) => {
-                  const task = edge.node;
-                  const isExpanded = !!expandedLogs[task.id];
-                  return (
-                    <div
-                      key={task.id}
-                      className='border border-gray-200 rounded p-2'
-                    >
-                      <div className='flex items-center justify-between gap-3'>
-                        <div className='flex items-center gap-2 text-sm min-w-0 flex-1'>
-                          <span className='font-medium text-gray-900 whitespace-nowrap'>
-                            {task.type.charAt(0).toUpperCase() +
-                              task.type.slice(1)}
-                          </span>
-                          <div className='min-w-0 flex-1'>
-                            <EnhancedEntityDisplay
-                              entityType={task.entityType}
-                              entityId={task.entityId}
-                              compact={true}
-                            />
+            <div className='p-6'>
+              {historyData?.taskHistory?.edges?.some(
+                (edge: TaskHistoryEdge) =>
+                  (edge.node.logMessages?.length ?? 0) > 0
+              ) ? (
+                <div className='space-y-1'>
+                  {historyData.taskHistory.edges
+                    .filter(
+                      (edge: TaskHistoryEdge) =>
+                        (edge.node.logMessages?.length ?? 0) > 0
+                    )
+                    .map((edge: TaskHistoryEdge) => {
+                      const task = edge.node;
+                      const isExpanded = !!expandedLogs[task.id];
+                      return (
+                        <div
+                          key={task.id}
+                          className='border border-gray-200 rounded p-2'
+                        >
+                          <div className='flex items-center justify-between gap-3'>
+                            <div className='flex items-center gap-2 text-sm min-w-0 flex-1'>
+                              <span className='font-medium text-gray-900 whitespace-nowrap'>
+                                {task.type.charAt(0).toUpperCase() +
+                                  task.type.slice(1)}
+                              </span>
+                              <div className='min-w-0 flex-1'>
+                                <EnhancedEntityDisplay
+                                  entityType={task.entityType}
+                                  entityId={task.entityId}
+                                  compact={true}
+                                />
+                              </div>
+                              {!isExpanded && task.logMessages && (
+                                <span className='text-xs text-gray-500 whitespace-nowrap flex-shrink-0'>
+                                  ({task.logMessages.length} logs)
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type='button'
+                              onClick={() =>
+                                setExpandedLogs(prev => ({
+                                  ...prev,
+                                  [task.id]: !isExpanded,
+                                }))
+                              }
+                              aria-expanded={isExpanded}
+                              className='text-xs text-indigo-600 hover:underline px-2 py-1 rounded hover:bg-indigo-50'
+                            >
+                              {isExpanded ? 'Hide' : 'Show logs'}
+                            </button>
                           </div>
-                          {!isExpanded && task.logMessages && (
-                            <span className='text-xs text-gray-500 whitespace-nowrap flex-shrink-0'>
-                              ({task.logMessages.length} logs)
-                            </span>
+                          {isExpanded && (
+                            <div className='mt-2 bg-gray-50 rounded p-2 text-xs font-mono text-gray-700 max-h-32 overflow-y-auto'>
+                              {task.logMessages?.map(
+                                (log: string, idx: number) => (
+                                  <div
+                                    // eslint-disable-next-line react/no-array-index-key
+                                    key={`task-${task.id}-log-${idx}`}
+                                    className='mb-1'
+                                  >
+                                    {log}
+                                  </div>
+                                )
+                              )}
+                            </div>
                           )}
                         </div>
-                        <button
-                          type='button'
-                          onClick={() =>
-                            setExpandedLogs(prev => ({
-                              ...prev,
-                              [task.id]: !isExpanded,
-                            }))
-                          }
-                          aria-expanded={isExpanded}
-                          className='text-xs text-indigo-600 hover:underline px-2 py-1 rounded hover:bg-indigo-50'
-                        >
-                          {isExpanded ? 'Hide' : 'Show logs'}
-                        </button>
-                      </div>
-                      {isExpanded && (
-                        <div className='mt-2 bg-gray-50 rounded p-2 text-xs font-mono text-gray-700 max-h-32 overflow-y-auto'>
-                          {task.logMessages?.map((log: string, idx: number) => (
-                            <div
-                              // eslint-disable-next-line react/no-array-index-key
-                              key={`task-${task.id}-log-${idx}`}
-                              className='mb-1'
-                            >
-                              {log}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className='text-center py-8 text-gray-500'>
+                  <div className='text-4xl mb-4'>📝</div>
+                  <p>No task logs available</p>
+                  <p className='text-sm'>
+                    Logs will appear here when tasks are executed
+                  </p>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className='text-center py-8 text-gray-500'>
-              <div className='text-4xl mb-4'>📝</div>
-              <p>No task logs available</p>
-              <p className='text-sm'>
-                Logs will appear here when tasks are executed
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'scheduled' && (
+        <>
+          <ScheduledTasksSection />
+          <OneOffTasksSection />
+        </>
+      )}
+
+      {activeTab === 'metadata' && <MetadataChangesSection />}
+
       <ConfirmDialog />
     </div>
   );

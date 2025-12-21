@@ -163,7 +163,7 @@ class SongService(BaseService[Song]):
             primary_artist=primary_artist_name,
             primary_artist_id=primary_artist_id,
             primary_artist_gid=primary_artist_gid,
-            created_at=django_song.created_at.isoformat(),
+            created_at=django_song.created_at,
             failed_count=django_song.failed_count,
             bitrate=django_song.bitrate,
             unavailable=django_song.unavailable,

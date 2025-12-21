@@ -242,3 +242,24 @@ def require_download_capability(task_history: Optional[TaskHistory] = None) -> N
             task_history.add_log_message(error_msg)
             task_history.save()
         raise RuntimeError(error_msg)
+
+
+def check_spotify_rate_limit() -> Optional[int]:
+    """Check if Spotify API is rate limited and return retry delay if so.
+
+    This should be called at the very START of download tasks, BEFORE creating
+    task history records or doing any other work. This prevents the "hammering"
+    pattern where many queued tasks all start up and immediately fail.
+
+    Returns:
+        None if not rate limited, otherwise the number of seconds to wait.
+        Tasks should use this value with Celery's self.retry(countdown=...).
+    """
+    from ..models import SpotifyRateLimitState
+
+    rate_status = SpotifyRateLimitState.get_status()
+    if rate_status["is_rate_limited"]:
+        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+        if seconds_remaining > 0:
+            return int(seconds_remaining)
+    return None

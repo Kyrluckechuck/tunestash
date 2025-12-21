@@ -8,6 +8,7 @@ from asgiref.sync import sync_to_async
 from ..graphql_types.models import (
     Album,
     Artist,
+    MetadataCheckResult,
     MutationResult,
     PeriodicTask,
     Playlist,
@@ -443,3 +444,75 @@ class Mutation:  # pylint: disable=too-many-public-methods
         if not task_id or not task_id.strip():
             return MutationResult(success=False, message="Task ID cannot be empty")
         return await services.one_off_task.run_task(task_id.strip())
+
+    # =========================================================================
+    # Metadata Update Mutations
+    # =========================================================================
+
+    @strawberry.mutation
+    async def apply_metadata_update(self, update_id: int) -> MutationResult:
+        """
+        Apply a pending metadata update.
+
+        This queues re-downloads for all affected songs and updates the
+        entity's name in the database. Old files will be cleaned up after
+        the new files are downloaded.
+        """
+        success, message = await services.metadata_update.apply_update(update_id)
+        return MutationResult(success=success, message=message)
+
+    @strawberry.mutation
+    async def dismiss_metadata_update(self, update_id: int) -> MutationResult:
+        """
+        Dismiss a pending metadata update.
+
+        This marks the update as dismissed. The user has chosen not to apply
+        this change. If detected again later (e.g., Spotify changed again),
+        the update will be re-shown.
+        """
+        success, message = await services.metadata_update.dismiss_update(update_id)
+        return MutationResult(success=success, message=message)
+
+    @strawberry.mutation
+    async def apply_all_metadata_updates(self) -> MutationResult:
+        """
+        Apply all pending metadata updates.
+
+        This queues re-downloads for all affected songs across all pending
+        updates. Use with caution as this may trigger many re-downloads.
+        """
+        success, message, count = await services.metadata_update.apply_all_pending()
+        return MutationResult(success=success, message=message)
+
+    @strawberry.mutation
+    async def check_artist_metadata(self, artist_id: int) -> MetadataCheckResult:
+        """
+        Check if an artist's metadata has changed on Spotify.
+
+        Makes an API call to Spotify to get the current artist name and
+        compares it to the stored value. If different, creates a pending
+        metadata update.
+        """
+        return await services.metadata_update.check_artist_metadata(artist_id)
+
+    @strawberry.mutation
+    async def check_album_metadata(self, album_id: int) -> MetadataCheckResult:
+        """
+        Check if an album's metadata has changed on Spotify.
+
+        Makes an API call to Spotify to get the current album name and
+        compares it to the stored value. If different, creates a pending
+        metadata update.
+        """
+        return await services.metadata_update.check_album_metadata(album_id)
+
+    @strawberry.mutation
+    async def check_song_metadata(self, song_id: int) -> MetadataCheckResult:
+        """
+        Check if a song's metadata has changed on Spotify.
+
+        Makes an API call to Spotify to get the current song name and
+        compares it to the stored value. If different, creates a pending
+        metadata update.
+        """
+        return await services.metadata_update.check_song_metadata(song_id)
