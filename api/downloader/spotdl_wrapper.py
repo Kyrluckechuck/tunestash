@@ -31,6 +31,11 @@ from spotdl.utils.logging import init_logging
 from spotdl.utils.spotify import SpotifyClient
 from spotipy.exceptions import SpotifyException
 
+from library_manager.metadata_detection import (
+    detect_album_name_change,
+    detect_artist_name_change,
+    detect_song_name_change,
+)
 from library_manager.models import (
     Album,
     Artist,
@@ -1307,6 +1312,8 @@ class SpotdlWrapper:
                     # Get or create artist
                     try:
                         db_artist = Artist.objects.get(gid=primary_artist_gid)
+                        # Detect if artist name has changed on Spotify
+                        detect_artist_name_change(db_artist, primary_artist["name"])
                     except Artist.DoesNotExist:
                         primary_artist_defaults = {
                             "name": primary_artist["name"],
@@ -1329,6 +1336,8 @@ class SpotdlWrapper:
                         # Get or create artist
                         try:
                             db_extra_artist = Artist.objects.get(gid=artist_gid)
+                            # Detect if contributing artist name has changed
+                            detect_artist_name_change(db_extra_artist, artist["name"])
                         except Artist.DoesNotExist:
                             db_extra_artist = Artist.objects.create(
                                 name=artist["name"],
@@ -1345,11 +1354,17 @@ class SpotdlWrapper:
                     db_album = None
                     track_album = track.get("album", {})
                     album_gid = track_album.get("id")
+                    album_name_from_spotify = track_album.get("name")
                     if album_gid:
                         db_album = Album.objects.filter(spotify_gid=album_gid).first()
+                        # Detect if album name has changed on Spotify
+                        if db_album and album_name_from_spotify:
+                            detect_album_name_change(db_album, album_name_from_spotify)
 
                     try:
                         db_song = Song.objects.get(gid=song_gid)
+                        # Detect if song name has changed on Spotify (before updating)
+                        detect_song_name_change(db_song, song["song_name"])
                         # Update existing song (including ISRC and album if we have them)
                         db_song.primary_artist = db_artist
                         db_song.name = song["song_name"]

@@ -10,6 +10,8 @@ import {
   DownloadArtistDocument,
   SetAlbumWantedDocument,
   DownloadAlbumDocument,
+  CheckArtistMetadataDocument,
+  CheckAlbumMetadataDocument,
   type Album,
   type Song,
 } from '../types/generated/graphql';
@@ -144,6 +146,8 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
   const [downloadArtist] = useMutation(DownloadArtistDocument);
   const [setAlbumWanted] = useMutation(SetAlbumWantedDocument);
   const [downloadAlbum] = useMutation(DownloadAlbumDocument);
+  const [checkArtistMetadata] = useMutation(CheckArtistMetadataDocument);
+  const [checkAlbumMetadata] = useMutation(CheckAlbumMetadataDocument);
 
   // Mutation state management
   const {
@@ -160,6 +164,11 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     loadingIds: downloadMutatingIds,
     startLoading: startDownload,
     stopLoading: stopDownload,
+  } = useMutationLoadingState();
+  const {
+    loadingIds: checkMetadataMutatingIds,
+    startLoading: startCheckMetadata,
+    stopLoading: stopCheckMetadata,
   } = useMutationLoadingState();
 
   // Artist action handlers
@@ -215,6 +224,63 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
       toast.error(error instanceof Error ? error.message : 'Download failed');
     } finally {
       stopDownload(artist.id);
+    }
+  };
+
+  const handleCheckArtistMetadata = async () => {
+    const artist = artistData?.artist;
+    if (!artist) return;
+
+    try {
+      startCheckMetadata(artist.id);
+      const result = await checkArtistMetadata({
+        variables: { artistId: artist.id },
+      });
+      const data = result.data?.checkArtistMetadata;
+      if (data?.success) {
+        if (data.changeDetected) {
+          toast.success(
+            `Change detected: "${data.oldValue}" → "${data.newValue}". Check the Metadata Changes tab.`
+          );
+        } else {
+          toast.info('No metadata changes detected');
+        }
+      } else {
+        toast.error(data?.message || 'Failed to check metadata');
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Metadata check failed'
+      );
+    } finally {
+      stopCheckMetadata(artist.id);
+    }
+  };
+
+  const handleCheckAlbumMetadata = async (albumId: number) => {
+    try {
+      startCheckMetadata(albumId);
+      const result = await checkAlbumMetadata({
+        variables: { albumId },
+      });
+      const data = result.data?.checkAlbumMetadata;
+      if (data?.success) {
+        if (data.changeDetected) {
+          toast.success(
+            `Change detected: "${data.oldValue}" → "${data.newValue}". Check the Metadata Changes tab.`
+          );
+        } else {
+          toast.info('No metadata changes detected');
+        }
+      } else {
+        toast.error(data?.message || 'Failed to check metadata');
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Metadata check failed'
+      );
+    } finally {
+      stopCheckMetadata(albumId);
     }
   };
 
@@ -323,8 +389,10 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     handleTrackToggle,
     handleSyncArtist,
     handleDownloadArtist,
+    handleCheckArtistMetadata,
     syncMutatingIds,
     downloadMutatingIds,
+    checkMetadataMutatingIds,
 
     // Albums data
     albums,
@@ -352,6 +420,7 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     handleAlbumSearch,
     handleAlbumWantedToggle,
     handleDownloadAlbum,
+    handleCheckAlbumMetadata,
     handleLoadMoreAlbums,
 
     // Songs data

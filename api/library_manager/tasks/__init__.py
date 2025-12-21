@@ -65,6 +65,12 @@ from .maintenance import (
     validate_undownloaded_songs,
 )
 
+# Re-export metadata tasks
+from .metadata import (
+    apply_metadata_update,
+    cleanup_old_files,
+)
+
 # Re-export periodic tasks
 from .periodic import (
     queue_missing_albums_for_tracked_artists,
@@ -120,6 +126,9 @@ __all__ = [
     # Periodic tasks
     "queue_missing_albums_for_tracked_artists",
     "sync_tracked_playlists",
+    # Metadata tasks
+    "apply_metadata_update",
+    "cleanup_old_files",
     # Diagnostic tasks
     "memory_compare_before_after",
     "memory_profile_after_init",

@@ -1,0 +1,82 @@
+query GetPendingMetadataUpdates(
+  $entityType: MetadataEntityType
+  $status: MetadataUpdateStatus
+  $includeResolved: Boolean
+) {
+  pendingMetadataUpdates(
+    entityType: $entityType
+    status: $status
+    includeResolved: $includeResolved
+  ) {
+    edges {
+      id
+      entityType
+      entityId
+      entityName
+      fieldName
+      oldValue
+      newValue
+      status
+      detectedAt
+      resolvedAt
+      affectedSongsCount
+    }
+    summary {
+      artistUpdates
+      albumUpdates
+      songUpdates
+      totalAffectedSongs
+    }
+  }
+}
+
+mutation ApplyMetadataUpdate($updateId: Int!) {
+  applyMetadataUpdate(updateId: $updateId) {
+    success
+    message
+  }
+}
+
+mutation DismissMetadataUpdate($updateId: Int!) {
+  dismissMetadataUpdate(updateId: $updateId) {
+    success
+    message
+  }
+}
+
+mutation ApplyAllMetadataUpdates {
+  applyAllMetadataUpdates {
+    success
+    message
+  }
+}
+
+mutation CheckArtistMetadata($artistId: Int!) {
+  checkArtistMetadata(artistId: $artistId) {
+    success
+    message
+    changeDetected
+    oldValue
+    newValue
+  }
+}
+
+mutation CheckAlbumMetadata($albumId: Int!) {
+  checkAlbumMetadata(albumId: $albumId) {
+    success
+    message
+    changeDetected
+    oldValue
+    newValue
+  }
+}
+
+mutation CheckSongMetadata($songId: Int!) {
+  checkSongMetadata(songId: $songId) {
+    success
+    message
+    changeDetected
+    oldValue
+    newValue
+  }
+}

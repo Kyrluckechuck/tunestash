@@ -125,7 +125,7 @@ class PeriodicTaskService:
             is_core=task.name in CORE_TASK_NAMES,
             description=task.description or None,
             schedule_description=schedule_desc,
-            last_run_at=task.last_run_at.isoformat() if task.last_run_at else None,
+            last_run_at=task.last_run_at,
             total_run_count=task.total_run_count,
         )
 

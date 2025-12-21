@@ -536,9 +536,5 @@ class PlaylistService(BaseService[Playlist]):
             status_message=django_playlist.status_message,
             enabled=django_playlist.enabled,  # Computed property for backwards compat
             auto_track_artists=django_playlist.auto_track_artists,
-            last_synced_at=(
-                django_playlist.last_synced_at.isoformat()
-                if django_playlist.last_synced_at
-                else None
-            ),
+            last_synced_at=django_playlist.last_synced_at,
         )

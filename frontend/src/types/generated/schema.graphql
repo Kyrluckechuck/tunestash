@@ -124,16 +124,68 @@ type LibraryStats {
   unavailableSongs: Int!
 }
 
+type MetadataCheckResult {
+  changeDetected: Boolean!
+  message: String!
+  newValue: String
+  oldValue: String
+  success: Boolean!
+}
+
+enum MetadataEntityType {
+  ALBUM
+  ARTIST
+  SONG
+}
+
+type MetadataUpdate {
+  affectedSongsCount: Int!
+  detectedAt: DateTime!
+  entityId: Int!
+  entityName: String!
+  entityType: MetadataEntityType!
+  fieldName: String!
+  id: Int!
+  newValue: String!
+  oldValue: String!
+  resolvedAt: DateTime
+  status: MetadataUpdateStatus!
+}
+
+type MetadataUpdateConnection {
+  edges: [MetadataUpdate!]!
+  summary: MetadataUpdateSummary!
+}
+
+enum MetadataUpdateStatus {
+  APPLIED
+  DISMISSED
+  PENDING
+}
+
+type MetadataUpdateSummary {
+  albumUpdates: Int!
+  artistUpdates: Int!
+  songUpdates: Int!
+  totalAffectedSongs: Int!
+}
+
 type Mutation {
+  applyAllMetadataUpdates: MutationResult!
+  applyMetadataUpdate(updateId: Int!): MutationResult!
   batchArtistOperations(artistIds: [Int!]!, operations: [String!] = null): MutationResult!
   cancelAllPendingTasks: MutationResult!
   cancelAllTasks: MutationResult!
   cancelRunningTasksByName(taskName: String!): MutationResult!
   cancelTaskById(taskId: String!): MutationResult!
   cancelTasksByName(taskName: String!): MutationResult!
+  checkAlbumMetadata(albumId: Int!): MetadataCheckResult!
+  checkArtistMetadata(artistId: Int!): MetadataCheckResult!
+  checkSongMetadata(songId: Int!): MetadataCheckResult!
   createPlaylist(autoTrackArtists: Boolean! = false, name: String!, url: String!): Playlist!
   deletePlaylist(playlistId: Int!): MutationResult!
   disconnectSpotify: MutationResult!
+  dismissMetadataUpdate(updateId: Int!): MutationResult!
   downloadAlbum(albumId: String!): Album!
   downloadAllPlaylists: MutationResult!
   downloadAllTrackedArtists: MutationResult!
@@ -228,6 +280,7 @@ type Query {
   downloadHistory(after: String = null, entityType: String = null, first: Int = 20, status: String = null): HistoryConnection!
   libraryStats: LibraryStats!
   oneOffTasks: [OneOffTask!]!
+  pendingMetadataUpdates(entityType: MetadataEntityType = null, includeResolved: Boolean! = false, status: MetadataUpdateStatus = null): MetadataUpdateConnection!
   periodicTasks(enabledOnly: Boolean = false): [PeriodicTask!]!
   playlist(id: String!): Playlist
   playlists(after: String = null, enabled: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, status: String = null): PlaylistConnection!
@@ -343,11 +396,6 @@ type SpotifySearchTrack {
   spotifyUri: String!
 }
 
-type Subscription {
-  allDownloadProgress: DownloadProgress!
-  downloadProgress(entityId: String!): DownloadProgress!
-}
-
 type StorageStatus {
   availableGb: Float
   errorMessage: String
@@ -359,6 +407,11 @@ type StorageStatus {
   totalGb: Float
   usagePercent: Float
   usedGb: Float
+}
+
+type Subscription {
+  allDownloadProgress: DownloadProgress!
+  downloadProgress(entityId: String!): DownloadProgress!
 }
 
 type SystemHealth {

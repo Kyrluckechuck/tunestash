@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, Optional, cast
 
 import django.core.validators
 from django.conf import settings
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.db import models
 from django.db.models import QuerySet, Sum, TextChoices
 from django.utils import timezone
@@ -1185,3 +1187,91 @@ class SpotifyRateLimitState(models.Model):
                 "hourly_max": cls.HOURLY_MAX_CALLS,
                 "backoff_pressure": 0,
             }
+
+
+class MetadataUpdateStatus(TextChoices):
+    """Status choices for pending metadata updates."""
+
+    PENDING = "pending", "Pending"
+    APPLIED = "applied", "Applied"
+    DISMISSED = "dismissed", "Dismissed"
+
+
+class PendingMetadataUpdate(models.Model):
+    """
+    Tracks metadata changes detected from Spotify that user can opt to apply.
+
+    When we detect that an artist, album, or song name has changed on Spotify
+    (compared to what we have stored locally), we create a record here instead
+    of automatically updating. The user can then review and choose to apply
+    the change (triggering a re-download with updated metadata) or dismiss it.
+
+    Uses Django's ContentType framework for polymorphic references to
+    Artist, Album, or Song models.
+    """
+
+    # Polymorphic reference to Artist, Album, or Song
+    content_type: models.ForeignKey = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        help_text="Type of entity (Artist, Album, or Song)",
+    )
+    object_id: models.BigIntegerField = models.BigIntegerField(
+        help_text="ID of the entity"
+    )
+    content_object = GenericForeignKey("content_type", "object_id")
+
+    # What changed
+    field_name: models.CharField = models.CharField(
+        max_length=50,
+        default="name",
+        help_text="Field that changed (currently only 'name' supported)",
+    )
+    old_value: models.CharField = models.CharField(
+        max_length=500, help_text="Value at time of download"
+    )
+    new_value: models.CharField = models.CharField(
+        max_length=500, help_text="Current value from Spotify"
+    )
+
+    # Status tracking
+    status: models.CharField = models.CharField(
+        max_length=20,
+        choices=MetadataUpdateStatus.choices,
+        default=MetadataUpdateStatus.PENDING,
+    )
+    detected_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    resolved_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return (
+            f"{self.content_type.model} #{self.object_id}: "
+            f"'{self.old_value}' → '{self.new_value}' ({self.status})"
+        )
+
+    def mark_applied(self) -> None:
+        """Mark this update as applied by the user."""
+        self.status = MetadataUpdateStatus.APPLIED
+        self.resolved_at = timezone.now()
+        self.save()
+
+    def mark_dismissed(self) -> None:
+        """Mark this update as dismissed by the user."""
+        self.status = MetadataUpdateStatus.DISMISSED
+        self.resolved_at = timezone.now()
+        self.save()
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "pending_metadata_updates"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["content_type", "object_id", "field_name"],
+                name="unique_pending_update_per_entity_field",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["content_type", "status"]),
+            models.Index(fields=["detected_at"]),
+        ]

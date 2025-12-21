@@ -486,3 +486,72 @@ class LibraryStats:
     desired_songs: int
     desired_downloaded: int
     desired_completion_percentage: float
+
+
+# =============================================================================
+# Metadata Update Types
+# =============================================================================
+
+
+@strawberry.enum
+class MetadataUpdateStatus(Enum):
+    """Status of a pending metadata update."""
+
+    PENDING = "PENDING"
+    APPLIED = "APPLIED"
+    DISMISSED = "DISMISSED"
+
+
+@strawberry.enum
+class MetadataEntityType(Enum):
+    """Type of entity for metadata updates."""
+
+    ARTIST = "ARTIST"
+    ALBUM = "ALBUM"
+    SONG = "SONG"
+
+
+@strawberry.type
+class MetadataUpdate:
+    """A detected metadata change that the user can apply or dismiss."""
+
+    id: int
+    entity_type: MetadataEntityType
+    entity_id: int
+    entity_name: str
+    field_name: str
+    old_value: str
+    new_value: str
+    status: MetadataUpdateStatus
+    detected_at: DateTime
+    resolved_at: Optional[DateTime]
+    affected_songs_count: int
+
+
+@strawberry.type
+class MetadataUpdateSummary:
+    """Summary counts for metadata updates."""
+
+    artist_updates: int
+    album_updates: int
+    song_updates: int
+    total_affected_songs: int
+
+
+@strawberry.type
+class MetadataUpdateConnection:
+    """Connection type for metadata updates with summary."""
+
+    edges: List[MetadataUpdate]
+    summary: MetadataUpdateSummary
+
+
+@strawberry.type
+class MetadataCheckResult:
+    """Result of a manual metadata check operation."""
+
+    success: bool
+    message: str
+    change_detected: bool
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None

@@ -11,6 +11,9 @@ from ..graphql_types.models import (
     HistoryConnection,
     HistoryEdge,
     LibraryStats,
+    MetadataEntityType,
+    MetadataUpdateConnection,
+    MetadataUpdateStatus,
     OneOffTask,
     PageInfo,
     PendingTask,
@@ -534,4 +537,28 @@ class Query:
             desired_songs=stats.desired_songs,
             desired_downloaded=stats.desired_downloaded,
             desired_completion_percentage=stats.desired_completion_percentage,
+        )
+
+    @strawberry.field
+    async def pending_metadata_updates(
+        self,
+        entity_type: Optional[MetadataEntityType] = None,
+        status: Optional[MetadataUpdateStatus] = None,
+        include_resolved: bool = False,
+    ) -> MetadataUpdateConnection:
+        """
+        Get pending metadata updates detected from Spotify.
+
+        Returns a list of detected name changes for artists, albums, and songs
+        that the user can choose to apply or dismiss.
+
+        Args:
+            entity_type: Filter by entity type (ARTIST, ALBUM, SONG)
+            status: Filter by status (PENDING, APPLIED, DISMISSED)
+            include_resolved: If True, include applied/dismissed updates; if False, only pending
+        """
+        return await services.metadata_update.get_pending_updates(
+            entity_type=entity_type,
+            status=status,
+            include_resolved=include_resolved,
         )

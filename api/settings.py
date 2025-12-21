@@ -85,6 +85,10 @@ settings = dynaconf.DjangoDynaconf(
             "PASSWORD": os.getenv("POSTGRES_PASSWORD", "slm_dev_password"),
             "HOST": os.getenv("POSTGRES_HOST", "localhost"),
             "PORT": os.getenv("POSTGRES_PORT", "5432"),
+            # Keep connections alive for 10 minutes (helps long-running processes like Celery Beat)
+            "CONN_MAX_AGE": 600,
+            # Check connection health before using (Django 4.1+) - prevents stale connection errors
+            "CONN_HEALTH_CHECKS": True,
             "OPTIONS": {
                 "connect_timeout": 10,
             },

@@ -165,6 +165,18 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
     Skips albums that already have pending/running download tasks to prevent
     duplicate task queuing.
     """
+    # Check if we're rate-limited before doing any work
+    # This prevents queueing tasks that will immediately fail
+    from ..models import SpotifyRateLimitState
+
+    rate_status = SpotifyRateLimitState.get_status()
+    if rate_status["is_rate_limited"]:
+        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+        logger.info(
+            f"Skipping album queue - Spotify API rate limited for {seconds_remaining}s"
+        )
+        return
+
     try:
         logger.info("Starting periodic queue of missing albums for tracked artists")
 

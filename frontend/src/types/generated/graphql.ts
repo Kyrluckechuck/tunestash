@@ -146,17 +146,71 @@ export type LibraryStats = {
   unavailableSongs: Scalars['Int']['output'];
 };
 
+export type MetadataCheckResult = {
+  __typename?: 'MetadataCheckResult';
+  changeDetected: Scalars['Boolean']['output'];
+  message: Scalars['String']['output'];
+  newValue: Maybe<Scalars['String']['output']>;
+  oldValue: Maybe<Scalars['String']['output']>;
+  success: Scalars['Boolean']['output'];
+};
+
+export type MetadataEntityType =
+  | 'ALBUM'
+  | 'ARTIST'
+  | 'SONG';
+
+export type MetadataUpdate = {
+  __typename?: 'MetadataUpdate';
+  affectedSongsCount: Scalars['Int']['output'];
+  detectedAt: Scalars['DateTime']['output'];
+  entityId: Scalars['Int']['output'];
+  entityName: Scalars['String']['output'];
+  entityType: MetadataEntityType;
+  fieldName: Scalars['String']['output'];
+  id: Scalars['Int']['output'];
+  newValue: Scalars['String']['output'];
+  oldValue: Scalars['String']['output'];
+  resolvedAt: Maybe<Scalars['DateTime']['output']>;
+  status: MetadataUpdateStatus;
+};
+
+export type MetadataUpdateConnection = {
+  __typename?: 'MetadataUpdateConnection';
+  edges: Array<MetadataUpdate>;
+  summary: MetadataUpdateSummary;
+};
+
+export type MetadataUpdateStatus =
+  | 'APPLIED'
+  | 'DISMISSED'
+  | 'PENDING';
+
+export type MetadataUpdateSummary = {
+  __typename?: 'MetadataUpdateSummary';
+  albumUpdates: Scalars['Int']['output'];
+  artistUpdates: Scalars['Int']['output'];
+  songUpdates: Scalars['Int']['output'];
+  totalAffectedSongs: Scalars['Int']['output'];
+};
+
 export type Mutation = {
   __typename?: 'Mutation';
+  applyAllMetadataUpdates: MutationResult;
+  applyMetadataUpdate: MutationResult;
   batchArtistOperations: MutationResult;
   cancelAllPendingTasks: MutationResult;
   cancelAllTasks: MutationResult;
   cancelRunningTasksByName: MutationResult;
   cancelTaskById: MutationResult;
   cancelTasksByName: MutationResult;
+  checkAlbumMetadata: MetadataCheckResult;
+  checkArtistMetadata: MetadataCheckResult;
+  checkSongMetadata: MetadataCheckResult;
   createPlaylist: Playlist;
   deletePlaylist: MutationResult;
   disconnectSpotify: MutationResult;
+  dismissMetadataUpdate: MutationResult;
   downloadAlbum: Album;
   downloadAllPlaylists: MutationResult;
   downloadAllTrackedArtists: MutationResult;
@@ -182,6 +236,11 @@ export type Mutation = {
 };
 
 
+export type MutationApplyMetadataUpdateArgs = {
+  updateId: Scalars['Int']['input'];
+};
+
+
 export type MutationBatchArtistOperationsArgs = {
   artistIds: Array<Scalars['Int']['input']>;
   operations?: InputMaybe<Array<Scalars['String']['input']>>;
@@ -203,6 +262,21 @@ export type MutationCancelTasksByNameArgs = {
 };
 
 
+export type MutationCheckAlbumMetadataArgs = {
+  albumId: Scalars['Int']['input'];
+};
+
+
+export type MutationCheckArtistMetadataArgs = {
+  artistId: Scalars['Int']['input'];
+};
+
+
+export type MutationCheckSongMetadataArgs = {
+  songId: Scalars['Int']['input'];
+};
+
+
 export type MutationCreatePlaylistArgs = {
   autoTrackArtists?: Scalars['Boolean']['input'];
   name: Scalars['String']['input'];
@@ -212,6 +286,11 @@ export type MutationCreatePlaylistArgs = {
 
 export type MutationDeletePlaylistArgs = {
   playlistId: Scalars['Int']['input'];
+};
+
+
+export type MutationDismissMetadataUpdateArgs = {
+  updateId: Scalars['Int']['input'];
 };
 
 
@@ -396,6 +475,7 @@ export type Query = {
   downloadHistory: HistoryConnection;
   libraryStats: LibraryStats;
   oneOffTasks: Array<OneOffTask>;
+  pendingMetadataUpdates: MetadataUpdateConnection;
   periodicTasks: Array<PeriodicTask>;
   playlist: Maybe<Playlist>;
   playlists: PlaylistConnection;
@@ -447,6 +527,13 @@ export type QueryDownloadHistoryArgs = {
   entityType?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
   status?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryPendingMetadataUpdatesArgs = {
+  entityType?: InputMaybe<MetadataEntityType>;
+  includeResolved?: Scalars['Boolean']['input'];
+  status?: InputMaybe<MetadataUpdateStatus>;
 };
 
 
@@ -922,6 +1009,55 @@ export type DisconnectSpotifyMutationVariables = Exact<{ [key: string]: never; }
 
 export type DisconnectSpotifyMutation = { __typename?: 'Mutation', disconnectSpotify: { __typename?: 'MutationResult', success: boolean, message: string } };
 
+export type GetPendingMetadataUpdatesQueryVariables = Exact<{
+  entityType?: InputMaybe<MetadataEntityType>;
+  status?: InputMaybe<MetadataUpdateStatus>;
+  includeResolved?: InputMaybe<Scalars['Boolean']['input']>;
+}>;
+
+
+export type GetPendingMetadataUpdatesQuery = { __typename?: 'Query', pendingMetadataUpdates: { __typename?: 'MetadataUpdateConnection', edges: Array<{ __typename?: 'MetadataUpdate', id: number, entityType: MetadataEntityType, entityId: number, entityName: string, fieldName: string, oldValue: string, newValue: string, status: MetadataUpdateStatus, detectedAt: string, resolvedAt: string | null, affectedSongsCount: number }>, summary: { __typename?: 'MetadataUpdateSummary', artistUpdates: number, albumUpdates: number, songUpdates: number, totalAffectedSongs: number } } };
+
+export type ApplyMetadataUpdateMutationVariables = Exact<{
+  updateId: Scalars['Int']['input'];
+}>;
+
+
+export type ApplyMetadataUpdateMutation = { __typename?: 'Mutation', applyMetadataUpdate: { __typename?: 'MutationResult', success: boolean, message: string } };
+
+export type DismissMetadataUpdateMutationVariables = Exact<{
+  updateId: Scalars['Int']['input'];
+}>;
+
+
+export type DismissMetadataUpdateMutation = { __typename?: 'Mutation', dismissMetadataUpdate: { __typename?: 'MutationResult', success: boolean, message: string } };
+
+export type ApplyAllMetadataUpdatesMutationVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ApplyAllMetadataUpdatesMutation = { __typename?: 'Mutation', applyAllMetadataUpdates: { __typename?: 'MutationResult', success: boolean, message: string } };
+
+export type CheckArtistMetadataMutationVariables = Exact<{
+  artistId: Scalars['Int']['input'];
+}>;
+
+
+export type CheckArtistMetadataMutation = { __typename?: 'Mutation', checkArtistMetadata: { __typename?: 'MetadataCheckResult', success: boolean, message: string, changeDetected: boolean, oldValue: string | null, newValue: string | null } };
+
+export type CheckAlbumMetadataMutationVariables = Exact<{
+  albumId: Scalars['Int']['input'];
+}>;
+
+
+export type CheckAlbumMetadataMutation = { __typename?: 'Mutation', checkAlbumMetadata: { __typename?: 'MetadataCheckResult', success: boolean, message: string, changeDetected: boolean, oldValue: string | null, newValue: string | null } };
+
+export type CheckSongMetadataMutationVariables = Exact<{
+  songId: Scalars['Int']['input'];
+}>;
+
+
+export type CheckSongMetadataMutation = { __typename?: 'Mutation', checkSongMetadata: { __typename?: 'MetadataCheckResult', success: boolean, message: string, changeDetected: boolean, oldValue: string | null, newValue: string | null } };
+
 export type SavePlaylistMutationVariables = Exact<{
   spotifyId: Scalars['String']['input'];
   autoTrackArtists?: InputMaybe<Scalars['Boolean']['input']>;
@@ -1146,6 +1282,13 @@ export const DownloadUrlDocument = {"kind":"Document","definitions":[{"kind":"Op
 export const CreatePlaylistFromDownloadDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreatePlaylistFromDownload"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}},{"kind":"Argument","name":{"kind":"Name","value":"autoTrackArtists"},"value":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"url"}},{"kind":"Field","name":{"kind":"Name","value":"enabled"}},{"kind":"Field","name":{"kind":"Name","value":"autoTrackArtists"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}}]}}]}}]} as unknown as DocumentNode<CreatePlaylistFromDownloadMutation, CreatePlaylistFromDownloadMutationVariables>;
 export const GetSystemStatusDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSystemStatus"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"systemHealth"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"canDownload"}},{"kind":"Field","name":{"kind":"Name","value":"downloadBlockerReason"}},{"kind":"Field","name":{"kind":"Name","value":"authentication"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cookiesValid"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesErrorType"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesExpireInDays"}},{"kind":"Field","name":{"kind":"Name","value":"poTokenConfigured"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUserAuthEnabled"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyAuthMode"}}]}},{"kind":"Field","name":{"kind":"Name","value":"spotifyRateLimit"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"isRateLimited"}},{"kind":"Field","name":{"kind":"Name","value":"rateLimitedUntil"}},{"kind":"Field","name":{"kind":"Name","value":"secondsUntilClear"}},{"kind":"Field","name":{"kind":"Name","value":"windowCallCount"}},{"kind":"Field","name":{"kind":"Name","value":"windowMaxCalls"}},{"kind":"Field","name":{"kind":"Name","value":"windowUsagePercent"}}]}},{"kind":"Field","name":{"kind":"Name","value":"storage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"path"}},{"kind":"Field","name":{"kind":"Name","value":"exists"}},{"kind":"Field","name":{"kind":"Name","value":"isWritable"}},{"kind":"Field","name":{"kind":"Name","value":"availableGb"}},{"kind":"Field","name":{"kind":"Name","value":"usagePercent"}},{"kind":"Field","name":{"kind":"Name","value":"isLow"}},{"kind":"Field","name":{"kind":"Name","value":"isCriticallyLow"}},{"kind":"Field","name":{"kind":"Name","value":"errorMessage"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"queueStatus"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalPendingTasks"}},{"kind":"Field","name":{"kind":"Name","value":"queueSize"}}]}}]}}]} as unknown as DocumentNode<GetSystemStatusQuery, GetSystemStatusQueryVariables>;
 export const DisconnectSpotifyDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DisconnectSpotify"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"disconnectSpotify"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DisconnectSpotifyMutation, DisconnectSpotifyMutationVariables>;
+export const GetPendingMetadataUpdatesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPendingMetadataUpdates"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"entityType"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"MetadataEntityType"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"status"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"MetadataUpdateStatus"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"includeResolved"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"pendingMetadataUpdates"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"entityType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"entityType"}}},{"kind":"Argument","name":{"kind":"Name","value":"status"},"value":{"kind":"Variable","name":{"kind":"Name","value":"status"}}},{"kind":"Argument","name":{"kind":"Name","value":"includeResolved"},"value":{"kind":"Variable","name":{"kind":"Name","value":"includeResolved"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"entityName"}},{"kind":"Field","name":{"kind":"Name","value":"fieldName"}},{"kind":"Field","name":{"kind":"Name","value":"oldValue"}},{"kind":"Field","name":{"kind":"Name","value":"newValue"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"detectedAt"}},{"kind":"Field","name":{"kind":"Name","value":"resolvedAt"}},{"kind":"Field","name":{"kind":"Name","value":"affectedSongsCount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"summary"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"artistUpdates"}},{"kind":"Field","name":{"kind":"Name","value":"albumUpdates"}},{"kind":"Field","name":{"kind":"Name","value":"songUpdates"}},{"kind":"Field","name":{"kind":"Name","value":"totalAffectedSongs"}}]}}]}}]}}]} as unknown as DocumentNode<GetPendingMetadataUpdatesQuery, GetPendingMetadataUpdatesQueryVariables>;
+export const ApplyMetadataUpdateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ApplyMetadataUpdate"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"updateId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"applyMetadataUpdate"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"updateId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"updateId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<ApplyMetadataUpdateMutation, ApplyMetadataUpdateMutationVariables>;
+export const DismissMetadataUpdateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DismissMetadataUpdate"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"updateId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dismissMetadataUpdate"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"updateId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"updateId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DismissMetadataUpdateMutation, DismissMetadataUpdateMutationVariables>;
+export const ApplyAllMetadataUpdatesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ApplyAllMetadataUpdates"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"applyAllMetadataUpdates"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<ApplyAllMetadataUpdatesMutation, ApplyAllMetadataUpdatesMutationVariables>;
+export const CheckArtistMetadataDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CheckArtistMetadata"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"artistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkArtistMetadata"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"artistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"artistId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"changeDetected"}},{"kind":"Field","name":{"kind":"Name","value":"oldValue"}},{"kind":"Field","name":{"kind":"Name","value":"newValue"}}]}}]}}]} as unknown as DocumentNode<CheckArtistMetadataMutation, CheckArtistMetadataMutationVariables>;
+export const CheckAlbumMetadataDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CheckAlbumMetadata"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"albumId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkAlbumMetadata"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"albumId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"albumId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"changeDetected"}},{"kind":"Field","name":{"kind":"Name","value":"oldValue"}},{"kind":"Field","name":{"kind":"Name","value":"newValue"}}]}}]}}]} as unknown as DocumentNode<CheckAlbumMetadataMutation, CheckAlbumMetadataMutationVariables>;
+export const CheckSongMetadataDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CheckSongMetadata"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"songId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkSongMetadata"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"songId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"songId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"changeDetected"}},{"kind":"Field","name":{"kind":"Name","value":"oldValue"}},{"kind":"Field","name":{"kind":"Name","value":"newValue"}}]}}]}}]} as unknown as DocumentNode<CheckSongMetadataMutation, CheckSongMetadataMutationVariables>;
 export const SavePlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SavePlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"spotifyId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"savePlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"spotifyId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"spotifyId"}}},{"kind":"Argument","name":{"kind":"Name","value":"autoTrackArtists"},"value":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"url"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"statusMessage"}},{"kind":"Field","name":{"kind":"Name","value":"enabled"}},{"kind":"Field","name":{"kind":"Name","value":"autoTrackArtists"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}}]}}]}}]} as unknown as DocumentNode<SavePlaylistMutation, SavePlaylistMutationVariables>;
 export const DeletePlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeletePlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deletePlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DeletePlaylistMutation, DeletePlaylistMutationVariables>;
 export const GetSpotifyPlaylistInfoDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSpotifyPlaylistInfo"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"spotifyPlaylistInfo"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"ownerName"}},{"kind":"Field","name":{"kind":"Name","value":"trackCount"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}}]}}]}}]} as unknown as DocumentNode<GetSpotifyPlaylistInfoQuery, GetSpotifyPlaylistInfoQueryVariables>;
