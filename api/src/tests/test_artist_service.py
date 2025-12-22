@@ -129,11 +129,12 @@ async def test_to_graphql_type_includes_timestamp_fields(
         result = await artist_service._to_graphql_type_async(mock_django_artist)
 
         assert isinstance(result, Artist)
-        # Verify both timestamp fields are present
+        # Verify both timestamp fields are present as datetime objects
+        # (GraphQL DateTime scalar handles serialization to ISO format)
         assert result.last_synced is not None
         assert result.last_downloaded is not None
-        assert isinstance(result.last_synced, str)  # ISO format
-        assert isinstance(result.last_downloaded, str)  # ISO format
+        assert isinstance(result.last_synced, datetime)
+        assert isinstance(result.last_downloaded, datetime)
 
 
 @pytest.mark.asyncio
