@@ -207,6 +207,53 @@ def worker_process_init_handler(sender: Any = None, **kwargs: Any) -> None:
         )
         log_process_state("Worker process initialization")
 
+    # Always check and log Spotify rate limit status on startup
+    _log_spotify_rate_limit_status()
+
+
+def _log_spotify_rate_limit_status() -> None:
+    """Check and log Spotify API rate limit status on worker startup.
+
+    This helps identify if Spotify has banned our credentials before
+    we start making API calls that will immediately fail.
+    """
+    try:
+        from library_manager.models import SpotifyRateLimitState
+
+        rate_status = SpotifyRateLimitState.get_status()
+        if rate_status["is_rate_limited"]:
+            seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+            hours = seconds_remaining / 3600
+            logger.warning(
+                "\n"
+                "╔════════════════════════════════════════════════════════════════════╗\n"
+                "║  🚨  SPOTIFY API IS RATE LIMITED!                                  ║\n"
+                "╠════════════════════════════════════════════════════════════════════╣\n"
+                f"║  Time remaining: {hours:.1f} hours ({seconds_remaining} seconds)".ljust(
+                    72
+                )
+                + "║\n"
+                "║                                                                    ║\n"
+                "║  All Spotify API calls will be blocked until the rate limit       ║\n"
+                "║  expires. Download and sync tasks will be rescheduled.            ║\n"
+                "║                                                                    ║\n"
+                "║  If this happens frequently, ensure you're using your own         ║\n"
+                "║  Spotify Developer credentials (SPOTIPY_CLIENT_ID/SECRET).        ║\n"
+                "╚════════════════════════════════════════════════════════════════════╝"
+            )
+        else:
+            # Log current rate limit bucket status
+            burst = rate_status.get("burst_calls", 0)
+            burst_max = rate_status.get("burst_max", 10)
+            sustained = rate_status.get("sustained_calls", 0)
+            sustained_max = rate_status.get("sustained_max", 100)
+            logger.info(
+                f"[SPOTIFY API] Rate limit status OK - "
+                f"burst: {burst}/{burst_max}, sustained: {sustained}/{sustained_max}"
+            )
+    except Exception as e:
+        logger.warning(f"[SPOTIFY API] Could not check rate limit status: {e}")
+
 
 @worker_process_shutdown.connect  # type: ignore[misc]
 def worker_process_shutdown_handler(sender: Any = None, **kwargs: Any) -> None:
