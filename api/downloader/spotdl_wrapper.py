@@ -435,6 +435,8 @@ SpotdlDownloader.download_multiple_songs = spotdl_override.download_multiple_son
 
 
 def generate_spotdl_settings(config: Config) -> Any:
+    from django.conf import settings as django_settings
+
     spotify_settings, downloader_settings, _ = create_settings(Namespace(config=False))
 
     # OAuth tokens are now fetched directly in spotdl_override.py during initialization
@@ -462,6 +464,34 @@ def generate_spotdl_settings(config: Config) -> Any:
             spotify_settings["downloader_settings"][key] = DEFAULT_DOWNLOAD_SETTINGS[
                 key
             ]
+
+    # Check for user-provided Spotify credentials (preferred over shared defaults)
+    user_client_id = getattr(django_settings, "SPOTIPY_CLIENT_ID", "") or ""
+    user_client_secret = getattr(django_settings, "SPOTIPY_CLIENT_SECRET", "") or ""
+
+    if user_client_id and user_client_secret:
+        # Use user's own credentials (not shared with all spotDL users)
+        spotify_settings["client_id"] = user_client_id
+        spotify_settings["client_secret"] = user_client_secret
+    else:
+        # Using shared spotDL credentials - log a prominent warning
+        _logger = logging.getLogger(__name__)
+        _logger.warning(
+            "\n"
+            "╔════════════════════════════════════════════════════════════════════╗\n"
+            "║  ⚠️  USING SHARED SPOTIFY CREDENTIALS - RATE LIMITS LIKELY!         ║\n"
+            "╠════════════════════════════════════════════════════════════════════╣\n"
+            "║  You are using spotDL's shared public credentials which are used   ║\n"
+            "║  by thousands of users worldwide. Spotify has likely rate-limited  ║\n"
+            "║  or banned these credentials.                                      ║\n"
+            "║                                                                    ║\n"
+            "║  To fix this, create your own Spotify Developer app:               ║\n"
+            "║  1. Go to https://developer.spotify.com/dashboard                  ║\n"
+            "║  2. Create a new app                                               ║\n"
+            "║  3. Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET in your        ║\n"
+            "║     environment or config/settings.yaml                            ║\n"
+            "╚════════════════════════════════════════════════════════════════════╝"
+        )
 
     # Use YouTube cookies for audio downloads
     if config.youtube_cookies_location:
