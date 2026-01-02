@@ -142,14 +142,15 @@ def __init__(
     - loop: Event loop to use
     """
 
-    import os
-
     if downloader_settings is None:
         downloader_settings = {}
 
     # SAFE MODE: Skip Spotify client initialization entirely
     # Use this to start the app without triggering any Spotify API calls
-    safe_mode = os.environ.get("SPOTIFY_SAFE_MODE", "").lower() in ("1", "true", "yes")
+    # Can be set via settings.yaml (spotify_safe_mode: true) or env var (SPOTIFY_SAFE_MODE=1)
+    from django.conf import settings as django_settings
+
+    safe_mode = getattr(django_settings, "spotify_safe_mode", False)
     if safe_mode:
         logger.warning(
             "[SAFE MODE] Skipping SpotifyClient initialization - "
