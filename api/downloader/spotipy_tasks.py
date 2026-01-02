@@ -205,18 +205,13 @@ class PublicSpotifyClient:
         return cls._instance
 
     def __init__(self) -> None:
-        import os
-
         if self._initialized:
             return
         self._initialized = True
 
         # SAFE MODE: Skip initialization to avoid any Spotify API calls
-        safe_mode = os.environ.get("SPOTIFY_SAFE_MODE", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        # Can be set via settings.yaml (spotify_safe_mode: true) or env var
+        safe_mode = getattr(settings, "spotify_safe_mode", False)
         if safe_mode:
             logger.warning("[SAFE MODE] Skipping PublicSpotifyClient initialization")
             self.sp = None
@@ -277,18 +272,13 @@ class OAuthSpotifyClient:
         return cls._instance
 
     def __init__(self) -> None:
-        import os
-
         if self._initialized:
             return
         self._initialized = True
 
         # SAFE MODE: Skip initialization to avoid any Spotify API calls
-        safe_mode = os.environ.get("SPOTIFY_SAFE_MODE", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        # Can be set via settings.yaml (spotify_safe_mode: true) or env var
+        safe_mode = getattr(settings, "spotify_safe_mode", False)
         if safe_mode:
             logger.warning("[SAFE MODE] Skipping OAuthSpotifyClient initialization")
             self.sp = None

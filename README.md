@@ -232,6 +232,36 @@ If you encounter issues:
    make dev
    ```
 
+### Changing Spotify Credentials
+
+If you need to switch Spotify API credentials (e.g., after hitting rate limits or switching accounts):
+
+1. **Enable safe mode** to prevent API calls during the switch. Add to `config/settings.yaml`:
+   ```yaml
+   spotify_safe_mode: true
+   ```
+
+2. **Restart containers** to pick up safe mode (via your preferred method - Docker Compose, Portainer, Dockge, etc.)
+
+3. **Clear old OAuth tokens and rate limit state** using any database tool (pgAdmin, DBeaver, psql, etc.):
+   ```sql
+   DELETE FROM spotify_oauth_tokens;
+   DELETE FROM spotify_rate_limit_state;
+   ```
+
+4. **Update your credentials** in `.env`:
+   ```
+   SPOTIPY_CLIENT_ID=your_new_client_id
+   SPOTIPY_CLIENT_SECRET=your_new_client_secret
+   ```
+
+5. **Disable safe mode** by removing or setting to false in `config/settings.yaml`:
+   ```yaml
+   spotify_safe_mode: false
+   ```
+
+6. **Restart containers** and re-authenticate via the Spotify OAuth flow in the app.
+
 ## Upgrading from the legacy Django app
 
 If you are upgrading from the older repository layout where the Django app lived at `spotify_library_sync/library_manager` with migrations `0001`–`0020`, this branch consolidates that history into a new `library_manager` app with a fresh `0001_initial` that declares `replaces` for the legacy chain. This prevents migration history conflicts.
