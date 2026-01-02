@@ -53,7 +53,7 @@ def download_missing_albums_for_artist(
                 f"Rate limited for {rate_limit_delay}s", rate_limit_delay
             ),
             countdown=rate_limit_delay,
-            max_retries=5,
+            max_retries=2,
         )
 
     task_history = None
@@ -223,7 +223,7 @@ def download_single_album(self: Any, album_id: int) -> None:
                 f"Rate limited for {rate_limit_delay}s", rate_limit_delay
             ),
             countdown=rate_limit_delay,
-            max_retries=5,
+            max_retries=2,
         )
 
     task_history = None
@@ -325,7 +325,7 @@ def download_single_album(self: Any, album_id: int) -> None:
         raise self.retry(
             exc=rate_limit_error,
             countdown=retry_after,
-            max_retries=5,
+            max_retries=2,
         )
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
@@ -355,7 +355,7 @@ def download_playlist(
                 f"Rate limited for {rate_limit_delay}s", rate_limit_delay
             ),
             countdown=rate_limit_delay,
-            max_retries=5,
+            max_retries=2,
         )
 
     task_history = None
@@ -484,7 +484,7 @@ def download_extra_album_types_for_artist(
                 f"Rate limited for {rate_limit_delay}s", rate_limit_delay
             ),
             countdown=rate_limit_delay,
-            max_retries=5,
+            max_retries=2,
         )
 
     # Check authentication before proceeding with any DB queries
@@ -574,7 +574,7 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
                 f"Rate limited for {rate_limit_delay}s", rate_limit_delay
             ),
             countdown=rate_limit_delay,
-            max_retries=5,
+            max_retries=2,
         )
 
     task_history = None
@@ -716,7 +716,7 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
         raise self.retry(
             exc=rate_limit_error,
             countdown=retry_after,
-            max_retries=5,
+            max_retries=2,
         )
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
@@ -745,7 +745,7 @@ def download_single_track(self: Any, track_id: str) -> None:
                 f"Rate limited for {rate_limit_delay}s", rate_limit_delay
             ),
             countdown=rate_limit_delay,
-            max_retries=5,
+            max_retries=2,
         )
 
     task_history = None
@@ -821,7 +821,7 @@ def download_single_track(self: Any, track_id: str) -> None:
         raise self.retry(
             exc=rate_limit_error,
             countdown=retry_after,
-            max_retries=5,
+            max_retries=2,
         )
     except Exception as e:
         error_msg = f"Error downloading track: {str(e)}"

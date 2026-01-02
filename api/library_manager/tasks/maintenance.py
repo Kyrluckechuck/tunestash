@@ -25,6 +25,18 @@ from .core import (
     name="library_manager.tasks.retry_all_missing_known_songs",
 )
 def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> None:
+    from ..models import SpotifyRateLimitState
+
+    # Check rate limit before doing any work
+    rate_status = SpotifyRateLimitState.get_status()
+    if rate_status["is_rate_limited"]:
+        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+        logger.info(
+            f"[RATE LIMIT] Skipping retry_all_missing_known_songs - "
+            f"rate limited for {seconds_remaining}s"
+        )
+        return
+
     # Check authentication before proceeding with any DB queries
     require_download_capability()
 
@@ -80,9 +92,7 @@ def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> N
             countdown=retry_after,
             max_retries=3,
         )
-
-    # Queue up next batch after ensuring rate limit has passed
-    retry_all_missing_known_songs.apply_async(countdown=30)
+    # Note: Don't self-queue - let Celery Beat handle scheduling to avoid infinite loops
 
 
 @celery_app.task(

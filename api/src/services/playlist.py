@@ -235,6 +235,8 @@ class PlaylistService(BaseService[Playlist]):
             from downloader.spotipy_tasks import SpotifyClient
 
             sp = SpotifyClient().sp
+            if sp is None:
+                return f"Playlist {spotify_id}"
             playlist_data = sp.playlist(spotify_id, fields="name")
             return str(playlist_data.get("name", f"Playlist {spotify_id}"))
 
@@ -508,6 +510,8 @@ class PlaylistService(BaseService[Playlist]):
                 from downloader.spotipy_tasks import SpotifyClient
 
                 sp = SpotifyClient().sp
+                if sp is None:
+                    return None
                 playlist_data = sp.playlist(
                     spotify_id, fields="name,owner(display_name),tracks(total),images"
                 )

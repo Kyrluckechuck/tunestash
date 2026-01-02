@@ -114,7 +114,18 @@ def update_tracked_artists_albums(
     priority: Optional[int] = None,
 ) -> None:
     # Local import to avoid circular import during module initialization
+    from .models import SpotifyRateLimitState
     from .tasks import fetch_all_albums_for_artist
+
+    # Check rate limit before queuing any tasks - prevents cascade failures
+    rate_status = SpotifyRateLimitState.get_status()
+    if rate_status["is_rate_limited"]:
+        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+        logger.warning(
+            f"[RATE LIMIT] Skipping update_tracked_artists_albums - "
+            f"Spotify rate limited for {seconds_remaining}s"
+        )
+        return
 
     # Use background priority for artist sync if not specified
     effective_priority = priority if priority is not None else TaskPriority.ARTIST_SYNC
@@ -150,7 +161,18 @@ def download_missing_tracked_artists(
     priority: Optional[int] = None,
 ) -> None:
     # Local import to avoid circular import during module initialization
+    from .models import SpotifyRateLimitState
     from .tasks import download_missing_albums_for_artist
+
+    # Check rate limit before queuing any tasks - prevents cascade failures
+    rate_status = SpotifyRateLimitState.get_status()
+    if rate_status["is_rate_limited"]:
+        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+        logger.warning(
+            f"[RATE LIMIT] Skipping download_missing_tracked_artists - "
+            f"Spotify rate limited for {seconds_remaining}s"
+        )
+        return
 
     # Use background priority for artist downloads if not specified
     effective_priority = (
