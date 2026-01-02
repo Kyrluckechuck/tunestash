@@ -41,6 +41,62 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 # Load task modules from all registered Django apps.
 app.autodiscover_tasks()
 
+
+# WORKAROUND: Celery 5.6.x + Python 3.13 compatibility issue
+# Bug: https://github.com/celery/celery/issues/10042
+# Fix: https://github.com/celery/celery/pull/10045
+# Error: AttributeError: 'str' object has no attribute '__module__' in django.py fixups
+# Also: RecursionError from DjangoWorkerFixup.__init__ creating WorkController
+# Remove this workaround when upgrading to Celery version with merged PR #10045
+def _patch_celery_django_fixup() -> None:
+    """
+    Patch two bugs in Celery's Django fixup for Python 3.13 compatibility.
+
+    Bug 1: DjangoWorkerFixup.__init__ creates WorkController when no worker
+           is passed, causing infinite recursion (WorkController triggers
+           worker_init signal, which creates another DjangoWorkerFixup).
+    Bug 2: pool_cls can be a string like "prefork" instead of a class,
+           causing AttributeError when accessing pool_cls.__module__.
+    """
+    try:
+        from celery.fixups.django import DjangoWorkerFixup
+
+        def patched_init(self, app, worker=None):  # type: ignore[no-untyped-def]
+            """Initialize without creating WorkController to avoid recursion."""
+            self.app = app
+            # Don't create WorkController here - it causes recursion
+            # Worker will be set by on_worker_init when available
+            self.worker = worker  # Can be None, that's fine
+
+        def patched_close_database(self) -> None:  # type: ignore[no-untyped-def]
+            """Close database connections for prefork workers."""
+            # Guard against uninitialized worker (from PR #10045)
+            if self.worker is None:
+                return
+
+            pool_cls = self.worker.pool_cls
+            if pool_cls is None:
+                return
+
+            # Handle pool_cls being a string (Python 3.13 issue #10042)
+            if isinstance(pool_cls, str):
+                is_prefork = "prefork" in pool_cls
+            else:
+                is_prefork = "prefork" in getattr(pool_cls, "__module__", "")
+
+            if is_prefork:
+                from django import db
+
+                db.close_old_connections()
+
+        DjangoWorkerFixup.__init__ = patched_init
+        DjangoWorkerFixup._close_database = patched_close_database
+    except ImportError:
+        pass  # Celery fixups not available
+
+
+_patch_celery_django_fixup()
+
 # Task routing by service type to enable per-service concurrency control
 app.conf.task_routes = {
     # Download tasks - route to 'downloads' queue (YouTube/spotdl - very rate-limited)

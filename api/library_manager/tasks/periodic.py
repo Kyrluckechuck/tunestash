@@ -18,7 +18,7 @@ from .core import logger
 from .download import download_single_album
 
 # Rate limiting: delay between Spotify API calls (in seconds)
-_API_CALL_DELAY_SECONDS = 0.5
+_API_CALL_DELAY_SECONDS = 1.0
 
 
 def get_albums_with_pending_tasks() -> Set[str]:

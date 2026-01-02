@@ -142,15 +142,28 @@ def __init__(
     - loop: Event loop to use
     """
 
+    import os
+
     if downloader_settings is None:
         downloader_settings = {}
 
-    # Initialize spotify client
-    if SpotifyClient._instance is None:
+    # SAFE MODE: Skip Spotify client initialization entirely
+    # Use this to start the app without triggering any Spotify API calls
+    safe_mode = os.environ.get("SPOTIFY_SAFE_MODE", "").lower() in ("1", "true", "yes")
+    if safe_mode:
+        logger.warning(
+            "[SAFE MODE] Skipping SpotifyClient initialization - "
+            "Spotify API calls will fail but app will start without triggering rate limits"
+        )
+    elif SpotifyClient._instance is None:
+        # Log each step for debugging rate limit triggers
+        logger.info("[SPOTIFY INIT] Step 1: Fetching OAuth credentials...")
         oauth_creds = get_spotify_oauth_credentials()
 
-        # If OAuth token is available, pass it directly; otherwise use client credentials
         if oauth_creds:
+            logger.info(
+                "[SPOTIFY INIT] Step 2: Initializing SpotifyClient with OAuth token..."
+            )
             # For OAuth authentication, pass the token directly
             # This bypasses client credentials and uses the OAuth token
             SpotifyClient.init(
@@ -163,6 +176,9 @@ def __init__(
                 auth_token=oauth_creds["access_token"],
             )
         else:
+            logger.info(
+                "[SPOTIFY INIT] Step 2: Initializing SpotifyClient with client credentials..."
+            )
             # Standard client credentials authentication
             SpotifyClient.init(
                 client_id=client_id,
@@ -173,9 +189,11 @@ def __init__(
                 headless=headless,
             )
 
+        logger.info("[SPOTIFY INIT] Step 3: Injecting rate-limited session...")
         # Inject our rate-limited session into spotdl's SpotifyClient
         # This ensures all spotdl API calls go through our rate limiter
         _inject_rate_limited_session()
+        logger.info("[SPOTIFY INIT] ✓ SpotifyClient initialization complete")
 
     # Initialize downloader
     self.downloader = Downloader(

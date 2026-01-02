@@ -287,6 +287,8 @@ class MetadataUpdateService:
                 from downloader.spotipy_tasks import SpotifyClient
 
                 sp = SpotifyClient().sp
+                if sp is None:
+                    raise RuntimeError("Spotify client not initialized")
                 spotify_data = sp.artist(artist.gid)
                 spotify_name = spotify_data.get("name", "")
             except Exception as e:
@@ -336,6 +338,8 @@ class MetadataUpdateService:
                 from downloader.spotipy_tasks import SpotifyClient
 
                 sp = SpotifyClient().sp
+                if sp is None:
+                    raise RuntimeError("Spotify client not initialized")
                 spotify_data = sp.album(album.spotify_gid)
                 spotify_name = spotify_data.get("name", "")
             except Exception as e:
@@ -385,6 +389,8 @@ class MetadataUpdateService:
                 from downloader.spotipy_tasks import SpotifyClient
 
                 sp = SpotifyClient().sp
+                if sp is None:
+                    raise RuntimeError("Spotify client not initialized")
                 spotify_data = sp.track(song.gid)
                 spotify_name = spotify_data.get("name", "")
             except Exception as e:

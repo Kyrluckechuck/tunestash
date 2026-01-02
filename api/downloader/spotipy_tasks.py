@@ -205,9 +205,22 @@ class PublicSpotifyClient:
         return cls._instance
 
     def __init__(self) -> None:
+        import os
+
         if self._initialized:
             return
         self._initialized = True
+
+        # SAFE MODE: Skip initialization to avoid any Spotify API calls
+        safe_mode = os.environ.get("SPOTIFY_SAFE_MODE", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if safe_mode:
+            logger.warning("[SAFE MODE] Skipping PublicSpotifyClient initialization")
+            self.sp = None
+            return
 
         client_id = getattr(settings, "SPOTIPY_CLIENT_ID", "") or ""
         client_secret = getattr(settings, "SPOTIPY_CLIENT_SECRET", "") or ""
@@ -221,6 +234,7 @@ class PublicSpotifyClient:
             self.sp = None
             return
 
+        logger.info("[SPOTIFY INIT] Initializing PublicSpotifyClient...")
         client_credentials_manager = SpotifyClientCredentials(
             client_id=client_id,
             client_secret=client_secret,
@@ -231,6 +245,7 @@ class PublicSpotifyClient:
             client_credentials_manager=client_credentials_manager,
             requests_session=create_limited_session(),
         )
+        logger.info("[SPOTIFY INIT] ✓ PublicSpotifyClient ready")
 
     @classmethod
     def reset(cls) -> None:
@@ -262,13 +277,29 @@ class OAuthSpotifyClient:
         return cls._instance
 
     def __init__(self) -> None:
+        import os
+
         if self._initialized:
             return
         self._initialized = True
 
+        # SAFE MODE: Skip initialization to avoid any Spotify API calls
+        safe_mode = os.environ.get("SPOTIFY_SAFE_MODE", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if safe_mode:
+            logger.warning("[SAFE MODE] Skipping OAuthSpotifyClient initialization")
+            self.sp = None
+            self.is_oauth = False
+            return
+
+        logger.info("[SPOTIFY INIT] Initializing OAuthSpotifyClient...")
         oauth_creds = get_spotify_oauth_credentials()
 
         if oauth_creds:
+            logger.info("[SPOTIFY INIT] Using OAuth token for OAuthSpotifyClient")
             # Use custom session with rate-limit-aware retry
             self.sp = spotipy.Spotify(
                 auth=oauth_creds["access_token"],
@@ -276,6 +307,9 @@ class OAuthSpotifyClient:
             )
             self.is_oauth = True
         else:
+            logger.info(
+                "[SPOTIFY INIT] No OAuth token, falling back to client credentials"
+            )
             # Fall back to client credentials (public access only)
             client_credentials_manager = SpotifyClientCredentials(
                 client_id=getattr(settings, "SPOTIPY_CLIENT_ID", ""),
@@ -287,6 +321,7 @@ class OAuthSpotifyClient:
                 requests_session=create_limited_session(),
             )
             self.is_oauth = False
+        logger.info("[SPOTIFY INIT] ✓ OAuthSpotifyClient ready")
 
     @classmethod
     def reset(cls) -> None:
