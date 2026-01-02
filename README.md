@@ -249,6 +249,11 @@ If you need to switch Spotify API credentials (e.g., after hitting rate limits o
    DELETE FROM spotify_rate_limit_state;
    ```
 
+   *To use psql from within the postgres container, open a terminal/shell and run:*
+   ```bash
+   psql -U slm_user -d tunestash
+   ```
+
 4. **Update your credentials** in `.env`:
    ```
    SPOTIPY_CLIENT_ID=your_new_client_id
