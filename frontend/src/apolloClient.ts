@@ -47,21 +47,16 @@ export const apolloClient = new ApolloClient({
               'sortBy',
               'sortDirection',
             ],
-            merge(existing, incoming) {
-              // Handle pagination merging
-              // Always merge edges if we have existing data (indicates pagination)
+            merge(existing, incoming, { args }) {
               if (!existing) return incoming;
+              // Only merge for pagination requests (when 'after' cursor is present)
+              // Fresh queries (filter/sort changes) should replace the cache
+              if (!args?.after) return incoming;
 
-              // Check if this is a pagination request by seeing if edges exist
-              if (existing.edges && incoming.edges) {
-                return {
-                  ...incoming,
-                  edges: [...existing.edges, ...incoming.edges],
-                };
-              }
-
-              // Not a pagination request, replace the cache
-              return incoming;
+              return {
+                ...incoming,
+                edges: [...existing.edges, ...incoming.edges],
+              };
             },
           },
           albums: {
@@ -73,19 +68,16 @@ export const apolloClient = new ApolloClient({
               'sortBy',
               'sortDirection',
             ],
-            merge(existing, incoming) {
+            merge(existing, incoming, { args }) {
               if (!existing) return incoming;
+              // Only merge for pagination requests (when 'after' cursor is present)
+              // Fresh queries (filter/sort changes) should replace the cache
+              if (!args?.after) return incoming;
 
-              // Merge edges if both have them (pagination request)
-              if (existing.edges && incoming.edges) {
-                return {
-                  ...incoming,
-                  edges: [...existing.edges, ...incoming.edges],
-                };
-              }
-
-              // Not a pagination request, replace the cache
-              return incoming;
+              return {
+                ...incoming,
+                edges: [...existing.edges, ...incoming.edges],
+              };
             },
           },
           songs: {
@@ -97,19 +89,16 @@ export const apolloClient = new ApolloClient({
               'sortBy',
               'sortDirection',
             ],
-            merge(existing, incoming) {
+            merge(existing, incoming, { args }) {
               if (!existing) return incoming;
+              // Only merge for pagination requests (when 'after' cursor is present)
+              // Fresh queries (filter/sort changes) should replace the cache
+              if (!args?.after) return incoming;
 
-              // Merge edges if both have them (pagination request)
-              if (existing.edges && incoming.edges) {
-                return {
-                  ...incoming,
-                  edges: [...existing.edges, ...incoming.edges],
-                };
-              }
-
-              // Not a pagination request, replace the cache
-              return incoming;
+              return {
+                ...incoming,
+                edges: [...existing.edges, ...incoming.edges],
+              };
             },
           },
           playlists: {
