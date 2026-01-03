@@ -74,6 +74,7 @@ from .metadata import (
 # Re-export periodic tasks
 from .periodic import (
     queue_missing_albums_for_tracked_artists,
+    sync_tracked_artists_metadata,
     sync_tracked_playlists,
 )
 
@@ -125,6 +126,7 @@ __all__ = [
     "validate_undownloaded_songs",
     # Periodic tasks
     "queue_missing_albums_for_tracked_artists",
+    "sync_tracked_artists_metadata",
     "sync_tracked_playlists",
     # Metadata tasks
     "apply_metadata_update",

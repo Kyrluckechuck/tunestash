@@ -6,10 +6,12 @@ from typing import Any, Optional, Set
 from celery_app import app as celery_app
 
 from .. import helpers
+from ..helpers import generate_task_id, is_task_pending_or_running
 from ..models import (
     ALBUM_GROUPS_TO_IGNORE,
     ALBUM_TYPES_TO_DOWNLOAD,
     Album,
+    Artist,
     PlaylistStatus,
     TaskHistory,
     TrackedPlaylist,
@@ -236,3 +238,93 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
         logger.error(
             f"Error in queue_missing_albums_for_tracked_artists: {e}", exc_info=True
         )
+
+
+# Default batch size for artist metadata sync
+_ARTIST_SYNC_BATCH_SIZE = 50
+
+
+@celery_app.task(
+    bind=True, name="library_manager.tasks.sync_tracked_artists_metadata"
+)  # Scheduled via Celery Beat - Every 2 hours
+def sync_tracked_artists_metadata(
+    self: Any, batch_size: int = _ARTIST_SYNC_BATCH_SIZE
+) -> None:
+    """
+    Periodically sync metadata for tracked artists to discover new releases.
+
+    Processes artists in batches, prioritizing those with the oldest last_synced_at
+    timestamps. This spreads the API load across time instead of syncing all artists
+    at once.
+
+    With default batch_size=50 and running every 2 hours:
+    - 1000 artists = ~40 hours for full rotation
+    - 2000 artists = ~80 hours for full rotation
+
+    Each artist sync involves 1-2 Spotify API calls, so 50 artists = ~100 API calls,
+    well within rate limits when spread across 2 hours.
+    """
+    from ..models import SpotifyRateLimitState
+    from .artist import fetch_all_albums_for_artist
+
+    # Check if we're rate-limited before doing any work
+    rate_status = SpotifyRateLimitState.get_status()
+    if rate_status["is_rate_limited"]:
+        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+        logger.info(
+            f"Skipping artist metadata sync - Spotify API rate limited for {seconds_remaining}s"
+        )
+        return
+
+    try:
+        # Get tracked artists ordered by last_synced_at (oldest/never synced first)
+        # NULL values sort first with nulls_first=True
+        artists_to_sync = Artist.objects.filter(tracked=True).order_by(
+            "last_synced_at", "id"
+        )[:batch_size]
+
+        if not artists_to_sync.exists():
+            logger.info("No tracked artists found to sync")
+            return
+
+        total_count = Artist.objects.filter(tracked=True).count()
+        logger.info(
+            f"Starting periodic artist metadata sync: {len(artists_to_sync)} of {total_count} tracked artists"
+        )
+
+        queued_count = 0
+        skipped_count = 0
+
+        for artist in artists_to_sync:
+            # Generate deterministic task ID for deduplication
+            task_id = generate_task_id(
+                "library_manager.tasks.fetch_all_albums_for_artist", artist.id
+            )
+
+            # Skip if task is already queued or running
+            is_pending, reason = is_task_pending_or_running(task_id)
+            if is_pending:
+                logger.debug(
+                    f"[DEDUP] Skipping artist {artist.name}: task already queued ({reason})"
+                )
+                skipped_count += 1
+                continue
+
+            try:
+                fetch_all_albums_for_artist.apply_async(
+                    args=[artist.id], task_id=task_id
+                )
+                queued_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to queue sync for artist {artist.name}: {e}")
+
+        if skipped_count:
+            logger.info(
+                f"Queued {queued_count} artists for metadata sync "
+                f"(skipped {skipped_count} with pending tasks)"
+            )
+        else:
+            logger.info(f"Queued {queued_count} artists for metadata sync")
+
+    except Exception as e:
+        logger.error(f"Error in sync_tracked_artists_metadata: {e}", exc_info=True)

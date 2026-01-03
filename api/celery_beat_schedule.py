@@ -27,6 +27,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute=0),  # Every hour
         "options": {"priority": TaskPriority.ARTIST_DOWNLOAD},
     },
+    "sync-tracked-artists-metadata": {
+        "task": "library_manager.tasks.sync_tracked_artists_metadata",
+        "schedule": crontab(minute=30, hour="*/2"),  # Every 2 hours at :30
+        "options": {"priority": TaskPriority.ARTIST_SYNC},
+    },
     "cleanup-celery-history": {
         "task": "library_manager.tasks.cleanup_celery_history",
         "schedule": crontab(minute=0, hour=6),  # Daily at 6 AM
