@@ -241,7 +241,9 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
 
 
 # Default batch size for artist metadata sync
-_ARTIST_SYNC_BATCH_SIZE = 50
+# Conservative to leave headroom for user activity and other tasks
+# 25 artists × ~2 API calls = ~50 calls, using ~50% of sustained rate limit budget
+_ARTIST_SYNC_BATCH_SIZE = 25
 
 
 @celery_app.task(
@@ -257,12 +259,13 @@ def sync_tracked_artists_metadata(
     timestamps. This spreads the API load across time instead of syncing all artists
     at once.
 
-    With default batch_size=50 and running every 2 hours:
-    - 1000 artists = ~40 hours for full rotation
-    - 2000 artists = ~80 hours for full rotation
+    With default batch_size=25 and running every 2 hours:
+    - 1000 artists = ~3.5 days for full rotation
+    - 2000 artists = ~7 days for full rotation
 
-    Each artist sync involves 1-2 Spotify API calls, so 50 artists = ~100 API calls,
-    well within rate limits when spread across 2 hours.
+    Each artist sync involves 1-2 Spotify API calls, so 25 artists = ~50 API calls,
+    using about 50% of the sustained rate limit budget (100 calls/5 min) and leaving
+    headroom for user activity and other background tasks.
     """
     from ..models import SpotifyRateLimitState
     from .artist import fetch_all_albums_for_artist
