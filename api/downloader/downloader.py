@@ -35,6 +35,74 @@ class Downloader:
         self.spotipy_client = spotipy_client
         self.public_client = public_client if public_client else spotipy_client
 
+    def get_new_releases(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[Dict[str, Any]] | None:
+        """Get new album releases from Spotify's browse endpoint.
+
+        This endpoint returns globally featured/promoted new releases, which is
+        useful for quickly detecting new music from popular tracked artists without
+        having to check each artist individually.
+
+        Args:
+            limit: Number of releases to fetch (max 50)
+            offset: Offset for pagination
+
+        Returns:
+            List of album dicts with 'id', 'name', and 'artists' keys,
+            or None if the API call fails.
+        """
+        try:
+            result = self.public_client.new_releases(
+                limit=min(limit, 50), offset=offset
+            )
+            if result and result.get("albums", {}).get("items"):
+                return [
+                    {
+                        "id": album.get("id"),
+                        "name": album.get("name"),
+                        "artists": [
+                            {"id": a.get("id"), "name": a.get("name")}
+                            for a in album.get("artists", [])
+                        ],
+                    }
+                    for album in result["albums"]["items"]
+                    if album.get("id")
+                ]
+            return []
+        except Exception:
+            return None
+
+    def get_artist_recent_album_ids(
+        self, artist_gid: str, limit: int = 20
+    ) -> list[str] | None:
+        """Get recent album IDs for an artist (lightweight API call for change detection).
+
+        This is an optimization for change detection: instead of fetching all albums
+        with pagination, we fetch the first N albums in a single API call. The caller
+        can then compare these against known albums in the database to detect new
+        releases.
+
+        Fetching 20 albums costs the same as fetching 1 (1 API call), but provides
+        more robust change detection since it doesn't depend on specific ordering.
+
+        Args:
+            artist_gid: The Spotify artist ID (22-character base62 string)
+            limit: Number of albums to fetch (max 50, default 20)
+
+        Returns:
+            List of Spotify album IDs, or None if the API call fails.
+            Empty list if artist has no albums.
+        """
+        try:
+            artist_uri = f"spotify:artist:{artist_gid}"
+            result = self.public_client.artist_albums(artist_uri, limit=min(limit, 50))
+            if result and result.get("items"):
+                return [album.get("id") for album in result["items"] if album.get("id")]
+            return []
+        except Exception:
+            return None
+
     def get_artist_albums(self, artist_gid: str) -> List[Album]:
         """Get all albums (including EPs and Singles) for this artist.
 
