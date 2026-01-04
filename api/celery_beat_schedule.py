@@ -29,7 +29,12 @@ CELERY_BEAT_SCHEDULE = {
     },
     "sync-tracked-artists-metadata": {
         "task": "library_manager.tasks.sync_tracked_artists_metadata",
-        "schedule": crontab(minute=30, hour="*/2"),  # Every 2 hours at :30
+        "schedule": crontab(minute=30),  # Every hour at :30
+        "options": {"priority": TaskPriority.ARTIST_SYNC},
+    },
+    "scan-new-releases-for-tracked-artists": {
+        "task": "library_manager.tasks.scan_new_releases_for_tracked_artists",
+        "schedule": crontab(minute=0),  # Every hour at :00
         "options": {"priority": TaskPriority.ARTIST_SYNC},
     },
     "cleanup-celery-history": {
