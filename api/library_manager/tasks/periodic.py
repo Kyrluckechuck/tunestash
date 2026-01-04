@@ -493,21 +493,30 @@ def scan_new_releases_for_tracked_artists(
                 if not album_id:
                     continue
 
-                # Check if any artist on this release is tracked
-                for artist_info in release.get("artists", []):
-                    artist_gid = artist_info.get("id")
-                    if artist_gid and artist_gid in tracked_artist_gids:
-                        # Check if we already have this album
-                        album_exists = Album.objects.filter(
-                            spotify_gid=album_id
-                        ).exists()
+                # Get tracked artist GIDs from this release
+                release_artist_gids = [
+                    a.get("id")
+                    for a in release.get("artists", [])
+                    if a.get("id") in tracked_artist_gids
+                ]
+                if not release_artist_gids:
+                    continue
 
-                        if not album_exists:
-                            logger.info(
-                                f"New release found: '{release.get('name')}' "
-                                f"by {artist_info.get('name')} (tracked artist)"
-                            )
-                            artists_to_sync.add(artist_gid)
+                # Check if we already have this album
+                if Album.objects.filter(spotify_gid=album_id).exists():
+                    continue
+
+                # New release from tracked artist(s)!
+                artist_names = [
+                    a.get("name")
+                    for a in release.get("artists", [])
+                    if a.get("id") in release_artist_gids
+                ]
+                logger.info(
+                    f"New release found: '{release.get('name')}' "
+                    f"by {', '.join(artist_names)} (tracked)"
+                )
+                artists_to_sync.update(release_artist_gids)
 
         # Queue syncs for artists with new releases
         queued_count = 0
