@@ -102,12 +102,10 @@ class RateLimitedHTTPAdapter(HTTPAdapter):
             delay = SpotifyRateLimitState.get_delay_seconds()
             if delay > 0:
                 # Cap the wait at 60 seconds - if longer, let task reschedule
+                # The detailed reason is already logged by get_delay_seconds()
                 if delay > 60:
-                    logger.warning(
-                        f"Rate limit delay {delay:.1f}s exceeds 60s, failing fast"
-                    )
                     raise SpotifyRateLimitError(
-                        f"Global rate limit requires {delay:.1f}s wait",
+                        f"Internal throttle requires {delay:.1f}s wait",
                         retry_after_seconds=int(delay),
                     )
                 logger.debug(f"Rate limit: waiting {delay:.2f}s before API call")
