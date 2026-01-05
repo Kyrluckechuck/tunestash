@@ -102,7 +102,8 @@ def _extract_entity_id(
 
     # Fall back to positional args
     # args might be a string if JSON parsing failed, so check type first
-    if isinstance(args, list) and args:
+    # Note: Celery stores args as tuple repr "(123,)", so check for both list and tuple
+    if isinstance(args, (list, tuple)) and args:
         return args[0]
 
     return None
