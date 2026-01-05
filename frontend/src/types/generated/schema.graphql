@@ -333,6 +333,8 @@ type SpotifyRateLimitStatus {
   isRateLimited: Boolean!
   rateLimitedUntil: DateTime
   secondsUntilClear: Int
+  isThrottling: Boolean!
+  currentDelaySeconds: Float!
   windowCallCount: Int!
   windowMaxCalls: Int!
   windowUsagePercent: Float!
