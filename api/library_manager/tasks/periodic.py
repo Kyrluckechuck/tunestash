@@ -261,6 +261,11 @@ _ARTIST_CHECK_BATCH_SIZE = 50
 # Fetching 20 costs the same as fetching 1 (1 API call), but is more robust
 _ALBUMS_TO_CHECK = 20
 
+# Maximum number of pending/running artist sync tasks before we stop queueing more
+# This provides backpressure during initial population or high-load periods,
+# preventing unbounded queue growth when we can't process tasks fast enough
+_MAX_PENDING_ARTIST_SYNCS = 100
+
 
 @celery_app.task(
     bind=True, name="library_manager.tasks.sync_tracked_artists_metadata"
@@ -299,6 +304,20 @@ def sync_tracked_artists_metadata(
         seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
         logger.info(
             f"Skipping artist metadata sync - Spotify API rate limited for {seconds_remaining}s"
+        )
+        return
+
+    # Backpressure: check if there are too many pending artist syncs already
+    # This prevents unbounded queue growth during initial population
+    pending_syncs = TaskHistory.objects.filter(
+        task_name="fetch_all_albums_for_artist",
+        status__in=["PENDING", "RUNNING"],
+    ).count()
+
+    if pending_syncs >= _MAX_PENDING_ARTIST_SYNCS:
+        logger.info(
+            f"Skipping artist metadata sync - {pending_syncs} syncs already pending "
+            f"(cap: {_MAX_PENDING_ARTIST_SYNCS})"
         )
         return
 
