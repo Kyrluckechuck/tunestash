@@ -99,15 +99,30 @@ def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> N
     bind=True, name="library_manager.tasks.cleanup_stuck_tasks_periodic"
 )  # Scheduled via Celery Beat - Every 5 minutes
 def cleanup_stuck_tasks_periodic(self: Any) -> None:
-    """Periodically clean up stuck tasks and stale artist references"""
+    """Periodically clean up stuck tasks and stale TaskResult records."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from django_celery_results.models import TaskResult
+
     from library_manager.models import TaskHistory
 
+    # Clean up stuck TaskHistory records
     stuck_count = TaskHistory.cleanup_stuck_tasks()
     if stuck_count > 0:
-        logger.info(f"Cleaned up {stuck_count} stuck task(s)")
+        logger.info(f"Cleaned up {stuck_count} stuck TaskHistory record(s)")
 
-    # Note: Celery task queue cleanup is handled by the task revocation above
-    # Additional queue-level cleanup can be added here if needed
+    # Clean up stale TaskResult records stuck in STARTED status
+    # These can accumulate when tasks crash without proper cleanup
+    stale_threshold = timezone.now() - timedelta(minutes=30)
+    stale_results = TaskResult.objects.filter(
+        status="STARTED",
+        date_created__lt=stale_threshold,
+    ).update(status="FAILURE")
+
+    if stale_results > 0:
+        logger.info(f"Cleaned up {stale_results} stale TaskResult record(s)")
 
 
 @celery_app.task(
