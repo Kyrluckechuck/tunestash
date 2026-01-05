@@ -133,7 +133,7 @@ function Home() {
             {loading ? (
               <span className='text-sm text-gray-500'>Loading...</span>
             ) : data?.systemHealth.spotifyRateLimit.isRateLimited ? (
-              // State 3: Actually blocked by Spotify (429 received)
+              // State 4: Actually blocked by Spotify (429 received)
               <>
                 <svg
                   className='h-4 w-4 text-red-500 flex-shrink-0'
@@ -152,7 +152,7 @@ function Home() {
                 >
                   Spotify API:{' '}
                   <span className='text-red-700 font-medium'>
-                    Blocked
+                    Blocked by Spotify
                     {data.systemHealth.spotifyRateLimit.rateLimitedUntil && (
                       <>
                         {' '}
@@ -169,8 +169,42 @@ function Home() {
                   </span>
                 </span>
               </>
+            ) : data?.systemHealth.spotifyRateLimit.isThrottling &&
+              data.systemHealth.spotifyRateLimit.currentDelaySeconds >= 60 ? (
+              // State 3: Hit internal rate limit (large delay, effectively paused)
+              <>
+                <svg
+                  className='h-4 w-4 text-orange-500 flex-shrink-0'
+                  fill='currentColor'
+                  viewBox='0 0 20 20'
+                >
+                  <path
+                    fillRule='evenodd'
+                    d='M10 18a8 8 0 100-16 8 8 0 000 16zM9 7a1 1 0 112 0v4a1 1 0 11-2 0V7zm1 8a1 1 0 100-2 1 1 0 000 2z'
+                    clipRule='evenodd'
+                  />
+                </svg>
+                <span
+                  className='text-sm text-gray-700'
+                  title={`Internal rate limit reached. Tasks are paused to prevent Spotify from blocking the account. Burst: ${data?.systemHealth.spotifyRateLimit.burstCalls}/${data?.systemHealth.spotifyRateLimit.burstMax} (30s) | Sustained: ${data?.systemHealth.spotifyRateLimit.sustainedCalls}/${data?.systemHealth.spotifyRateLimit.sustainedMax} (5min) | Hourly: ${data?.systemHealth.spotifyRateLimit.hourlyCalls}/${data?.systemHealth.spotifyRateLimit.hourlyMax}`}
+                >
+                  Spotify API:{' '}
+                  <span className='text-orange-700 font-medium'>
+                    Limit Reached
+                  </span>
+                  <span className='text-gray-500 ml-1 text-xs'>
+                    (~
+                    {Math.round(
+                      data.systemHealth.spotifyRateLimit.currentDelaySeconds /
+                        60
+                    )}
+                    m wait, {data?.systemHealth.spotifyRateLimit.hourlyCalls}/
+                    {data?.systemHealth.spotifyRateLimit.hourlyMax} this hour)
+                  </span>
+                </span>
+              </>
             ) : data?.systemHealth.spotifyRateLimit.isThrottling ? (
-              // State 2: Proactively throttling to avoid hitting limits
+              // State 2: Proactively throttling (small delays)
               <>
                 <svg
                   className='h-4 w-4 text-yellow-500 flex-shrink-0'
@@ -185,7 +219,7 @@ function Home() {
                 </svg>
                 <span
                   className='text-sm text-gray-700'
-                  title={`Tasks are being delayed to stay within rate limits. Burst: ${data?.systemHealth.spotifyRateLimit.burstCalls}/${data?.systemHealth.spotifyRateLimit.burstMax} (30s) | Sustained: ${data?.systemHealth.spotifyRateLimit.sustainedCalls}/${data?.systemHealth.spotifyRateLimit.sustainedMax} (5min) | Hourly: ${data?.systemHealth.spotifyRateLimit.hourlyCalls}/${data?.systemHealth.spotifyRateLimit.hourlyMax}`}
+                  title={`Tasks are being briefly delayed to stay within rate limits. Burst: ${data?.systemHealth.spotifyRateLimit.burstCalls}/${data?.systemHealth.spotifyRateLimit.burstMax} (30s) | Sustained: ${data?.systemHealth.spotifyRateLimit.sustainedCalls}/${data?.systemHealth.spotifyRateLimit.sustainedMax} (5min) | Hourly: ${data?.systemHealth.spotifyRateLimit.hourlyCalls}/${data?.systemHealth.spotifyRateLimit.hourlyMax}`}
                 >
                   Spotify API:{' '}
                   <span className='text-yellow-700 font-medium'>
