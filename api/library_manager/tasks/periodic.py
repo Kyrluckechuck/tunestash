@@ -307,21 +307,22 @@ def sync_tracked_artists_metadata(
         )
         return
 
-    # Backpressure: check if there are too many pending artist syncs already
-    # This prevents unbounded queue growth during initial population
-    pending_syncs = TaskHistory.objects.filter(
-        task_name="fetch_all_albums_for_artist",
-        status__in=["PENDING", "RUNNING"],
-    ).count()
-
-    if pending_syncs >= _MAX_PENDING_ARTIST_SYNCS:
-        logger.info(
-            f"Skipping artist metadata sync - {pending_syncs} syncs already pending "
-            f"(cap: {_MAX_PENDING_ARTIST_SYNCS})"
-        )
-        return
-
     try:
+        # Backpressure: check if there are too many pending artist syncs already
+        # This prevents unbounded queue growth during initial population
+        # task_id format is "{task_name}-{hash}", so we use startswith to match
+        pending_syncs = TaskHistory.objects.filter(
+            task_id__startswith="library_manager.tasks.fetch_all_albums_for_artist",
+            status__in=["PENDING", "RUNNING"],
+        ).count()
+
+        if pending_syncs >= _MAX_PENDING_ARTIST_SYNCS:
+            logger.info(
+                f"Skipping artist metadata sync - {pending_syncs} syncs already pending "
+                f"(cap: {_MAX_PENDING_ARTIST_SYNCS})"
+            )
+            return
+
         # Get tracked artists ordered by last_synced_at (oldest/never synced first)
         artists_to_check = Artist.objects.filter(tracked=True).order_by(
             "last_synced_at", "id"
