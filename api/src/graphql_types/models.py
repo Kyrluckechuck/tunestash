@@ -338,9 +338,17 @@ class SpotifyRateLimitStatus:
     is_rate_limited: bool
     rate_limited_until: Optional[DateTime] = None
     seconds_until_clear: Optional[int] = None
+    # Legacy fields for backwards compatibility
     window_call_count: int
     window_max_calls: int
     window_usage_percent: float
+    # Detailed tier information
+    burst_calls: int = 0
+    burst_max: int = 25
+    sustained_calls: int = 0
+    sustained_max: int = 100
+    hourly_calls: int = 0
+    hourly_max: int = 600
 
 
 @strawberry.type

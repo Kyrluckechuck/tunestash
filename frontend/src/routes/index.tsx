@@ -146,9 +146,9 @@ function Home() {
                   />
                 </svg>
                 <span className='text-sm text-gray-700'>
-                  Rate Limit:{' '}
+                  Spotify API:{' '}
                   <span className='text-red-700 font-medium'>
-                    Limited
+                    Rate Limited
                     {data.systemHealth.spotifyRateLimit.rateLimitedUntil && (
                       <span
                         title={`Expires: ${new Date(data.systemHealth.spotifyRateLimit.rateLimitedUntil).toLocaleString()}`}
@@ -180,18 +180,16 @@ function Home() {
                     clipRule='evenodd'
                   />
                 </svg>
-                <span className='text-sm text-gray-700'>
-                  Rate Limit:{' '}
+                <span
+                  className='text-sm text-gray-700'
+                  title={`Burst: ${data?.systemHealth.spotifyRateLimit.burstCalls}/${data?.systemHealth.spotifyRateLimit.burstMax} (30s) | Sustained: ${data?.systemHealth.spotifyRateLimit.sustainedCalls}/${data?.systemHealth.spotifyRateLimit.sustainedMax} (5min) | Hourly: ${data?.systemHealth.spotifyRateLimit.hourlyCalls}/${data?.systemHealth.spotifyRateLimit.hourlyMax}`}
+                >
+                  Spotify API:{' '}
                   <span className='text-green-700 font-medium'>OK</span>
-                  {data?.systemHealth.spotifyRateLimit.windowUsagePercent !=
-                    null &&
-                    data.systemHealth.spotifyRateLimit.windowUsagePercent >
-                      50 && (
-                      <span className='text-yellow-600 ml-1'>
-                        ({data.systemHealth.spotifyRateLimit.windowUsagePercent}
-                        %)
-                      </span>
-                    )}
+                  <span className='text-gray-500 ml-1 text-xs'>
+                    ({data?.systemHealth.spotifyRateLimit.hourlyCalls}/
+                    {data?.systemHealth.spotifyRateLimit.hourlyMax} this hour)
+                  </span>
                 </span>
               </>
             )}

@@ -336,6 +336,12 @@ type SpotifyRateLimitStatus {
   windowCallCount: Int!
   windowMaxCalls: Int!
   windowUsagePercent: Float!
+  burstCalls: Int!
+  burstMax: Int!
+  sustainedCalls: Int!
+  sustainedMax: Int!
+  hourlyCalls: Int!
+  hourlyMax: Int!
 }
 
 type SpotifySearchAlbum {

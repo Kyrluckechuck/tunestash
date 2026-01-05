@@ -381,6 +381,12 @@ class Query:
                 window_call_count=rate_limit_data["window_call_count"],
                 window_max_calls=rate_limit_data["window_max_calls"],
                 window_usage_percent=rate_limit_data["window_usage_percent"],
+                burst_calls=rate_limit_data.get("burst_calls", 0),
+                burst_max=rate_limit_data.get("burst_max", 25),
+                sustained_calls=rate_limit_data.get("sustained_calls", 0),
+                sustained_max=rate_limit_data.get("sustained_max", 100),
+                hourly_calls=rate_limit_data.get("hourly_calls", 0),
+                hourly_max=rate_limit_data.get("hourly_max", 600),
             ),
             storage=StorageStatus(
                 path=storage_data.path,
