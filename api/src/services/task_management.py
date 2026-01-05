@@ -317,7 +317,7 @@ class TaskManagementService:
         Parses task arguments to extract entity IDs, then looks up
         the entity names from the database.
         """
-        from library_manager.models import Album, Artist, TrackedPlaylist
+        from library_manager.models import Album, Artist, Song, TrackedPlaylist
 
         def fetch_tasks_and_resolve() -> List[PendingTaskInfo]:
             tasks = TaskResult.objects.filter(
@@ -336,6 +336,7 @@ class TaskManagementService:
             album_ids: set = set()
             playlist_ids: set = set()
             playlist_urls: set = set()
+            track_gids: set = set()  # Spotify track GIDs
 
             task_list = list(tasks)
 
@@ -358,6 +359,9 @@ class TaskManagementService:
                             album_ids.add(int(entity_id))
                         except (ValueError, TypeError):
                             pass
+                    elif "track" in task_name.lower():
+                        # Track IDs are Spotify GIDs (strings), not database IDs
+                        track_gids.add(entity_id_str)
                     elif "playlist" in task_name.lower():
                         if entity_id_str.startswith(
                             "spotify:"
@@ -371,7 +375,23 @@ class TaskManagementService:
 
             # Batch fetch entities
             artists = {a.id: a.name for a in Artist.objects.filter(id__in=artist_ids)}
-            albums = {a.id: a.name for a in Album.objects.filter(id__in=album_ids)}
+            # For albums, include artist name for better context
+            albums = {
+                a.id: f"{a.artist.name} - {a.name}" if a.artist else a.name
+                for a in Album.objects.select_related("artist").filter(id__in=album_ids)
+            }
+            # For tracks/songs, include artist name for better context
+            # Songs are looked up by Spotify GID (not database ID)
+            tracks = {
+                s.gid: (
+                    f"{s.primary_artist.name} - {s.name}"
+                    if s.primary_artist
+                    else s.name
+                )
+                for s in Song.objects.select_related("primary_artist").filter(
+                    gid__in=track_gids
+                )
+            }
             playlists_by_id = {
                 p.id: p.name
                 for p in TrackedPlaylist.objects.filter(id__in=playlist_ids)
@@ -404,6 +424,9 @@ class TaskManagementService:
                             entity_name = albums.get(int(entity_id))
                         except (ValueError, TypeError):
                             pass
+                    elif entity_type == "track":
+                        # Track IDs are Spotify GIDs (strings)
+                        entity_name = tracks.get(entity_id_str)
                     elif entity_type == "playlist":
                         if entity_id_str.startswith(
                             "spotify:"
