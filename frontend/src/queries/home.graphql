@@ -17,6 +17,12 @@ query GetSystemStatus {
       windowCallCount
       windowMaxCalls
       windowUsagePercent
+      burstCalls
+      burstMax
+      sustainedCalls
+      sustainedMax
+      hourlyCalls
+      hourlyMax
     }
     storage {
       path
