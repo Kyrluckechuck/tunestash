@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, cast
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
     from django_stubs_ext.db.models import TypedModelMeta
 else:
     TypedModelMeta = type
+
+logger = logging.getLogger(__name__)
 
 # Album selection configuration
 #
@@ -1003,33 +1006,56 @@ class SpotifyRateLimitState(models.Model):
 
             # If we're rate limited by Spotify, return time until we can resume
             if instance.rate_limited_until and instance.rate_limited_until > now:
-                return float((instance.rate_limited_until - now).total_seconds())
+                delay = float((instance.rate_limited_until - now).total_seconds())
+                logger.warning(
+                    f"[SPOTIFY API] Blocked by Spotify 429 - must wait {delay:.0f}s"
+                )
+                return delay
 
-            delays: list[float] = []
+            # Track delays with their source for logging
+            delay_sources: list[tuple[float, str]] = []
 
             # Check BURST tier
             burst_elapsed = (now - instance.burst_window_start).total_seconds()
             if burst_elapsed < cls.BURST_WINDOW_SECONDS:
                 if instance.burst_call_count >= cls.BURST_MAX_CALLS:
-                    delays.append(cls.BURST_WINDOW_SECONDS - burst_elapsed)
+                    burst_delay = cls.BURST_WINDOW_SECONDS - burst_elapsed
+                    delay_sources.append(
+                        (
+                            burst_delay,
+                            f"burst {instance.burst_call_count}/{cls.BURST_MAX_CALLS}",
+                        )
+                    )
 
             # Check SUSTAINED tier
             sustained_elapsed = (now - instance.sustained_window_start).total_seconds()
             if sustained_elapsed < cls.SUSTAINED_WINDOW_SECONDS:
                 if instance.sustained_call_count >= cls.SUSTAINED_MAX_CALLS:
-                    delays.append(cls.SUSTAINED_WINDOW_SECONDS - sustained_elapsed)
+                    sustained_delay = cls.SUSTAINED_WINDOW_SECONDS - sustained_elapsed
+                    delay_sources.append(
+                        (
+                            sustained_delay,
+                            f"sustained {instance.sustained_call_count}/{cls.SUSTAINED_MAX_CALLS}",
+                        )
+                    )
 
             # Check HOURLY tier
             hourly_elapsed = (now - instance.hourly_window_start).total_seconds()
             if hourly_elapsed < cls.HOURLY_WINDOW_SECONDS:
                 if instance.hourly_call_count >= cls.HOURLY_MAX_CALLS:
-                    delays.append(cls.HOURLY_WINDOW_SECONDS - hourly_elapsed)
+                    hourly_delay = cls.HOURLY_WINDOW_SECONDS - hourly_elapsed
+                    delay_sources.append(
+                        (
+                            hourly_delay,
+                            f"hourly {instance.hourly_call_count}/{cls.HOURLY_MAX_CALLS}",
+                        )
+                    )
 
-            # Enforce minimum delay between calls
+            # Enforce minimum delay between calls (don't log this, too noisy)
             time_since_last = (now - instance.last_call_at).total_seconds()
             min_delay = cls.MIN_DELAY_BETWEEN_CALLS_MS / 1000.0
             if time_since_last < min_delay:
-                delays.append(min_delay - time_since_last)
+                delay_sources.append((min_delay - time_since_last, ""))
 
             # Apply backoff pressure delay
             if instance.backoff_pressure > 0:
@@ -1038,9 +1064,24 @@ class SpotifyRateLimitState(models.Model):
                     * cls.BACKOFF_DELAY_PER_PRESSURE_MS
                     / 1000.0
                 )
-                delays.append(pressure_delay)
+                delay_sources.append(
+                    (pressure_delay, f"backoff pressure={instance.backoff_pressure}")
+                )
 
-            return max(delays) if delays else 0.0
+            if not delay_sources:
+                return 0.0
+
+            # Find the maximum delay and its source
+            max_delay, max_source = max(delay_sources, key=lambda x: x[0])
+
+            # Log significant delays (> 5 seconds) to help with debugging
+            if max_delay > 5.0 and max_source:
+                logger.info(
+                    f"[SPOTIFY API] Rate limit delay: {max_delay:.1f}s "
+                    f"(reason: {max_source})"
+                )
+
+            return max_delay
 
     @classmethod
     def increase_pressure(cls, amount: int = 1) -> None:
