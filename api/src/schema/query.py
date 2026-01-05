@@ -350,8 +350,9 @@ class Query:
             SystemHealthService.is_download_capable
         )()
 
-        # Get rate limit status
+        # Get rate limit status and current delay
         rate_limit_data = await sync_to_async(SpotifyRateLimitState.get_status)()
+        current_delay = await sync_to_async(SpotifyRateLimitState.get_delay_seconds)()
 
         # Get storage status
         storage_data = await sync_to_async(SystemHealthService.check_storage_status)()
@@ -378,6 +379,8 @@ class Query:
                 is_rate_limited=rate_limit_data["is_rate_limited"],
                 rate_limited_until=rate_limit_data["rate_limited_until"],
                 seconds_until_clear=rate_limit_data["seconds_until_clear"],
+                is_throttling=current_delay > 0,
+                current_delay_seconds=current_delay,
                 window_call_count=rate_limit_data["window_call_count"],
                 window_max_calls=rate_limit_data["window_max_calls"],
                 window_usage_percent=rate_limit_data["window_usage_percent"],

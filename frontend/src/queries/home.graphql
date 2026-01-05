@@ -14,6 +14,8 @@ query GetSystemStatus {
       isRateLimited
       rateLimitedUntil
       secondsUntilClear
+      isThrottling
+      currentDelaySeconds
       windowCallCount
       windowMaxCalls
       windowUsagePercent

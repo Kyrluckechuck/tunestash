@@ -335,9 +335,13 @@ class AuthenticationStatus:
 class SpotifyRateLimitStatus:
     """Spotify API rate limit status."""
 
+    # True only when Spotify has returned a 429 (actually blocked)
     is_rate_limited: bool
     rate_limited_until: Optional[DateTime] = None
     seconds_until_clear: Optional[int] = None
+    # True when we're proactively delaying tasks to avoid hitting limits
+    is_throttling: bool = False
+    current_delay_seconds: float = 0.0
     # Legacy fields for backwards compatibility
     window_call_count: int
     window_max_calls: int
