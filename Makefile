@@ -218,6 +218,7 @@ format-check-frontend:
 	cd frontend && yarn format:check
 
 # Run all API linting in parallel - shows results as each completes
+# In CI environments, slows spinner to 1 update/sec to reduce log spam
 lint-api:
 	@mkdir -p .lint-tmp; \
 	rm -f .lint-tmp/*; \
@@ -237,6 +238,7 @@ lint-api:
 	PID_PYLINT=$$!; \
 	printf "$$PID_FLAKE8:flake8:0\n$$PID_BLACK:black:0\n$$PID_ISORT:isort:0\n$$PID_MYPY:mypy:0\n$$PID_BANDIT:bandit:1\n$$PID_PYLINT:pylint:0\n" > .lint-tmp/pids; \
 	TOTAL=6; COMPLETED=0; FAIL=0; SPIN=0; \
+	if [ -n "$${CI:-}" ]; then SLEEP_INTERVAL=1; else SLEEP_INTERVAL=0.1; fi; \
 	printf "\033[?25l"; \
 	while [ $$COMPLETED -lt $$TOTAL ]; do \
 		SPIN=$$(($$SPIN + 1)); \
@@ -263,7 +265,7 @@ lint-api:
 				printf "%s" "$$CHAR $$NAME  "; \
 			fi; \
 		done < .lint-tmp/pids.active; \
-		sleep 0.1; \
+		sleep $$SLEEP_INTERVAL; \
 	done; \
 	printf "\r\033[K"; \
 	printf "\033[?25h"; \
