@@ -18,11 +18,75 @@ from ..models import (
     TaskHistory,
     TrackedPlaylist,
 )
-from .core import logger
+from .core import logger, spotdl_wrapper
 from .download import download_single_album
 
 # Rate limiting: delay between Spotify API calls (in seconds)
 _API_CALL_DELAY_SECONDS = 1.0
+
+# Max albums to backfill metadata for per run (to avoid API quota issues)
+_MAX_METADATA_BACKFILL_PER_RUN = 20
+
+
+def backfill_album_metadata(limit: int = _MAX_METADATA_BACKFILL_PER_RUN) -> int:
+    """
+    Backfill metadata for albums with album_type=None.
+
+    These are typically albums created from playlist syncs that only have
+    basic info (GID, name) but no type/group metadata from Spotify.
+
+    Returns the number of albums updated.
+    """
+    from ..models import SpotifyRateLimitState
+
+    # Find albums missing metadata from tracked artists
+    albums_needing_metadata = Album.objects.filter(
+        artist__tracked=True,
+        downloaded=False,
+        wanted=True,
+        album_type__isnull=True,
+    ).order_by("id")[:limit]
+
+    if not albums_needing_metadata.exists():
+        return 0
+
+    updated_count = 0
+    for album in albums_needing_metadata:
+        try:
+            # Rate limiting: check if we need to wait
+            delay = SpotifyRateLimitState.get_delay_seconds()
+            if delay > 30:
+                # Don't wait too long during backfill, just stop
+                logger.info(
+                    f"Stopping metadata backfill due to rate limit delay ({delay:.0f}s)"
+                )
+                break
+            if delay > 0:
+                time.sleep(delay)
+
+            # Fetch album details from Spotify
+            album_data = spotdl_wrapper.downloader.get_album(album.spotify_gid)
+            SpotifyRateLimitState.record_call()
+
+            if album_data:
+                # Update album metadata
+                album.album_type = album_data.get("album_type")
+                album.album_group = album_data.get("album_group")
+                album.save(update_fields=["album_type", "album_group"])
+                updated_count += 1
+                logger.debug(
+                    f"Backfilled metadata for '{album.name}': "
+                    f"type={album.album_type}, group={album.album_group}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to backfill metadata for album {album.spotify_gid}: {e}"
+            )
+
+    if updated_count > 0:
+        logger.info(f"Backfilled metadata for {updated_count} album(s)")
+
+    return updated_count
 
 
 def get_albums_with_pending_tasks() -> Set[str]:
@@ -188,6 +252,9 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
         )
         return
 
+    # Maximum albums to process per run
+    max_albums_per_run = 50
+
     try:
         logger.info("Starting periodic queue of missing albums for tracked artists")
 
@@ -207,14 +274,8 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
                 album_type__in=ALBUM_TYPES_TO_DOWNLOAD,
             )
             .exclude(album_group__in=ALBUM_GROUPS_TO_IGNORE)
-            .order_by("id")[:50]
+            .order_by("id")[:max_albums_per_run]
         )
-
-        if not missing_albums.exists():
-            logger.info(
-                "No missing albums found for tracked artists to queue for download"
-            )
-            return
 
         queued_count = 0
         skipped_count = 0
@@ -230,18 +291,29 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
             except Exception as e:
                 logger.warning(f"Failed to queue album {album.name} ({album.id}): {e}")
 
-        if skipped_count:
-            logger.info(
-                "Queued %d missing albums from tracked artists for download "
-                "(skipped %d with pending tasks)",
-                queued_count,
-                skipped_count,
-            )
-        else:
-            logger.info(
-                "Queued %d missing albums from tracked artists for download",
-                queued_count,
-            )
+        if queued_count > 0:
+            if skipped_count:
+                logger.info(
+                    "Queued %d missing albums from tracked artists for download "
+                    "(skipped %d with pending tasks)",
+                    queued_count,
+                    skipped_count,
+                )
+            else:
+                logger.info(
+                    "Queued %d missing albums from tracked artists for download",
+                    queued_count,
+                )
+
+        # Use remaining capacity to backfill metadata for albums with type=None
+        # This handles albums created from playlist syncs missing Spotify metadata
+        remaining_capacity = max_albums_per_run - queued_count
+        if remaining_capacity > 0:
+            backfilled = backfill_album_metadata(limit=remaining_capacity)
+            if backfilled == 0 and queued_count == 0:
+                logger.info(
+                    "No missing albums found for tracked artists to queue for download"
+                )
 
     except Exception as e:
         logger.error(
