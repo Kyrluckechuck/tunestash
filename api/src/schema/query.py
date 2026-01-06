@@ -545,7 +545,15 @@ class Query:
             album_completion_percentage=stats.album_completion_percentage,
             desired_songs=stats.desired_songs,
             desired_downloaded=stats.desired_downloaded,
+            desired_missing=stats.desired_missing,
+            desired_failed=stats.desired_failed,
+            desired_unavailable=stats.desired_unavailable,
             desired_completion_percentage=stats.desired_completion_percentage,
+            desired_albums=stats.desired_albums,
+            desired_albums_downloaded=stats.desired_albums_downloaded,
+            desired_albums_partial=stats.desired_albums_partial,
+            desired_albums_missing=stats.desired_albums_missing,
+            desired_album_completion_percentage=stats.desired_album_completion_percentage,
         )
 
     @strawberry.field

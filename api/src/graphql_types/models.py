@@ -473,14 +473,14 @@ class SpotifyPlaylistInfo:
 class LibraryStats:
     """Aggregate statistics for the music library."""
 
-    # Song counts
+    # Song counts (full library)
     total_songs: int
     downloaded_songs: int
     missing_songs: int  # Not downloaded and not failed
     failed_songs: int
     unavailable_songs: int
 
-    # Album counts
+    # Album counts (full library)
     total_albums: int
     downloaded_albums: int  # All songs downloaded
     partial_albums: int  # Some songs downloaded
@@ -490,14 +490,24 @@ class LibraryStats:
     total_artists: int
     tracked_artists: int
 
-    # Completion percentages (rounded to 1 decimal)
+    # Completion percentages - full library (rounded to 1 decimal)
     song_completion_percentage: float
     album_completion_percentage: float
 
     # "Desired" = songs from tracked artists
     desired_songs: int
     desired_downloaded: int
+    desired_missing: int
+    desired_failed: int
+    desired_unavailable: int
     desired_completion_percentage: float
+
+    # Album stats for tracked artists
+    desired_albums: int
+    desired_albums_downloaded: int
+    desired_albums_partial: int
+    desired_albums_missing: int
+    desired_album_completion_percentage: float
 
 
 # =============================================================================

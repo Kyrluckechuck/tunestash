@@ -107,9 +107,17 @@ type HistoryEdge {
 
 type LibraryStats {
   albumCompletionPercentage: Float!
+  desiredAlbumCompletionPercentage: Float!
+  desiredAlbums: Int!
+  desiredAlbumsDownloaded: Int!
+  desiredAlbumsMissing: Int!
+  desiredAlbumsPartial: Int!
   desiredCompletionPercentage: Float!
   desiredDownloaded: Int!
+  desiredFailed: Int!
+  desiredMissing: Int!
   desiredSongs: Int!
+  desiredUnavailable: Int!
   downloadedAlbums: Int!
   downloadedSongs: Int!
   failedSongs: Int!
@@ -330,20 +338,20 @@ type SpotifyPlaylistInfo {
 }
 
 type SpotifyRateLimitStatus {
+  burstCalls: Int!
+  burstMax: Int!
+  currentDelaySeconds: Float!
+  hourlyCalls: Int!
+  hourlyMax: Int!
   isRateLimited: Boolean!
+  isThrottling: Boolean!
   rateLimitedUntil: DateTime
   secondsUntilClear: Int
-  isThrottling: Boolean!
-  currentDelaySeconds: Float!
+  sustainedCalls: Int!
+  sustainedMax: Int!
   windowCallCount: Int!
   windowMaxCalls: Int!
   windowUsagePercent: Float!
-  burstCalls: Int!
-  burstMax: Int!
-  sustainedCalls: Int!
-  sustainedMax: Int!
-  hourlyCalls: Int!
-  hourlyMax: Int!
 }
 
 type SpotifySearchAlbum {

@@ -1,6 +1,51 @@
+import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@apollo/client/react';
 import { GetLibraryStatsDocument } from '../types/generated/graphql';
+
+function RefreshIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns='http://www.w3.org/2000/svg'
+      fill='none'
+      viewBox='0 0 24 24'
+      strokeWidth={1.5}
+      stroke='currentColor'
+      className={className}
+    >
+      <path
+        strokeLinecap='round'
+        strokeLinejoin='round'
+        d='M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.992 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99'
+      />
+    </svg>
+  );
+}
+
+function ChevronIcon({
+  className,
+  expanded,
+}: {
+  className?: string;
+  expanded: boolean;
+}) {
+  return (
+    <svg
+      xmlns='http://www.w3.org/2000/svg'
+      fill='none'
+      viewBox='0 0 24 24'
+      strokeWidth={1.5}
+      stroke='currentColor'
+      className={`${className} transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+    >
+      <path
+        strokeLinecap='round'
+        strokeLinejoin='round'
+        d='m19.5 8.25-7.5 7.5-7.5-7.5'
+      />
+    </svg>
+  );
+}
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) {
@@ -76,11 +121,13 @@ function ProgressBar({
 }
 
 function Dashboard() {
-  const { data, loading, error } = useQuery(GetLibraryStatsDocument, {
-    pollInterval: 30000,
-  });
+  const { data, loading, error, refetch } = useQuery(GetLibraryStatsDocument);
+  const [showFullStats, setShowFullStats] = useState(false);
 
-  if (loading) {
+  const isInitialLoad = loading && !data;
+  const isRefetching = loading && !!data;
+
+  if (isInitialLoad) {
     return (
       <div className='space-y-6'>
         <h1 className='text-2xl font-semibold'>Library Dashboard</h1>
@@ -96,7 +143,7 @@ function Dashboard() {
     );
   }
 
-  if (error) {
+  if (error && !data) {
     return (
       <div className='space-y-6'>
         <h1 className='text-2xl font-semibold'>Library Dashboard</h1>
@@ -112,25 +159,40 @@ function Dashboard() {
   const stats = data?.libraryStats;
   if (!stats) return null;
 
+  const handleRefresh = () => {
+    refetch();
+  };
+
   return (
     <section className='space-y-6'>
-      <div>
-        <h1 className='text-2xl font-semibold mb-1'>Library Dashboard</h1>
-        <p className='text-gray-700'>
-          Track your library completion progress and statistics.
-        </p>
+      <div className='flex items-start justify-between'>
+        <div>
+          <h1 className='text-2xl font-semibold mb-1'>Library Dashboard</h1>
+          <p className='text-gray-700'>
+            Download progress for your {stats.trackedArtists.toLocaleString()}{' '}
+            tracked artists.
+          </p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isRefetching}
+          className='flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed'
+        >
+          <RefreshIcon
+            className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`}
+          />
+          {isRefetching ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
 
-      {/* Main Completion Progress */}
+      {/* Main Song Progress - Tracked Artists */}
       <div className='bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-200 p-6'>
         <div className='flex items-center justify-between mb-4'>
           <div>
             <h2 className='text-lg font-semibold text-gray-900'>
-              Tracked Artists Progress
+              Song Progress
             </h2>
-            <p className='text-sm text-gray-600'>
-              Songs from {stats.trackedArtists.toLocaleString()} tracked artists
-            </p>
+            <p className='text-sm text-gray-600'>Songs from tracked artists</p>
           </div>
           <div className='text-right'>
             <div className='text-3xl font-bold text-indigo-700'>
@@ -148,123 +210,205 @@ function Dashboard() {
         />
       </div>
 
-      {/* Song Statistics */}
+      {/* Song Statistics - Tracked Artists */}
       <div>
         <h2 className='text-lg font-semibold text-gray-900 mb-3'>
-          Song Statistics
+          Song Breakdown
         </h2>
         <div className='grid grid-cols-2 md:grid-cols-5 gap-4'>
-          <StatCard title='Total Songs' value={stats.totalSongs} color='gray' />
+          <StatCard title='Total' value={stats.desiredSongs} color='gray' />
           <StatCard
             title='Downloaded'
-            value={stats.downloadedSongs}
-            subtitle={`${stats.songCompletionPercentage}% of total`}
+            value={stats.desiredDownloaded}
+            subtitle={`${stats.desiredCompletionPercentage}%`}
             color='green'
           />
           <StatCard
             title='Missing'
-            value={stats.missingSongs}
+            value={stats.desiredMissing}
             subtitle='Not yet attempted'
             color='blue'
           />
           <StatCard
             title='Failed'
-            value={stats.failedSongs}
+            value={stats.desiredFailed}
             subtitle='Download errors'
             color='red'
           />
           <StatCard
             title='Unavailable'
-            value={stats.unavailableSongs}
+            value={stats.desiredUnavailable}
             subtitle='Not on YouTube Music'
             color='yellow'
           />
         </div>
       </div>
 
-      {/* Album Statistics */}
+      {/* Album Statistics - Tracked Artists */}
       <div>
         <h2 className='text-lg font-semibold text-gray-900 mb-3'>
-          Album Statistics
+          Album Breakdown
         </h2>
         <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
-          <StatCard
-            title='Total Albums'
-            value={stats.totalAlbums}
-            color='gray'
-          />
+          <StatCard title='Total' value={stats.desiredAlbums} color='gray' />
           <StatCard
             title='Complete'
-            value={stats.downloadedAlbums}
-            subtitle={`${stats.albumCompletionPercentage}% of total`}
+            value={stats.desiredAlbumsDownloaded}
+            subtitle={`${stats.desiredAlbumCompletionPercentage}%`}
             color='green'
           />
           <StatCard
             title='Partial'
-            value={stats.partialAlbums}
+            value={stats.desiredAlbumsPartial}
             subtitle='Some songs downloaded'
             color='blue'
           />
           <StatCard
             title='Missing'
-            value={stats.missingAlbums}
+            value={stats.desiredAlbumsMissing}
             subtitle='No songs downloaded'
             color='yellow'
           />
         </div>
       </div>
 
-      {/* Artist Statistics */}
-      <div>
-        <h2 className='text-lg font-semibold text-gray-900 mb-3'>
-          Artist Statistics
-        </h2>
-        <div className='grid grid-cols-2 md:grid-cols-2 gap-4'>
-          <StatCard
-            title='Total Artists'
-            value={stats.totalArtists}
-            color='gray'
-          />
-          <StatCard
-            title='Tracked Artists'
-            value={stats.trackedArtists}
-            subtitle='Auto-syncing enabled'
-            color='purple'
-          />
-        </div>
-      </div>
-
-      {/* Overall Library Progress */}
+      {/* Overall Progress Bars */}
       <div className='bg-white rounded-lg border border-gray-200 p-6'>
         <h2 className='text-lg font-semibold text-gray-900 mb-4'>
-          Overall Library Progress
+          Completion Progress
         </h2>
         <div className='space-y-4'>
           <div>
             <div className='flex justify-between text-sm mb-1'>
-              <span className='text-gray-600'>Song Completion</span>
+              <span className='text-gray-600'>Songs</span>
               <span className='font-medium'>
-                {stats.songCompletionPercentage}%
+                {stats.desiredCompletionPercentage}%
               </span>
             </div>
             <ProgressBar
-              percentage={stats.songCompletionPercentage}
+              percentage={stats.desiredCompletionPercentage}
               color='green'
             />
           </div>
           <div>
             <div className='flex justify-between text-sm mb-1'>
-              <span className='text-gray-600'>Album Completion</span>
+              <span className='text-gray-600'>Albums</span>
               <span className='font-medium'>
-                {stats.albumCompletionPercentage}%
+                {stats.desiredAlbumCompletionPercentage}%
               </span>
             </div>
             <ProgressBar
-              percentage={stats.albumCompletionPercentage}
+              percentage={stats.desiredAlbumCompletionPercentage}
               color='blue'
             />
           </div>
         </div>
+      </div>
+
+      {/* Full Library Stats - Collapsible */}
+      <div className='border border-gray-200 rounded-lg'>
+        <button
+          onClick={() => setShowFullStats(!showFullStats)}
+          className='w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors'
+        >
+          <div>
+            <h2 className='text-lg font-semibold text-gray-900'>
+              Full Library Statistics
+            </h2>
+            <p className='text-sm text-gray-500'>
+              Includes all artists, not just tracked ones
+            </p>
+          </div>
+          <ChevronIcon
+            className='w-5 h-5 text-gray-500'
+            expanded={showFullStats}
+          />
+        </button>
+
+        {showFullStats && (
+          <div className='p-4 pt-0 space-y-6 border-t border-gray-200'>
+            {/* Full Library Artist Stats */}
+            <div>
+              <h3 className='text-md font-medium text-gray-700 mb-3'>
+                Artists
+              </h3>
+              <div className='grid grid-cols-2 gap-4'>
+                <StatCard
+                  title='Total Artists'
+                  value={stats.totalArtists}
+                  color='gray'
+                />
+                <StatCard
+                  title='Tracked'
+                  value={stats.trackedArtists}
+                  subtitle='Auto-syncing enabled'
+                  color='purple'
+                />
+              </div>
+            </div>
+
+            {/* Full Library Song Stats */}
+            <div>
+              <h3 className='text-md font-medium text-gray-700 mb-3'>
+                All Songs
+              </h3>
+              <div className='grid grid-cols-2 md:grid-cols-5 gap-4'>
+                <StatCard title='Total' value={stats.totalSongs} color='gray' />
+                <StatCard
+                  title='Downloaded'
+                  value={stats.downloadedSongs}
+                  subtitle={`${stats.songCompletionPercentage}%`}
+                  color='green'
+                />
+                <StatCard
+                  title='Missing'
+                  value={stats.missingSongs}
+                  color='blue'
+                />
+                <StatCard
+                  title='Failed'
+                  value={stats.failedSongs}
+                  color='red'
+                />
+                <StatCard
+                  title='Unavailable'
+                  value={stats.unavailableSongs}
+                  color='yellow'
+                />
+              </div>
+            </div>
+
+            {/* Full Library Album Stats */}
+            <div>
+              <h3 className='text-md font-medium text-gray-700 mb-3'>
+                All Albums
+              </h3>
+              <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+                <StatCard
+                  title='Total'
+                  value={stats.totalAlbums}
+                  color='gray'
+                />
+                <StatCard
+                  title='Complete'
+                  value={stats.downloadedAlbums}
+                  subtitle={`${stats.albumCompletionPercentage}%`}
+                  color='green'
+                />
+                <StatCard
+                  title='Partial'
+                  value={stats.partialAlbums}
+                  color='blue'
+                />
+                <StatCard
+                  title='Missing'
+                  value={stats.missingAlbums}
+                  color='yellow'
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
