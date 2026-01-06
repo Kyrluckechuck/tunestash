@@ -424,3 +424,103 @@ class TestTaskManagementService:
         failure_result = MutationResult(success=False, message="Failed")
         assert failure_result.success is False
         assert failure_result.message == "Failed"
+
+
+class TestExtractEntityId:
+    """Test _extract_entity_id helper function."""
+
+    def test_extract_entity_id_from_list_args(self):
+        """Test extracting entity ID from list args."""
+        from src.services.task_management import _extract_entity_id
+
+        result = _extract_entity_id("some_task", [123], {})
+        assert result == 123
+
+    def test_extract_entity_id_from_tuple_args(self):
+        """Test extracting entity ID from tuple args (Celery stores args as tuples)."""
+        from src.services.task_management import _extract_entity_id
+
+        # Celery stores args as tuples like (123,)
+        result = _extract_entity_id("some_task", (456,), {})
+        assert result == 456
+
+    def test_extract_entity_id_from_kwargs(self):
+        """Test extracting entity ID from kwargs takes precedence."""
+        from src.services.task_management import _extract_entity_id
+
+        result = _extract_entity_id("download_artist", [999], {"artist_id": 123})
+        assert result == 123
+
+    def test_extract_entity_id_from_kwargs_playlist_url(self):
+        """Test extracting playlist URL from kwargs."""
+        from src.services.task_management import _extract_entity_id
+
+        result = _extract_entity_id(
+            "sync_playlist",
+            [],
+            {"playlist_url": "spotify:playlist:abc123"},
+        )
+        assert result == "spotify:playlist:abc123"
+
+    def test_extract_entity_id_empty_args(self):
+        """Test extracting entity ID with empty args returns None."""
+        from src.services.task_management import _extract_entity_id
+
+        result = _extract_entity_id("some_task", [], {})
+        assert result is None
+
+    def test_extract_entity_id_empty_tuple(self):
+        """Test extracting entity ID with empty tuple returns None."""
+        from src.services.task_management import _extract_entity_id
+
+        result = _extract_entity_id("some_task", (), {})
+        assert result is None
+
+    def test_extract_entity_id_string_args_fallback(self):
+        """Test that string args (unparseable) returns None."""
+        from src.services.task_management import _extract_entity_id
+
+        # If JSON parsing failed, args might be a raw string
+        result = _extract_entity_id("some_task", "unparsed_string", {})
+        assert result is None
+
+
+class TestParseJsonField:
+    """Test _parse_json_field helper function."""
+
+    def test_parse_json_string(self):
+        """Test parsing JSON string."""
+        from src.services.task_management import _parse_json_field
+
+        result = _parse_json_field('["arg1", "arg2"]')
+        assert result == ["arg1", "arg2"]
+
+    def test_parse_python_repr_tuple(self):
+        """Test parsing Python repr tuple string."""
+        from src.services.task_management import _parse_json_field
+
+        # Celery stores args as Python repr: "(123,)"
+        result = _parse_json_field("(123,)")
+        assert result == (123,)
+
+    def test_parse_python_repr_with_booleans(self):
+        """Test parsing Python repr with True/False."""
+        from src.services.task_management import _parse_json_field
+
+        result = _parse_json_field("{'flag': True, 'count': 5}")
+        assert result == {"flag": True, "count": 5}
+
+    def test_parse_already_parsed_value(self):
+        """Test that already parsed values are returned as-is."""
+        from src.services.task_management import _parse_json_field
+
+        result = _parse_json_field([1, 2, 3])
+        assert result == [1, 2, 3]
+
+    def test_parse_double_encoded_string(self):
+        """Test parsing double-encoded JSON (JSON containing Python repr)."""
+        from src.services.task_management import _parse_json_field
+
+        # JSON string containing Python repr
+        result = _parse_json_field('"(123,)"')
+        assert result == (123,)

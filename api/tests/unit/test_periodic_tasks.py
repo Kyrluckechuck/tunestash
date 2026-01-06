@@ -538,6 +538,249 @@ class TestRetryFailedSongsTask(TestCase):
             assert f"spotify:track:{gid}" not in downloaded_uris
 
 
+class TestBackfillAlbumMetadata(TestCase):
+    """Test backfill_album_metadata function for albums with type=None."""
+
+    def setUp(self):
+        """Set up test data with albums missing metadata."""
+        # Create tracked artist
+        self.tracked_artist = Artist.objects.create(
+            name="Tracked Artist", gid="tracked_bf_123", tracked=True
+        )
+
+        # Create untracked artist
+        self.untracked_artist = Artist.objects.create(
+            name="Untracked Artist", gid="untracked_bf_456", tracked=False
+        )
+
+        # Album missing metadata (should be backfilled)
+        self.album_no_type = Album.objects.create(
+            name="Album Missing Type",
+            spotify_gid="bf_album_001",
+            spotify_uri="spotify:album:bf001",
+            artist=self.tracked_artist,
+            wanted=True,
+            downloaded=False,
+            album_type=None,
+            album_group=None,
+            total_tracks=10,
+        )
+
+        # Album with metadata (should be skipped)
+        self.album_with_type = Album.objects.create(
+            name="Album With Type",
+            spotify_gid="bf_album_002",
+            spotify_uri="spotify:album:bf002",
+            artist=self.tracked_artist,
+            wanted=True,
+            downloaded=False,
+            album_type="album",
+            album_group="album",
+            total_tracks=12,
+        )
+
+        # Album from untracked artist (should be skipped)
+        self.untracked_album = Album.objects.create(
+            name="Untracked Artist Album",
+            spotify_gid="bf_album_003",
+            spotify_uri="spotify:album:bf003",
+            artist=self.untracked_artist,
+            wanted=True,
+            downloaded=False,
+            album_type=None,
+            album_group=None,
+            total_tracks=8,
+        )
+
+        # Already downloaded album missing metadata (should be skipped)
+        self.downloaded_album = Album.objects.create(
+            name="Downloaded Album",
+            spotify_gid="bf_album_004",
+            spotify_uri="spotify:album:bf004",
+            artist=self.tracked_artist,
+            wanted=True,
+            downloaded=True,
+            album_type=None,
+            album_group=None,
+            total_tracks=6,
+        )
+
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    def test_backfill_updates_album_metadata(self, mock_spotdl, mock_rate_limit_state):
+        """Test that backfill fetches and updates album metadata."""
+        from library_manager.tasks.periodic import backfill_album_metadata
+
+        # Mock rate limit to allow calls
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+
+        # Mock Spotify API response
+        mock_spotdl.downloader.get_album.return_value = {
+            "album_type": "compilation",
+            "album_group": "appears_on",
+        }
+
+        # Run backfill
+        updated = backfill_album_metadata(limit=10)
+
+        # Should have updated 1 album (album_no_type)
+        assert updated == 1
+
+        # Verify the album was updated
+        self.album_no_type.refresh_from_db()
+        assert self.album_no_type.album_type == "compilation"
+        assert self.album_no_type.album_group == "appears_on"
+
+        # Verify other albums were not modified
+        self.album_with_type.refresh_from_db()
+        assert self.album_with_type.album_type == "album"
+
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    def test_backfill_skips_untracked_artists(self, mock_spotdl, mock_rate_limit_state):
+        """Test that backfill only processes albums from tracked artists."""
+        from library_manager.tasks.periodic import backfill_album_metadata
+
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+        mock_spotdl.downloader.get_album.return_value = {
+            "album_type": "album",
+            "album_group": "album",
+        }
+
+        # Run backfill
+        backfill_album_metadata(limit=10)
+
+        # Untracked artist's album should NOT have been updated
+        self.untracked_album.refresh_from_db()
+        assert self.untracked_album.album_type is None
+
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    def test_backfill_respects_limit(self, mock_spotdl, mock_rate_limit_state):
+        """Test that backfill respects the limit parameter."""
+        from library_manager.tasks.periodic import backfill_album_metadata
+
+        # Create multiple albums needing backfill
+        for i in range(5):
+            Album.objects.create(
+                name=f"Bulk Album {i}",
+                spotify_gid=f"bf_bulk_{i:04d}",
+                spotify_uri=f"spotify:album:bf_bulk_{i:04d}",
+                artist=self.tracked_artist,
+                wanted=True,
+                downloaded=False,
+                album_type=None,
+                album_group=None,
+                total_tracks=10,
+            )
+
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+        mock_spotdl.downloader.get_album.return_value = {
+            "album_type": "album",
+            "album_group": "album",
+        }
+
+        # Run backfill with limit=3
+        updated = backfill_album_metadata(limit=3)
+
+        # Should only update 3 albums
+        assert updated == 3
+
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    def test_backfill_stops_on_high_rate_limit_delay(
+        self, mock_spotdl, mock_rate_limit_state
+    ):
+        """Test that backfill stops if rate limit delay exceeds threshold."""
+        from library_manager.tasks.periodic import backfill_album_metadata
+
+        # Create multiple albums
+        for i in range(5):
+            Album.objects.create(
+                name=f"Rate Limit Album {i}",
+                spotify_gid=f"bf_rate_{i:04d}",
+                spotify_uri=f"spotify:album:bf_rate_{i:04d}",
+                artist=self.tracked_artist,
+                wanted=True,
+                downloaded=False,
+                album_type=None,
+                album_group=None,
+                total_tracks=10,
+            )
+
+        # First call returns 0, second call returns high delay (> 30s)
+        mock_rate_limit_state.get_delay_seconds.side_effect = [0, 60]
+        mock_spotdl.downloader.get_album.return_value = {
+            "album_type": "album",
+            "album_group": "album",
+        }
+
+        # Run backfill
+        updated = backfill_album_metadata(limit=10)
+
+        # Should stop after first album due to high delay
+        assert updated == 1
+
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    def test_backfill_handles_api_failure(self, mock_spotdl, mock_rate_limit_state):
+        """Test that backfill continues after API failures."""
+        from library_manager.tasks.periodic import backfill_album_metadata
+
+        # Create second album needing backfill
+        album2 = Album.objects.create(
+            name="Second Album",
+            spotify_gid="bf_second_001",
+            spotify_uri="spotify:album:bf_second_001",
+            artist=self.tracked_artist,
+            wanted=True,
+            downloaded=False,
+            album_type=None,
+            album_group=None,
+            total_tracks=10,
+        )
+
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+
+        # First call fails, second succeeds
+        mock_spotdl.downloader.get_album.side_effect = [
+            Exception("API Error"),
+            {"album_type": "single", "album_group": "single"},
+        ]
+
+        # Run backfill
+        updated = backfill_album_metadata(limit=10)
+
+        # Should have updated 1 album (the second one)
+        assert updated == 1
+
+        # Verify second album was updated
+        album2.refresh_from_db()
+        assert album2.album_type == "single"
+
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    def test_backfill_returns_zero_when_no_albums(
+        self, mock_spotdl, mock_rate_limit_state
+    ):
+        """Test that backfill returns 0 when no albums need metadata."""
+        from library_manager.tasks.periodic import backfill_album_metadata
+
+        # Delete the album without metadata
+        self.album_no_type.delete()
+
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+
+        # Run backfill
+        updated = backfill_album_metadata(limit=10)
+
+        # Should return 0
+        assert updated == 0
+
+        # Should not have called the API
+        mock_spotdl.downloader.get_album.assert_not_called()
+
+
 class TestSongFailureBackoff(TestCase):
     """Test exponential backoff for failed song retries."""
 
@@ -811,3 +1054,489 @@ class TestSongFailureBackoff(TestCase):
         assert song.failure_reason is None
         assert song.last_failed_at is None
         assert song.unavailable is False
+
+
+class TestSyncTrackedArtistsMetadata(TestCase):
+    """Test sync_tracked_artists_metadata periodic task."""
+
+    def setUp(self):
+        """Set up test artists."""
+        from django.utils import timezone
+
+        # Create tracked artists with different last_synced_at times
+        self.artist1 = Artist.objects.create(
+            name="Artist Oldest",
+            gid="artist_oldest_001",
+            tracked=True,
+            last_synced_at=timezone.now() - timezone.timedelta(days=30),
+        )
+        self.artist2 = Artist.objects.create(
+            name="Artist Recent",
+            gid="artist_recent_002",
+            tracked=True,
+            last_synced_at=timezone.now() - timezone.timedelta(days=1),
+        )
+        self.artist_never_synced = Artist.objects.create(
+            name="Artist Never Synced",
+            gid="artist_never_003",
+            tracked=True,
+            last_synced_at=None,
+        )
+        self.untracked_artist = Artist.objects.create(
+            name="Untracked Artist",
+            gid="untracked_004",
+            tracked=False,
+        )
+
+        # Create albums for artist1 (to test change detection)
+        self.known_album = Album.objects.create(
+            name="Known Album",
+            spotify_gid="known_album_001",
+            spotify_uri="spotify:album:known001",
+            artist=self.artist1,
+            wanted=True,
+            downloaded=False,
+            album_type="album",
+            album_group="album",
+            total_tracks=10,
+        )
+
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_skips_when_rate_limited(self, mock_rate_limit_state):
+        """Test that task skips execution when API is rate limited."""
+        from library_manager.tasks import sync_tracked_artists_metadata
+
+        # Mock rate limited state
+        mock_rate_limit_state.get_status.return_value = {
+            "is_rate_limited": True,
+            "seconds_until_clear": 3600,
+        }
+
+        # Run the task
+        sync_tracked_artists_metadata()
+
+        # Should not attempt to query artists
+        mock_rate_limit_state.get_delay_seconds.assert_not_called()
+
+    @patch("library_manager.tasks.periodic.TaskHistory")
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_backpressure_skips_when_too_many_pending(
+        self, mock_rate_limit_state, mock_task_history
+    ):
+        """Test that task skips when too many syncs are already pending."""
+        from library_manager.tasks import sync_tracked_artists_metadata
+
+        # Mock not rate limited
+        mock_rate_limit_state.get_status.return_value = {"is_rate_limited": False}
+
+        # Mock 100+ pending tasks (backpressure threshold)
+        mock_filter = mock_task_history.objects.filter.return_value
+        mock_filter.count.return_value = 150
+
+        # Run the task
+        sync_tracked_artists_metadata()
+
+        # Should check for pending tasks
+        mock_task_history.objects.filter.assert_called()
+
+        # Should not proceed to check artists (no get_delay_seconds call)
+        mock_rate_limit_state.get_delay_seconds.assert_not_called()
+
+    @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    @patch("library_manager.tasks.periodic.is_task_pending_or_running")
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_queues_artist_with_new_albums(
+        self,
+        mock_rate_limit_state,
+        mock_is_pending,
+        mock_spotdl,
+        mock_fetch_task,
+    ):
+        """Test that artists with new albums are queued for full sync."""
+        from library_manager.tasks import sync_tracked_artists_metadata
+
+        # Mock not rate limited
+        mock_rate_limit_state.get_status.return_value = {
+            "is_rate_limited": False,
+            "sustained_calls": 0,
+        }
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+
+        # Mock no pending tasks (no task dedup needed)
+        mock_is_pending.return_value = (False, None)
+
+        # Mock Spotify API returning new album ID that we don't have
+        mock_spotdl.downloader.get_artist_recent_album_ids.return_value = [
+            "known_album_001",  # We have this one
+            "new_album_xyz",  # We don't have this one
+        ]
+
+        # Run the task with batch_size=1 to just process artist1
+        sync_tracked_artists_metadata(batch_size=1)
+
+        # Should queue the artist for full sync
+        mock_fetch_task.apply_async.assert_called()
+
+    @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    @patch("library_manager.tasks.periodic.is_task_pending_or_running")
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_skips_unchanged_artist(
+        self,
+        mock_rate_limit_state,
+        mock_is_pending,
+        mock_spotdl,
+        mock_fetch_task,
+    ):
+        """Test that artists with no new albums are skipped."""
+        from library_manager.tasks import sync_tracked_artists_metadata
+
+        # Mock not rate limited
+        mock_rate_limit_state.get_status.return_value = {
+            "is_rate_limited": False,
+            "sustained_calls": 0,
+        }
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+
+        # Mock no pending tasks
+        mock_is_pending.return_value = (False, None)
+
+        # Mock Spotify API returning only albums we already know
+        mock_spotdl.downloader.get_artist_recent_album_ids.return_value = [
+            "known_album_001",  # We already have this
+        ]
+
+        # Run the task
+        sync_tracked_artists_metadata(batch_size=1)
+
+        # Should NOT queue for full sync
+        mock_fetch_task.apply_async.assert_not_called()
+
+        # Should update last_synced_at
+        self.artist1.refresh_from_db()
+        assert self.artist1.last_synced_at is not None
+
+    @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    @patch("library_manager.tasks.periodic.is_task_pending_or_running")
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_skips_artist_with_pending_task(
+        self,
+        mock_rate_limit_state,
+        mock_is_pending,
+        mock_spotdl,
+        mock_fetch_task,
+    ):
+        """Test that artists with already pending sync tasks are skipped."""
+        from library_manager.tasks import sync_tracked_artists_metadata
+
+        # Mock not rate limited
+        mock_rate_limit_state.get_status.return_value = {
+            "is_rate_limited": False,
+            "sustained_calls": 0,
+        }
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+
+        # Mock task already pending
+        mock_is_pending.return_value = (True, "TaskHistory PENDING")
+
+        # Run the task
+        sync_tracked_artists_metadata(batch_size=1)
+
+        # Should NOT call Spotify API (skipped before check)
+        mock_spotdl.downloader.get_artist_recent_album_ids.assert_not_called()
+
+        # Should NOT queue
+        mock_fetch_task.apply_async.assert_not_called()
+
+    @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    @patch("library_manager.tasks.periodic.is_task_pending_or_running")
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_processes_artists_in_oldest_first_order(
+        self,
+        mock_rate_limit_state,
+        mock_is_pending,
+        mock_spotdl,
+        mock_fetch_task,
+    ):
+        """Test that artists are processed oldest-synced first."""
+        from library_manager.tasks import sync_tracked_artists_metadata
+
+        # Mock not rate limited
+        mock_rate_limit_state.get_status.return_value = {
+            "is_rate_limited": False,
+            "sustained_calls": 0,
+        }
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+        mock_is_pending.return_value = (False, None)
+
+        # Track the order of API calls
+        api_call_gids = []
+
+        def capture_gid(gid, limit=20):
+            api_call_gids.append(gid)
+            return []  # No new albums
+
+        mock_spotdl.downloader.get_artist_recent_album_ids.side_effect = capture_gid
+
+        # Run the task with batch_size=3 to check order
+        sync_tracked_artists_metadata(batch_size=3)
+
+        # Never synced should come first (None sorts before any date)
+        # Then oldest synced, then most recent
+        assert len(api_call_gids) == 3
+        assert api_call_gids[0] == self.artist_never_synced.gid
+        assert api_call_gids[1] == self.artist1.gid  # 30 days ago
+        assert api_call_gids[2] == self.artist2.gid  # 1 day ago
+
+    @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    @patch("library_manager.tasks.periodic.is_task_pending_or_running")
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_stops_early_when_soft_cap_reached(
+        self,
+        mock_rate_limit_state,
+        mock_is_pending,
+        mock_spotdl,
+        mock_fetch_task,
+    ):
+        """Test that task stops checking artists when API call soft cap is reached."""
+        from library_manager.tasks import sync_tracked_artists_metadata
+
+        # Start below cap, then exceed it after first artist
+        call_count = [0]
+
+        def mock_get_status():
+            # First call is below cap, subsequent calls are at/above cap
+            if call_count[0] == 0:
+                call_count[0] += 1
+                return {"is_rate_limited": False, "sustained_calls": 0}
+            return {"is_rate_limited": False, "sustained_calls": 80}  # Above 75 cap
+
+        mock_rate_limit_state.get_status.side_effect = mock_get_status
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+        mock_is_pending.return_value = (False, None)
+        mock_spotdl.downloader.get_artist_recent_album_ids.return_value = []
+
+        # Run the task with all 3 artists
+        sync_tracked_artists_metadata(batch_size=3)
+
+        # Should only check 1 artist before hitting the soft cap
+        assert mock_spotdl.downloader.get_artist_recent_album_ids.call_count == 1
+
+
+class TestScanNewReleasesForTrackedArtists(TestCase):
+    """Test scan_new_releases_for_tracked_artists periodic task."""
+
+    def setUp(self):
+        """Set up test artists and albums."""
+        self.tracked_artist = Artist.objects.create(
+            name="Tracked Artist",
+            gid="tracked_new_release_001",
+            tracked=True,
+        )
+        self.untracked_artist = Artist.objects.create(
+            name="Untracked Artist",
+            gid="untracked_new_release_002",
+            tracked=False,
+        )
+
+        # Existing album from tracked artist
+        self.existing_album = Album.objects.create(
+            name="Existing Album",
+            spotify_gid="existing_album_001",
+            spotify_uri="spotify:album:existing001",
+            artist=self.tracked_artist,
+            wanted=True,
+            downloaded=False,
+            album_type="album",
+            album_group="album",
+            total_tracks=10,
+        )
+
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_skips_when_rate_limited(self, mock_rate_limit_state):
+        """Test that task skips execution when API is rate limited."""
+        from library_manager.tasks import scan_new_releases_for_tracked_artists
+
+        mock_rate_limit_state.get_status.return_value = {
+            "is_rate_limited": True,
+            "seconds_until_clear": 3600,
+        }
+
+        # Run the task
+        scan_new_releases_for_tracked_artists()
+
+        # Should not call get_new_releases
+        mock_rate_limit_state.get_delay_seconds.assert_not_called()
+
+    @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    @patch("library_manager.tasks.periodic.is_task_pending_or_running")
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_queues_sync_for_new_release_from_tracked_artist(
+        self,
+        mock_rate_limit_state,
+        mock_is_pending,
+        mock_spotdl,
+        mock_fetch_task,
+    ):
+        """Test that new releases from tracked artists trigger syncs."""
+        from library_manager.tasks import scan_new_releases_for_tracked_artists
+
+        mock_rate_limit_state.get_status.return_value = {"is_rate_limited": False}
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+        mock_is_pending.return_value = (False, None)
+
+        # Mock new release from tracked artist
+        mock_spotdl.downloader.get_new_releases.return_value = [
+            {
+                "id": "brand_new_album_xyz",
+                "name": "Brand New Album",
+                "artists": [
+                    {"id": "tracked_new_release_001", "name": "Tracked Artist"},
+                ],
+            },
+        ]
+
+        # Run the task
+        scan_new_releases_for_tracked_artists()
+
+        # Should queue sync for tracked artist
+        mock_fetch_task.apply_async.assert_called()
+
+    @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    @patch("library_manager.tasks.periodic.is_task_pending_or_running")
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_ignores_new_releases_from_untracked_artists(
+        self,
+        mock_rate_limit_state,
+        mock_is_pending,
+        mock_spotdl,
+        mock_fetch_task,
+    ):
+        """Test that new releases from untracked artists are ignored."""
+        from library_manager.tasks import scan_new_releases_for_tracked_artists
+
+        mock_rate_limit_state.get_status.return_value = {"is_rate_limited": False}
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+        mock_is_pending.return_value = (False, None)
+
+        # Mock new release from untracked artist
+        mock_spotdl.downloader.get_new_releases.return_value = [
+            {
+                "id": "untracked_new_album",
+                "name": "Untracked Album",
+                "artists": [
+                    {"id": "untracked_new_release_002", "name": "Untracked Artist"},
+                ],
+            },
+        ]
+
+        # Run the task
+        scan_new_releases_for_tracked_artists()
+
+        # Should NOT queue any syncs
+        mock_fetch_task.apply_async.assert_not_called()
+
+    @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
+    @patch("library_manager.tasks.periodic.spotdl_wrapper")
+    @patch("library_manager.tasks.periodic.is_task_pending_or_running")
+    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    def test_skips_albums_we_already_have(
+        self,
+        mock_rate_limit_state,
+        mock_is_pending,
+        mock_spotdl,
+        mock_fetch_task,
+    ):
+        """Test that albums already in database don't trigger syncs."""
+        from library_manager.tasks import scan_new_releases_for_tracked_artists
+
+        mock_rate_limit_state.get_status.return_value = {"is_rate_limited": False}
+        mock_rate_limit_state.get_delay_seconds.return_value = 0
+        mock_is_pending.return_value = (False, None)
+
+        # Mock release that we already have
+        mock_spotdl.downloader.get_new_releases.return_value = [
+            {
+                "id": "existing_album_001",  # Already in DB
+                "name": "Existing Album",
+                "artists": [
+                    {"id": "tracked_new_release_001", "name": "Tracked Artist"},
+                ],
+            },
+        ]
+
+        # Run the task
+        scan_new_releases_for_tracked_artists()
+
+        # Should NOT queue sync (album already exists)
+        mock_fetch_task.apply_async.assert_not_called()
+
+
+class TestCleanupStuckTasksPeriodic(TestCase):
+    """Test cleanup_stuck_tasks_periodic maintenance task."""
+
+    @patch("library_manager.tasks.maintenance.TaskResult")
+    @patch("library_manager.tasks.maintenance.TaskHistory")
+    def test_cleans_up_stuck_task_history(self, mock_task_history, mock_task_result):
+        """Test that stuck TaskHistory records are cleaned up."""
+        from library_manager.tasks import cleanup_stuck_tasks_periodic
+
+        # Mock TaskHistory.cleanup_stuck_tasks to return count
+        mock_task_history.cleanup_stuck_tasks.return_value = 5
+
+        # Mock TaskResult cleanup
+        mock_task_result.objects.filter.return_value.update.return_value = 0
+
+        # Run the task
+        cleanup_stuck_tasks_periodic()
+
+        # Should call cleanup on TaskHistory
+        mock_task_history.cleanup_stuck_tasks.assert_called_once()
+
+    @patch("library_manager.tasks.maintenance.TaskResult")
+    @patch("library_manager.tasks.maintenance.TaskHistory")
+    def test_cleans_up_stale_task_results(self, mock_task_history, mock_task_result):
+        """Test that stale TaskResult records in STARTED status are cleaned up."""
+        from library_manager.tasks import cleanup_stuck_tasks_periodic
+
+        # Mock TaskHistory cleanup
+        mock_task_history.cleanup_stuck_tasks.return_value = 0
+
+        # Mock TaskResult.objects.filter().update() chain
+        mock_filter = mock_task_result.objects.filter.return_value
+        mock_filter.update.return_value = 3  # 3 stale records cleaned
+
+        # Run the task
+        cleanup_stuck_tasks_periodic()
+
+        # Should filter for STARTED status older than threshold
+        mock_task_result.objects.filter.assert_called()
+        call_kwargs = mock_task_result.objects.filter.call_args[1]
+        assert call_kwargs["status"] == "STARTED"
+        assert "date_created__lt" in call_kwargs
+
+        # Should update to FAILURE status
+        mock_filter.update.assert_called_once_with(status="FAILURE")
+
+    @patch("library_manager.tasks.maintenance.TaskResult")
+    @patch("library_manager.tasks.maintenance.TaskHistory")
+    def test_handles_no_stale_records(self, mock_task_history, mock_task_result):
+        """Test that task handles case when no stale records exist."""
+        from library_manager.tasks import cleanup_stuck_tasks_periodic
+
+        # Mock no cleanup needed
+        mock_task_history.cleanup_stuck_tasks.return_value = 0
+        mock_task_result.objects.filter.return_value.update.return_value = 0
+
+        # Run the task - should not raise any errors
+        cleanup_stuck_tasks_periodic()
+
+        # Verify both cleanups were attempted
+        mock_task_history.cleanup_stuck_tasks.assert_called_once()
+        mock_task_result.objects.filter.assert_called()
