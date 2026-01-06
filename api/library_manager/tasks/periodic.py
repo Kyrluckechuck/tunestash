@@ -321,13 +321,13 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
         )
 
 
-# Batch size for lightweight artist change detection
-# Each check is 1 API call with ~1s delay, so 50 artists ≈ 50 calls in ~1 minute
-# This uses ~50% of the sustained rate limit (100/5min), leaving headroom for:
-# - User activity (manual syncs, downloads)
-# - Other periodic tasks (playlist syncs, album downloads)
-# - Full syncs triggered when changes are detected (~2-10 extra calls)
+# Maximum artists to check per run (hard cap)
 _ARTIST_CHECK_BATCH_SIZE = 50
+
+# Soft cap on API calls before stopping artist checks
+# Allows processing more artists when few have changes, but stops early
+# when many full syncs are triggered to leave headroom for other tasks
+_ARTIST_CHECK_API_CALL_SOFT_CAP = 75
 
 # Number of recent albums to fetch per artist for change detection
 # Fetching 20 costs the same as fetching 1 (1 API call), but is more robust
@@ -357,11 +357,11 @@ def sync_tracked_artists_metadata(
     new releases on any given day. Instead of 2+ API calls per artist for full sync,
     we use 1 call for the check and only do full syncs for the ~1-5% that changed.
 
-    With default batch_size=50 and running every hour:
-    - 50 lightweight checks = 50 API calls (~50% of sustained rate limit)
-    - Typically ~1-3 artists need full sync = ~2-6 additional API calls
-    - Leaves headroom for user activity and other periodic tasks
-    - Full rotation of 1000 artists: ~20 hours (vs ~3.5 days with old approach)
+    With default batch_size=50 and soft cap of 75 API calls:
+    - Checks up to 50 artists, but stops early if sustained calls reach 75
+    - When few artists have changes: processes all 50 (~50 calls)
+    - When many have changes: stops early to leave headroom for full syncs
+    - Adaptive approach maximizes throughput while preventing rate limit hits
 
     All API calls are tracked via SpotifyRateLimitState to coordinate with other
     tasks and prevent rate limit violations.
@@ -412,8 +412,20 @@ def sync_tracked_artists_metadata(
         queued_count = 0
         skipped_unchanged = 0
         skipped_pending = 0
+        checked_count = 0
 
         for artist in artists_to_check:
+            # Soft cap: stop if we've used too much of the rate limit budget
+            # This leaves headroom for full syncs and other tasks
+            status = SpotifyRateLimitState.get_status()
+            if status["sustained_calls"] >= _ARTIST_CHECK_API_CALL_SOFT_CAP:
+                logger.info(
+                    f"Stopping artist checks early: sustained calls "
+                    f"({status['sustained_calls']}) reached soft cap "
+                    f"({_ARTIST_CHECK_API_CALL_SOFT_CAP})"
+                )
+                break
+
             # Generate deterministic task ID for deduplication
             task_id = generate_task_id(
                 "library_manager.tasks.fetch_all_albums_for_artist", artist.id
@@ -433,6 +445,8 @@ def sync_tracked_artists_metadata(
             if delay > 0:
                 logger.debug(f"Rate limit delay: sleeping {delay:.1f}s before API call")
                 time.sleep(delay)
+
+            checked_count += 1
 
             # Lightweight check: fetch recent album IDs from Spotify (1 API call)
             recent_album_ids = spotdl_wrapper.downloader.get_artist_recent_album_ids(
@@ -487,6 +501,7 @@ def sync_tracked_artists_metadata(
 
         logger.info(
             f"Artist metadata sync complete: "
+            f"checked {checked_count} artists, "
             f"queued {queued_count} for full sync, "
             f"skipped {skipped_unchanged} unchanged, "
             f"skipped {skipped_pending} with pending tasks"
