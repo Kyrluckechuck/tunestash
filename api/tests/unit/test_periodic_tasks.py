@@ -605,7 +605,7 @@ class TestBackfillAlbumMetadata(TestCase):
             total_tracks=6,
         )
 
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     def test_backfill_updates_album_metadata(self, mock_spotdl, mock_rate_limit_state):
         """Test that backfill fetches and updates album metadata."""
@@ -635,7 +635,7 @@ class TestBackfillAlbumMetadata(TestCase):
         self.album_with_type.refresh_from_db()
         assert self.album_with_type.album_type == "album"
 
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     def test_backfill_skips_untracked_artists(self, mock_spotdl, mock_rate_limit_state):
         """Test that backfill only processes albums from tracked artists."""
@@ -654,7 +654,7 @@ class TestBackfillAlbumMetadata(TestCase):
         self.untracked_album.refresh_from_db()
         assert self.untracked_album.album_type is None
 
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     def test_backfill_respects_limit(self, mock_spotdl, mock_rate_limit_state):
         """Test that backfill respects the limit parameter."""
@@ -686,7 +686,7 @@ class TestBackfillAlbumMetadata(TestCase):
         # Should only update 3 albums
         assert updated == 3
 
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     def test_backfill_stops_on_high_rate_limit_delay(
         self, mock_spotdl, mock_rate_limit_state
@@ -721,7 +721,7 @@ class TestBackfillAlbumMetadata(TestCase):
         # Should stop after first album due to high delay
         assert updated == 1
 
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     def test_backfill_handles_api_failure(self, mock_spotdl, mock_rate_limit_state):
         """Test that backfill continues after API failures."""
@@ -758,7 +758,7 @@ class TestBackfillAlbumMetadata(TestCase):
         album2.refresh_from_db()
         assert album2.album_type == "single"
 
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     def test_backfill_returns_zero_when_no_albums(
         self, mock_spotdl, mock_rate_limit_state
@@ -1101,7 +1101,7 @@ class TestSyncTrackedArtistsMetadata(TestCase):
             total_tracks=10,
         )
 
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_skips_when_rate_limited(self, mock_rate_limit_state):
         """Test that task skips execution when API is rate limited."""
         from library_manager.tasks import sync_tracked_artists_metadata
@@ -1119,7 +1119,7 @@ class TestSyncTrackedArtistsMetadata(TestCase):
         mock_rate_limit_state.get_delay_seconds.assert_not_called()
 
     @patch("library_manager.tasks.periodic.TaskHistory")
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_backpressure_skips_when_too_many_pending(
         self, mock_rate_limit_state, mock_task_history
     ):
@@ -1145,7 +1145,7 @@ class TestSyncTrackedArtistsMetadata(TestCase):
     @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     @patch("library_manager.tasks.periodic.is_task_pending_or_running")
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_queues_artist_with_new_albums(
         self,
         mock_rate_limit_state,
@@ -1181,7 +1181,7 @@ class TestSyncTrackedArtistsMetadata(TestCase):
     @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     @patch("library_manager.tasks.periodic.is_task_pending_or_running")
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_skips_unchanged_artist(
         self,
         mock_rate_limit_state,
@@ -1220,7 +1220,7 @@ class TestSyncTrackedArtistsMetadata(TestCase):
     @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     @patch("library_manager.tasks.periodic.is_task_pending_or_running")
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_skips_artist_with_pending_task(
         self,
         mock_rate_limit_state,
@@ -1253,7 +1253,7 @@ class TestSyncTrackedArtistsMetadata(TestCase):
     @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     @patch("library_manager.tasks.periodic.is_task_pending_or_running")
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_processes_artists_in_oldest_first_order(
         self,
         mock_rate_limit_state,
@@ -1294,7 +1294,7 @@ class TestSyncTrackedArtistsMetadata(TestCase):
     @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     @patch("library_manager.tasks.periodic.is_task_pending_or_running")
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_stops_early_when_soft_cap_reached(
         self,
         mock_rate_limit_state,
@@ -1356,7 +1356,7 @@ class TestScanNewReleasesForTrackedArtists(TestCase):
             total_tracks=10,
         )
 
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_skips_when_rate_limited(self, mock_rate_limit_state):
         """Test that task skips execution when API is rate limited."""
         from library_manager.tasks import scan_new_releases_for_tracked_artists
@@ -1375,7 +1375,7 @@ class TestScanNewReleasesForTrackedArtists(TestCase):
     @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     @patch("library_manager.tasks.periodic.is_task_pending_or_running")
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_queues_sync_for_new_release_from_tracked_artist(
         self,
         mock_rate_limit_state,
@@ -1410,7 +1410,7 @@ class TestScanNewReleasesForTrackedArtists(TestCase):
     @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     @patch("library_manager.tasks.periodic.is_task_pending_or_running")
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_ignores_new_releases_from_untracked_artists(
         self,
         mock_rate_limit_state,
@@ -1445,7 +1445,7 @@ class TestScanNewReleasesForTrackedArtists(TestCase):
     @patch("library_manager.tasks.periodic.fetch_all_albums_for_artist")
     @patch("library_manager.tasks.periodic.spotdl_wrapper")
     @patch("library_manager.tasks.periodic.is_task_pending_or_running")
-    @patch("library_manager.tasks.periodic.SpotifyRateLimitState")
+    @patch("library_manager.models.SpotifyRateLimitState")
     def test_skips_albums_we_already_have(
         self,
         mock_rate_limit_state,
@@ -1481,8 +1481,8 @@ class TestScanNewReleasesForTrackedArtists(TestCase):
 class TestCleanupStuckTasksPeriodic(TestCase):
     """Test cleanup_stuck_tasks_periodic maintenance task."""
 
-    @patch("library_manager.tasks.maintenance.TaskResult")
-    @patch("library_manager.tasks.maintenance.TaskHistory")
+    @patch("django_celery_results.models.TaskResult")
+    @patch("library_manager.models.TaskHistory")
     def test_cleans_up_stuck_task_history(self, mock_task_history, mock_task_result):
         """Test that stuck TaskHistory records are cleaned up."""
         from library_manager.tasks import cleanup_stuck_tasks_periodic
@@ -1499,8 +1499,8 @@ class TestCleanupStuckTasksPeriodic(TestCase):
         # Should call cleanup on TaskHistory
         mock_task_history.cleanup_stuck_tasks.assert_called_once()
 
-    @patch("library_manager.tasks.maintenance.TaskResult")
-    @patch("library_manager.tasks.maintenance.TaskHistory")
+    @patch("django_celery_results.models.TaskResult")
+    @patch("library_manager.models.TaskHistory")
     def test_cleans_up_stale_task_results(self, mock_task_history, mock_task_result):
         """Test that stale TaskResult records in STARTED status are cleaned up."""
         from library_manager.tasks import cleanup_stuck_tasks_periodic
@@ -1524,8 +1524,8 @@ class TestCleanupStuckTasksPeriodic(TestCase):
         # Should update to FAILURE status
         mock_filter.update.assert_called_once_with(status="FAILURE")
 
-    @patch("library_manager.tasks.maintenance.TaskResult")
-    @patch("library_manager.tasks.maintenance.TaskHistory")
+    @patch("django_celery_results.models.TaskResult")
+    @patch("library_manager.models.TaskHistory")
     def test_handles_no_stale_records(self, mock_task_history, mock_task_result):
         """Test that task handles case when no stale records exist."""
         from library_manager.tasks import cleanup_stuck_tasks_periodic
