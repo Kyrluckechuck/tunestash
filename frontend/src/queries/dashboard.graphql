@@ -1,5 +1,21 @@
 query GetLibraryStats {
   libraryStats {
+    # Tracked artists stats (primary focus)
+    trackedArtists
+    desiredSongs
+    desiredDownloaded
+    desiredMissing
+    desiredFailed
+    desiredUnavailable
+    desiredCompletionPercentage
+    desiredAlbums
+    desiredAlbumsDownloaded
+    desiredAlbumsPartial
+    desiredAlbumsMissing
+    desiredAlbumCompletionPercentage
+
+    # Full library stats (secondary)
+    totalArtists
     totalSongs
     downloadedSongs
     missingSongs
@@ -9,12 +25,7 @@ query GetLibraryStats {
     downloadedAlbums
     partialAlbums
     missingAlbums
-    totalArtists
-    trackedArtists
     songCompletionPercentage
     albumCompletionPercentage
-    desiredSongs
-    desiredDownloaded
-    desiredCompletionPercentage
   }
 }
