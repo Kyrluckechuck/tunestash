@@ -48,6 +48,31 @@ ALBUM_TYPES_TO_DOWNLOAD = _get_setting_list(
 ALBUM_GROUPS_TO_IGNORE = _get_setting_list("ALBUM_GROUPS_TO_IGNORE", ["appears_on"])
 
 
+def truncate_name(name: str, max_length: int = 500) -> str:
+    """Truncate a name to fit within max_length, preserving start and end.
+
+    If the name exceeds max_length, truncates to: first 400 chars + "..." + last 96 chars.
+    This preserves both the beginning (usually title) and end (often has important suffixes
+    like remix info or featured artists).
+
+    Args:
+        name: The name to truncate
+        max_length: Maximum length allowed (default 500 to match CharField max_length)
+
+    Returns:
+        The original name if short enough, or truncated version
+    """
+    if len(name) <= max_length:
+        return name
+
+    # first 400 + "..." + last 96 = 499 chars (leaves 1 char margin)
+    prefix_len = 400
+    suffix_len = 96
+    separator = "..."
+
+    return name[:prefix_len] + separator + name[-suffix_len:]
+
+
 # Create your models here.
 class FilePath(models.Model):
     """Deduplicated file paths to save storage space."""
@@ -378,6 +403,12 @@ class Song(models.Model):
         self.last_failed_at = None
         self.unavailable = False
         self.save()
+
+    def save(self, *args, **kwargs) -> None:
+        """Override save to truncate name if too long for database field."""
+        if self.name:
+            self.name = truncate_name(self.name, max_length=500)
+        super().save(*args, **kwargs)
 
     class Meta(TypedModelMeta):
         app_label = "library_manager"
