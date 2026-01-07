@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import django.core.validators
 from django.conf import settings
@@ -404,7 +404,7 @@ class Song(models.Model):
         self.unavailable = False
         self.save()
 
-    def save(self, *args, **kwargs) -> None:
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Override save to truncate name if too long for database field."""
         if self.name:
             self.name = truncate_name(self.name, max_length=500)
