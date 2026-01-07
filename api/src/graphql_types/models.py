@@ -577,3 +577,57 @@ class MetadataCheckResult:
     change_detected: bool
     old_value: Optional[str] = None
     new_value: Optional[str] = None
+
+
+# =============================================================================
+# Application Metrics Types
+# =============================================================================
+
+
+@strawberry.type
+class MetricTimePoint:
+    """A single data point in a time series."""
+
+    timestamp: DateTime
+    value: float
+    count: int
+
+
+@strawberry.type
+class MetricSummary:
+    """Summary statistics for a single metric."""
+
+    name: str
+    total: float
+    count: int
+    first_recorded: Optional[DateTime]
+    last_recorded: Optional[DateTime]
+
+
+@strawberry.type
+class MetricTimeSeries:
+    """Time series data for a metric."""
+
+    name: str
+    period: str  # "hour" or "day"
+    data: List[MetricTimePoint]
+
+
+@strawberry.type
+class FallbackMetrics:
+    """Aggregated metrics for fallback download provider usage."""
+
+    total_attempts: int
+    total_successes: int
+    total_failures: int
+    success_rate: float
+    time_series: List[MetricTimePoint]
+    failure_reasons: List["FailureReasonCount"]
+
+
+@strawberry.type
+class FailureReasonCount:
+    """Count of failures by reason."""
+
+    reason: str
+    count: int
