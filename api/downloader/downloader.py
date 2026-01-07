@@ -341,24 +341,24 @@ class Downloader:
     def get_playlist(self, playlist_id: str) -> Any:
         """Get playlist with all tracks.
 
-        Tries public client first (works for public playlists, saves OAuth quota),
-        falls back to OAuth client for private playlists. This allows users who
-        haven't authenticated to still sync public playlists.
+        Prefers OAuth client (can access both public and private playlists),
+        falls back to public client for unauthenticated users syncing public playlists.
         """
         playlist = None
         used_client = None
 
-        # Try public client first (works for public playlists)
-        try:
+        # Prefer OAuth client - it can access both public AND private playlists
+        if self.public_client != self.spotipy_client:
+            try:
+                playlist = self.spotipy_client.playlist(playlist_id)
+                used_client = self.spotipy_client
+            except Exception:
+                pass
+
+        # Fall back to public client (unauthenticated users syncing public playlists)
+        if playlist is None:
             playlist = self.public_client.playlist(playlist_id)
             used_client = self.public_client
-        except Exception:
-            pass
-
-        # Fall back to OAuth client (needed for private playlists)
-        if playlist is None and self.public_client != self.spotipy_client:
-            playlist = self.spotipy_client.playlist(playlist_id)
-            used_client = self.spotipy_client
 
         if playlist is None:
             raise Exception(f"Failed to fetch playlist {playlist_id}")
@@ -380,8 +380,8 @@ class Downloader:
         Uses the fields parameter to minimize API response size and reduce rate
         limiting risk.
 
-        Tries public client first (public playlists), falls back to OAuth client
-        for private playlists. This reduces OAuth rate limit usage.
+        Prefers OAuth client (can access both public and private playlists),
+        falls back to public client for unauthenticated users.
 
         Args:
             playlist_id: The Spotify playlist ID (22-character base62 string)
@@ -389,20 +389,20 @@ class Downloader:
         Returns:
             The playlist's snapshot_id string, or None if request fails
         """
-        # Try public client first (works for public playlists, saves OAuth quota)
-        try:
-            result = self.public_client.playlist(playlist_id, fields="snapshot_id")
-            return result.get("snapshot_id")
-        except Exception:
-            pass
-
-        # Fall back to OAuth client (needed for private playlists)
+        # Prefer OAuth client - it can access both public AND private playlists
         if self.public_client != self.spotipy_client:
             try:
                 result = self.spotipy_client.playlist(playlist_id, fields="snapshot_id")
                 return result.get("snapshot_id")
             except Exception:
                 pass
+
+        # Fall back to public client (unauthenticated users syncing public playlists)
+        try:
+            result = self.public_client.playlist(playlist_id, fields="snapshot_id")
+            return result.get("snapshot_id")
+        except Exception:
+            pass
 
         return None
 
