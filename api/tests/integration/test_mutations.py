@@ -279,6 +279,8 @@ class TestTaskMutations(TransactionTestCase):
 
     async def test_cancel_all_tasks(self):
         """Test canceling all tasks."""
+        from unittest.mock import patch
+
         mutation = """
         mutation CancelAllTasks {
             cancelAllTasks {
@@ -288,7 +290,11 @@ class TestTaskMutations(TransactionTestCase):
         }
         """
 
-        result = await schema.execute(mutation)
+        # Mock celery_app.control.purge() to avoid broker connection
+        with patch("src.services.task_management.celery_app") as mock_celery:
+            mock_celery.control.purge.return_value = 0
 
-        assert result.errors is None
-        assert result.data["cancelAllTasks"]["success"] is True
+            result = await schema.execute(mutation)
+
+            assert result.errors is None
+            assert result.data["cancelAllTasks"]["success"] is True
