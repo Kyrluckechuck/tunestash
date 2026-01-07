@@ -262,6 +262,7 @@ disable = [
     "C0114",  # missing-module-docstring
     "C0115",  # missing-class-docstring
     "C0116",  # missing-function-docstring
+    "R0902",  # too-many-instance-attributes (Django models have many fields)
     "R0903",  # too-few-public-methods
     "R0901",  # too-many-ancestors (Django models have deep inheritance chains)
     "R0912",  # too-many-branches (legitimate complexity in parsing/event handling)
