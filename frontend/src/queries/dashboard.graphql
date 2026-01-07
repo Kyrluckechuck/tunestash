@@ -29,3 +29,21 @@ query GetLibraryStats {
     albumCompletionPercentage
   }
 }
+
+query GetFallbackMetrics($days: Int) {
+  fallbackMetrics(days: $days) {
+    totalAttempts
+    totalSuccesses
+    totalFailures
+    successRate
+    timeSeries {
+      timestamp
+      value
+      count
+    }
+    failureReasons {
+      reason
+      count
+    }
+  }
+}

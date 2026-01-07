@@ -94,6 +94,20 @@ enum EntityType {
   TRACK
 }
 
+type FailureReasonCount {
+  count: Int!
+  reason: String!
+}
+
+type FallbackMetrics {
+  failureReasons: [FailureReasonCount!]!
+  successRate: Float!
+  timeSeries: [MetricTimePoint!]!
+  totalAttempts: Int!
+  totalFailures: Int!
+  totalSuccesses: Int!
+}
+
 type HistoryConnection {
   edges: [HistoryEdge!]!
   pageInfo: PageInfo!
@@ -176,6 +190,12 @@ type MetadataUpdateSummary {
   artistUpdates: Int!
   songUpdates: Int!
   totalAffectedSongs: Int!
+}
+
+type MetricTimePoint {
+  count: Int!
+  timestamp: DateTime!
+  value: Float!
 }
 
 type Mutation {
@@ -286,6 +306,7 @@ type Query {
   artist(id: String!): Artist
   artists(after: String = null, first: Int = 20, hasUndownloaded: Boolean = null, isTracked: Boolean = null, search: String = null, sortBy: String = null, sortDirection: String = null): ArtistConnection!
   downloadHistory(after: String = null, entityType: String = null, first: Int = 20, status: String = null): HistoryConnection!
+  fallbackMetrics(days: Int = 7): FallbackMetrics!
   libraryStats: LibraryStats!
   oneOffTasks: [OneOffTask!]!
   pendingMetadataUpdates(entityType: MetadataEntityType = null, includeResolved: Boolean! = false, status: MetadataUpdateStatus = null): MetadataUpdateConnection!

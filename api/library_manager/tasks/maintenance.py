@@ -140,6 +140,20 @@ def cleanup_celery_history(self: Any, days_to_keep: int = 30) -> None:
 
 
 @celery_app.task(
+    bind=True, name="library_manager.tasks.cleanup_app_metrics"
+)  # Scheduled via Celery Beat - Daily at 6 AM
+def cleanup_app_metrics(self: Any, days_to_keep: int = 30) -> None:
+    """Periodically clean up old app metrics to prevent database bloat."""
+    from src.services.metrics import MetricsService
+
+    deleted_count = MetricsService.cleanup_old_metrics(days=days_to_keep)
+    if deleted_count > 0:
+        logger.info(f"Cleaned up {deleted_count} old app metric record(s)")
+    else:
+        logger.info("No old app metrics to clean up")
+
+
+@celery_app.task(
     bind=True,
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 2, "countdown": 30},

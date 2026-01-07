@@ -109,6 +109,25 @@ Notes:
 - You can also set environment variables to override YAML at runtime.
 - Secrets like `DJANGO_SECRET_KEY` should be set via env vars.
 
+### Tidal Fallback Provider
+
+When the primary download source (YouTube Music via spotdl) fails, TuneStash can automatically retry using Tidal as a fallback. This improves success rates for tracks that are unavailable or restricted on YouTube Music.
+
+**Enable in `settings.yaml`:**
+```yaml
+default:
+  tidal_fallback_enabled: true     # Enable/disable fallback (default: false)
+  tidal_fallback_quality: "lossless"  # Options: high, lossless, hi_res (default: lossless)
+```
+
+**How it works:**
+- When spotdl fails to download a track, the fallback provider searches Tidal by ISRC/metadata
+- If a high-confidence match is found, the track is downloaded from Tidal instead
+- Metadata is embedded and the file is validated before being saved
+
+**Monitoring:**
+View fallback success rates in the Dashboard → "Fallback Provider Metrics" section (collapsed by default). Metrics are retained for 30 days.
+
 ## Running From Docker (recommended)
 An example compose setup is included. Follow these steps:
 

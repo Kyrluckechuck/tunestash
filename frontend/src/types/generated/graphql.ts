@@ -112,6 +112,22 @@ export type EntityType =
   | 'PLAYLIST'
   | 'TRACK';
 
+export type FailureReasonCount = {
+  __typename?: 'FailureReasonCount';
+  count: Scalars['Int']['output'];
+  reason: Scalars['String']['output'];
+};
+
+export type FallbackMetrics = {
+  __typename?: 'FallbackMetrics';
+  failureReasons: Array<FailureReasonCount>;
+  successRate: Scalars['Float']['output'];
+  timeSeries: Array<MetricTimePoint>;
+  totalAttempts: Scalars['Int']['output'];
+  totalFailures: Scalars['Int']['output'];
+  totalSuccesses: Scalars['Int']['output'];
+};
+
 export type HistoryConnection = {
   __typename?: 'HistoryConnection';
   edges: Array<HistoryEdge>;
@@ -199,6 +215,13 @@ export type MetadataUpdateSummary = {
   artistUpdates: Scalars['Int']['output'];
   songUpdates: Scalars['Int']['output'];
   totalAffectedSongs: Scalars['Int']['output'];
+};
+
+export type MetricTimePoint = {
+  __typename?: 'MetricTimePoint';
+  count: Scalars['Int']['output'];
+  timestamp: Scalars['DateTime']['output'];
+  value: Scalars['Float']['output'];
 };
 
 export type Mutation = {
@@ -480,6 +503,7 @@ export type Query = {
   artist: Maybe<Artist>;
   artists: ArtistConnection;
   downloadHistory: HistoryConnection;
+  fallbackMetrics: FallbackMetrics;
   libraryStats: LibraryStats;
   oneOffTasks: Array<OneOffTask>;
   pendingMetadataUpdates: MetadataUpdateConnection;
@@ -534,6 +558,11 @@ export type QueryDownloadHistoryArgs = {
   entityType?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
   status?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryFallbackMetricsArgs = {
+  days?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -997,6 +1026,13 @@ export type GetLibraryStatsQueryVariables = Exact<{ [key: string]: never; }>;
 
 export type GetLibraryStatsQuery = { __typename?: 'Query', libraryStats: { __typename?: 'LibraryStats', trackedArtists: number, desiredSongs: number, desiredDownloaded: number, desiredMissing: number, desiredFailed: number, desiredUnavailable: number, desiredCompletionPercentage: number, desiredAlbums: number, desiredAlbumsDownloaded: number, desiredAlbumsPartial: number, desiredAlbumsMissing: number, desiredAlbumCompletionPercentage: number, totalArtists: number, totalSongs: number, downloadedSongs: number, missingSongs: number, failedSongs: number, unavailableSongs: number, totalAlbums: number, downloadedAlbums: number, partialAlbums: number, missingAlbums: number, songCompletionPercentage: number, albumCompletionPercentage: number } };
 
+export type GetFallbackMetricsQueryVariables = Exact<{
+  days?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type GetFallbackMetricsQuery = { __typename?: 'Query', fallbackMetrics: { __typename?: 'FallbackMetrics', totalAttempts: number, totalSuccesses: number, totalFailures: number, successRate: number, timeSeries: Array<{ __typename?: 'MetricTimePoint', timestamp: string, value: number, count: number }>, failureReasons: Array<{ __typename?: 'FailureReasonCount', reason: string, count: number }> } };
+
 export type DownloadUrlMutationVariables = Exact<{
   url: Scalars['String']['input'];
   autoTrackArtists?: InputMaybe<Scalars['Boolean']['input']>;
@@ -1293,6 +1329,7 @@ export const SyncAllTrackedArtistsDocument = {"kind":"Document","definitions":[{
 export const DownloadAllTrackedArtistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DownloadAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"downloadAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DownloadAllTrackedArtistsMutation, DownloadAllTrackedArtistsMutationVariables>;
 export const DownloadAllPlaylistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DownloadAllPlaylists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"downloadAllPlaylists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DownloadAllPlaylistsMutation, DownloadAllPlaylistsMutationVariables>;
 export const GetLibraryStatsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetLibraryStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"libraryStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"trackedArtists"}},{"kind":"Field","name":{"kind":"Name","value":"desiredSongs"}},{"kind":"Field","name":{"kind":"Name","value":"desiredDownloaded"}},{"kind":"Field","name":{"kind":"Name","value":"desiredMissing"}},{"kind":"Field","name":{"kind":"Name","value":"desiredFailed"}},{"kind":"Field","name":{"kind":"Name","value":"desiredUnavailable"}},{"kind":"Field","name":{"kind":"Name","value":"desiredCompletionPercentage"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbumsDownloaded"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbumsPartial"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbumsMissing"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbumCompletionPercentage"}},{"kind":"Field","name":{"kind":"Name","value":"totalArtists"}},{"kind":"Field","name":{"kind":"Name","value":"totalSongs"}},{"kind":"Field","name":{"kind":"Name","value":"downloadedSongs"}},{"kind":"Field","name":{"kind":"Name","value":"missingSongs"}},{"kind":"Field","name":{"kind":"Name","value":"failedSongs"}},{"kind":"Field","name":{"kind":"Name","value":"unavailableSongs"}},{"kind":"Field","name":{"kind":"Name","value":"totalAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"downloadedAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"partialAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"missingAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"songCompletionPercentage"}},{"kind":"Field","name":{"kind":"Name","value":"albumCompletionPercentage"}}]}}]}}]} as unknown as DocumentNode<GetLibraryStatsQuery, GetLibraryStatsQueryVariables>;
+export const GetFallbackMetricsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetFallbackMetrics"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"days"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"fallbackMetrics"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"days"},"value":{"kind":"Variable","name":{"kind":"Name","value":"days"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalAttempts"}},{"kind":"Field","name":{"kind":"Name","value":"totalSuccesses"}},{"kind":"Field","name":{"kind":"Name","value":"totalFailures"}},{"kind":"Field","name":{"kind":"Name","value":"successRate"}},{"kind":"Field","name":{"kind":"Name","value":"timeSeries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"timestamp"}},{"kind":"Field","name":{"kind":"Name","value":"value"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}},{"kind":"Field","name":{"kind":"Name","value":"failureReasons"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}}]}}]}}]} as unknown as DocumentNode<GetFallbackMetricsQuery, GetFallbackMetricsQueryVariables>;
 export const DownloadUrlDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DownloadUrl"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"downloadUrl"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}},{"kind":"Argument","name":{"kind":"Name","value":"autoTrackArtists"},"value":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"artist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"gid"}},{"kind":"Field","name":{"kind":"Name","value":"isTracked"}},{"kind":"Field","name":{"kind":"Name","value":"addedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastSynced"}}]}},{"kind":"Field","name":{"kind":"Name","value":"album"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyGid"}},{"kind":"Field","name":{"kind":"Name","value":"totalTracks"}},{"kind":"Field","name":{"kind":"Name","value":"wanted"}},{"kind":"Field","name":{"kind":"Name","value":"downloaded"}},{"kind":"Field","name":{"kind":"Name","value":"albumType"}},{"kind":"Field","name":{"kind":"Name","value":"albumGroup"}},{"kind":"Field","name":{"kind":"Name","value":"artist"}},{"kind":"Field","name":{"kind":"Name","value":"artistId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"playlist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"url"}},{"kind":"Field","name":{"kind":"Name","value":"enabled"}},{"kind":"Field","name":{"kind":"Name","value":"autoTrackArtists"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}}]}}]}}]}}]} as unknown as DocumentNode<DownloadUrlMutation, DownloadUrlMutationVariables>;
 export const CreatePlaylistFromDownloadDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreatePlaylistFromDownload"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}},{"kind":"Argument","name":{"kind":"Name","value":"autoTrackArtists"},"value":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"url"}},{"kind":"Field","name":{"kind":"Name","value":"enabled"}},{"kind":"Field","name":{"kind":"Name","value":"autoTrackArtists"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}}]}}]}}]} as unknown as DocumentNode<CreatePlaylistFromDownloadMutation, CreatePlaylistFromDownloadMutationVariables>;
 export const GetSystemStatusDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSystemStatus"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"systemHealth"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"canDownload"}},{"kind":"Field","name":{"kind":"Name","value":"downloadBlockerReason"}},{"kind":"Field","name":{"kind":"Name","value":"authentication"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cookiesValid"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesErrorType"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesExpireInDays"}},{"kind":"Field","name":{"kind":"Name","value":"poTokenConfigured"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUserAuthEnabled"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyAuthMode"}}]}},{"kind":"Field","name":{"kind":"Name","value":"spotifyRateLimit"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"isRateLimited"}},{"kind":"Field","name":{"kind":"Name","value":"rateLimitedUntil"}},{"kind":"Field","name":{"kind":"Name","value":"secondsUntilClear"}},{"kind":"Field","name":{"kind":"Name","value":"isThrottling"}},{"kind":"Field","name":{"kind":"Name","value":"currentDelaySeconds"}},{"kind":"Field","name":{"kind":"Name","value":"windowCallCount"}},{"kind":"Field","name":{"kind":"Name","value":"windowMaxCalls"}},{"kind":"Field","name":{"kind":"Name","value":"windowUsagePercent"}},{"kind":"Field","name":{"kind":"Name","value":"burstCalls"}},{"kind":"Field","name":{"kind":"Name","value":"burstMax"}},{"kind":"Field","name":{"kind":"Name","value":"sustainedCalls"}},{"kind":"Field","name":{"kind":"Name","value":"sustainedMax"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyCalls"}},{"kind":"Field","name":{"kind":"Name","value":"hourlyMax"}}]}},{"kind":"Field","name":{"kind":"Name","value":"storage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"path"}},{"kind":"Field","name":{"kind":"Name","value":"exists"}},{"kind":"Field","name":{"kind":"Name","value":"isWritable"}},{"kind":"Field","name":{"kind":"Name","value":"availableGb"}},{"kind":"Field","name":{"kind":"Name","value":"usagePercent"}},{"kind":"Field","name":{"kind":"Name","value":"isLow"}},{"kind":"Field","name":{"kind":"Name","value":"isCriticallyLow"}},{"kind":"Field","name":{"kind":"Name","value":"errorMessage"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"queueStatus"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalPendingTasks"}},{"kind":"Field","name":{"kind":"Name","value":"queueSize"}}]}}]}}]} as unknown as DocumentNode<GetSystemStatusQuery, GetSystemStatusQueryVariables>;

@@ -20,6 +20,8 @@ class Config:
         artist_to_fetch: Optional[str] = None,
         print_exceptions: bool = True,
         force_playlist_resync: bool = False,
+        tidal_fallback_enabled: Optional[bool] = None,
+        tidal_fallback_quality: Optional[str] = None,
     ):
         # Handle YouTube cookies with backwards compatibility
         self.youtube_cookies_location = youtube_cookies_location or Path(
@@ -61,6 +63,19 @@ class Config:
             overwrite
             if overwrite is not None
             else getattr(settings, "overwrite", False)
+        )
+
+        # Tidal fallback for when spotdl/YTM fails to find a match
+        self.tidal_fallback_enabled = (
+            tidal_fallback_enabled
+            if tidal_fallback_enabled is not None
+            else getattr(settings, "tidal_fallback_enabled", True)
+        )
+        # Quality preference: "high" (320kbps), "lossless" (FLAC), "hi_res" (24-bit)
+        self.tidal_fallback_quality = (
+            tidal_fallback_quality
+            if tidal_fallback_quality is not None
+            else getattr(settings, "tidal_fallback_quality", "lossless")
         )
 
         # Direct assignments

@@ -51,6 +51,8 @@ from . import __version__, spotdl_override, utils
 from .default_download_settings import DEFAULT_DOWNLOAD_SETTINGS
 from .downloader import Downloader
 from .premium_detector import PremiumDetector, PremiumStatus
+from .providers.base import QualityPreference, SpotifyTrackMetadata
+from .providers.fallback import FallbackDownloader
 from .spotdl_override import (
     DownloadTimeoutError,
     _malloc_trim,
@@ -353,6 +355,34 @@ def _is_fail_fast_error(exception: Exception) -> tuple[bool, int | None]:
 MIN_ACCEPTABLE_BITRATE_KBPS = 192
 
 
+def _create_spotify_metadata_from_track(track: dict) -> SpotifyTrackMetadata:
+    """Create SpotifyTrackMetadata from Spotify API track data."""
+    album = track.get("album", {})
+    album_images = album.get("images", [])
+    cover_url = album_images[0]["url"] if album_images else None
+
+    return SpotifyTrackMetadata(
+        spotify_id=extract_spotify_id_from_uri(track.get("id", "")),
+        title=track.get("name", ""),
+        artist=track["artists"][0]["name"] if track.get("artists") else "",
+        album=album.get("name", ""),
+        album_artist=(
+            album.get("artists", [{}])[0].get("name", "")
+            if album.get("artists")
+            else ""
+        ),
+        track_number=track.get("track_number", 1),
+        total_tracks=album.get("total_tracks", 1),
+        disc_number=track.get("disc_number", 1),
+        total_discs=1,
+        duration_ms=track.get("duration_ms", 0),
+        release_date=album.get("release_date", ""),
+        isrc=track.get("external_ids", {}).get("isrc"),
+        genres=track.get("genres", []),
+        cover_url=cover_url,
+    )
+
+
 def _get_songs_needing_download(
     track_gids: list[str],
     logger: logging.Logger,
@@ -605,7 +635,29 @@ class SpotdlWrapper:
         except Exception as e:
             self.logger.warning(f"Startup premium verification failed: {e}")
 
+        # Initialize fallback downloader (Tidal) for when spotdl fails
+        self._fallback_downloader: FallbackDownloader | None = None
+        self._fallback_enabled = config.tidal_fallback_enabled
+        self._fallback_quality = self._parse_quality_preference(
+            config.tidal_fallback_quality
+        )
+        if self._fallback_enabled:
+            self.logger.info(
+                f"Tidal fallback downloader enabled (quality: {config.tidal_fallback_quality})"
+            )
+        else:
+            self.logger.info("Tidal fallback downloader disabled")
+
         self.logger.debug("Completed SpotdlWrapper Initialization")
+
+    def _parse_quality_preference(self, quality_str: str) -> QualityPreference:
+        """Map config string to QualityPreference enum."""
+        quality_map = {
+            "high": QualityPreference.HIGH,
+            "lossless": QualityPreference.LOSSLESS,
+            "hi_res": QualityPreference.HI_RES,
+        }
+        return quality_map.get(quality_str.lower(), QualityPreference.LOSSLESS)
 
     def refresh_spotify_client(self) -> bool:
         """
@@ -777,6 +829,91 @@ class SpotdlWrapper:
             except Exception as recovery_error:
                 self.logger.error(f"[SPOTDL REINIT] Recovery failed: {recovery_error}")
                 return False
+
+    def _try_fallback_download(
+        self, track: dict, output_dir: Path
+    ) -> tuple[bool, Path | None, int | None]:
+        """
+        Attempt to download a track using the Tidal fallback provider.
+
+        Args:
+            track: Spotify track metadata dictionary
+            output_dir: Directory to save the downloaded file
+
+        Returns:
+            Tuple of (success, output_path, bitrate_kbps)
+        """
+        if not self._fallback_enabled:
+            return False, None, None
+
+        # Record fallback attempt metric
+        from src.services.metrics import MetricsService
+
+        MetricsService.increment("fallback.attempt", labels={"provider": "tidal"})
+
+        try:
+            # Lazy-initialize the fallback downloader
+            if self._fallback_downloader is None:
+                self._fallback_downloader = FallbackDownloader(
+                    quality_preference=self._fallback_quality,
+                    output_dir=output_dir,
+                )
+
+            # Create SpotifyTrackMetadata from track data
+            spotify_metadata = _create_spotify_metadata_from_track(track)
+
+            self.logger.info(
+                f"[FALLBACK] Attempting Tidal download for "
+                f"'{spotify_metadata.artist} - {spotify_metadata.title}'"
+            )
+
+            # Use async_to_sync for proper async/sync boundary handling
+            # This is the same pattern used elsewhere in the codebase
+            from asgiref.sync import async_to_sync
+
+            result = async_to_sync(self._fallback_downloader.download_track)(
+                spotify_metadata
+            )
+
+            if result.success and result.file_path:
+                self.logger.info(
+                    f"[FALLBACK] ✓ Successfully downloaded from {result.provider_used}: "
+                    f"{result.file_path}"
+                )
+                # Record success metric
+                MetricsService.increment(
+                    "fallback.success", labels={"provider": "tidal"}
+                )
+                # Get bitrate from the file
+                media_info = MediaInfo.parse(result.file_path)
+                bitrate = 0
+                for media_track in media_info.tracks:
+                    if media_track.track_type == "Audio":
+                        bitrate = int(media_track.bit_rate / 1000)
+                        break
+                return True, result.file_path, bitrate
+            else:
+                self.logger.warning(
+                    f"[FALLBACK] Failed to download from Tidal: {result.error_message}"
+                )
+                # Record failure metric with reason
+                MetricsService.increment(
+                    "fallback.failure",
+                    labels={
+                        "provider": "tidal",
+                        "reason": result.error_message or "unknown",
+                    },
+                )
+                return False, None, None
+
+        except Exception as e:
+            self.logger.warning(f"[FALLBACK] Exception during Tidal download: {e}")
+            # Record exception metric
+            MetricsService.increment(
+                "fallback.failure",
+                labels={"provider": "tidal", "reason": "exception"},
+            )
+            return False, None, None
 
     def _update_playlist_status_on_error(self, url: str) -> None:
         """
@@ -1445,6 +1582,32 @@ class SpotdlWrapper:
                         self.logger.debug(f"output_path: {output_path}")
                         # Capture spotdl error details for debugging
                         spotdl_errors = list(self.spotdl.downloader.errors)
+
+                        # Try fallback download (Tidal) before failing
+                        from django.conf import settings as django_settings
+
+                        music_output_dir = Path(
+                            getattr(django_settings, "OUTPUT_PATH", "/music")
+                        )
+                        fallback_success, fallback_path, fallback_bitrate = (
+                            self._try_fallback_download(track, music_output_dir)
+                        )
+
+                        if fallback_success and fallback_path:
+                            # Fallback succeeded - use fallback result
+                            output_path = fallback_path
+                            song_success = True
+                            bit_rate = fallback_bitrate or 320
+                            # Mark as downloaded and continue
+                            db_song.mark_downloaded(
+                                bitrate=int(bit_rate), file_path=output_path
+                            )
+                            self.logger.info(
+                                f"[FALLBACK] Song downloaded via Tidal: {output_path}"
+                            )
+                            continue  # Skip to next track (avoid bitrate validation for Tidal)
+
+                        # Fallback also failed - raise the original spotdl error
                         raise SpotdlDownloadError(
                             "Failed to download correctly", spotdl_errors=spotdl_errors
                         )

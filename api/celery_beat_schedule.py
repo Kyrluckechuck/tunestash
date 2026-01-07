@@ -52,4 +52,9 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/10"),  # Every 10 minutes
         "options": {"priority": TaskPriority.MAINTENANCE},
     },
+    "cleanup-app-metrics": {
+        "task": "library_manager.tasks.cleanup_app_metrics",
+        "schedule": crontab(minute=0, hour=6),  # Daily at 6 AM
+        "options": {"priority": TaskPriority.MAINTENANCE},
+    },
 }

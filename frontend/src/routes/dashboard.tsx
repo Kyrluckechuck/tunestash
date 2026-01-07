@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@apollo/client/react';
-import { GetLibraryStatsDocument } from '../types/generated/graphql';
+import {
+  GetLibraryStatsDocument,
+  GetFallbackMetricsDocument,
+} from '../types/generated/graphql';
 
 function RefreshIcon({ className }: { className?: string }) {
   return (
@@ -122,7 +125,15 @@ function ProgressBar({
 
 function Dashboard() {
   const { data, loading, error, refetch } = useQuery(GetLibraryStatsDocument);
+  const {
+    data: metricsData,
+    loading: metricsLoading,
+    refetch: refetchMetrics,
+  } = useQuery(GetFallbackMetricsDocument, {
+    variables: { days: 7 },
+  });
   const [showFullStats, setShowFullStats] = useState(false);
+  const [showFallbackMetrics, setShowFallbackMetrics] = useState(false);
 
   const isInitialLoad = loading && !data;
   const isRefetching = loading && !!data;
@@ -161,7 +172,10 @@ function Dashboard() {
 
   const handleRefresh = () => {
     refetch();
+    refetchMetrics();
   };
+
+  const fallback = metricsData?.fallbackMetrics;
 
   return (
     <section className='space-y-6'>
@@ -407,6 +421,127 @@ function Dashboard() {
                 />
               </div>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Fallback Provider Metrics - Collapsible */}
+      <div className='border border-gray-200 rounded-lg'>
+        <button
+          onClick={() => setShowFallbackMetrics(!showFallbackMetrics)}
+          className='w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors'
+        >
+          <div>
+            <h2 className='text-lg font-semibold text-gray-900'>
+              Fallback Provider Metrics
+            </h2>
+            <p className='text-sm text-gray-500'>
+              Tidal fallback download statistics (last 7 days)
+            </p>
+          </div>
+          <ChevronIcon
+            className='w-5 h-5 text-gray-500'
+            expanded={showFallbackMetrics}
+          />
+        </button>
+
+        {showFallbackMetrics && (
+          <div className='p-4 pt-0 space-y-6 border-t border-gray-200'>
+            {metricsLoading && !fallback ? (
+              <div className='animate-pulse space-y-4'>
+                <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+                  {[1, 2, 3, 4].map(i => (
+                    <div key={i} className='h-24 bg-gray-200 rounded-lg' />
+                  ))}
+                </div>
+              </div>
+            ) : fallback && fallback.totalAttempts > 0 ? (
+              <>
+                {/* Fallback Overview */}
+                <div>
+                  <h3 className='text-md font-medium text-gray-700 mb-3'>
+                    Overview
+                  </h3>
+                  <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+                    <StatCard
+                      title='Total Attempts'
+                      value={fallback.totalAttempts}
+                      color='gray'
+                    />
+                    <StatCard
+                      title='Successful'
+                      value={fallback.totalSuccesses}
+                      subtitle={`${fallback.successRate}% success rate`}
+                      color='green'
+                    />
+                    <StatCard
+                      title='Failed'
+                      value={fallback.totalFailures}
+                      color='red'
+                    />
+                    <StatCard
+                      title='Success Rate'
+                      value={`${fallback.successRate}%`}
+                      color={
+                        fallback.successRate >= 70
+                          ? 'green'
+                          : fallback.successRate >= 40
+                            ? 'yellow'
+                            : 'red'
+                      }
+                    />
+                  </div>
+                </div>
+
+                {/* Success Rate Progress Bar */}
+                <div className='bg-white rounded-lg border border-gray-200 p-4'>
+                  <div className='flex justify-between text-sm mb-2'>
+                    <span className='text-gray-600'>Fallback Success Rate</span>
+                    <span className='font-medium'>{fallback.successRate}%</span>
+                  </div>
+                  <ProgressBar
+                    percentage={fallback.successRate}
+                    color={fallback.successRate >= 50 ? 'green' : 'blue'}
+                  />
+                </div>
+
+                {/* Failure Reasons */}
+                {fallback.failureReasons.length > 0 && (
+                  <div>
+                    <h3 className='text-md font-medium text-gray-700 mb-3'>
+                      Failure Reasons
+                    </h3>
+                    <div className='bg-gray-50 rounded-lg border border-gray-200 p-4'>
+                      <div className='space-y-2'>
+                        {fallback.failureReasons.map(reason => (
+                          <div
+                            key={reason.reason}
+                            className='flex justify-between items-center'
+                          >
+                            <span className='text-sm text-gray-600 font-mono'>
+                              {reason.reason}
+                            </span>
+                            <span className='text-sm font-medium text-gray-900'>
+                              {reason.count}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className='text-center py-8 text-gray-500'>
+                <p>
+                  No fallback download attempts recorded in the last 7 days.
+                </p>
+                <p className='text-sm mt-1'>
+                  The fallback provider is used when the primary download source
+                  fails.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

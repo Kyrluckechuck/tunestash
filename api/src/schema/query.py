@@ -8,12 +8,15 @@ from ..graphql_types.models import (
     Artist,
     ArtistConnection,
     AuthenticationStatus,
+    FailureReasonCount,
+    FallbackMetrics,
     HistoryConnection,
     HistoryEdge,
     LibraryStats,
     MetadataEntityType,
     MetadataUpdateConnection,
     MetadataUpdateStatus,
+    MetricTimePoint,
     OneOffTask,
     PageInfo,
     PendingTask,
@@ -578,4 +581,40 @@ class Query:
             entity_type=entity_type,
             status=status,
             include_resolved=include_resolved,
+        )
+
+    @strawberry.field
+    async def fallback_metrics(self, days: Optional[int] = 7) -> FallbackMetrics:
+        """
+        Get aggregated metrics for the fallback download provider (Tidal).
+
+        Returns success/failure counts, success rate percentage, time series
+        data for charting, and breakdown of failure reasons.
+
+        Args:
+            days: Number of days to look back (default 7)
+        """
+        from asgiref.sync import sync_to_async
+
+        from src.services.metrics import MetricsService
+
+        data = await sync_to_async(MetricsService.get_fallback_metrics)(days or 7)
+
+        return FallbackMetrics(
+            total_attempts=data["total_attempts"],
+            total_successes=data["total_successes"],
+            total_failures=data["total_failures"],
+            success_rate=data["success_rate"],
+            time_series=[
+                MetricTimePoint(
+                    timestamp=point["timestamp"],
+                    value=point["value"],
+                    count=point["count"],
+                )
+                for point in data["time_series"]
+            ],
+            failure_reasons=[
+                FailureReasonCount(reason=r["reason"], count=r["count"])
+                for r in data["failure_reasons"]
+            ],
         )

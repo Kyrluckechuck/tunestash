@@ -1347,3 +1347,58 @@ class PendingMetadataUpdate(models.Model):
             models.Index(fields=["content_type", "status"]),
             models.Index(fields=["detected_at"]),
         ]
+
+
+class MetricType(TextChoices):
+    """Types of metrics that can be recorded."""
+
+    COUNTER = "counter", "Counter"  # Incrementing values (downloads, failures)
+    GAUGE = "gauge", "Gauge"  # Point-in-time values (queue depth, memory)
+
+
+# pylint: disable=R0902
+class AppMetric(models.Model):
+    """
+    Generic metrics storage for operational insights.
+
+    Used to track things like fallback download success rates, endpoint
+    reliability, and other operational metrics that help understand
+    system behavior over time.
+    """
+
+    name: models.CharField = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="Metric name, e.g., 'fallback.tidal.success'",
+    )
+    metric_type: models.CharField = models.CharField(
+        max_length=20,
+        choices=MetricType.choices,
+        default=MetricType.COUNTER,
+    )
+    value: models.DecimalField = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        help_text="Metric value",
+    )
+    labels: models.JSONField = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Additional labels for filtering, e.g., {'provider': 'tidal'}",
+    )
+    recorded_at: models.DateTimeField = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+    )
+
+    def __str__(self) -> str:
+        labels_str = f" {self.labels}" if self.labels else ""
+        return f"{self.name}={self.value}{labels_str} @ {self.recorded_at}"
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "app_metrics"
+        indexes = [
+            models.Index(fields=["name", "recorded_at"]),
+            models.Index(fields=["recorded_at"]),
+        ]
