@@ -22,7 +22,8 @@ This started as a simple want to mass-download songs for specific artists since 
  - Automatically checks for and queues missing albums (hourly)
 
 Features from spotify-aac-downloader:
-* Download songs in 128kbps AAC or 256kbps AAC with a premium account
+* Download songs via YouTube Music (128kbps AAC, or 256kbps with YTM Premium cookies)
+* Optional fallback providers (Tidal, Qobuz) for higher quality or better availability
 * Download synced lyrics
 * Includes a device wvd so no need to load your own!
      
@@ -109,24 +110,91 @@ Notes:
 - You can also set environment variables to override YAML at runtime.
 - Secrets like `DJANGO_SECRET_KEY` should be set via env vars.
 
-### Tidal Fallback Provider
+### Download Providers
 
-When the primary download source (YouTube Music via spotdl) fails, TuneStash can automatically retry using Tidal as a fallback. This improves success rates for tracks that are unavailable or restricted on YouTube Music.
+TuneStash supports multiple download providers. By default, it uses spotdl (YouTube Music) as the primary source, with Tidal as a fallback.
 
-**Enable in `settings.yaml`:**
+**Configure provider order in `settings.yaml`:**
 ```yaml
 default:
-  tidal_fallback_enabled: true     # Enable/disable fallback (default: false)
-  tidal_fallback_quality: "lossless"  # Options: high, lossless, hi_res (default: lossless)
+  # Specify provider order (first provider tried first)
+  # Available providers: spotdl (YouTube Music), tidal, qobuz
+  download_provider_order:
+    - spotdl
+    - tidal
+
+  # Quality preference for Tidal/Qobuz (default: high)
+  tidal_fallback_quality: "high"
+```
+
+**Provider Comparison:**
+
+| Provider | Source | Quality | Reliability | Notes |
+|----------|--------|---------|-------------|-------|
+| **spotdl** | YouTube Music | 128kbps (free) / 256kbps (premium) | ★★★★☆ | Requires YTM cookies. Most tracks available. |
+| **tidal** | Tidal (via squid.wtf) | Up to 24-bit FLAC | ★★★☆☆ | Third-party API, no setup required. |
+| **qobuz** | Qobuz (via squid.wtf) | Up to 24-bit FLAC | ★★★☆☆ | Third-party API, no setup required. |
+
+**Provider Details:**
+
+- **spotdl** (default primary): Uses YouTube Music via [spotdl](https://github.com/spotDL/spotify-downloader).
+  - **Without** YouTube Music Premium: Limited to **128kbps AAC**
+  - **With** YouTube Music Premium: Up to **256kbps AAC** (requires cookies from a premium account)
+  - Most reliable for track availability; YouTube Music has the largest catalog
+
+- **tidal** / **qobuz**: Use third-party APIs (squid.wtf) that provide access to premium streaming catalogs.
+  - **No account or credentials required** — these APIs handle authentication
+  - Support lossless (FLAC) and hi-res (24-bit FLAC) quality
+  - **Less reliable**: Third-party services may have downtime, rate limits, or be discontinued
+  - Best used as fallback providers when spotdl fails to find a match
+
+**Quality Options:**
+
+| Quality | Tidal Format | Qobuz Format | Description |
+|---------|--------------|--------------|-------------|
+| `high` | M4A (AAC ~320kbps) | FLAC → M4A (AAC 256kbps) | Default. Consistent lossy format. |
+| `lossless` | FLAC 16-bit | FLAC 16-bit | CD quality, larger files (~3x). |
+| `hi_res` | FLAC 24-bit | FLAC 24-bit | Hi-res when available. |
+
+> **Note**: For `high` quality, Tidal returns M4A/AAC natively while Qobuz downloads FLAC and converts to M4A/AAC for library consistency.
+
+**Qobuz Format Option:**
+
+If you prefer MP3 over M4A for Qobuz `high` quality downloads:
+```yaml
+qobuz_use_mp3: true  # Download MP3 320kbps directly (default: false)
+```
+
+**Common Configurations:**
+```yaml
+# Default: spotdl first, Tidal fallback (requires YTM cookies)
+download_provider_order: ["spotdl", "tidal"]
+
+# Maximum fallback coverage: try all providers
+download_provider_order: ["spotdl", "tidal", "qobuz"]
+
+# Tidal-only: No YouTube Music cookies needed
+download_provider_order: ["tidal"]
+
+# Qobuz-only: Alternative if Tidal is unavailable
+download_provider_order: ["qobuz"]
+
+# spotdl-only: No fallback (legacy behavior)
+download_provider_order: ["spotdl"]
+
+# Lossless priority: Tidal first for quality, spotdl fallback for availability
+download_provider_order: ["tidal", "spotdl"]
+tidal_fallback_quality: "lossless"
 ```
 
 **How it works:**
-- When spotdl fails to download a track, the fallback provider searches Tidal by ISRC/metadata
-- If a high-confidence match is found, the track is downloaded from Tidal instead
-- Metadata is embedded and the file is validated before being saved
+- Providers are tried in order until one succeeds
+- Each provider searches for a matching track (by ISRC, title/artist)
+- Downloaded files are validated before saving
+- If all providers fail, the track is marked as failed
 
 **Monitoring:**
-View fallback success rates in the Dashboard → "Fallback Provider Metrics" section (collapsed by default). Metrics are retained for 30 days.
+View provider success rates in the Dashboard → "Fallback Provider Metrics" section (collapsed by default). Metrics are retained for 30 days.
 
 ## Running From Docker (recommended)
 An example compose setup is included. Follow these steps:

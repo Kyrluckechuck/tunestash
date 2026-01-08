@@ -1,6 +1,8 @@
 default:
   # Downloader defaults (used by api/lib/config_class.py)
-  # YouTube Music cookies (for high-quality audio downloads via yt-dlp)
+  # YouTube Music cookies for spotdl downloads
+  # - Without YTM Premium: 128kbps AAC
+  # - With YTM Premium cookies: 256kbps AAC
   youtube_cookies_location: "/config/youtube_music_cookies.txt"
 
   # Spotify OAuth Configuration (for private playlist access)
@@ -28,12 +30,27 @@ default:
   no_lrc: false
   overwrite: false
 
-  # Tidal fallback: When spotdl/YouTube Music fails to find a matching track,
-  # automatically try downloading from Tidal via the squid.wtf API.
-  # This provides better coverage for songs not available on YouTube Music.
-  tidal_fallback_enabled: true
-  # Quality preference for Tidal downloads: high (320kbps AAC), lossless (FLAC), hi_res (24-bit FLAC)
-  tidal_fallback_quality: "lossless"
+  # Download provider configuration
+  # Specify which providers to try and in what order
+  # Available providers: spotdl (YouTube Music), tidal, qobuz
+  # - spotdl: Most reliable, requires YTM cookies, 128-256kbps
+  # - tidal/qobuz: Higher quality (up to FLAC), but use third-party APIs (squid.wtf)
+  #   which may be less reliable or have downtime
+  # Default: ["spotdl", "tidal"] - spotdl first with Tidal fallback
+  download_provider_order:
+    - spotdl
+    - tidal
+
+  # Tidal/Qobuz quality preference
+  # - high: 320kbps AAC (M4A) - default, consistent with spotdl output
+  # - lossless: FLAC 16-bit 44.1kHz (larger files, kept as FLAC)
+  # - hi_res: FLAC 24-bit (when available, kept as FLAC)
+  tidal_fallback_quality: "high"
+
+  # Qobuz format preference for HIGH quality
+  # When false (default): Downloads FLAC and converts to M4A/AAC for library consistency
+  # When true: Downloads MP3 320kbps directly (no conversion, slightly larger files)
+  qobuz_use_mp3: false
 
   # Album selection
   ALBUM_TYPES_TO_DOWNLOAD:

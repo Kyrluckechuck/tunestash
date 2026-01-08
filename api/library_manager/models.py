@@ -205,6 +205,7 @@ class FailureReason(TextChoices):
     BOTH_UNAVAILABLE = "both_unavailable", "Unavailable on both Spotify and YTM"
 
 
+# pylint: disable=R0902
 class Song(models.Model):
     """
     Represents a music track/song.

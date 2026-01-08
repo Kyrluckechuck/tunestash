@@ -18,6 +18,7 @@ from .base import (
 )
 from .fallback import FallbackDownloader, FallbackDownloadResult
 from .metadata import MetadataEmbedder, create_spotify_metadata_from_match
+from .qobuz import QobuzProvider
 from .tidal import TidalProvider
 from .tidal_endpoints import TidalEndpoint, TidalEndpointManager
 from .validation import AudioFormat, AudioInfo, AudioValidator, ValidationResult
@@ -36,7 +37,8 @@ __all__ = [
     # Metadata embedding
     "MetadataEmbedder",
     "create_spotify_metadata_from_match",
-    # Tidal provider
+    # Providers
+    "QobuzProvider",
     "TidalEndpoint",
     "TidalEndpointManager",
     "TidalProvider",

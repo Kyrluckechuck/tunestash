@@ -65,6 +65,7 @@ temp/
 # Coverage reports (generated)
 htmlcov/
 .coverage
+.coverage.*
 coverage/
 *.coverage
 coverage.xml

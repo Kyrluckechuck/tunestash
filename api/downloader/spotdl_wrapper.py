@@ -635,18 +635,14 @@ class SpotdlWrapper:
         except Exception as e:
             self.logger.warning(f"Startup premium verification failed: {e}")
 
-        # Initialize fallback downloader (Tidal) for when spotdl fails
+        # Initialize fallback/alternative downloader (Tidal)
         self._fallback_downloader: FallbackDownloader | None = None
-        self._fallback_enabled = config.tidal_fallback_enabled
         self._fallback_quality = self._parse_quality_preference(
             config.tidal_fallback_quality
         )
-        if self._fallback_enabled:
-            self.logger.info(
-                f"Tidal fallback downloader enabled (quality: {config.tidal_fallback_quality})"
-            )
-        else:
-            self.logger.info("Tidal fallback downloader disabled")
+        self._provider_order = config.download_provider_order
+        self._qobuz_use_mp3 = config.qobuz_use_mp3
+        self.logger.info(f"Download provider order: {self._provider_order}")
 
         self.logger.debug("Completed SpotdlWrapper Initialization")
 
@@ -834,7 +830,9 @@ class SpotdlWrapper:
         self, track: dict, output_dir: Path
     ) -> tuple[bool, Path | None, int | None]:
         """
-        Attempt to download a track using the Tidal fallback provider.
+        Attempt to download a track using fallback providers (Tidal, Qobuz).
+
+        Tries each configured fallback provider in order until one succeeds.
 
         Args:
             track: Spotify track metadata dictionary
@@ -843,13 +841,15 @@ class SpotdlWrapper:
         Returns:
             Tuple of (success, output_path, bitrate_kbps)
         """
-        if not self._fallback_enabled:
+        # Check if any fallback providers are configured
+        fallback_providers = {"tidal", "qobuz"}
+        if not any(p in self._provider_order for p in fallback_providers):
             return False, None, None
 
         # Record fallback attempt metric
         from src.services.metrics import MetricsService
 
-        MetricsService.increment("fallback.attempt", labels={"provider": "tidal"})
+        MetricsService.increment("fallback.attempt")
 
         try:
             # Lazy-initialize the fallback downloader
@@ -857,13 +857,15 @@ class SpotdlWrapper:
                 self._fallback_downloader = FallbackDownloader(
                     quality_preference=self._fallback_quality,
                     output_dir=output_dir,
+                    provider_order=self._provider_order,
+                    qobuz_use_mp3=self._qobuz_use_mp3,
                 )
 
             # Create SpotifyTrackMetadata from track data
             spotify_metadata = _create_spotify_metadata_from_track(track)
 
             self.logger.info(
-                f"[FALLBACK] Attempting Tidal download for "
+                f"[FALLBACK] Attempting fallback download for "
                 f"'{spotify_metadata.artist} - {spotify_metadata.title}'"
             )
 
@@ -880,9 +882,10 @@ class SpotdlWrapper:
                     f"[FALLBACK] ✓ Successfully downloaded from {result.provider_used}: "
                     f"{result.file_path}"
                 )
-                # Record success metric
+                # Record success metric with actual provider used
                 MetricsService.increment(
-                    "fallback.success", labels={"provider": "tidal"}
+                    "fallback.success",
+                    labels={"provider": result.provider_used or "unknown"},
                 )
                 # Get bitrate from the file
                 media_info = MediaInfo.parse(result.file_path)
@@ -894,24 +897,24 @@ class SpotdlWrapper:
                 return True, result.file_path, bitrate
             else:
                 self.logger.warning(
-                    f"[FALLBACK] Failed to download from Tidal: {result.error_message}"
+                    f"[FALLBACK] All fallback providers failed: {result.error_message}"
                 )
                 # Record failure metric with reason
                 MetricsService.increment(
                     "fallback.failure",
                     labels={
-                        "provider": "tidal",
+                        "provider": result.provider_used or "all",
                         "reason": result.error_message or "unknown",
                     },
                 )
                 return False, None, None
 
         except Exception as e:
-            self.logger.warning(f"[FALLBACK] Exception during Tidal download: {e}")
+            self.logger.warning(f"[FALLBACK] Exception during fallback download: {e}")
             # Record exception metric
             MetricsService.increment(
                 "fallback.failure",
-                labels={"provider": "tidal", "reason": "exception"},
+                labels={"provider": "unknown", "reason": "exception"},
             )
             return False, None, None
 
@@ -1554,65 +1557,110 @@ class SpotdlWrapper:
                             artist=artist, song=db_song
                         )
 
-                    # Use song_from_track_data() to avoid 3 extra API calls per song
-                    # that SpotdlSong.from_url() would make (track, artist, album)
-                    spotdl_song = song_from_track_data(track)
-                    song_success, output_path = self.spotdl.download(spotdl_song)
+                    # Get output directory for provider downloads
+                    from django.conf import settings as django_settings
 
-                    # Log memory after each download to catch spikes during yt-dlp processing
-                    try:
-                        import os
+                    music_output_dir = Path(
+                        getattr(django_settings, "OUTPUT_PATH", "/music")
+                    )
 
-                        import psutil
+                    # Try providers in configured order
+                    song_success = None
+                    output_path = None
+                    bit_rate = None
+                    spotdl_errors: list = []
 
-                        rss_mb = (
-                            psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
-                        )
-                        container_mb, limit_mb = _get_container_memory_mb()
-                        limit_str = f"/{limit_mb:.0f}" if limit_mb > 0 else ""
-                        self.logger.info(
-                            f"[MEMORY POST-DOWNLOAD] Track {track_index}: "
-                            f"worker={rss_mb:.0f}MB, container={container_mb:.0f}{limit_str}MB"
-                        )
-                    except Exception:
-                        pass
+                    for provider in self._provider_order:
+                        if provider == "tidal":
+                            # Try Tidal download
+                            tidal_success, tidal_path, tidal_bitrate = (
+                                self._try_fallback_download(track, music_output_dir)
+                            )
+                            if tidal_success and tidal_path:
+                                output_path = tidal_path
+                                song_success = True
+                                bit_rate = tidal_bitrate or 320
+                                db_song.mark_downloaded(
+                                    bitrate=int(bit_rate), file_path=output_path
+                                )
+                                self.logger.info(
+                                    f"[TIDAL] Song downloaded: {output_path}"
+                                )
+                                break  # Success - exit provider loop
 
+                        elif provider == "spotdl":
+                            # Try spotdl (YouTube Music) download
+                            spotdl_song = song_from_track_data(track)
+                            song_success, output_path = self.spotdl.download(
+                                spotdl_song
+                            )
+
+                            # Log memory after spotdl download
+                            try:
+                                import os
+
+                                import psutil
+
+                                rss_mb = (
+                                    psutil.Process(os.getpid()).memory_info().rss
+                                    / 1024
+                                    / 1024
+                                )
+                                container_mb, limit_mb = _get_container_memory_mb()
+                                limit_str = f"/{limit_mb:.0f}" if limit_mb > 0 else ""
+                                self.logger.info(
+                                    f"[MEMORY POST-DOWNLOAD] Track {track_index}: "
+                                    f"worker={rss_mb:.0f}MB, "
+                                    f"container={container_mb:.0f}{limit_str}MB"
+                                )
+                            except Exception:
+                                pass
+
+                            if song_success and output_path:
+                                break  # Success - exit provider loop
+
+                            # spotdl failed, capture errors for potential reporting
+                            spotdl_errors = list(self.spotdl.downloader.errors)
+                            self.logger.debug(
+                                f"spotdl failed, trying next provider: {spotdl_errors}"
+                            )
+
+                    # Check if any provider succeeded
                     if song_success is None or output_path is None:
-                        self.logger.debug(song_success)
-                        self.logger.debug(f"output_path: {output_path}")
-                        # Capture spotdl error details for debugging
-                        spotdl_errors = list(self.spotdl.downloader.errors)
-
-                        # Try fallback download (Tidal) before failing
-                        from django.conf import settings as django_settings
-
-                        music_output_dir = Path(
-                            getattr(django_settings, "OUTPUT_PATH", "/music")
-                        )
-                        fallback_success, fallback_path, fallback_bitrate = (
-                            self._try_fallback_download(track, music_output_dir)
-                        )
-
-                        if fallback_success and fallback_path:
-                            # Fallback succeeded - use fallback result
-                            output_path = fallback_path
-                            song_success = True
-                            bit_rate = fallback_bitrate or 320
-                            # Mark as downloaded and continue
-                            db_song.mark_downloaded(
-                                bitrate=int(bit_rate), file_path=output_path
-                            )
-                            self.logger.info(
-                                f"[FALLBACK] Song downloaded via Tidal: {output_path}"
-                            )
-                            continue  # Skip to next track (avoid bitrate validation for Tidal)
-
-                        # Fallback also failed - raise the original spotdl error
                         raise SpotdlDownloadError(
-                            "Failed to download correctly", spotdl_errors=spotdl_errors
+                            "All providers failed to download",
+                            spotdl_errors=spotdl_errors,
                         )
 
-                    # Validate the song is in the correct audio bitrate using premium detection
+                    # Track which provider succeeded for conditional validation
+                    used_tidal = bit_rate is not None
+
+                    # Validate the downloaded file has an audio track
+                    media_info = MediaInfo.parse(output_path)
+                    audio_track = None
+                    actual_bitrate = 0
+                    for media_track in media_info.tracks:
+                        if media_track.track_type == "Audio":
+                            audio_track = media_track
+                            actual_bitrate = audio_track.bit_rate / 1000
+                            break
+
+                    if audio_track is None or actual_bitrate < 64:
+                        # File doesn't have audio or is extremely low quality
+                        raise BitrateException(
+                            f"Downloaded file has no valid audio track | "
+                            f"output_path: {output_path}, bitrate: {actual_bitrate}"
+                        )
+
+                    # For Tidal downloads: already validated by provider, just verify
+                    if used_tidal:
+                        # Update db_song with verified bitrate (already marked in loop)
+                        self.logger.debug(
+                            f"Tidal download verified: {actual_bitrate:.0f} kbps"
+                        )
+                        continue
+
+                    # For spotdl: run full premium detection validation
                     spotify_url = track["external_urls"]["spotify"]
 
                     # Get actual available qualities for this specific song
@@ -1638,20 +1686,11 @@ class SpotdlWrapper:
                             127, max_available
                         )  # Free: up to 128kbps or song max
 
-                    media_info = MediaInfo.parse(output_path)
-                    audio_track = None
-                    bit_rate = 0
-                    for media_track in media_info.tracks:
-                        if media_track.track_type == "Audio":
-                            audio_track = media_track
-                            bit_rate = audio_track.bit_rate / 1000
-                            break
-
-                    if audio_track is not None and bit_rate > 0:
+                    if actual_bitrate > 0:
                         db_song.mark_downloaded(
-                            bitrate=int(bit_rate), file_path=output_path
+                            bitrate=int(actual_bitrate), file_path=output_path
                         )
-                    if audio_track is None or bit_rate < expected_bitrate:
+                    if audio_track is None or actual_bitrate < expected_bitrate:
                         # pathlib.Path.unlink(output_path)
                         if audio_track is None:
                             raise BitrateException(
@@ -1661,13 +1700,13 @@ class SpotdlWrapper:
                         # Uses 240kbps threshold (default) and re-validates account status if low
                         is_expired, expiry_reason = (
                             self.premium_detector.is_premium_expired(
-                                downloaded_bitrate=int(bit_rate),
+                                downloaded_bitrate=int(actual_bitrate),
                             )
                         )
 
                         error_msg = (
                             f"File was downloaded successfully but not in the correct bitrate "
-                            f"({bit_rate} found, but {expected_bitrate} is minimum expected) | "
+                            f"({actual_bitrate} found, but {expected_bitrate} is minimum expected) | "
                             f"output_path: {output_path}"
                         )
 

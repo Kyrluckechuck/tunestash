@@ -8,7 +8,7 @@ success rates, endpoint reliability, and other operational insights.
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Union
 
 from django.db.models import Count, Sum
 from django.db.models.functions import TruncDay, TruncHour
@@ -188,6 +188,7 @@ class MetricsService:
                 queryset = queryset.filter(labels__contains={key: value})
 
         # Group by time bucket
+        trunc_func: Union[TruncDay, TruncHour]
         if granularity == "day":
             trunc_func = TruncDay("recorded_at")
         else:
