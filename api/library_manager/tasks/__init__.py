@@ -87,6 +87,11 @@ from .playlist import (
     sync_tracked_playlist_artists,
 )
 
+# Re-export upgrade tasks
+from .upgrade import (
+    upgrade_low_quality_songs,
+)
+
 __all__ = [
     # Core utilities
     "TaskPriority",
@@ -140,4 +145,6 @@ __all__ = [
     "memory_profile_after_init",
     "memory_profile_worker",
     "periodic_memory_health_check",
+    # Upgrade tasks
+    "upgrade_low_quality_songs",
 ]

@@ -11,9 +11,10 @@ from django.db.models import Q
 
 from asgiref.sync import sync_to_async
 
+from library_manager.models import DownloadProvider as DjangoDownloadProvider
 from library_manager.models import Song as DjangoSong
 
-from ..graphql_types.models import Song
+from ..graphql_types.models import DownloadProvider, Song
 from .base import BaseService
 
 
@@ -56,6 +57,11 @@ class SongService(BaseService[Song]):
             if isinstance(filters.get("sort_direction"), str)
             else None
         )
+        max_bitrate = (
+            filters.get("max_bitrate")
+            if isinstance(filters.get("max_bitrate"), int)
+            else None
+        )
 
         # Copy the exact pattern from ArtistService
         queryset = self.model.objects.all()
@@ -69,6 +75,9 @@ class SongService(BaseService[Song]):
 
         if unavailable is not None:
             queryset = queryset.filter(unavailable=unavailable)
+
+        if max_bitrate is not None:
+            queryset = queryset.filter(bitrate__gt=0, bitrate__lt=max_bitrate)
 
         if search:
             queryset = queryset.filter(
@@ -156,6 +165,17 @@ class SongService(BaseService[Song]):
         # Use sync_to_async for file_path property which accesses file_path_ref
         file_path = await sync_to_async(lambda: django_song.file_path)()
 
+        # Convert download_provider to GraphQL enum
+        provider_map = {
+            DjangoDownloadProvider.UNKNOWN: DownloadProvider.UNKNOWN,
+            DjangoDownloadProvider.SPOTDL: DownloadProvider.SPOTDL,
+            DjangoDownloadProvider.TIDAL: DownloadProvider.TIDAL,
+            DjangoDownloadProvider.QOBUZ: DownloadProvider.QOBUZ,
+        }
+        download_provider = provider_map.get(
+            django_song.download_provider, DownloadProvider.UNKNOWN
+        )
+
         return Song(
             id=int(django_song.id),
             name=django_song.name,
@@ -170,4 +190,5 @@ class SongService(BaseService[Song]):
             file_path=file_path,
             downloaded=django_song.downloaded,
             spotify_uri=django_song.spotify_uri,
+            download_provider=download_provider,
         )

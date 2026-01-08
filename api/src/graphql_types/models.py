@@ -39,6 +39,16 @@ class EntityType(Enum):
     TRACK = "TRACK"
 
 
+@strawberry.enum
+class DownloadProvider(Enum):
+    """Provider used to download a song."""
+
+    UNKNOWN = "UNKNOWN"
+    SPOTDL = "SPOTDL"
+    TIDAL = "TIDAL"
+    QOBUZ = "QOBUZ"
+
+
 @strawberry.type
 class Artist:
     id: int
@@ -86,6 +96,7 @@ class Song:
     file_path: Optional[str]
     downloaded: bool
     spotify_uri: str
+    download_provider: Optional[DownloadProvider] = None
 
 
 @strawberry.type
@@ -303,6 +314,16 @@ class OneOffTask:
     name: str
     description: str
     category: str  # e.g., "maintenance", "data-migration", "cleanup"
+
+
+@strawberry.type
+class UpgradeStats:
+    """Statistics about low-quality song upgrades."""
+
+    total_low_quality: int  # Total songs below quality threshold
+    upgradeable: int  # Songs with untried providers
+    upgraded: int  # Successfully upgraded songs
+    not_upgradeable: int  # All providers returned NOT_FOUND
 
 
 @strawberry.type

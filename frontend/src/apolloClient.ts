@@ -88,6 +88,7 @@ export const apolloClient = new ApolloClient({
               'search',
               'sortBy',
               'sortDirection',
+              'maxBitrate',
             ],
             merge(existing, incoming, { args }) {
               if (!existing) return incoming;

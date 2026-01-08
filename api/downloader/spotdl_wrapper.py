@@ -41,6 +41,7 @@ from library_manager.models import (
     Artist,
     ContributingArtist,
     DownloadHistory,
+    DownloadProvider,
     FailureReason,
     Song,
     TrackedPlaylist,
@@ -828,7 +829,7 @@ class SpotdlWrapper:
 
     def _try_fallback_download(
         self, track: dict, output_dir: Path
-    ) -> tuple[bool, Path | None, int | None]:
+    ) -> tuple[bool, Path | None, int | None, str | None]:
         """
         Attempt to download a track using fallback providers (Tidal, Qobuz).
 
@@ -839,12 +840,12 @@ class SpotdlWrapper:
             output_dir: Directory to save the downloaded file
 
         Returns:
-            Tuple of (success, output_path, bitrate_kbps)
+            Tuple of (success, output_path, bitrate_kbps, provider_used)
         """
         # Check if any fallback providers are configured
         fallback_providers = {"tidal", "qobuz"}
         if not any(p in self._provider_order for p in fallback_providers):
-            return False, None, None
+            return False, None, None, None
 
         # Record fallback attempt metric
         from src.services.metrics import MetricsService
@@ -894,7 +895,7 @@ class SpotdlWrapper:
                     if media_track.track_type == "Audio":
                         bitrate = int(media_track.bit_rate / 1000)
                         break
-                return True, result.file_path, bitrate
+                return True, result.file_path, bitrate, result.provider_used
             else:
                 self.logger.warning(
                     f"[FALLBACK] All fallback providers failed: {result.error_message}"
@@ -907,7 +908,7 @@ class SpotdlWrapper:
                         "reason": result.error_message or "unknown",
                     },
                 )
-                return False, None, None
+                return False, None, None, None
 
         except Exception as e:
             self.logger.warning(f"[FALLBACK] Exception during fallback download: {e}")
@@ -916,7 +917,7 @@ class SpotdlWrapper:
                 "fallback.failure",
                 labels={"provider": "unknown", "reason": "exception"},
             )
-            return False, None, None
+            return False, None, None, None
 
     def _update_playlist_status_on_error(self, url: str) -> None:
         """
@@ -1570,21 +1571,33 @@ class SpotdlWrapper:
                     bit_rate = None
                     spotdl_errors: list = []
 
+                    # Map string provider names to DownloadProvider enum values
+                    provider_enum_map = {
+                        "tidal": DownloadProvider.TIDAL,
+                        "qobuz": DownloadProvider.QOBUZ,
+                        "spotdl": DownloadProvider.SPOTDL,
+                    }
+
                     for provider in self._provider_order:
                         if provider == "tidal":
-                            # Try Tidal download
-                            tidal_success, tidal_path, tidal_bitrate = (
+                            # Try fallback providers (Tidal, Qobuz)
+                            fb_success, fb_path, fb_bitrate, fb_provider = (
                                 self._try_fallback_download(track, music_output_dir)
                             )
-                            if tidal_success and tidal_path:
-                                output_path = tidal_path
+                            if fb_success and fb_path:
+                                output_path = fb_path
                                 song_success = True
-                                bit_rate = tidal_bitrate or 320
+                                bit_rate = fb_bitrate or 320
                                 db_song.mark_downloaded(
-                                    bitrate=int(bit_rate), file_path=output_path
+                                    bitrate=int(bit_rate),
+                                    file_path=output_path,
+                                    provider=provider_enum_map.get(
+                                        fb_provider, DownloadProvider.UNKNOWN
+                                    ),
                                 )
                                 self.logger.info(
-                                    f"[TIDAL] Song downloaded: {output_path}"
+                                    f"[{(fb_provider or 'FALLBACK').upper()}] "
+                                    f"Song downloaded: {output_path}"
                                 )
                                 break  # Success - exit provider loop
 
@@ -1633,7 +1646,8 @@ class SpotdlWrapper:
                         )
 
                     # Track which provider succeeded for conditional validation
-                    used_tidal = bit_rate is not None
+                    # Fallback downloads (Tidal/Qobuz) set bit_rate; spotdl doesn't
+                    used_fallback = bit_rate is not None
 
                     # Validate the downloaded file has an audio track
                     media_info = MediaInfo.parse(output_path)
@@ -1652,11 +1666,11 @@ class SpotdlWrapper:
                             f"output_path: {output_path}, bitrate: {actual_bitrate}"
                         )
 
-                    # For Tidal downloads: already validated by provider, just verify
-                    if used_tidal:
-                        # Update db_song with verified bitrate (already marked in loop)
+                    # For fallback downloads: already validated by provider, just verify
+                    if used_fallback:
+                        # Already marked as downloaded in the provider loop above
                         self.logger.debug(
-                            f"Tidal download verified: {actual_bitrate:.0f} kbps"
+                            f"Fallback download verified: {actual_bitrate:.0f} kbps"
                         )
                         continue
 
@@ -1688,7 +1702,9 @@ class SpotdlWrapper:
 
                     if actual_bitrate > 0:
                         db_song.mark_downloaded(
-                            bitrate=int(actual_bitrate), file_path=output_path
+                            bitrate=int(actual_bitrate),
+                            file_path=output_path,
+                            provider=DownloadProvider.SPOTDL,
                         )
                     if audio_track is None or actual_bitrate < expected_bitrate:
                         # pathlib.Path.unlink(output_path)
@@ -1807,7 +1823,9 @@ class SpotdlWrapper:
 
                                 if audio_track is not None and bit_rate > 0:
                                     db_song.mark_downloaded(
-                                        bitrate=int(bit_rate), file_path=output_path
+                                        bitrate=int(bit_rate),
+                                        file_path=output_path,
+                                        provider=DownloadProvider.SPOTDL,
                                     )
                                     self.logger.info(
                                         f"({current_track}) Successfully downloaded after token refresh"

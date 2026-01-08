@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from django.db.models import QuerySet, Sum, TextChoices
+from django.db.models import IntegerChoices, QuerySet, Sum, TextChoices
 from django.utils import timezone
 
 # TypedModelMeta is only needed for type checking with mypy
@@ -205,6 +205,30 @@ class FailureReason(TextChoices):
     BOTH_UNAVAILABLE = "both_unavailable", "Unavailable on both Spotify and YTM"
 
 
+class DownloadProvider(IntegerChoices):
+    """Provider used to download a song.
+
+    Uses IntegerChoices for storage efficiency (2 bytes vs 7-20 bytes for CharField).
+    """
+
+    UNKNOWN = 0, "Unknown"
+    SPOTDL = 1, "spotdl (YouTube Music)"
+    TIDAL = 2, "Tidal"
+    QOBUZ = 3, "Qobuz"
+
+
+class UpgradeAttemptResult(IntegerChoices):
+    """Result of an upgrade attempt for a song.
+
+    Used to track whether we should retry upgrading on a given provider.
+    """
+
+    NOT_FOUND = 0, "Song not available on provider"
+    API_ERROR = 1, "Provider API error (temporary - can retry)"
+    NOT_AN_UPGRADE = 2, "Downloaded file was not higher quality"
+    SUCCESS = 3, "Successfully upgraded"
+
+
 # pylint: disable=R0902
 class Song(models.Model):
     """
@@ -279,6 +303,11 @@ class Song(models.Model):
         null=True,
         blank=True,
         help_text="When the song last failed (for exponential backoff calculation)",
+    )
+    download_provider: models.SmallIntegerField = models.SmallIntegerField(
+        choices=DownloadProvider.choices,
+        default=DownloadProvider.SPOTDL,
+        help_text="Provider used to download this song",
     )
 
     def clean(self) -> None:
@@ -388,16 +417,24 @@ class Song(models.Model):
         next_retry_at = self.last_failed_at + timedelta(days=backoff_days)
         return bool(timezone.now() >= next_retry_at)
 
-    def mark_downloaded(self, bitrate: int, file_path: str) -> None:
+    def mark_downloaded(
+        self,
+        bitrate: int,
+        file_path: str,
+        provider: Optional[int] = None,
+    ) -> None:
         """Mark the song as successfully downloaded, clearing failure tracking.
 
         Args:
             bitrate: Audio bitrate of the downloaded file
             file_path: Path to the downloaded file
+            provider: DownloadProvider integer value (e.g., DownloadProvider.SPOTDL)
         """
         self.downloaded = True
         self.bitrate = bitrate
         self.set_file_path(file_path)
+        if provider is not None:
+            self.download_provider = provider
         # Clear failure tracking on success (NULL saves storage)
         self.failed_count = 0
         self.failure_reason = None
@@ -1402,4 +1439,61 @@ class AppMetric(models.Model):
         indexes = [
             models.Index(fields=["name", "recorded_at"]),
             models.Index(fields=["recorded_at"]),
+        ]
+
+
+class SongUpgradeAttempt(models.Model):
+    """
+    Tracks individual upgrade attempts for songs.
+
+    When attempting to upgrade a low-quality song (e.g., 128kbps from spotdl)
+    to higher quality using Tidal or Qobuz, we record each attempt here.
+    This allows us to:
+    - Skip providers that already returned NOT_FOUND for this song
+    - Retry providers that had temporary API_ERROR
+    - Not re-attempt providers that returned NOT_AN_UPGRADE
+    """
+
+    song: models.ForeignKey = models.ForeignKey(
+        Song,
+        on_delete=models.CASCADE,
+        related_name="upgrade_attempts",
+    )
+    provider: models.SmallIntegerField = models.SmallIntegerField(
+        choices=DownloadProvider.choices,
+        help_text="Provider that was attempted",
+    )
+    attempted_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    result: models.SmallIntegerField = models.SmallIntegerField(
+        choices=UpgradeAttemptResult.choices,
+        help_text="Outcome of the upgrade attempt",
+    )
+    original_bitrate: models.IntegerField = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Bitrate of the song before this attempt",
+    )
+    new_bitrate: models.IntegerField = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Bitrate of downloaded file (if download succeeded)",
+    )
+    error_message: models.TextField = models.TextField(
+        blank=True,
+        default="",
+        help_text="Error details for failed attempts",
+    )
+
+    def __str__(self) -> str:
+        result_label = UpgradeAttemptResult(self.result).label
+        provider_label = DownloadProvider(self.provider).label
+        return f"Song {self.song_id} via {provider_label}: {result_label}"
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "song_upgrade_attempts"
+        indexes = [
+            models.Index(fields=["song", "provider"]),
+            models.Index(fields=["result"]),
+            models.Index(fields=["attempted_at"]),
         ]

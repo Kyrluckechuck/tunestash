@@ -21,12 +21,13 @@ import {
 } from '../components/ui/FilterButtonGroup';
 
 const songFilterOptions: FilterOption<
-  'all' | 'downloaded' | 'failed' | 'unavailable'
+  'all' | 'downloaded' | 'failed' | 'unavailable' | 'lowQuality'
 >[] = [
   { value: 'all', label: 'All Songs', color: 'blue' },
   { value: 'downloaded', label: 'Downloaded', color: 'green' },
   { value: 'failed', label: 'Failed', color: 'yellow' },
   { value: 'unavailable', label: 'Unavailable', color: 'red' },
+  { value: 'lowQuality', label: 'Low Quality (<220kbps)', color: 'orange' },
 ];
 
 function Songs() {
@@ -38,7 +39,7 @@ function Songs() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [searchQuery, setSearchQuery] = useState(initialSearch || '');
   const [filter, setFilter] = useState<
-    'all' | 'downloaded' | 'failed' | 'unavailable'
+    'all' | 'downloaded' | 'failed' | 'unavailable' | 'lowQuality'
   >('all');
 
   // Memoize query variables to prevent unnecessary re-renders
@@ -56,8 +57,12 @@ function Songs() {
   const queryVariablesWithFilter = useMemo(
     () => ({
       ...queryVariables,
-      downloaded: filter === 'all' ? undefined : filter === 'downloaded',
+      downloaded:
+        filter === 'all' || filter === 'lowQuality'
+          ? undefined
+          : filter === 'downloaded',
       unavailable: filter === 'unavailable' ? true : undefined,
+      maxBitrate: filter === 'lowQuality' ? 220 : undefined,
     }),
     [queryVariables, filter]
   );
@@ -74,7 +79,7 @@ function Songs() {
   );
 
   const handleFilterChange = (
-    newFilter: 'all' | 'downloaded' | 'failed' | 'unavailable'
+    newFilter: 'all' | 'downloaded' | 'failed' | 'unavailable' | 'lowQuality'
   ) => {
     setFilter(newFilter);
   };

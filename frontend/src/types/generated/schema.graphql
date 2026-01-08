@@ -79,6 +79,13 @@ type DownloadProgress {
   status: DownloadStatus!
 }
 
+enum DownloadProvider {
+  QOBUZ
+  SPOTDL
+  TIDAL
+  UNKNOWN
+}
+
 enum DownloadStatus {
   COMPLETED
   FAILED
@@ -315,11 +322,12 @@ type Query {
   playlists(after: String = null, enabled: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, status: String = null): PlaylistConnection!
   queueStatus: QueueStatus!
   song(id: String!): Song
-  songs(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, unavailable: Boolean = null): SongConnection!
+  songs(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, maxBitrate: Int = null, search: String = null, sortBy: String = null, sortDirection: String = null, unavailable: Boolean = null): SongConnection!
   spotifyPlaylistInfo(url: String!): SpotifyPlaylistInfo
   spotifySearch(limit: Int = 10, query: String!, types: [String!] = null): SpotifySearchResults!
   systemHealth: SystemHealth!
   taskHistory(after: String = null, entityType: String = null, first: Int = 20, search: String = null, status: String = null, type: String = null): TaskHistoryConnection!
+  upgradeStats: UpgradeStats!
 }
 
 type QueueStatus {
@@ -332,6 +340,7 @@ type QueueStatus {
 type Song {
   bitrate: Int!
   createdAt: DateTime!
+  downloadProvider: DownloadProvider
   downloaded: Boolean!
   failedCount: Int!
   filePath: String
@@ -517,4 +526,11 @@ input UpdateArtistInput {
   artistId: String!
   autoDownload: Boolean = null
   isTracked: Boolean = null
+}
+
+type UpgradeStats {
+  notUpgradeable: Int!
+  totalLowQuality: Int!
+  upgradeable: Int!
+  upgraded: Int!
 }
