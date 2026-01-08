@@ -38,6 +38,7 @@ from ..graphql_types.models import (
     TaskCount,
     TaskHistoryConnection,
     TaskHistoryEdge,
+    UpgradeStats,
 )
 from ..services import services
 
@@ -152,6 +153,7 @@ class Query:
         sort_by: Optional[str] = None,
         sort_direction: Optional[str] = None,
         search: Optional[str] = None,
+        max_bitrate: Optional[int] = None,
     ) -> SongConnection:
         first_int: int = int(first or 20)
         items, has_next_page, total_count = await services.song.get_connection(
@@ -163,6 +165,7 @@ class Query:
             sort_by=sort_by,
             sort_direction=sort_direction,
             search=search,
+            max_bitrate=max_bitrate,
         )
 
         edges = items
@@ -335,6 +338,20 @@ class Query:
     def one_off_tasks(self) -> List[OneOffTask]:
         """Get all available one-off maintenance tasks."""
         return services.one_off_task.get_all()
+
+    @strawberry.field
+    async def upgrade_stats(self) -> UpgradeStats:
+        """Get statistics about low-quality song upgrades."""
+        from src.services.song_upgrade import SongUpgradeService
+
+        service = SongUpgradeService()
+        stats = await service.get_upgrade_stats()
+        return UpgradeStats(
+            total_low_quality=stats.total_low_quality,
+            upgradeable=stats.upgradeable,
+            upgraded=stats.upgraded,
+            not_upgradeable=stats.not_upgradeable,
+        )
 
     @strawberry.field
     async def system_health(self) -> SystemHealth:

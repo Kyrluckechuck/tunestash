@@ -72,6 +72,7 @@ export const createMockSong = (overrides = {}) => ({
   filePath: '/path/to/song.mp3',
   downloaded: true,
   spotifyUri: 'spotify:track:test123',
+  downloadProvider: null,
   ...overrides,
 });
 

@@ -29,7 +29,11 @@ class OneOffTaskService:
     def _register_tasks(self) -> None:
         """Register all available one-off tasks."""
         # Import tasks here to avoid circular imports
-        from library_manager.tasks import backfill_song_album, backfill_song_isrc
+        from library_manager.tasks import (
+            backfill_song_album,
+            backfill_song_isrc,
+            upgrade_low_quality_songs,
+        )
 
         self._tasks["backfill_song_isrc"] = OneOffTaskDefinition(
             id="backfill_song_isrc",
@@ -53,6 +57,18 @@ class OneOffTaskService:
             ),
             category="data-migration",
             task_func=backfill_song_album,
+        )
+
+        self._tasks["upgrade_low_quality_songs"] = OneOffTaskDefinition(
+            id="upgrade_low_quality_songs",
+            name="Upgrade Low Quality Songs",
+            description=(
+                "Attempt to upgrade songs below 220kbps (typically 128kbps from spotdl) "
+                "to higher quality versions from Tidal or Qobuz. Processes up to 50 songs "
+                "per run and tracks attempts to avoid re-trying songs that aren't available."
+            ),
+            category="maintenance",
+            task_func=upgrade_low_quality_songs,
         )
 
     def get_all(self) -> List[OneOffTask]:

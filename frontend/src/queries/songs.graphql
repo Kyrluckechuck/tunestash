@@ -7,6 +7,7 @@ query GetSongs(
   $sortBy: String
   $sortDirection: String
   $search: String
+  $maxBitrate: Int
 ) {
   songs(
     first: $first
@@ -17,6 +18,7 @@ query GetSongs(
     sortBy: $sortBy
     sortDirection: $sortDirection
     search: $search
+    maxBitrate: $maxBitrate
   ) {
     edges {
       id
@@ -32,6 +34,7 @@ query GetSongs(
       filePath
       downloaded
       spotifyUri
+      downloadProvider
     }
     pageInfo {
       hasNextPage
@@ -57,5 +60,6 @@ query GetSong($id: String!) {
     filePath
     downloaded
     spotifyUri
+    downloadProvider
   }
 }
