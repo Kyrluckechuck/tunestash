@@ -3,7 +3,7 @@ Fallback download orchestrator.
 
 This module provides a FallbackDownloader that tries multiple download providers
 in sequence until one succeeds. The primary use case is falling back to Tidal
-when spotdl fails to find a matching track on YouTube Music.
+or Qobuz when spotdl fails to find a matching track on YouTube Music.
 """
 
 from __future__ import annotations
@@ -13,12 +13,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from .audio_converter import AudioConversionError, convert_flac_to_m4a
 from .base import (
+    DownloadProvider,
     QualityPreference,
     SpotifyTrackMetadata,
     TrackMatch,
 )
 from .metadata import MetadataEmbedder
+from .qobuz import QobuzProvider
 from .tidal import TidalProvider
 from .tidal_endpoints import TidalEndpointManager
 from .validation import AudioValidator, ValidationResult
@@ -43,19 +46,25 @@ class FallbackDownloader:
     Orchestrates fallback downloads using alternative providers.
 
     When the primary download method (spotdl) fails, this class attempts
-    to download the track using fallback providers like Tidal.
+    to download the track using fallback providers like Tidal or Qobuz.
 
-    The download process:
+    The download process for each provider:
     1. Search for the track using ISRC (most reliable) or metadata
     2. Download from the matching track
-    3. Embed Spotify metadata (providers don't include proper tags)
-    4. Validate the downloaded file
+    3. Convert FLAC to M4A if needed (for HIGH quality preference)
+    4. Embed Spotify metadata (providers don't include proper tags)
+    5. Validate the downloaded file
     """
+
+    # Supported provider names
+    SUPPORTED_PROVIDERS = {"tidal", "qobuz"}
 
     def __init__(
         self,
         quality_preference: QualityPreference = QualityPreference.HIGH,
         output_dir: Optional[Path] = None,
+        provider_order: Optional[list[str]] = None,
+        qobuz_use_mp3: bool = False,
     ):
         """
         Initialize the fallback downloader.
@@ -63,44 +72,71 @@ class FallbackDownloader:
         Args:
             quality_preference: Preferred quality level for downloads
             output_dir: Directory to save downloaded files
+            provider_order: List of provider names to try in order.
+                          Defaults to ["tidal", "qobuz"].
+            qobuz_use_mp3: If True, Qobuz downloads MP3 directly for HIGH quality
+                          instead of FLAC (which gets converted to M4A).
         """
         self._quality_preference = quality_preference
         self._output_dir = output_dir or Path("/music")
+        self._qobuz_use_mp3 = qobuz_use_mp3
+
+        # Parse provider order - filter to only fallback providers (not spotdl)
+        if provider_order is not None:
+            self._provider_order = [
+                p for p in provider_order if p in self.SUPPORTED_PROVIDERS
+            ]
+        else:
+            self._provider_order = ["tidal", "qobuz"]
 
         # Initialize components
-        self._endpoint_manager = TidalEndpointManager()
-        self._tidal_provider: Optional[TidalProvider] = None
+        self._tidal_endpoint_manager = TidalEndpointManager()
+        self._providers: dict[str, DownloadProvider] = {}
         self._metadata_embedder = MetadataEmbedder()
         self._audio_validator = AudioValidator()
 
-        # Track initialization state
-        self._initialized = False
+        # Track initialization state per provider
+        self._initialized: set[str] = set()
 
-    async def _ensure_initialized(self) -> bool:
+    async def _ensure_provider_initialized(self, provider_name: str) -> bool:
         """
-        Ensure the downloader is initialized.
+        Ensure a specific provider is initialized.
+
+        Args:
+            provider_name: Name of the provider to initialize
 
         Returns:
             True if initialization succeeded, False otherwise.
         """
-        if self._initialized:
+        if provider_name in self._initialized:
             return True
 
         try:
-            # Create Tidal provider (endpoint manager loads endpoints lazily)
-            self._tidal_provider = TidalProvider(
-                endpoint_manager=self._endpoint_manager,
-            )
+            if provider_name == "tidal":
+                provider = TidalProvider(
+                    endpoint_manager=self._tidal_endpoint_manager,
+                )
+                if not await provider.is_available():
+                    logger.warning("Tidal API is not available")
+                    return False
+                self._providers["tidal"] = provider
 
-            # Verify Tidal API is available
-            if not await self._tidal_provider.is_available():
-                logger.error("Tidal API is not available")
+            elif provider_name == "qobuz":
+                provider = QobuzProvider(use_mp3=self._qobuz_use_mp3)
+                if not await provider.is_available():
+                    logger.warning("Qobuz API is not available")
+                    return False
+                self._providers["qobuz"] = provider
+
+            else:
+                logger.warning(f"Unknown provider: {provider_name}")
                 return False
 
-            self._initialized = True
+            self._initialized.add(provider_name)
             return True
+
         except Exception as e:
-            logger.error(f"Failed to initialize fallback downloader: {e}")
+            logger.error(f"Failed to initialize {provider_name}: {e}")
             return False
 
     async def download_track(
@@ -111,6 +147,8 @@ class FallbackDownloader:
         """
         Attempt to download a track using fallback providers.
 
+        Tries each provider in the configured order until one succeeds.
+
         Args:
             spotify_metadata: Metadata from Spotify for the track
             output_filename: Optional custom filename (without extension)
@@ -118,60 +156,78 @@ class FallbackDownloader:
         Returns:
             FallbackDownloadResult with success status and file path
         """
-        # Ensure we're initialized
-        if not await self._ensure_initialized():
+        if not self._provider_order:
             return FallbackDownloadResult(
                 success=False,
                 file_path=None,
                 provider_used=None,
-                error_message="Failed to initialize fallback providers",
+                error_message="No fallback providers configured",
                 track_match=None,
                 validation_result=None,
             )
 
-        if self._tidal_provider is None:
-            return FallbackDownloadResult(
-                success=False,
-                file_path=None,
-                provider_used=None,
-                error_message="Tidal provider not available",
-                track_match=None,
-                validation_result=None,
+        last_error = "All providers failed"
+
+        for provider_name in self._provider_order:
+            logger.info(
+                f"[{provider_name}] Trying to download: "
+                f"'{spotify_metadata.artist} - {spotify_metadata.title}'"
             )
 
-        # Try Tidal first (only provider for now)
-        return await self._try_tidal(spotify_metadata, output_filename)
+            # Initialize provider if needed
+            if not await self._ensure_provider_initialized(provider_name):
+                logger.warning(f"[{provider_name}] Provider not available, skipping")
+                continue
 
-    async def _try_tidal(
+            provider = self._providers.get(provider_name)
+            if not provider:
+                continue
+
+            # Try this provider
+            result = await self._try_provider(
+                provider=provider,
+                spotify_metadata=spotify_metadata,
+                output_filename=output_filename,
+            )
+
+            if result.success:
+                return result
+
+            # Record error for logging
+            last_error = result.error_message or f"{provider_name} failed"
+            logger.info(f"[{provider_name}] Failed: {last_error}")
+
+        return FallbackDownloadResult(
+            success=False,
+            file_path=None,
+            provider_used=None,
+            error_message=last_error,
+            track_match=None,
+            validation_result=None,
+        )
+
+    async def _try_provider(
         self,
+        provider: DownloadProvider,
         spotify_metadata: SpotifyTrackMetadata,
         output_filename: Optional[str],
     ) -> FallbackDownloadResult:
         """
-        Attempt to download from Tidal.
+        Attempt to download from a specific provider.
 
         Args:
+            provider: The download provider to use
             spotify_metadata: Spotify track metadata
             output_filename: Optional custom filename
 
         Returns:
             FallbackDownloadResult with download status
         """
-        if self._tidal_provider is None:
-            return FallbackDownloadResult(
-                success=False,
-                file_path=None,
-                provider_used="tidal",
-                error_message="Tidal provider not initialized",
-                track_match=None,
-                validation_result=None,
-            )
-
-        provider_name = self._tidal_provider.name
+        provider_name = provider.name
 
         # Step 1: Search for the track
         try:
-            match = await self._tidal_provider.search_track(
+            match = await provider.search_track(
                 title=spotify_metadata.title,
                 artist=spotify_metadata.artist,
                 album=spotify_metadata.album,
@@ -218,17 +274,12 @@ class FallbackDownloader:
                 safe_title = self._sanitize_filename(spotify_metadata.title)
                 base_filename = f"{safe_artist} - {safe_title}"
 
-            # Determine file extension based on quality
-            ext = (
-                "flac"
-                if self._quality_preference
-                in (QualityPreference.LOSSLESS, QualityPreference.HI_RES)
-                else "m4a"
-            )
+            # Determine file extension based on quality and provider
+            ext = self._get_expected_extension(provider_name)
             output_path = self._output_dir / f"{base_filename}.{ext}"
 
             # Download
-            download_result = await self._tidal_provider.download_track(
+            download_result = await provider.download_track(
                 track_match=match,
                 output_path=output_path,
                 quality=self._quality_preference,
@@ -260,7 +311,34 @@ class FallbackDownloader:
                 validation_result=None,
             )
 
-        # Step 3: Embed metadata (Tidal downloads don't have proper tags)
+        # Step 3: Convert FLAC/MP3 to M4A if user requested HIGH quality
+        # (Keep FLAC as-is for LOSSLESS/HI_RES quality preferences)
+        if (
+            self._quality_preference == QualityPreference.HIGH
+            and file_path.suffix.lower() == ".flac"
+        ):
+            try:
+                logger.info(
+                    f"[{provider_name}] Converting FLAC to M4A for HIGH quality"
+                )
+                file_path = convert_flac_to_m4a(
+                    input_path=file_path,
+                    bitrate_kbps=256,
+                    delete_original=True,
+                )
+                logger.info(f"[{provider_name}] Converted to: {file_path}")
+            except AudioConversionError as e:
+                logger.error(f"[{provider_name}] FLAC to M4A conversion failed: {e}")
+                return FallbackDownloadResult(
+                    success=False,
+                    file_path=None,
+                    provider_used=provider_name,
+                    error_message=f"Format conversion failed: {e}",
+                    track_match=match,
+                    validation_result=None,
+                )
+
+        # Step 4: Embed metadata (providers don't have proper tags)
         try:
             metadata_success = self._metadata_embedder.embed_metadata(
                 file_path=file_path,
@@ -275,7 +353,8 @@ class FallbackDownloader:
             logger.warning(f"[{provider_name}] Metadata embedding failed: {e}")
             # Continue - file is still valid, just without metadata
 
-        # Step 4: Validate the downloaded file
+        # Step 5: Validate the downloaded file
+        validation_result: Optional[ValidationResult] = None
         try:
             validation_result = self._audio_validator.validate(
                 file_path=file_path,
@@ -287,10 +366,8 @@ class FallbackDownloader:
                     f"[{provider_name}] Validation failed: {validation_result.errors}"
                 )
                 # Don't fail the download, just log the warning
-                # The file might still be usable
         except Exception as e:
             logger.warning(f"[{provider_name}] Validation failed with exception: {e}")
-            validation_result = None
 
         logger.info(
             f"[{provider_name}] Successfully downloaded and processed: "
@@ -305,6 +382,22 @@ class FallbackDownloader:
             track_match=match,
             validation_result=validation_result,
         )
+
+    def _get_expected_extension(self, provider_name: str) -> str:
+        """Get expected file extension based on provider and quality."""
+        if self._quality_preference in (
+            QualityPreference.LOSSLESS,
+            QualityPreference.HI_RES,
+        ):
+            return "flac"
+
+        # For HIGH quality
+        if provider_name == "qobuz":
+            # Qobuz HIGH: returns MP3 if use_mp3=True, else FLAC (to be converted to M4A)
+            return "mp3" if self._qobuz_use_mp3 else "flac"
+        else:
+            # Tidal returns M4A for HIGH quality
+            return "m4a"
 
     def _sanitize_filename(self, name: str) -> str:
         """
@@ -341,5 +434,5 @@ class FallbackDownloader:
 
     async def close(self) -> None:
         """Clean up resources."""
-        self._tidal_provider = None
-        self._initialized = False
+        self._providers.clear()
+        self._initialized.clear()

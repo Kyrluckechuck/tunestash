@@ -20,8 +20,9 @@ class Config:
         artist_to_fetch: Optional[str] = None,
         print_exceptions: bool = True,
         force_playlist_resync: bool = False,
-        tidal_fallback_enabled: Optional[bool] = None,
         tidal_fallback_quality: Optional[str] = None,
+        download_provider_order: Optional[List[str]] = None,
+        qobuz_use_mp3: Optional[bool] = None,
     ):
         # Handle YouTube cookies with backwards compatibility
         self.youtube_cookies_location = youtube_cookies_location or Path(
@@ -65,17 +66,25 @@ class Config:
             else getattr(settings, "overwrite", False)
         )
 
-        # Tidal fallback for when spotdl/YTM fails to find a match
-        self.tidal_fallback_enabled = (
-            tidal_fallback_enabled
-            if tidal_fallback_enabled is not None
-            else getattr(settings, "tidal_fallback_enabled", True)
-        )
-        # Quality preference: "high" (320kbps), "lossless" (FLAC), "hi_res" (24-bit)
+        # Quality preference: "high" (320kbps AAC), "lossless" (FLAC), "hi_res" (24-bit FLAC)
         self.tidal_fallback_quality = (
             tidal_fallback_quality
             if tidal_fallback_quality is not None
-            else getattr(settings, "tidal_fallback_quality", "lossless")
+            else getattr(settings, "tidal_fallback_quality", "high")
+        )
+
+        # Provider order (default: spotdl primary, tidal fallback)
+        self.download_provider_order = (
+            download_provider_order
+            if download_provider_order is not None
+            else getattr(settings, "download_provider_order", ["spotdl", "tidal"])
+        )
+
+        # Qobuz format preference: if True, get MP3 directly instead of FLAC→M4A conversion
+        self.qobuz_use_mp3 = (
+            qobuz_use_mp3
+            if qobuz_use_mp3 is not None
+            else getattr(settings, "qobuz_use_mp3", False)
         )
 
         # Direct assignments
