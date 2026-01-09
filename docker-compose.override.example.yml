@@ -81,7 +81,9 @@ services:
     networks:
       - slm_net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      # Use 127.0.0.1 instead of localhost - Alpine resolves localhost to ::1 (IPv6)
+      # but Vite only binds to 0.0.0.0 (IPv4)
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
       interval: 10s
       timeout: 5s
       retries: 5
