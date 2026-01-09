@@ -232,32 +232,32 @@ class TestDownloaderDualClients:
         mock_public.album.assert_called_once_with("test_id")
         mock_oauth.album.assert_not_called()
 
-    def test_get_playlist_tries_public_first(self) -> None:
-        """get_playlist() should try public client first (for public playlists)."""
+    def test_get_playlist_tries_oauth_first(self) -> None:
+        """get_playlist() should try OAuth client first (can access private playlists)."""
         mock_oauth = MagicMock()
         mock_public = MagicMock()
-        mock_public.playlist.return_value = {"id": "test", "tracks": {"items": []}}
-        mock_public.next.return_value = None
-
-        downloader = Downloader(mock_oauth, public_client=mock_public)
-        downloader.get_playlist("test_id")
-
-        mock_public.playlist.assert_called_once_with("test_id")
-        mock_oauth.playlist.assert_not_called()
-
-    def test_get_playlist_falls_back_to_oauth(self) -> None:
-        """get_playlist() should fall back to OAuth for private playlists."""
-        mock_oauth = MagicMock()
-        mock_public = MagicMock()
-        mock_public.playlist.side_effect = Exception("Not authorized")
         mock_oauth.playlist.return_value = {"id": "test", "tracks": {"items": []}}
         mock_oauth.next.return_value = None
 
         downloader = Downloader(mock_oauth, public_client=mock_public)
         downloader.get_playlist("test_id")
 
-        mock_public.playlist.assert_called_once()
         mock_oauth.playlist.assert_called_once_with("test_id")
+        mock_public.playlist.assert_not_called()
+
+    def test_get_playlist_falls_back_to_public(self) -> None:
+        """get_playlist() should fall back to public client when OAuth fails."""
+        mock_oauth = MagicMock()
+        mock_public = MagicMock()
+        mock_oauth.playlist.side_effect = Exception("OAuth error")
+        mock_public.playlist.return_value = {"id": "test", "tracks": {"items": []}}
+        mock_public.next.return_value = None
+
+        downloader = Downloader(mock_oauth, public_client=mock_public)
+        downloader.get_playlist("test_id")
+
+        mock_oauth.playlist.assert_called_once_with("test_id")
+        mock_public.playlist.assert_called_once_with("test_id")
 
     def test_get_playlist_works_without_oauth(self) -> None:
         """get_playlist() should work with only public client (no OAuth configured)."""
@@ -287,32 +287,32 @@ class TestDownloaderDualClients:
         assert result == "abc123"
         mock_client.playlist.assert_called_once()
 
-    def test_get_playlist_snapshot_id_tries_public_first(self) -> None:
-        """get_playlist_snapshot_id() should try public client first."""
+    def test_get_playlist_snapshot_id_tries_oauth_first(self) -> None:
+        """get_playlist_snapshot_id() should try OAuth client first."""
         mock_oauth = MagicMock()
         mock_public = MagicMock()
-        mock_public.playlist.return_value = {"snapshot_id": "abc123"}
+        mock_oauth.playlist.return_value = {"snapshot_id": "abc123"}
 
         downloader = Downloader(mock_oauth, public_client=mock_public)
         result = downloader.get_playlist_snapshot_id("test_id")
 
         assert result == "abc123"
-        mock_public.playlist.assert_called_once()
-        mock_oauth.playlist.assert_not_called()
+        mock_oauth.playlist.assert_called_once()
+        mock_public.playlist.assert_not_called()
 
-    def test_get_playlist_snapshot_id_falls_back_to_oauth(self) -> None:
-        """get_playlist_snapshot_id() should fall back to OAuth on public failure."""
+    def test_get_playlist_snapshot_id_falls_back_to_public(self) -> None:
+        """get_playlist_snapshot_id() should fall back to public on OAuth failure."""
         mock_oauth = MagicMock()
         mock_public = MagicMock()
-        mock_public.playlist.side_effect = Exception("Not found")
-        mock_oauth.playlist.return_value = {"snapshot_id": "private123"}
+        mock_oauth.playlist.side_effect = Exception("OAuth error")
+        mock_public.playlist.return_value = {"snapshot_id": "public123"}
 
         downloader = Downloader(mock_oauth, public_client=mock_public)
         result = downloader.get_playlist_snapshot_id("test_id")
 
-        assert result == "private123"
-        mock_public.playlist.assert_called_once()
+        assert result == "public123"
         mock_oauth.playlist.assert_called_once()
+        mock_public.playlist.assert_called_once()
 
 
 class TestFailFastErrorDetection:
