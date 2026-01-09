@@ -47,15 +47,18 @@ class TestTaskHistoryService:
     @pytest.mark.asyncio
     async def test_create_task_success(self, task_history_service):
         """Test creating a task successfully."""
+        import uuid
+
+        unique_id = f"test_task_{uuid.uuid4().hex[:8]}"
         task = await task_history_service.create_task(
-            task_id="test_task_123_unique",
+            task_id=unique_id,
             task_type=TaskType.SYNC,
             entity_id="artist_456",
             entity_type=EntityType.ARTIST,
         )
 
         assert task is not None
-        assert task.task_id == "test_task_123_unique"
+        assert task.task_id == unique_id
         assert task.type == "SYNC"
         assert task.entity_id == "artist_456"
         assert task.entity_type == "ARTIST"
@@ -65,9 +68,12 @@ class TestTaskHistoryService:
     @pytest.mark.asyncio
     async def test_get_connection_with_filters(self, task_history_service):
         """Test getting task connection with filters."""
+        import uuid
+
+        suffix = uuid.uuid4().hex[:8]
         # Create some test tasks with unique IDs
-        await sync_to_async(CompletedTaskFactory)(task_id="completed_task_1")
-        await sync_to_async(FailedTaskFactory)(task_id="failed_task_1")
+        await sync_to_async(CompletedTaskFactory)(task_id=f"completed_task_{suffix}")
+        await sync_to_async(FailedTaskFactory)(task_id=f"failed_task_{suffix}")
 
         items, has_next, total = await task_history_service.get_connection(
             first=10, status=TaskStatus.COMPLETED
@@ -81,9 +87,14 @@ class TestTaskHistoryService:
     @pytest.mark.asyncio
     async def test_get_connection_with_pagination(self, task_history_service):
         """Test getting task connection with pagination."""
+        import uuid
+
+        suffix = uuid.uuid4().hex[:8]
         # Create multiple tasks with unique IDs
         for i in range(5):
-            await sync_to_async(TaskHistoryFactory)(task_id=f"paginated_task_{i}")
+            await sync_to_async(TaskHistoryFactory)(
+                task_id=f"paginated_task_{suffix}_{i}"
+            )
 
         items, has_next, total = await task_history_service.get_connection(first=3)
 
@@ -95,12 +106,15 @@ class TestTaskHistoryService:
     @pytest.mark.asyncio
     async def test_get_connection_with_sorting(self, task_history_service):
         """Test getting task connection with sorting."""
+        import uuid
+
+        suffix = uuid.uuid4().hex[:8]
         # Create tasks with different timestamps and unique IDs
         await sync_to_async(TaskHistoryFactory)(
-            started_at=datetime.now() - timedelta(hours=2), task_id="old_task_1"
+            started_at=datetime.now() - timedelta(hours=2), task_id=f"old_task_{suffix}"
         )
         await sync_to_async(TaskHistoryFactory)(
-            started_at=datetime.now(), task_id="new_task_1"
+            started_at=datetime.now(), task_id=f"new_task_{suffix}"
         )
 
         items, has_next, total = await task_history_service.get_connection(first=10)
