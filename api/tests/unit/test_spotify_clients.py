@@ -314,6 +314,78 @@ class TestDownloaderDualClients:
         mock_oauth.playlist.assert_called_once()
         mock_public.playlist.assert_called_once()
 
+    def test_get_playlist_snapshot_id_refreshes_token_on_401(self) -> None:
+        """get_playlist_snapshot_id() should refresh token on 401 and retry."""
+        from spotipy.exceptions import SpotifyException
+
+        mock_oauth = MagicMock()
+        mock_public = MagicMock()
+        mock_refresh = MagicMock(return_value=True)
+
+        # First call fails with 401, second succeeds after refresh
+        mock_oauth.playlist.side_effect = [
+            SpotifyException(http_status=401, code=-1, msg="Token expired"),
+            {"snapshot_id": "refreshed123"},
+        ]
+
+        downloader = Downloader(
+            mock_oauth, public_client=mock_public, on_auth_error=mock_refresh
+        )
+        result = downloader.get_playlist_snapshot_id("test_id")
+
+        assert result == "refreshed123"
+        mock_refresh.assert_called_once()
+        assert mock_oauth.playlist.call_count == 2
+        mock_public.playlist.assert_not_called()
+
+    def test_get_playlist_snapshot_id_falls_back_if_refresh_fails(self) -> None:
+        """get_playlist_snapshot_id() should fall back to public if refresh fails."""
+        from spotipy.exceptions import SpotifyException
+
+        mock_oauth = MagicMock()
+        mock_public = MagicMock()
+        mock_refresh = MagicMock(return_value=False)
+
+        mock_oauth.playlist.side_effect = SpotifyException(
+            http_status=401, code=-1, msg="Token expired"
+        )
+        mock_public.playlist.return_value = {"snapshot_id": "public123"}
+
+        downloader = Downloader(
+            mock_oauth, public_client=mock_public, on_auth_error=mock_refresh
+        )
+        result = downloader.get_playlist_snapshot_id("test_id")
+
+        assert result == "public123"
+        mock_refresh.assert_called_once()
+        mock_oauth.playlist.assert_called_once()
+        mock_public.playlist.assert_called_once()
+
+    def test_get_playlist_snapshot_id_aborts_on_persistent_401(self) -> None:
+        """get_playlist_snapshot_id() should not loop if 401 persists after refresh."""
+        from spotipy.exceptions import SpotifyException
+
+        mock_oauth = MagicMock()
+        mock_public = MagicMock()
+        mock_refresh = MagicMock(return_value=True)
+
+        # Both calls fail with 401 - refresh didn't help
+        mock_oauth.playlist.side_effect = SpotifyException(
+            http_status=401, code=-1, msg="Token expired"
+        )
+        mock_public.playlist.return_value = {"snapshot_id": "public123"}
+
+        downloader = Downloader(
+            mock_oauth, public_client=mock_public, on_auth_error=mock_refresh
+        )
+        result = downloader.get_playlist_snapshot_id("test_id")
+
+        # Should fall back to public after exactly one refresh attempt
+        assert result == "public123"
+        mock_refresh.assert_called_once()
+        assert mock_oauth.playlist.call_count == 2  # Initial + one retry
+        mock_public.playlist.assert_called_once()
+
 
 class TestFailFastErrorDetection:
     """Tests for the _is_fail_fast_error helper function."""

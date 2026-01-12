@@ -597,8 +597,11 @@ class SpotdlWrapper:
 
         # Pass both clients to Downloader - routes operations to appropriate client
         # SpotDL's SpotifyClient is the Spotipy client itself (not a wrapper)
+        # The on_auth_error callback allows Downloader to trigger token refresh on 401
         self.downloader = Downloader(
-            self.spotipy_client, public_client=self.public_spotipy_client.sp
+            self.spotipy_client,
+            public_client=self.public_spotipy_client.sp,
+            on_auth_error=self.refresh_spotify_client,
         )
 
         # Initialize premium detector for quality validation
