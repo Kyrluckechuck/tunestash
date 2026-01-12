@@ -65,6 +65,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docker compose exec web python manage.py createsuperuser` - Create superuser in web container
 - `make dev-db` - Connect to PostgreSQL database directly
 
+### Interactive Django Shell
+- `docker compose exec web python manage.py shell_plus` - **Preferred** - Auto-imports all models and common utilities
+- `docker compose exec web python manage.py shell_plus -c "..."` - Run one-off Python commands with Django context
+- Available in both dev and production environments
+
 **Legacy SQLite Migration**: If you have data from an older SQLite-based setup, the `migrate_from_sqlite` command automatically runs during container startup (via `startup.sh`) when `/config/db/db.sqlite3` is detected. It migrates data to PostgreSQL and can be run manually with `docker compose exec web python manage.py migrate_from_sqlite` if needed.
 
 ## Architecture Overview

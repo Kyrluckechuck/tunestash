@@ -1,11 +1,16 @@
+import logging
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
+
+from spotipy.exceptions import SpotifyException
 
 from library_manager.models import Album, Artist
 
 # Rate limiting: delay between Spotify API calls (in seconds)
 _API_CALL_DELAY_SECONDS = 0.5
+
+logger = logging.getLogger(__name__)
 
 
 class Downloader:
@@ -23,6 +28,7 @@ class Downloader:
         self,
         spotipy_client: Any,
         public_client: Optional[Any] = None,
+        on_auth_error: Optional[Callable[[], bool]] = None,
     ):
         """Initialize Downloader with Spotipy client(s).
 
@@ -31,9 +37,13 @@ class Downloader:
                            Also used as fallback if public_client is None.
             public_client: Optional client using Client Credentials for public
                           metadata operations. If None, spotipy_client is used for all.
+            on_auth_error: Optional callback invoked on 401 auth errors. Should refresh
+                          the OAuth token and return True if successful. If provided,
+                          failed requests will be retried once after callback returns True.
         """
         self.spotipy_client = spotipy_client
         self.public_client = public_client if public_client else spotipy_client
+        self._on_auth_error = on_auth_error
 
     def get_new_releases(
         self, limit: int = 50, offset: int = 0
@@ -383,6 +393,9 @@ class Downloader:
         Prefers OAuth client (can access both public and private playlists),
         falls back to public client for unauthenticated users.
 
+        If a 401 auth error occurs and an on_auth_error callback is configured,
+        the token will be refreshed and the request retried once.
+
         Args:
             playlist_id: The Spotify playlist ID (22-character base62 string)
 
@@ -394,6 +407,32 @@ class Downloader:
             try:
                 result = self.spotipy_client.playlist(playlist_id, fields="snapshot_id")
                 return result.get("snapshot_id")
+            except SpotifyException as e:
+                if e.http_status == 401 and self._on_auth_error:
+                    logger.warning(
+                        "OAuth token expired during playlist snapshot check, refreshing..."
+                    )
+                    if self._on_auth_error():
+                        # Retry once after token refresh
+                        try:
+                            result = self.spotipy_client.playlist(
+                                playlist_id, fields="snapshot_id"
+                            )
+                            return result.get("snapshot_id")
+                        except SpotifyException as retry_err:
+                            if retry_err.http_status == 401:
+                                logger.error(
+                                    "OAuth token still invalid after refresh - "
+                                    "possible auth configuration issue"
+                                )
+                            # Don't retry again, fall through to public client
+                        except Exception:
+                            pass
+                    else:
+                        logger.warning(
+                            "OAuth token refresh failed, trying public client"
+                        )
+                # Fall through to public client for other errors
             except Exception:
                 pass
 
