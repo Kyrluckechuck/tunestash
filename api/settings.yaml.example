@@ -36,10 +36,11 @@ default:
   # - spotdl: Most reliable, requires YTM cookies, 128-256kbps
   # - tidal/qobuz: Higher quality (up to FLAC), but use third-party APIs (squid.wtf)
   #   which may be less reliable or have downtime
-  # Default: ["spotdl", "tidal"] - spotdl first with Tidal fallback
+  # Default: Try all providers in order for maximum success rate
   download_provider_order:
     - spotdl
     - tidal
+    - qobuz
 
   # Tidal/Qobuz quality preference
   # - high: 320kbps AAC (M4A) - default, consistent with spotdl output
