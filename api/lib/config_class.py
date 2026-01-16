@@ -73,11 +73,13 @@ class Config:
             else getattr(settings, "tidal_fallback_quality", "high")
         )
 
-        # Provider order (default: spotdl primary, tidal fallback)
+        # Provider order (default: try all providers for maximum success rate)
         self.download_provider_order = (
             download_provider_order
             if download_provider_order is not None
-            else getattr(settings, "download_provider_order", ["spotdl", "tidal"])
+            else getattr(
+                settings, "download_provider_order", ["spotdl", "tidal", "qobuz"]
+            )
         )
 
         # Qobuz format preference: if True, get MP3 directly instead of FLAC→M4A conversion
