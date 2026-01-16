@@ -29,16 +29,16 @@ class TestConfigProviderOrder:
         return settings
 
     def test_default_provider_order(self, mock_django_settings):
-        """Default provider order should be spotdl first, tidal second."""
+        """Default provider order should include all providers for max success rate."""
         from lib.config_class import Config
 
         # When no provider order is explicitly set, default should be used
         # Constructor arg takes precedence, so passing None triggers settings lookup
-        # which falls back to default ["spotdl", "tidal"]
+        # which falls back to default ["spotdl", "tidal", "qobuz"]
         config = Config(download_provider_order=None)
         # The actual behavior: since settings doesn't have download_provider_order,
         # getattr returns the default value
-        assert config.download_provider_order == ["spotdl", "tidal"]
+        assert config.download_provider_order == ["spotdl", "tidal", "qobuz"]
 
     @patch("lib.config_class.settings")
     def test_explicit_provider_order_from_settings(
