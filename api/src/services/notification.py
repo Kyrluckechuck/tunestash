@@ -149,14 +149,7 @@ class NotificationService:
             logger.debug(f"[NOTIFY] Cooldown active for {alert_type}, skipping")
             return False
 
-        try:
-            import apprise
-        except ImportError:
-            logger.error(
-                "[NOTIFY] apprise package not installed. "
-                "Install with: pip install apprise"
-            )
-            return False
+        import apprise
 
         urls = getattr(settings, "NOTIFICATIONS_URLS", [])
         if not urls:
