@@ -64,5 +64,21 @@ default:
   # Operational toggles
   disable_missing_tracked_artist_download: false
 
+  # Notifications (Apprise) - alerts for credential expiry and high error rates
+  # See: https://github.com/caronc/apprise/wiki#notification-services
+  NOTIFICATIONS_ENABLED: false
+  NOTIFICATIONS_URLS: []
+    # Examples:
+    # - "discord://webhook_id/webhook_token"
+    # - "tgram://bot_token/chat_id"
+    # - "ntfy://ntfy.sh/my-topic"
+    # - "gotify://hostname/token"
+  NOTIFICATIONS_COOLDOWN_MINUTES: 60
+  NOTIFICATIONS_ERROR_THRESHOLD: 10
+  NOTIFICATIONS_ERROR_WINDOW_HOURS: 6
+  # Optional: Name shown in notification titles (e.g. "MyServer: Cookies Expired")
+  # Defaults to "TuneStash" if not set
+  NOTIFICATIONS_INSTANCE_NAME: ""
+
   # Optional: paths (ensure these exist in your environment)
   final_path: "/mnt/music_spotify"

@@ -57,4 +57,9 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute=0, hour=6),  # Daily at 6 AM
         "options": {"priority": TaskPriority.MAINTENANCE},
     },
+    "check-notifications": {
+        "task": "library_manager.tasks.check_notifications",
+        "schedule": crontab(minute="*/15"),  # Every 15 minutes
+        "options": {"priority": 0},
+    },
 }

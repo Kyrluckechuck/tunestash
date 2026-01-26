@@ -32,6 +32,7 @@ class OneOffTaskService:
         from library_manager.tasks import (
             backfill_song_album,
             backfill_song_isrc,
+            send_test_notification,
             upgrade_low_quality_songs,
         )
 
@@ -69,6 +70,18 @@ class OneOffTaskService:
             ),
             category="maintenance",
             task_func=upgrade_low_quality_songs,
+        )
+
+        self._tasks["send_test_notification"] = OneOffTaskDefinition(
+            id="send_test_notification",
+            name="Send Test Notification",
+            description=(
+                "Send a test notification to all configured Apprise URLs. "
+                "Verifies that NOTIFICATIONS_ENABLED is true and NOTIFICATIONS_URLS "
+                "are reachable. Check worker logs for [NOTIFY] output."
+            ),
+            category="notifications",
+            task_func=send_test_notification,
         )
 
     def get_all(self) -> List[OneOffTask]:
