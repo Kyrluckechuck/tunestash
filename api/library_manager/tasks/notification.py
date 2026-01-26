@@ -50,11 +50,7 @@ def send_test_notification(self: Any) -> bool:
         )
         return False
 
-    try:
-        import apprise
-    except ImportError:
-        logger.error("[NOTIFY] Test failed: apprise package not installed")
-        return False
+    import apprise
 
     service = NotificationService()
     name = service.get_instance_name()

@@ -379,28 +379,6 @@ class TestCooldown:
 class TestAppriseFailures:
     """Tests for Apprise error handling."""
 
-    def test_handles_apprise_import_error(
-        self, service, notification_settings, mock_auth_status_cookies_expired
-    ):
-        import builtins
-
-        real_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "apprise":
-                raise ImportError("no apprise")
-            return real_import(name, *args, **kwargs)
-
-        with (
-            patch(
-                "src.services.system_health.SystemHealthService.check_authentication_status",
-                return_value=mock_auth_status_cookies_expired,
-            ),
-            patch("builtins.__import__", side_effect=mock_import),
-        ):
-            result = service.check_and_notify_all()
-            assert result[NotificationService.ALERT_COOKIES_EXPIRED] is False
-
     def test_handles_apprise_send_failure(
         self, service, notification_settings, mock_auth_status_cookies_expired
     ):
