@@ -150,7 +150,7 @@ class NotificationService:
             return False
 
         try:
-            import apprise  # type: ignore[import-not-found]
+            import apprise
         except ImportError:
             logger.error(
                 "[NOTIFY] apprise package not installed. "

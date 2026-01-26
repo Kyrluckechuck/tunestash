@@ -51,7 +51,7 @@ def send_test_notification(self: Any) -> bool:
         return False
 
     try:
-        import apprise  # type: ignore[import-not-found]
+        import apprise
     except ImportError:
         logger.error("[NOTIFY] Test failed: apprise package not installed")
         return False
