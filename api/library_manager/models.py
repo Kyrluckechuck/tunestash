@@ -1497,3 +1497,22 @@ class SongUpgradeAttempt(models.Model):
             models.Index(fields=["result"]),
             models.Index(fields=["attempted_at"]),
         ]
+
+
+class NotificationState(models.Model):
+    """Tracks cooldown state for notification alerts.
+
+    One row per alert type, recording when the last notification was sent
+    to prevent notification spam during persistent error conditions.
+    """
+
+    alert_type: models.CharField = models.CharField(max_length=50, unique=True)
+    last_sent_at: models.DateTimeField = models.DateTimeField()
+    last_message: models.TextField = models.TextField(blank=True, default="")
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "notification_state"
+
+    def __str__(self) -> str:
+        return f"{self.alert_type} (last sent: {self.last_sent_at})"

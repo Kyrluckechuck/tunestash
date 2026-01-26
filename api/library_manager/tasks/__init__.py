@@ -72,6 +72,12 @@ from .metadata import (
     cleanup_old_files,
 )
 
+# Re-export notification tasks
+from .notification import (
+    check_notifications,
+    send_test_notification,
+)
+
 # Re-export periodic tasks
 from .periodic import (
     queue_missing_albums_for_tracked_artists,
@@ -145,6 +151,9 @@ __all__ = [
     "memory_profile_after_init",
     "memory_profile_worker",
     "periodic_memory_health_check",
+    # Notification tasks
+    "check_notifications",
+    "send_test_notification",
     # Upgrade tasks
     "upgrade_low_quality_songs",
 ]
