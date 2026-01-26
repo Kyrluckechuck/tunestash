@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from django.db.models.functions import Now
 
+from celery.exceptions import Retry as CeleryRetry
 from celery_app import app as celery_app
 from downloader.spotdl_wrapper import YouTubeRateLimitError
 from downloader.spotipy_tasks import SpotifyRateLimitError
@@ -196,8 +197,8 @@ def download_missing_albums_for_artist(
         if task_history:
             complete_task(task_history, success=True)
 
-    except YouTubeRateLimitError:
-        # Already handled above with self.retry - just re-raise
+    except (YouTubeRateLimitError, SpotifyRateLimitError, CeleryRetry):
+        # Rate limit or retry - task will be rescheduled, don't mark as failed
         raise
     except Exception as e:
         logger.error("Error in sync_tracked_playlist_internal: %s", e, exc_info=True)
@@ -327,6 +328,9 @@ def download_single_album(self: Any, album_id: int) -> None:
             countdown=retry_after,
             max_retries=2,
         )
+    except CeleryRetry:
+        # Celery Retry exception - task will be rescheduled, don't mark as failed
+        raise
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
         logger.error(error_msg)
@@ -457,8 +461,8 @@ def download_playlist(
 
         complete_task(task_history, success=True)
 
-    except YouTubeRateLimitError:
-        # Already handled above with self.retry - just re-raise
+    except (YouTubeRateLimitError, SpotifyRateLimitError, CeleryRetry):
+        # Rate limit or retry - task will be rescheduled, don't mark as failed
         raise
     except Exception as e:
         if task_history:
@@ -718,6 +722,9 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
             countdown=retry_after,
             max_retries=2,
         )
+    except CeleryRetry:
+        # Celery Retry exception - task will be rescheduled, don't mark as failed
+        raise
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
         logger.error(error_msg)
@@ -823,6 +830,9 @@ def download_single_track(self: Any, track_id: str) -> None:
             countdown=retry_after,
             max_retries=2,
         )
+    except CeleryRetry:
+        # Celery Retry exception - task will be rescheduled, don't mark as failed
+        raise
     except Exception as e:
         error_msg = f"Error downloading track: {str(e)}"
         logger.error(error_msg)

@@ -6,6 +6,7 @@ from django.conf import settings
 from django.db.models.functions import Now
 from django.utils import timezone
 
+from celery.exceptions import Retry as CeleryRetry
 from celery_app import app as celery_app
 from downloader.spotdl_wrapper import YouTubeRateLimitError
 from downloader.spotipy_tasks import SpotifyRateLimitError
@@ -175,6 +176,9 @@ def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
 
     except (YouTubeRateLimitError, SpotifyRateLimitError):
         # Already handled above with self.retry - just re-raise
+        raise
+    except CeleryRetry:
+        # Celery Retry exception - task will be rescheduled, don't mark as failed
         raise
     except Exception as e:
         if task_history:
