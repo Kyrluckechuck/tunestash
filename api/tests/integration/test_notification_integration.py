@@ -24,7 +24,12 @@ class TestNotificationCooldownFlow:
 
         assert NotificationState.objects.count() == 0
 
-        with patch("apprise.Apprise") as mock_apprise_cls:
+        with (
+            patch("src.services.notification.settings") as mock_settings,
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
+            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
@@ -43,7 +48,12 @@ class TestNotificationCooldownFlow:
         """Sending the same alert type twice in quick succession should be blocked."""
         service = NotificationService()
 
-        with patch("apprise.Apprise") as mock_apprise_cls:
+        with (
+            patch("src.services.notification.settings") as mock_settings,
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
+            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
@@ -67,7 +77,12 @@ class TestNotificationCooldownFlow:
         """Different alert types should have independent cooldowns."""
         service = NotificationService()
 
-        with patch("apprise.Apprise") as mock_apprise_cls:
+        with (
+            patch("src.services.notification.settings") as mock_settings,
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
+            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
