@@ -96,7 +96,7 @@ Quick start:
      final_path: "/mnt/music_spotify"
 
      # Downloader defaults
-     cookies_location: "/config/youtube_music_cookies.txt"
+     youtube_cookies_location: "/config/youtube_music_cookies.txt"
      log_level: INFO
      no_lrc: false
      overwrite: false
@@ -195,6 +195,33 @@ tidal_fallback_quality: "lossless"
 
 **Monitoring:**
 View provider success rates in the Dashboard → "Fallback Provider Metrics" section (collapsed by default). Metrics are retained for 30 days.
+
+### Notifications
+
+TuneStash can send alerts via [Apprise](https://github.com/caronc/apprise) (80+ notification services) when:
+- **YouTube cookies expire** or are about to expire (configurable warning thresholds)
+- **PO token becomes invalid** (if configured)
+- **Spotify OAuth fails** to refresh (if using user-authenticated mode)
+- **High error rate** detected (configurable threshold)
+
+**Configure notifications in `settings.yaml`:**
+```yaml
+default:
+  NOTIFICATIONS_ENABLED: true
+  NOTIFICATIONS_URLS:
+    - "discord://webhook_id/webhook_token"
+    - "ntfy://ntfy.sh/my-topic"
+  NOTIFICATIONS_COOLDOWN_MINUTES: 60
+  NOTIFICATIONS_ERROR_THRESHOLD: 10
+  NOTIFICATIONS_ERROR_WINDOW_HOURS: 6
+  # Cookie expiration warnings
+  NOTIFICATIONS_COOKIE_WARN_DAYS: 7     # First warning
+  NOTIFICATIONS_COOKIE_URGENT_DAYS: 1   # Urgent warning
+  # Instance name shown in notifications (default: "TuneStash")
+  NOTIFICATIONS_INSTANCE_NAME: "My Server"
+```
+
+See [Apprise Wiki](https://github.com/caronc/apprise/wiki#notification-services) for available notification services including Discord, Telegram, Gotify, Pushover, email, and many more.
 
 ## Running From Docker (recommended)
 An example compose setup is included. Follow these steps:

@@ -261,10 +261,14 @@ The following tasks run automatically via Celery Beat (`api/celery_beat_schedule
 | `sync-all-playlists` | Every 8 hours | Syncs all tracked playlists to detect new songs |
 | `validate-undownloaded-songs` | Every 12 hours | Validates songs marked as undownloaded |
 | `retry-failed-songs` | Mon/Wed/Fri at 4 AM | Retries downloading songs that failed previously |
-| `queue-missing-albums-for-tracked-artists` | Hourly | Queues downloads for new albums from tracked artists |
+| `queue-missing-albums-for-tracked-artists` | Hourly at :00 | Queues downloads for new albums from tracked artists |
+| `sync-tracked-artists-metadata` | Hourly at :30 | Updates metadata for tracked artists |
+| `scan-new-releases-for-tracked-artists` | Hourly at :00 | Checks for new releases from tracked artists |
 | `cleanup-celery-history` | Daily (6 AM) | Removes old task history records (older than 30 days) |
+| `cleanup-app-metrics` | Daily (6 AM) | Removes old fallback provider metrics (older than 30 days) |
 | `cleanup-stale-tasks` | Every 5 minutes | Marks stuck/stale tasks as failed |
 | `memory-health-check` | Every 10 minutes | Monitors worker memory usage |
+| `check-notifications` | Every 15 minutes | Checks credentials and sends alerts via Apprise |
 
 **Note**: Celery Beat uses `DatabaseScheduler` which stores schedules in PostgreSQL. To manage schedules:
 - **Docker mode**: Use Django shell: `docker compose exec web python manage.py shell`
