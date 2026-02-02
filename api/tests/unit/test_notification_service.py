@@ -21,6 +21,7 @@ def mock_auth_status_healthy():
     """AuthenticationStatus where everything is healthy."""
     status = MagicMock()
     status.cookies_valid = True
+    status.cookies_expire_in_days = 30  # Plenty of time
     status.po_token_configured = True
     status.po_token_valid = True
     status.po_token_error_message = None
@@ -36,7 +37,36 @@ def mock_auth_status_cookies_expired():
     """AuthenticationStatus with expired cookies."""
     status = MagicMock()
     status.cookies_valid = False
+    status.cookies_expire_in_days = None
     status.cookies_error_message = "Cookies expired 5 days ago"
+    status.po_token_configured = False
+    status.po_token_valid = False
+    status.spotify_auth_mode = "public"
+    status.spotify_token_valid = True
+    return status
+
+
+@pytest.fixture
+def mock_auth_status_cookies_expiring_soon():
+    """AuthenticationStatus with cookies expiring in 5 days."""
+    status = MagicMock()
+    status.cookies_valid = True
+    status.cookies_expire_in_days = 5  # Within 7-day warning threshold
+    status.cookies_error_message = None
+    status.po_token_configured = False
+    status.po_token_valid = False
+    status.spotify_auth_mode = "public"
+    status.spotify_token_valid = True
+    return status
+
+
+@pytest.fixture
+def mock_auth_status_cookies_expiring_urgent():
+    """AuthenticationStatus with cookies expiring in 1 day."""
+    status = MagicMock()
+    status.cookies_valid = True
+    status.cookies_expire_in_days = 1  # Within 1-day urgent threshold
+    status.cookies_error_message = None
     status.po_token_configured = False
     status.po_token_valid = False
     status.spotify_auth_mode = "public"
@@ -53,6 +83,8 @@ def notification_settings():
         mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
         mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 10
         mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
+        mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
+        mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
         yield mock_settings
 
 
@@ -118,6 +150,68 @@ class TestCookiesAlert:
             result = service.check_and_notify_all()
             assert result[NotificationService.ALERT_COOKIES_EXPIRED] is False
 
+    def test_sends_warning_when_cookies_expiring_soon(
+        self, service, notification_settings, mock_auth_status_cookies_expiring_soon
+    ):
+        """Cookies with 5 days left should trigger the 7-day warning."""
+        with (
+            patch(
+                "src.services.system_health.SystemHealthService.check_authentication_status",
+                return_value=mock_auth_status_cookies_expiring_soon,
+            ),
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_apprise = MagicMock()
+            mock_apprise.notify.return_value = True
+            mock_apprise_cls.return_value = mock_apprise
+
+            result = service.check_and_notify_all()
+
+            assert result[NotificationService.ALERT_COOKIES_EXPIRED] is False
+            assert result[NotificationService.ALERT_COOKIES_EXPIRING_SOON] is True
+            assert result[NotificationService.ALERT_COOKIES_EXPIRING_URGENT] is False
+            call_kwargs = mock_apprise.notify.call_args[1]
+            assert "Expiring" in call_kwargs["title"]
+            assert "5 day(s)" in call_kwargs["body"]
+
+    def test_sends_urgent_when_cookies_expiring_tomorrow(
+        self, service, notification_settings, mock_auth_status_cookies_expiring_urgent
+    ):
+        """Cookies with 1 day left should trigger the urgent warning."""
+        with (
+            patch(
+                "src.services.system_health.SystemHealthService.check_authentication_status",
+                return_value=mock_auth_status_cookies_expiring_urgent,
+            ),
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_apprise = MagicMock()
+            mock_apprise.notify.return_value = True
+            mock_apprise_cls.return_value = mock_apprise
+
+            result = service.check_and_notify_all()
+
+            assert result[NotificationService.ALERT_COOKIES_EXPIRED] is False
+            assert result[NotificationService.ALERT_COOKIES_EXPIRING_SOON] is False
+            assert result[NotificationService.ALERT_COOKIES_EXPIRING_URGENT] is True
+            call_kwargs = mock_apprise.notify.call_args[1]
+            assert "Soon!" in call_kwargs["title"]
+            assert "1 day(s)" in call_kwargs["body"]
+
+    def test_no_warning_when_cookies_have_plenty_of_time(
+        self, service, notification_settings, mock_auth_status_healthy
+    ):
+        """Cookies with 30 days left should not trigger any warning."""
+        with patch(
+            "src.services.system_health.SystemHealthService.check_authentication_status",
+            return_value=mock_auth_status_healthy,
+        ):
+            result = service.check_and_notify_all()
+
+            assert result[NotificationService.ALERT_COOKIES_EXPIRED] is False
+            assert result[NotificationService.ALERT_COOKIES_EXPIRING_SOON] is False
+            assert result[NotificationService.ALERT_COOKIES_EXPIRING_URGENT] is False
+
 
 class TestPoTokenAlert:
     """Tests for PO token validity alerts."""
@@ -125,6 +219,7 @@ class TestPoTokenAlert:
     def test_sends_alert_when_po_token_invalid(self, service, notification_settings):
         status = MagicMock()
         status.cookies_valid = True
+        status.cookies_expire_in_days = 30
         status.cookies_error_message = None
         status.po_token_configured = True
         status.po_token_valid = False
@@ -154,6 +249,7 @@ class TestPoTokenAlert:
     ):
         status = MagicMock()
         status.cookies_valid = True
+        status.cookies_expire_in_days = 30
         status.cookies_error_message = None
         status.po_token_configured = False
         status.po_token_valid = False
@@ -174,6 +270,7 @@ class TestSpotifyOAuthAlert:
     def test_sends_alert_when_oauth_failed(self, service, notification_settings):
         status = MagicMock()
         status.cookies_valid = True
+        status.cookies_expire_in_days = 30
         status.cookies_error_message = None
         status.po_token_configured = False
         status.po_token_valid = False
@@ -201,6 +298,7 @@ class TestSpotifyOAuthAlert:
     def test_no_alert_in_public_mode(self, service, notification_settings):
         status = MagicMock()
         status.cookies_valid = True
+        status.cookies_expire_in_days = 30
         status.cookies_error_message = None
         status.po_token_configured = False
         status.po_token_valid = False

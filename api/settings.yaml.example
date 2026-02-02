@@ -76,6 +76,11 @@ default:
   NOTIFICATIONS_COOLDOWN_MINUTES: 60
   NOTIFICATIONS_ERROR_THRESHOLD: 10
   NOTIFICATIONS_ERROR_WINDOW_HOURS: 6
+  # Cookie expiration warnings (days before expiry)
+  # - WARN: First warning (default 7 days) - "Consider refreshing soon"
+  # - URGENT: Urgent warning (default 1 day) - "Expiring soon!"
+  NOTIFICATIONS_COOKIE_WARN_DAYS: 7
+  NOTIFICATIONS_COOKIE_URGENT_DAYS: 1
   # Optional: Name shown in notification titles (e.g. "MyServer: Cookies Expired")
   # Defaults to "TuneStash" if not set
   NOTIFICATIONS_INSTANCE_NAME: ""
