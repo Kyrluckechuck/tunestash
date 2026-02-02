@@ -20,9 +20,13 @@ class NotificationService:
         NOTIFICATIONS_COOLDOWN_MINUTES: int - minimum minutes between repeated alerts
         NOTIFICATIONS_ERROR_THRESHOLD: int - number of failures to trigger alert
         NOTIFICATIONS_ERROR_WINDOW_HOURS: int - time window for error counting
+        NOTIFICATIONS_COOKIE_WARN_DAYS: int - days before expiry for first warning (default 7)
+        NOTIFICATIONS_COOKIE_URGENT_DAYS: int - days before expiry for urgent warning (default 1)
     """
 
     ALERT_COOKIES_EXPIRED = "cookies_expired"
+    ALERT_COOKIES_EXPIRING_SOON = "cookies_expiring_soon"
+    ALERT_COOKIES_EXPIRING_URGENT = "cookies_expiring_urgent"
     ALERT_PO_TOKEN_INVALID = "po_token_invalid"
     ALERT_SPOTIFY_OAUTH_FAILED = "spotify_oauth_failed"
     ALERT_HIGH_ERROR_RATE = "high_error_rate"
@@ -75,8 +79,13 @@ class NotificationService:
 
         auth_status = SystemHealthService.check_authentication_status()
 
-        # YouTube cookies
+        # Get configurable warning thresholds
+        warn_days = int(getattr(settings, "NOTIFICATIONS_COOKIE_WARN_DAYS", 7))
+        urgent_days = int(getattr(settings, "NOTIFICATIONS_COOKIE_URGENT_DAYS", 1))
+
+        # YouTube cookies - check expiration state with tiered warnings
         if not auth_status.cookies_valid:
+            # Cookies already expired/invalid
             error_msg = auth_status.cookies_error_message or "Unknown error"
             results[self.ALERT_COOKIES_EXPIRED] = self._send(
                 title=f"{name}: YouTube Cookies Expired",
@@ -84,8 +93,33 @@ class NotificationService:
                 "Downloads will fail until cookies are refreshed.",
                 alert_type=self.ALERT_COOKIES_EXPIRED,
             )
+            results[self.ALERT_COOKIES_EXPIRING_SOON] = False
+            results[self.ALERT_COOKIES_EXPIRING_URGENT] = False
         else:
             results[self.ALERT_COOKIES_EXPIRED] = False
+            days_left = auth_status.cookies_expire_in_days
+
+            # Check for urgent warning (default: ≤1 day remaining)
+            if days_left is not None and days_left <= urgent_days:
+                results[self.ALERT_COOKIES_EXPIRING_URGENT] = self._send(
+                    title=f"{name}: YouTube Cookies Expiring Soon!",
+                    body=f"YouTube Music cookies expire in {days_left} day(s). "
+                    "Please refresh your cookies to avoid download failures.",
+                    alert_type=self.ALERT_COOKIES_EXPIRING_URGENT,
+                )
+                results[self.ALERT_COOKIES_EXPIRING_SOON] = False
+            # Check for early warning (default: ≤7 days remaining)
+            elif days_left is not None and days_left <= warn_days:
+                results[self.ALERT_COOKIES_EXPIRING_SOON] = self._send(
+                    title=f"{name}: YouTube Cookies Expiring",
+                    body=f"YouTube Music cookies expire in {days_left} day(s). "
+                    "Consider refreshing your cookies soon.",
+                    alert_type=self.ALERT_COOKIES_EXPIRING_SOON,
+                )
+                results[self.ALERT_COOKIES_EXPIRING_URGENT] = False
+            else:
+                results[self.ALERT_COOKIES_EXPIRING_SOON] = False
+                results[self.ALERT_COOKIES_EXPIRING_URGENT] = False
 
         # PO token (only alert if configured but invalid)
         if auth_status.po_token_configured and not auth_status.po_token_valid:

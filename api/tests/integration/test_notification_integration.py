@@ -171,6 +171,7 @@ class TestErrorRateIntegration:
 
             mock_auth.return_value = MagicMock(
                 cookies_valid=True,
+                cookies_expire_in_days=30,
                 cookies_error_message=None,
                 po_token_configured=False,
                 po_token_valid=False,
@@ -257,6 +258,7 @@ class TestFullNotificationCycle:
         def make_auth_status(cookies_valid: bool):
             return MagicMock(
                 cookies_valid=cookies_valid,
+                cookies_expire_in_days=None if not cookies_valid else 30,
                 cookies_error_message="Expired" if not cookies_valid else None,
                 po_token_configured=False,
                 po_token_valid=False,
@@ -273,6 +275,8 @@ class TestFullNotificationCycle:
             mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
             mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 100
             mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
+            mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
+            mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
 
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
@@ -330,6 +334,7 @@ class TestFullNotificationCycle:
 
         all_broken_status = MagicMock(
             cookies_valid=False,
+            cookies_expire_in_days=None,
             cookies_error_message="Cookies expired",
             po_token_configured=True,
             po_token_valid=False,
@@ -352,6 +357,8 @@ class TestFullNotificationCycle:
             mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
             mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 100
             mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
+            mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
+            mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
 
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
@@ -447,10 +454,13 @@ class TestInstanceNameConfiguration:
             mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
             mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 100
             mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
+            mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
+            mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
             mock_settings.NOTIFICATIONS_INSTANCE_NAME = "Production NAS"
 
             mock_auth.return_value = MagicMock(
                 cookies_valid=False,
+                cookies_expire_in_days=None,
                 cookies_error_message="Expired",
                 po_token_configured=False,
                 po_token_valid=False,
