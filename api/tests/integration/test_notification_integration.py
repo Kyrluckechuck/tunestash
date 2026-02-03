@@ -292,7 +292,7 @@ class TestFullNotificationCycle:
             assert result1[NotificationService.ALERT_COOKIES_EXPIRED] is True
             assert mock_apprise.notify.call_count == 1
 
-            # Phase 2: Cookies still expired, but cooldown blocks
+            # Phase 2: Cookies still expired, send-once blocks repeat
             with patch(
                 "src.services.system_health.SystemHealthService.check_authentication_status",
                 return_value=make_auth_status(cookies_valid=False),
@@ -302,7 +302,7 @@ class TestFullNotificationCycle:
             assert result2[NotificationService.ALERT_COOKIES_EXPIRED] is False
             assert mock_apprise.notify.call_count == 1  # No new notification
 
-            # Phase 3: Cookies fixed, no alert needed
+            # Phase 3: Cookies fixed → state is cleared automatically
             with patch(
                 "src.services.system_health.SystemHealthService.check_authentication_status",
                 return_value=make_auth_status(cookies_valid=True),
@@ -310,15 +310,13 @@ class TestFullNotificationCycle:
                 result3 = service.check_and_notify_all()
 
             assert result3[NotificationService.ALERT_COOKIES_EXPIRED] is False
-            assert mock_apprise.notify.call_count == 1  # Still no new notification
-
-            # Phase 4: Fast-forward past cooldown, cookies expire again
-            state = NotificationState.objects.get(
+            assert mock_apprise.notify.call_count == 1
+            # State should be cleared since cookies are healthy
+            assert not NotificationState.objects.filter(
                 alert_type=NotificationService.ALERT_COOKIES_EXPIRED
-            )
-            state.last_sent_at = timezone.now() - timedelta(hours=2)
-            state.save()
+            ).exists()
 
+            # Phase 4: Cookies expire again → fires immediately (no cooldown needed)
             with patch(
                 "src.services.system_health.SystemHealthService.check_authentication_status",
                 return_value=make_auth_status(cookies_valid=False),

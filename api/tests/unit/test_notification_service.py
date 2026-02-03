@@ -370,6 +370,7 @@ class TestErrorRateAlert:
             "src.services.system_health.SystemHealthService.check_authentication_status",
             return_value=MagicMock(
                 cookies_valid=True,
+                cookies_expire_in_days=30,
                 cookies_error_message=None,
                 po_token_configured=False,
                 po_token_valid=False,
@@ -396,6 +397,7 @@ class TestErrorRateAlert:
             "src.services.system_health.SystemHealthService.check_authentication_status",
             return_value=MagicMock(
                 cookies_valid=True,
+                cookies_expire_in_days=30,
                 cookies_error_message=None,
                 po_token_configured=False,
                 po_token_valid=False,
@@ -407,36 +409,13 @@ class TestErrorRateAlert:
             assert result[NotificationService.ALERT_HIGH_ERROR_RATE] is False
 
 
-class TestCooldown:
-    """Tests for notification cooldown behavior."""
+class TestSendOnce:
+    """Tests for fire-once notification behavior (auth alerts)."""
 
-    def test_respects_cooldown(
+    def test_auth_alert_fires_once_then_blocks(
         self, service, notification_settings, mock_auth_status_cookies_expired
     ):
-        # Record a recent notification
-        NotificationState.objects.create(
-            alert_type=NotificationService.ALERT_COOKIES_EXPIRED,
-            last_sent_at=timezone.now() - timedelta(minutes=30),
-            last_message="Previous alert",
-        )
-
-        with patch(
-            "src.services.system_health.SystemHealthService.check_authentication_status",
-            return_value=mock_auth_status_cookies_expired,
-        ):
-            result = service.check_and_notify_all()
-            assert result[NotificationService.ALERT_COOKIES_EXPIRED] is False
-
-    def test_sends_after_cooldown_expired(
-        self, service, notification_settings, mock_auth_status_cookies_expired
-    ):
-        # Record an old notification (beyond 60-minute cooldown)
-        NotificationState.objects.create(
-            alert_type=NotificationService.ALERT_COOKIES_EXPIRED,
-            last_sent_at=timezone.now() - timedelta(minutes=90),
-            last_message="Old alert",
-        )
-
+        """Same auth condition checked twice should only send once."""
         with (
             patch(
                 "src.services.system_health.SystemHealthService.check_authentication_status",
@@ -448,8 +427,224 @@ class TestCooldown:
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
 
+            result1 = service.check_and_notify_all()
+            result2 = service.check_and_notify_all()
+
+            assert result1[NotificationService.ALERT_COOKIES_EXPIRED] is True
+            assert result2[NotificationService.ALERT_COOKIES_EXPIRED] is False
+            assert mock_apprise.notify.call_count == 1
+
+    def test_auth_alert_blocked_even_after_cooldown(
+        self, service, notification_settings, mock_auth_status_cookies_expired
+    ):
+        """Auth alerts use send-once, not cooldown. Old state still blocks."""
+        NotificationState.objects.create(
+            alert_type=NotificationService.ALERT_COOKIES_EXPIRED,
+            last_sent_at=timezone.now() - timedelta(hours=24),
+            last_message="Old alert",
+        )
+
+        with patch(
+            "src.services.system_health.SystemHealthService.check_authentication_status",
+            return_value=mock_auth_status_cookies_expired,
+        ):
             result = service.check_and_notify_all()
-            assert result[NotificationService.ALERT_COOKIES_EXPIRED] is True
+            assert result[NotificationService.ALERT_COOKIES_EXPIRED] is False
+
+    def test_cookie_states_cleared_when_healthy(
+        self, service, notification_settings, mock_auth_status_healthy
+    ):
+        """When cookies are healthy, clear all cookie alert states."""
+        for alert_type in NotificationService.COOKIE_ALERT_TYPES:
+            NotificationState.objects.create(
+                alert_type=alert_type,
+                last_sent_at=timezone.now(),
+                last_message="Previous alert",
+            )
+
+        with patch(
+            "src.services.system_health.SystemHealthService.check_authentication_status",
+            return_value=mock_auth_status_healthy,
+        ):
+            service.check_and_notify_all()
+
+        assert (
+            NotificationState.objects.filter(
+                alert_type__in=NotificationService.COOKIE_ALERT_TYPES
+            ).count()
+            == 0
+        )
+
+    def test_alert_fires_again_after_state_cleared(
+        self,
+        service,
+        notification_settings,
+        mock_auth_status_cookies_expiring_soon,
+        mock_auth_status_healthy,
+    ):
+        """Full lifecycle: alert → resolve → re-alert."""
+        with (patch("apprise.Apprise") as mock_apprise_cls,):
+            mock_apprise = MagicMock()
+            mock_apprise.notify.return_value = True
+            mock_apprise_cls.return_value = mock_apprise
+
+            # Phase 1: Cookies expiring → sends alert
+            with patch(
+                "src.services.system_health.SystemHealthService"
+                ".check_authentication_status",
+                return_value=mock_auth_status_cookies_expiring_soon,
+            ):
+                result1 = service.check_and_notify_all()
+            assert result1[NotificationService.ALERT_COOKIES_EXPIRING_SOON] is True
+
+            # Phase 2: Cookies refreshed → clears state
+            with patch(
+                "src.services.system_health.SystemHealthService"
+                ".check_authentication_status",
+                return_value=mock_auth_status_healthy,
+            ):
+                service.check_and_notify_all()
+            assert not NotificationState.objects.filter(
+                alert_type=NotificationService.ALERT_COOKIES_EXPIRING_SOON
+            ).exists()
+
+            # Phase 3: Cookies expiring again → sends again
+            with patch(
+                "src.services.system_health.SystemHealthService"
+                ".check_authentication_status",
+                return_value=mock_auth_status_cookies_expiring_soon,
+            ):
+                result3 = service.check_and_notify_all()
+            assert result3[NotificationService.ALERT_COOKIES_EXPIRING_SOON] is True
+            assert mock_apprise.notify.call_count == 2
+
+    def test_po_token_state_cleared_when_valid(
+        self, service, notification_settings, mock_auth_status_healthy
+    ):
+        """PO token state should clear when token becomes valid."""
+        NotificationState.objects.create(
+            alert_type=NotificationService.ALERT_PO_TOKEN_INVALID,
+            last_sent_at=timezone.now(),
+            last_message="Previous alert",
+        )
+
+        with patch(
+            "src.services.system_health.SystemHealthService.check_authentication_status",
+            return_value=mock_auth_status_healthy,
+        ):
+            service.check_and_notify_all()
+
+        assert not NotificationState.objects.filter(
+            alert_type=NotificationService.ALERT_PO_TOKEN_INVALID
+        ).exists()
+
+    def test_spotify_oauth_state_cleared_when_valid(
+        self, service, notification_settings
+    ):
+        """Spotify OAuth state should clear when token is valid."""
+        NotificationState.objects.create(
+            alert_type=NotificationService.ALERT_SPOTIFY_OAUTH_FAILED,
+            last_sent_at=timezone.now(),
+            last_message="Previous alert",
+        )
+        status = MagicMock()
+        status.cookies_valid = True
+        status.cookies_expire_in_days = 30
+        status.cookies_error_message = None
+        status.po_token_configured = False
+        status.po_token_valid = False
+        status.spotify_auth_mode = "user-authenticated"
+        status.spotify_token_valid = True
+
+        with patch(
+            "src.services.system_health.SystemHealthService.check_authentication_status",
+            return_value=status,
+        ):
+            service.check_and_notify_all()
+
+        assert not NotificationState.objects.filter(
+            alert_type=NotificationService.ALERT_SPOTIFY_OAUTH_FAILED
+        ).exists()
+
+
+class TestCooldown:
+    """Tests for time-based cooldown behavior (error rate alerts)."""
+
+    def test_error_rate_respects_cooldown(self, service, notification_settings):
+        """Error rate alerts still use time-based cooldown."""
+        now = timezone.now()
+        for i in range(12):
+            TaskHistory.objects.create(
+                task_id=f"fail-cd-{i}",
+                type="DOWNLOAD",
+                entity_id="123",
+                entity_type="ALBUM",
+                status="FAILED",
+                started_at=now - timedelta(hours=1),
+            )
+
+        NotificationState.objects.create(
+            alert_type=NotificationService.ALERT_HIGH_ERROR_RATE,
+            last_sent_at=timezone.now() - timedelta(minutes=30),
+            last_message="Previous alert",
+        )
+
+        with patch(
+            "src.services.system_health.SystemHealthService.check_authentication_status",
+            return_value=MagicMock(
+                cookies_valid=True,
+                cookies_expire_in_days=30,
+                cookies_error_message=None,
+                po_token_configured=False,
+                po_token_valid=False,
+                spotify_auth_mode="public",
+                spotify_token_valid=True,
+            ),
+        ):
+            result = service.check_and_notify_all()
+            assert result[NotificationService.ALERT_HIGH_ERROR_RATE] is False
+
+    def test_error_rate_sends_after_cooldown(self, service, notification_settings):
+        """Error rate alert sends again after cooldown expires."""
+        now = timezone.now()
+        for i in range(12):
+            TaskHistory.objects.create(
+                task_id=f"fail-cd2-{i}",
+                type="DOWNLOAD",
+                entity_id="123",
+                entity_type="ALBUM",
+                status="FAILED",
+                started_at=now - timedelta(hours=1),
+            )
+
+        NotificationState.objects.create(
+            alert_type=NotificationService.ALERT_HIGH_ERROR_RATE,
+            last_sent_at=timezone.now() - timedelta(minutes=90),
+            last_message="Old alert",
+        )
+
+        with (
+            patch(
+                "src.services.system_health.SystemHealthService"
+                ".check_authentication_status",
+                return_value=MagicMock(
+                    cookies_valid=True,
+                    cookies_expire_in_days=30,
+                    cookies_error_message=None,
+                    po_token_configured=False,
+                    po_token_valid=False,
+                    spotify_auth_mode="public",
+                    spotify_token_valid=True,
+                ),
+            ),
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_apprise = MagicMock()
+            mock_apprise.notify.return_value = True
+            mock_apprise_cls.return_value = mock_apprise
+
+            result = service.check_and_notify_all()
+            assert result[NotificationService.ALERT_HIGH_ERROR_RATE] is True
 
     def test_records_sent_state(
         self, service, notification_settings, mock_auth_status_cookies_expired
