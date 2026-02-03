@@ -31,6 +31,12 @@ class NotificationService:
     ALERT_SPOTIFY_OAUTH_FAILED = "spotify_oauth_failed"
     ALERT_HIGH_ERROR_RATE = "high_error_rate"
 
+    COOKIE_ALERT_TYPES = [
+        ALERT_COOKIES_EXPIRED,
+        ALERT_COOKIES_EXPIRING_SOON,
+        ALERT_COOKIES_EXPIRING_URGENT,
+    ]
+
     def check_and_notify_all(self) -> dict[str, bool]:
         """Run all notification checks and send alerts as needed.
 
@@ -84,14 +90,15 @@ class NotificationService:
         urgent_days = int(getattr(settings, "NOTIFICATIONS_COOKIE_URGENT_DAYS", 1))
 
         # YouTube cookies - check expiration state with tiered warnings
+        # Auth alerts use fire-once: send once per condition, reset when resolved
         if not auth_status.cookies_valid:
-            # Cookies already expired/invalid
             error_msg = auth_status.cookies_error_message or "Unknown error"
             results[self.ALERT_COOKIES_EXPIRED] = self._send(
                 title=f"{name}: YouTube Cookies Expired",
                 body=f"YouTube Music cookies are invalid: {error_msg}. "
                 "Downloads will fail until cookies are refreshed.",
                 alert_type=self.ALERT_COOKIES_EXPIRED,
+                send_once=True,
             )
             results[self.ALERT_COOKIES_EXPIRING_SOON] = False
             results[self.ALERT_COOKIES_EXPIRING_URGENT] = False
@@ -99,25 +106,28 @@ class NotificationService:
             results[self.ALERT_COOKIES_EXPIRED] = False
             days_left = auth_status.cookies_expire_in_days
 
-            # Check for urgent warning (default: ≤1 day remaining)
             if days_left is not None and days_left <= urgent_days:
                 results[self.ALERT_COOKIES_EXPIRING_URGENT] = self._send(
                     title=f"{name}: YouTube Cookies Expiring Soon!",
                     body=f"YouTube Music cookies expire in {days_left} day(s). "
                     "Please refresh your cookies to avoid download failures.",
                     alert_type=self.ALERT_COOKIES_EXPIRING_URGENT,
+                    send_once=True,
                 )
                 results[self.ALERT_COOKIES_EXPIRING_SOON] = False
-            # Check for early warning (default: ≤7 days remaining)
             elif days_left is not None and days_left <= warn_days:
                 results[self.ALERT_COOKIES_EXPIRING_SOON] = self._send(
                     title=f"{name}: YouTube Cookies Expiring",
                     body=f"YouTube Music cookies expire in {days_left} day(s). "
                     "Consider refreshing your cookies soon.",
                     alert_type=self.ALERT_COOKIES_EXPIRING_SOON,
+                    send_once=True,
                 )
                 results[self.ALERT_COOKIES_EXPIRING_URGENT] = False
             else:
+                # Cookies are healthy - clear cookie alert states so they
+                # fire again when cookies next enter a warning tier
+                self._clear_alert_states(self.COOKIE_ALERT_TYPES)
                 results[self.ALERT_COOKIES_EXPIRING_SOON] = False
                 results[self.ALERT_COOKIES_EXPIRING_URGENT] = False
 
@@ -129,8 +139,10 @@ class NotificationService:
                 body=f"PO token validation failed: {error_msg}. "
                 "Premium audio quality may be unavailable.",
                 alert_type=self.ALERT_PO_TOKEN_INVALID,
+                send_once=True,
             )
         else:
+            self._clear_alert_states([self.ALERT_PO_TOKEN_INVALID])
             results[self.ALERT_PO_TOKEN_INVALID] = False
 
         # Spotify OAuth (only alert in user-authenticated mode)
@@ -146,8 +158,10 @@ class NotificationService:
                 body=f"Spotify OAuth token is invalid: {error_msg}. "
                 "Private playlist syncing will fail until re-authenticated.",
                 alert_type=self.ALERT_SPOTIFY_OAUTH_FAILED,
+                send_once=True,
             )
         else:
+            self._clear_alert_states([self.ALERT_SPOTIFY_OAUTH_FAILED])
             results[self.ALERT_SPOTIFY_OAUTH_FAILED] = False
 
         return results
@@ -174,12 +188,23 @@ class NotificationService:
 
         return {self.ALERT_HIGH_ERROR_RATE: False}
 
-    def _send(self, title: str, body: str, alert_type: str) -> bool:
-        """Send a notification if cooldown has elapsed.
+    def _send(
+        self, title: str, body: str, alert_type: str, send_once: bool = False
+    ) -> bool:
+        """Send a notification if allowed by cooldown or send-once logic.
+
+        Args:
+            send_once: If True, only send if we haven't already notified for this
+                alert type. State must be cleared externally when the condition
+                resolves. If False, use the standard time-based cooldown.
 
         Returns True if notification was actually sent, False if skipped or failed.
         """
-        if not self._cooldown_elapsed(alert_type):
+        if send_once:
+            if self._already_notified(alert_type):
+                logger.debug(f"[NOTIFY] Already notified for {alert_type}, skipping")
+                return False
+        elif not self._cooldown_elapsed(alert_type):
             logger.debug(f"[NOTIFY] Cooldown active for {alert_type}, skipping")
             return False
 
@@ -214,6 +239,24 @@ class NotificationService:
             return bool(elapsed >= timedelta(minutes=cooldown_minutes))
         except NotificationState.DoesNotExist:
             return True
+
+    def _already_notified(self, alert_type: str) -> bool:
+        """Check if we've already sent a notification for this alert type."""
+        return NotificationState.objects.filter(alert_type=alert_type).exists()
+
+    def _clear_alert_states(self, alert_types: list[str]) -> None:
+        """Clear notification states so alerts can fire again.
+
+        Called when a condition resolves (e.g., cookies refreshed).
+        """
+        deleted, _ = NotificationState.objects.filter(
+            alert_type__in=alert_types
+        ).delete()
+        if deleted:
+            logger.debug(
+                f"[NOTIFY] Cleared {deleted} notification state(s) "
+                f"for resolved conditions"
+            )
 
     def _record_sent(self, alert_type: str, message: str) -> None:
         """Record that a notification was sent for cooldown tracking."""
