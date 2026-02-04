@@ -153,6 +153,14 @@ class Downloader:
         if len(albums_to_create_or_update) == 0:
             return []
 
+        # Deduplicate by spotify_gid — Spotify pagination can return
+        # overlapping results, and PostgreSQL's ON CONFLICT DO UPDATE
+        # cannot update the same row twice in a single statement.
+        seen: dict[str, dict] = {}
+        for album_data in albums_to_create_or_update:
+            seen[album_data["spotify_gid"]] = album_data
+        albums_to_create_or_update = list(seen.values())
+
         albums: List[Album] = Album.objects.bulk_create(
             [Album(**album) for album in albums_to_create_or_update],
             update_conflicts=True,
