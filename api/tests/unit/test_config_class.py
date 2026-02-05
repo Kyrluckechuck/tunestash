@@ -22,7 +22,7 @@ class TestConfigProviderOrder:
         settings.spotdl_log_level = "INFO"
         settings.no_lrc = False
         settings.overwrite = False
-        settings.tidal_fallback_quality = "high"
+        settings.fallback_quality = "high"
         # Remove attributes to test defaults (getattr will use default value)
         del settings.download_provider_order
         del settings.qobuz_use_mp3
@@ -96,7 +96,7 @@ class TestConfigProviderOrder:
         from lib.config_class import Config
 
         config = Config()
-        assert config.tidal_fallback_quality == "high"
+        assert config.fallback_quality == "high"
 
     @patch("lib.config_class.settings")
     def test_quality_preference_explicit(self, mock_settings, mock_django_settings):
@@ -105,8 +105,8 @@ class TestConfigProviderOrder:
 
         from lib.config_class import Config
 
-        config = Config(tidal_fallback_quality="high")
-        assert config.tidal_fallback_quality == "high"
+        config = Config(fallback_quality="high")
+        assert config.fallback_quality == "high"
 
     @patch("lib.config_class.settings")
     def test_empty_provider_order(self, mock_settings, mock_django_settings):

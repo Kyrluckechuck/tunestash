@@ -42,11 +42,11 @@ default:
     - tidal
     - qobuz
 
-  # Tidal/Qobuz quality preference
+  # Fallback provider quality preference (applies to Tidal and Qobuz)
   # - high: 320kbps AAC (M4A) - default, consistent with spotdl output
   # - lossless: FLAC 16-bit 44.1kHz (larger files, kept as FLAC)
   # - hi_res: FLAC 24-bit (when available, kept as FLAC)
-  tidal_fallback_quality: "high"
+  fallback_quality: "high"
 
   # Qobuz format preference for HIGH quality
   # When false (default): Downloads FLAC and converts to M4A/AAC for library consistency
