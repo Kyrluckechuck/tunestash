@@ -159,7 +159,7 @@ services:
   postgres:
     # Override user for development to match host user
     user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
-    # Increase shared memory if needed (e.g., for large VACUUM operations)
+    # Shared memory size for PostgreSQL (increase if needed for large VACUUM operations)
     shm_size: 256m
     # Expose PostgreSQL port for development/debugging
     ports:
