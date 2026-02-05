@@ -639,11 +639,9 @@ class SpotdlWrapper:
         except Exception as e:
             self.logger.warning(f"Startup premium verification failed: {e}")
 
-        # Initialize fallback/alternative downloader (Tidal)
+        # Initialize fallback/alternative downloader
         self._fallback_downloader: FallbackDownloader | None = None
-        self._fallback_quality = self._parse_quality_preference(
-            config.tidal_fallback_quality
-        )
+        self._fallback_quality = self._parse_quality_preference(config.fallback_quality)
         self._provider_order = config.download_provider_order
         self._qobuz_use_mp3 = config.qobuz_use_mp3
         self.logger.info(f"Download provider order: {self._provider_order}")

@@ -302,7 +302,7 @@ class SongUpgradeService:
             "lossless": QualityPreference.LOSSLESS,
             "hi_res": QualityPreference.HI_RES,
         }
-        quality = quality_map.get(config.tidal_fallback_quality, QualityPreference.HIGH)
+        quality = quality_map.get(config.fallback_quality, QualityPreference.HIGH)
 
         # Get output directory
         output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/music"))

@@ -1,6 +1,7 @@
-.PHONY: build-and-publish dev dev-container dev-container-branch dev-container-update dev-container-attach dev-container-down dev-container-logs dev-container-logs-web dev-container-logs-frontend dev-container-logs-worker setup migrate createsuperuser test-migrations clean test test-docker test-api test-api-docker test-frontend test-frontend-docker lint lint-all lint-api lint-frontend docker-build docker-up docker-down dev-api dev-frontend dev-worker dev-admin dev-db docker-cleanup docker-cleanup-full docker-status
+.PHONY: dev dev-container dev-container-branch dev-container-update dev-container-down dev-container-logs dev-container-logs-web dev-container-logs-frontend dev-container-logs-worker setup migrate createsuperuser test-migrations clean test test-docker test-api test-api-docker test-frontend test-frontend-docker lint lint-all lint-api lint-frontend docker-build dev-api dev-frontend dev-worker dev-admin dev-db docker-cleanup docker-cleanup-full docker-status
 
-# Main development command - starts all services
+# Local development command - starts all services locally (requires local PostgreSQL, Python, Node.js)
+# NOTE: Docker-based development via 'make dev-container' is recommended instead
 dev:
 	python dev.py
 
@@ -45,10 +46,6 @@ dev-container-update:
 	@docker compose exec beat pip install -r /requirements/requirements.txt -r /requirements/requirements-dev.txt --quiet || echo "⚠️ Beat requirements update failed"
 	@echo "✅ App containers updated and running with latest dependencies. Use 'make dev-container-logs' to view logs."
 
-# Attach to the running dev container logs
-dev-container-attach:
-	docker compose logs -f
-
 dev-container-down:
 	docker compose down
 
@@ -87,10 +84,6 @@ dev-db:
 # Celery queue management
 clear-celery-queue:
 	cd api && celery -A celery_app purge -f
-
-# Celery monitoring 
-celery-monitor:
-	cd api && celery -A celery_app monitor
 
 # Installation and setup
 setup:
@@ -397,19 +390,6 @@ docker-build-test:
 	@echo "🔨 Building test Docker images..."
 	docker build --target backend-test -t tunestash:test .
 	docker build --target test -t tunestash-frontend:test ./frontend
-
-# Use dev-container and dev-container-down instead
-docker-up:
-	docker compose up -d
-
-docker-down:
-	docker compose down
-
-# Build and publish (existing)
-build-and-publish:
-	sudo podman build -t test_build .
-	sudo podman tag test_build ghcr.io/kyrluckechuck/tunestash:latest
-	sudo podman push ghcr.io/kyrluckechuck/tunestash:latest
 
 # Cleanup
 clean:

@@ -2,30 +2,22 @@
 
 A music library sync tool that tracks your Spotify artists and playlists, then downloads the music locally via YouTube Music.
 
-Originally derived as a fork of [glomatico/spotify-aac-downloader](https://github.com/glomatico/spotify-aac-downloader), this has grown into a completely different behemoth.
+## Features
 
-This started as a simple want to mass-download songs for specific artists since they were not otherwise available, and snowballed into a full-fledged library management platform including:
-- Task queuing system, allowing downloads to continue after restarts*
-  - *Semi-lossy, where jobs which are interrupted will not be recovered, but any un-started jobs will be. Jobs can safely be restarted manually, though.
-- Artist discography syncing and mass-downloading
-- Artist tracking - auto downloading missing releases (including new)
-- Fetch metadata for all albums available for tracked artists
-- Mark un-downloaded albums as non-wanted
-  - Useful for artists which have a large backlog of music you don't want, but you still want to track their latest stuff automatically
-- Download all "wanted" albums (via queued tasks)
-- Download playlists/albums directly
-  - Can choose to auto mark all artists on given playlists as "Tracked", useful for "favourites" playlists
-- Tracked playlist syncing
- - Automatically refreshes and syncs (every 8 hours)
- - Can include auto-tracking new artists (such as tracking a "favourites" playlist)
-- Artist tracking supporting auto-downloading newly released albums (including tracks)
- - Automatically checks for and queues missing albums (hourly)
-
-Features from spotify-aac-downloader:
-* Download songs via YouTube Music (128kbps AAC, or 256kbps with YTM Premium cookies)
-* Optional fallback providers (Tidal, Qobuz) for higher quality or better availability
-* Download synced lyrics
-* Includes a device wvd so no need to load your own!
+- **Artist tracking** — Mark artists as tracked to auto-download new releases and missing albums
+  - Automatically checks for and queues missing albums (hourly)
+  - Fetch and browse metadata for all albums in a tracked artist's discography
+  - Mark unwanted albums as non-wanted (useful for artists with large backlogs where you only want new releases)
+- **Playlist syncing** — Track playlists to automatically download new songs as they're added
+  - Automatically refreshes and syncs tracked playlists (every 8 hours)
+  - Optionally auto-track new artists discovered from playlists (e.g., a "favourites" playlist)
+- **Download management** — Download playlists, albums, or individual tracks on demand
+  - Multiple download providers: YouTube Music (via spotdl), Tidal, and Qobuz with configurable fallback order
+  - Synced lyrics download support
+- **Task queue** — Background task system with Celery, backed by PostgreSQL
+  - Downloads continue after restarts (pending tasks resume automatically; interrupted tasks can be retried)
+  - Task progress visible in the UI
+- **Notifications** — Configurable alerts via [Apprise](https://github.com/caronc/apprise) (80+ services) for credential expiry and error rates
      
 ## Notes
 While this has a lot of opportunity to improve, it's reached a "stable" state for my personal usage. Therefore I will fix critical issues as I encounter them, but will not actively be working on additional features except when inspiration hits me, or there are specific community requests.
@@ -59,18 +51,6 @@ If you plan to expose this application externally or want to add authentication,
 - **Keep the application updated** and monitor for security advisories
 - **Limit network access** to trusted users and networks only
 - **Regular backups** of your configuration and database
-
-## Migration from Previous Versions
-
-**⚠️ Breaking Changes**: This version includes major infrastructure changes (Huey→Celery, SQLite→PostgreSQL, Docker-first development). 
-
-### Quick Migration (Docker Users)
-```bash
-docker compose down -v && git pull && docker compose up -d
-```
-
-### Full Migration Guide
-For development setups or data preservation, see [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for detailed instructions.
 
 ## Screenshots
 ![Main Dashboard](https://github.com/Kyrluckechuck/tunestash/assets/7606153/6d32f8d5-fe6b-4884-a5a9-7970aaba284a)
@@ -112,7 +92,7 @@ Notes:
 
 ### Download Providers
 
-TuneStash supports multiple download providers. By default, it uses spotdl (YouTube Music) as the primary source, with Tidal as a fallback.
+TuneStash supports multiple download providers. By default, it tries all three providers in order for maximum success rate.
 
 **Configure provider order in `settings.yaml`:**
 ```yaml
@@ -122,9 +102,13 @@ default:
   download_provider_order:
     - spotdl
     - tidal
+    - qobuz
 
-  # Quality preference for Tidal/Qobuz (default: high)
-  tidal_fallback_quality: "high"
+  # Fallback provider quality: high, lossless, or hi_res (default: high)
+  fallback_quality: "high"
+
+  # Qobuz: use MP3 320kbps instead of FLAC→M4A conversion for "high" quality (default: false)
+  qobuz_use_mp3: false
 ```
 
 **Provider Comparison:**
@@ -167,10 +151,7 @@ qobuz_use_mp3: true  # Download MP3 320kbps directly (default: false)
 
 **Common Configurations:**
 ```yaml
-# Default: spotdl first, Tidal fallback (requires YTM cookies)
-download_provider_order: ["spotdl", "tidal"]
-
-# Maximum fallback coverage: try all providers
+# Default: try all providers in order (requires YTM cookies for spotdl)
 download_provider_order: ["spotdl", "tidal", "qobuz"]
 
 # Tidal-only: No YouTube Music cookies needed
@@ -184,7 +165,7 @@ download_provider_order: ["spotdl"]
 
 # Lossless priority: Tidal first for quality, spotdl fallback for availability
 download_provider_order: ["tidal", "spotdl"]
-tidal_fallback_quality: "lossless"
+fallback_quality: "lossless"
 ```
 
 **How it works:**
@@ -229,9 +210,8 @@ An example compose setup is included. Follow these steps:
 1. Prepare a local config directory and files:
    ```bash
    mkdir -p ./config/db
-   # Export cookies from your browser while logged into Spotify
+   # Export cookies from your browser while logged into YouTube Music
    # Save as ./config/youtube_music_cookies.txt
-   # Optional: place your Widevine device file as ./config/device.wvd
    # Create ./config/settings.yaml with your desired overrides (see earlier example)
    ```
 
@@ -263,14 +243,14 @@ An example compose setup is included. Follow these steps:
 
 ## Running From Source (Development)
 
-> [!NOTE]
-> This setup is optimized for development with proper async processing and background task handling.
+> [!WARNING]
+> Local development without Docker is not actively tested and may not work out of the box. **Docker-based development via `make dev-container` is strongly recommended.** This section is provided for reference only.
 
 ### Prerequisites
 1. Install Python 3.13 or higher
 2. Install Node.js and Yarn
 3. Place your cookies in `/config/` as `youtube_music_cookies.txt`
-   * You can export your cookies by using this Google Chrome extension on Spotify website: https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc. Make sure to be logged in.
+   * You can export your cookies by using this Google Chrome extension on YouTube Music: https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc. Make sure to be logged in.
 
 ### Quick Start
 1. **Setup dependencies:**
@@ -381,7 +361,19 @@ If you need to switch Spotify API credentials (e.g., after hitting rate limits o
 
 6. **Restart containers** and re-authenticate via the Spotify OAuth flow in the app.
 
-## Upgrading from the legacy Django app
+## Migrating from spotify-library-manager
+
+**⚠️ Breaking Changes**: This version includes major infrastructure changes (Huey→Celery, SQLite→PostgreSQL, Docker-first development).
+
+### Quick Migration (Docker Users)
+```bash
+docker compose down -v && git pull && docker compose up -d
+```
+
+### Full Migration Guide
+For development setups or data preservation, see [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for detailed instructions.
+
+### Legacy Django Migration History
 
 If you are upgrading from the older repository layout where the Django app lived at `spotify_library_sync/library_manager` with migrations `0001`–`0020`, this branch consolidates that history into a new `library_manager` app with a fresh `0001_initial` that declares `replaces` for the legacy chain. This prevents migration history conflicts.
 

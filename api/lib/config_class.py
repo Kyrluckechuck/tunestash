@@ -20,7 +20,7 @@ class Config:
         artist_to_fetch: Optional[str] = None,
         print_exceptions: bool = True,
         force_playlist_resync: bool = False,
-        tidal_fallback_quality: Optional[str] = None,
+        fallback_quality: Optional[str] = None,
         download_provider_order: Optional[List[str]] = None,
         qobuz_use_mp3: Optional[bool] = None,
     ):
@@ -67,10 +67,10 @@ class Config:
         )
 
         # Quality preference: "high" (320kbps AAC), "lossless" (FLAC), "hi_res" (24-bit FLAC)
-        self.tidal_fallback_quality = (
-            tidal_fallback_quality
-            if tidal_fallback_quality is not None
-            else getattr(settings, "tidal_fallback_quality", "high")
+        self.fallback_quality = (
+            fallback_quality
+            if fallback_quality is not None
+            else getattr(settings, "fallback_quality", "high")
         )
 
         # Provider order (default: try all providers for maximum success rate)

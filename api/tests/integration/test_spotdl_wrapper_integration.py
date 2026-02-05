@@ -24,7 +24,7 @@ class TestSpotdlWrapperIntegration:
         config.youtube_cookies_location = None
         config.po_token = None
         config.spotify_user_auth_enabled = False
-        config.tidal_fallback_quality = "high"
+        config.fallback_quality = "high"
         config.download_provider_order = ["spotdl", "tidal"]
         config.qobuz_use_mp3 = False
         return config
@@ -209,7 +209,7 @@ class TestSpotdlWrapperTokenRefresh:
         config.youtube_cookies_location = None
         config.po_token = None
         config.spotify_user_auth_enabled = False
-        config.tidal_fallback_quality = "high"
+        config.fallback_quality = "high"
         config.download_provider_order = ["spotdl", "tidal"]
         config.qobuz_use_mp3 = False
         return config
