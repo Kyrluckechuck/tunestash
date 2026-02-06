@@ -53,6 +53,15 @@ from .download import (
     download_single_track,
 )
 
+# Re-export external list tasks
+from .external_list import (
+    cleanup_mapping_cache,
+    map_external_list_tracks,
+    retry_failed_external_mappings,
+    sync_all_external_lists,
+    sync_external_list,
+)
+
 # Re-export maintenance tasks
 from .maintenance import (
     backfill_song_album,
@@ -154,6 +163,12 @@ __all__ = [
     # Notification tasks
     "check_notifications",
     "send_test_notification",
+    # External list tasks
+    "cleanup_mapping_cache",
+    "map_external_list_tracks",
+    "retry_failed_external_mappings",
+    "sync_all_external_lists",
+    "sync_external_list",
     # Upgrade tasks
     "upgrade_low_quality_songs",
 ]

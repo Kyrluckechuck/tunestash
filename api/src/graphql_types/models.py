@@ -652,3 +652,36 @@ class FailureReasonCount:
 
     reason: str
     count: int
+
+
+# =============================================================================
+# External List Types
+# =============================================================================
+
+
+@strawberry.type
+class ExternalListType:
+    """An external music list from Last.fm or ListenBrainz."""
+
+    id: int
+    name: str
+    source: str
+    list_type: str
+    username: str
+    period: Optional[str]
+    list_identifier: Optional[str]
+    status: str
+    status_message: Optional[str]
+    auto_track_artists: bool
+    last_synced_at: Optional[DateTime]
+    created_at: Optional[DateTime]
+    total_tracks: int
+    mapped_tracks: int
+    failed_tracks: int
+
+
+@strawberry.type
+class ExternalListConnection:
+    edges: List[ExternalListType]
+    page_info: PageInfo
+    total_count: int

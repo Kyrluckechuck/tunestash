@@ -9,6 +9,10 @@ from library_manager.models import (
     Album,
     Artist,
     DownloadHistory,
+    ExternalList,
+    ExternalListSource,
+    ExternalListStatus,
+    ExternalListType,
     PlaylistStatus,
     Song,
     TaskHistory,
@@ -178,3 +182,28 @@ class CompletedDownloadFactory(DownloadHistoryFactory):
 
     completed_at = Faker("date_time", tzinfo=timezone.utc)
     progress = 100
+
+
+class ExternalListFactory(DjangoModelFactory):
+    """Factory for creating ExternalList instances."""
+
+    class Meta:
+        model = ExternalList
+
+    name = Sequence(lambda n: f"External List {n}")
+    source = ExternalListSource.LASTFM
+    list_type = ExternalListType.LOVED_TRACKS
+    username = Faker("user_name")
+    status = ExternalListStatus.ACTIVE
+
+
+class ActiveExternalListFactory(ExternalListFactory):
+    """Factory for creating active external lists."""
+
+    status = ExternalListStatus.ACTIVE
+
+
+class DisabledExternalListFactory(ExternalListFactory):
+    """Factory for creating disabled external lists."""
+
+    status = ExternalListStatus.DISABLED_BY_USER

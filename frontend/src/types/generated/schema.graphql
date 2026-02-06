@@ -101,6 +101,30 @@ enum EntityType {
   TRACK
 }
 
+type ExternalListConnection {
+  edges: [ExternalListType!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ExternalListType {
+  autoTrackArtists: Boolean!
+  createdAt: DateTime
+  failedTracks: Int!
+  id: Int!
+  lastSyncedAt: DateTime
+  listIdentifier: String
+  listType: String!
+  mappedTracks: Int!
+  name: String!
+  period: String
+  source: String!
+  status: String!
+  statusMessage: String
+  totalTracks: Int!
+  username: String!
+}
+
 type FailureReasonCount {
   count: Int!
   reason: String!
@@ -217,7 +241,9 @@ type Mutation {
   checkAlbumMetadata(albumId: Int!): MetadataCheckResult!
   checkArtistMetadata(artistId: Int!): MetadataCheckResult!
   checkSongMetadata(songId: Int!): MetadataCheckResult!
+  createExternalList(autoTrackArtists: Boolean! = false, listIdentifier: String = null, listType: String!, period: String = null, source: String!, username: String!): ExternalListType!
   createPlaylist(autoTrackArtists: Boolean! = false, name: String!, url: String!): Playlist!
+  deleteExternalList(listId: Int!): MutationResult!
   deletePlaylist(playlistId: Int!): MutationResult!
   disconnectSpotify: MutationResult!
   dismissMetadataUpdate(updateId: Int!): MutationResult!
@@ -232,9 +258,13 @@ type Mutation {
   savePlaylist(autoTrackArtists: Boolean! = false, spotifyId: String!): Playlist!
   setAlbumWanted(albumId: Int!, wanted: Boolean!): MutationResult!
   setPeriodicTaskEnabled(enabled: Boolean!, taskId: Int!): PeriodicTask!
+  syncAllExternalLists: MutationResult!
   syncAllTrackedArtists: MutationResult!
   syncArtist(artistId: String!): Artist!
+  syncExternalList(force: Boolean! = false, listId: Int!): MutationResult!
   syncPlaylist(force: Boolean! = false, playlistId: Int!, recheck: Boolean! = false): MutationResult!
+  toggleExternalList(listId: Int!): MutationResult!
+  toggleExternalListAutoTrack(listId: Int!): MutationResult!
   togglePlaylist(playlistId: Int!): MutationResult!
   togglePlaylistAutoTrack(playlistId: Int!): MutationResult!
   trackArtist(artistId: Int!): MutationResult!
@@ -242,6 +272,7 @@ type Mutation {
   untrackArtist(artistId: Int!): MutationResult!
   updateAlbum(input: UpdateAlbumInput!): Album!
   updateArtist(input: UpdateArtistInput!): Artist!
+  updateExternalList(listId: Int!, listIdentifier: String = null, name: String = null, period: String = null, username: String = null): MutationResult!
   updatePlaylist(autoTrackArtists: Boolean!, name: String!, playlistId: Int!, url: String!): MutationResult!
 }
 
@@ -313,6 +344,8 @@ type Query {
   artist(id: String!): Artist
   artists(after: String = null, first: Int = 20, hasUndownloaded: Boolean = null, isTracked: Boolean = null, search: String = null, sortBy: String = null, sortDirection: String = null): ArtistConnection!
   downloadHistory(after: String = null, entityType: String = null, first: Int = 20, status: String = null): HistoryConnection!
+  externalList(id: String!): ExternalListType
+  externalLists(after: String = null, first: Int = 20, listType: String = null, search: String = null, sortBy: String = null, sortDirection: String = null, source: String = null, status: String = null): ExternalListConnection!
   fallbackMetrics(days: Int = 7): FallbackMetrics!
   libraryStats: LibraryStats!
   oneOffTasks: [OneOffTask!]!

@@ -114,6 +114,25 @@ export const apolloClient = new ApolloClient({
               };
             },
           },
+          externalLists: {
+            keyArgs: [
+              'source',
+              'listType',
+              'status',
+              'search',
+              'sortBy',
+              'sortDirection',
+            ],
+            merge(existing, incoming, { args }) {
+              if (!existing) return incoming;
+              if (!args?.after) return incoming;
+
+              return {
+                ...incoming,
+                edges: [...existing.edges, ...incoming.edges],
+              };
+            },
+          },
         },
       },
     },

@@ -32,6 +32,7 @@ class OneOffTaskService:
         from library_manager.tasks import (
             backfill_song_album,
             backfill_song_isrc,
+            retry_failed_external_mappings,
             send_test_notification,
             upgrade_low_quality_songs,
         )
@@ -70,6 +71,18 @@ class OneOffTaskService:
             ),
             category="maintenance",
             task_func=upgrade_low_quality_songs,
+        )
+
+        self._tasks["retry_failed_external_mappings"] = OneOffTaskDefinition(
+            id="retry_failed_external_mappings",
+            name="Retry Failed External Mappings",
+            description=(
+                "Reset all failed track mappings in external lists back to pending "
+                "and re-queue the mapping pipeline. Useful after Spotify catalog "
+                "updates or mapping logic improvements."
+            ),
+            category="external-lists",
+            task_func=retry_failed_external_mappings,
         )
 
         self._tasks["send_test_notification"] = OneOffTaskDefinition(
