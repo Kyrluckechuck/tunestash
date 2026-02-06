@@ -8,6 +8,7 @@ from asgiref.sync import sync_to_async
 from ..graphql_types.models import (
     Album,
     Artist,
+    ExternalListType,
     MetadataCheckResult,
     MutationResult,
     PeriodicTask,
@@ -505,6 +506,75 @@ class Mutation:  # pylint: disable=too-many-public-methods
         metadata update.
         """
         return await services.metadata_update.check_album_metadata(album_id)
+
+    # =========================================================================
+    # External List Mutations
+    # =========================================================================
+
+    @strawberry.mutation
+    async def create_external_list(
+        self,
+        source: str,
+        list_type: str,
+        username: str,
+        period: Optional[str] = None,
+        list_identifier: Optional[str] = None,
+        auto_track_artists: bool = False,
+    ) -> ExternalListType:
+        """Create a new external music list (Last.fm or ListenBrainz)."""
+        return await services.external_list.create_external_list(
+            source=source.strip(),
+            list_type=list_type.strip(),
+            username=username.strip(),
+            period=period,
+            list_identifier=list_identifier,
+            auto_track_artists=auto_track_artists,
+        )
+
+    @strawberry.mutation
+    async def update_external_list(
+        self,
+        list_id: int,
+        name: Optional[str] = None,
+        username: Optional[str] = None,
+        period: Optional[str] = None,
+        list_identifier: Optional[str] = None,
+    ) -> MutationResult:
+        """Update an external list's editable fields (source and type are immutable)."""
+        return await services.external_list.update_external_list(
+            list_id,
+            name=name,
+            username=username,
+            period=period,
+            list_identifier=list_identifier,
+        )
+
+    @strawberry.mutation
+    async def delete_external_list(self, list_id: int) -> MutationResult:
+        """Delete an external list and its track records."""
+        return await services.external_list.delete_external_list(list_id)
+
+    @strawberry.mutation
+    async def toggle_external_list(self, list_id: int) -> MutationResult:
+        """Toggle an external list between active and disabled."""
+        return await services.external_list.toggle_external_list(list_id)
+
+    @strawberry.mutation
+    async def toggle_external_list_auto_track(self, list_id: int) -> MutationResult:
+        """Toggle auto-track artists for an external list."""
+        return await services.external_list.toggle_auto_track(list_id)
+
+    @strawberry.mutation
+    async def sync_external_list(
+        self, list_id: int, force: bool = False
+    ) -> MutationResult:
+        """Queue a sync for an external list."""
+        return await services.external_list.sync_external_list(list_id, force=force)
+
+    @strawberry.mutation
+    async def sync_all_external_lists(self) -> MutationResult:
+        """Queue sync for all active external lists."""
+        return await services.external_list.sync_all_external_lists()
 
     @strawberry.mutation
     async def check_song_metadata(self, song_id: int) -> MetadataCheckResult:

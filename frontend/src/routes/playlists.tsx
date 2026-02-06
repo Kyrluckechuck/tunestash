@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 // Components
@@ -10,11 +11,16 @@ import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { LoadMoreButton } from '../components/ui/LoadMoreButton';
 import { PlaylistModal } from '../components/ui/PlaylistModal';
 import { SearchInput } from '../components/ui/SearchInput';
+import { ExternalListsSection } from '../components/external-lists/ExternalListsSection';
 
 // Hooks
 import { usePlaylistsPage } from '../hooks/usePlaylistsPage';
 
+type PlaylistTab = 'spotify' | 'external';
+
 function Playlists() {
+  const [activeTab, setActiveTab] = useState<PlaylistTab>('spotify');
+
   const {
     // Data
     playlists,
@@ -31,6 +37,7 @@ function Playlists() {
     pageSize,
     sortField,
     sortDirection,
+    searchQuery,
 
     // Modal state
     showPlaylistModal,
@@ -66,45 +73,153 @@ function Playlists() {
     handleLoadMore,
   } = usePlaylistsPage();
 
-  // Only show loading state on initial load
+  const tabClass = (tab: PlaylistTab) =>
+    `px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors ${
+      activeTab === tab
+        ? 'border-indigo-500 text-indigo-600'
+        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+    }`;
+
+  return (
+    <section>
+      <h1 className='text-2xl font-semibold mb-4'>Playlists</h1>
+
+      <div className='flex gap-1 border-b border-gray-200 mb-6'>
+        <button
+          className={tabClass('spotify')}
+          onClick={() => setActiveTab('spotify')}
+        >
+          Spotify Playlists
+        </button>
+        <button
+          className={tabClass('external')}
+          onClick={() => setActiveTab('external')}
+        >
+          External Lists
+        </button>
+      </div>
+
+      {activeTab === 'spotify' && (
+        <SpotifyPlaylistsTab
+          playlists={playlists}
+          totalCount={totalCount}
+          pageInfo={pageInfo}
+          loading={loading}
+          error={error}
+          isRefreshing={isRefreshing}
+          isInitialLoading={isInitialLoading}
+          issuesCount={issuesCount}
+          filter={filter}
+          pageSize={pageSize}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          searchQuery={searchQuery}
+          showPlaylistModal={showPlaylistModal}
+          editingPlaylist={editingPlaylist}
+          enabledMutatingIds={enabledMutatingIds}
+          enabledPulseIds={enabledPulseIds}
+          autoMutatingIds={autoMutatingIds}
+          autoPulseIds={autoPulseIds}
+          syncMutatingIds={syncMutatingIds}
+          forceSyncMutatingIds={forceSyncMutatingIds}
+          deleteMutatingIds={deleteMutatingIds}
+          recheckMutatingIds={recheckMutatingIds}
+          errorById={errorById}
+          handleEnabledFilterChange={handleEnabledFilterChange}
+          handlePageSizeChange={handlePageSizeChange}
+          handleSort={handleSort}
+          handleSearch={handleSearch}
+          handleFilterHover={handleFilterHover}
+          handleTogglePlaylist={handleTogglePlaylist}
+          handleSyncPlaylist={handleSyncPlaylist}
+          handleForceSyncPlaylist={handleForceSyncPlaylist}
+          handleRecheckPlaylist={handleRecheckPlaylist}
+          handleDeletePlaylist={handleDeletePlaylist}
+          handleToggleAutoTrack={handleToggleAutoTrack}
+          handleEditPlaylist={handleEditPlaylist}
+          handleClosePlaylistModal={handleClosePlaylistModal}
+          handleCreatePlaylist={handleCreatePlaylist}
+          handleDownloadAllPlaylists={handleDownloadAllPlaylists}
+          handleLoadMore={handleLoadMore}
+        />
+      )}
+
+      {activeTab === 'external' && <ExternalListsSection />}
+    </section>
+  );
+}
+
+function SpotifyPlaylistsTab({
+  playlists,
+  totalCount,
+  pageInfo,
+  loading,
+  error,
+  isRefreshing,
+  isInitialLoading,
+  issuesCount,
+  filter,
+  pageSize,
+  sortField,
+  sortDirection,
+  showPlaylistModal,
+  editingPlaylist,
+  enabledMutatingIds,
+  enabledPulseIds,
+  autoMutatingIds,
+  autoPulseIds,
+  syncMutatingIds,
+  forceSyncMutatingIds,
+  deleteMutatingIds,
+  recheckMutatingIds,
+  errorById,
+  handleEnabledFilterChange,
+  handlePageSizeChange,
+  handleSort,
+  handleSearch,
+  handleFilterHover,
+  handleTogglePlaylist,
+  handleSyncPlaylist,
+  handleForceSyncPlaylist,
+  handleRecheckPlaylist,
+  handleDeletePlaylist,
+  handleToggleAutoTrack,
+  handleEditPlaylist,
+  handleClosePlaylistModal,
+  handleCreatePlaylist,
+  handleDownloadAllPlaylists,
+  handleLoadMore,
+}: ReturnType<typeof usePlaylistsPage>) {
   if (isInitialLoading && !playlists.length) {
-    return (
-      <section>
-        <h1 className='text-2xl font-semibold mb-4'>Playlists</h1>
-        <PageSpinner message='Loading playlists...' />
-      </section>
-    );
+    return <PageSpinner message='Loading playlists...' />;
   }
 
   if (error) {
     return (
-      <section>
-        <h1 className='text-2xl font-semibold mb-4'>Playlists</h1>
-        <ErrorBanner title='Error loading playlists' message={error.message} />
-      </section>
+      <ErrorBanner title='Error loading playlists' message={error.message} />
     );
   }
 
   return (
-    <section>
+    <>
       <div className='flex items-center justify-between mb-4'>
         <div className='flex items-center gap-3'>
-          <h1 className='text-2xl font-semibold'>
-            Playlists ({playlists.length} of {totalCount})
-          </h1>
+          <h2 className='text-lg font-medium text-gray-700'>
+            Spotify Playlists ({playlists.length} of {totalCount})
+          </h2>
           {isRefreshing && <InlineSpinner label='Updating...' />}
         </div>
         <div className='flex items-center gap-4'>
           <button
             onClick={handleDownloadAllPlaylists}
             disabled={loading}
-            className='px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+            className='px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm'
           >
             Download All Enabled Playlists
           </button>
           <button
             onClick={handleCreatePlaylist}
-            className='px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors'
+            className='px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm'
           >
             Create Playlist
           </button>
@@ -166,15 +281,13 @@ function Playlists() {
         onLoadMore={handleLoadMore}
       />
 
-      {/* Modals */}
-
       <PlaylistModal
         isOpen={showPlaylistModal}
         onClose={handleClosePlaylistModal}
         playlist={editingPlaylist}
         mode={editingPlaylist ? 'edit' : 'create'}
       />
-    </section>
+    </>
   );
 }
 

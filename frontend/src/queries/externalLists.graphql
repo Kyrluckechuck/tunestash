@@ -1,0 +1,148 @@
+query GetExternalLists(
+  $first: Int = 20
+  $after: String
+  $source: String
+  $listType: String
+  $status: String
+  $search: String
+  $sortBy: String
+  $sortDirection: String
+) {
+  externalLists(
+    first: $first
+    after: $after
+    source: $source
+    listType: $listType
+    status: $status
+    search: $search
+    sortBy: $sortBy
+    sortDirection: $sortDirection
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    edges {
+      id
+      name
+      source
+      listType
+      username
+      period
+      listIdentifier
+      status
+      statusMessage
+      autoTrackArtists
+      lastSyncedAt
+      createdAt
+      totalTracks
+      mappedTracks
+      failedTracks
+    }
+  }
+}
+
+query GetExternalList($id: String!) {
+  externalList(id: $id) {
+    id
+    name
+    source
+    listType
+    username
+    period
+    listIdentifier
+    status
+    statusMessage
+    autoTrackArtists
+    lastSyncedAt
+    createdAt
+    totalTracks
+    mappedTracks
+    failedTracks
+  }
+}
+
+mutation CreateExternalList(
+  $source: String!
+  $listType: String!
+  $username: String!
+  $period: String
+  $listIdentifier: String
+  $autoTrackArtists: Boolean
+) {
+  createExternalList(
+    source: $source
+    listType: $listType
+    username: $username
+    period: $period
+    listIdentifier: $listIdentifier
+    autoTrackArtists: $autoTrackArtists
+  ) {
+    id
+    name
+    source
+    listType
+    username
+    status
+    totalTracks
+    mappedTracks
+    failedTracks
+  }
+}
+
+mutation UpdateExternalList(
+  $listId: Int!
+  $name: String
+  $username: String
+  $period: String
+  $listIdentifier: String
+) {
+  updateExternalList(
+    listId: $listId
+    name: $name
+    username: $username
+    period: $period
+    listIdentifier: $listIdentifier
+  ) {
+    success
+    message
+  }
+}
+
+mutation DeleteExternalList($listId: Int!) {
+  deleteExternalList(listId: $listId) {
+    success
+    message
+  }
+}
+
+mutation ToggleExternalList($listId: Int!) {
+  toggleExternalList(listId: $listId) {
+    success
+    message
+  }
+}
+
+mutation ToggleExternalListAutoTrack($listId: Int!) {
+  toggleExternalListAutoTrack(listId: $listId) {
+    success
+    message
+  }
+}
+
+mutation SyncExternalList($listId: Int!, $force: Boolean) {
+  syncExternalList(listId: $listId, force: $force) {
+    success
+    message
+  }
+}
+
+mutation SyncAllExternalLists {
+  syncAllExternalLists {
+    success
+    message
+  }
+}

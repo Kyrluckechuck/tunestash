@@ -85,5 +85,12 @@ default:
   # Defaults to "TuneStash" if not set
   NOTIFICATIONS_INSTANCE_NAME: ""
 
+  # External Music Lists (Last.fm, ListenBrainz)
+  # Last.fm API key - free, get one at https://www.last.fm/api/account/create
+  LASTFM_API_KEY: ""
+  # ListenBrainz user token (optional, for private listening data)
+  # Get yours at https://listenbrainz.org/settings/
+  LISTENBRAINZ_USER_TOKEN: ""
+
   # Optional: paths (ensure these exist in your environment)
   final_path: "/mnt/music_spotify"

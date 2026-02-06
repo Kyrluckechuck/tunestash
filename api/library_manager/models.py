@@ -1516,3 +1516,216 @@ class NotificationState(models.Model):
 
     def __str__(self) -> str:
         return f"{self.alert_type} (last sent: {self.last_sent_at})"
+
+
+# =============================================================================
+# External Music List Tracking (Last.fm, ListenBrainz)
+# =============================================================================
+
+
+class ExternalListSource(TextChoices):
+    LASTFM = "lastfm", "Last.fm"
+    LISTENBRAINZ = "listenbrainz", "ListenBrainz"
+    YOUTUBE_MUSIC = "youtube_music", "YouTube Music"
+
+
+class ExternalListType(TextChoices):
+    LOVED_TRACKS = "loved", "Loved/Favorited Tracks"
+    TOP_TRACKS = "top", "Top Tracks"
+    PLAYLIST = "playlist", "Playlist"
+    CHART = "chart", "Chart"
+
+
+class ExternalListStatus(TextChoices):
+    ACTIVE = "active", "Active"
+    DISABLED_BY_USER = "disabled_by_user", "Disabled by user"
+    AUTH_ERROR = "auth_error", "Authentication error"
+    NOT_FOUND = "not_found", "User not found"
+    SYNC_ERROR = "sync_error", "Sync error"
+
+
+class TrackMappingStatus(TextChoices):
+    PENDING = "pending", "Pending mapping"
+    MAPPED = "mapped", "Successfully mapped to Spotify"
+    FAILED = "failed", "Mapping failed"
+
+
+class ExternalList(models.Model):
+    """An external music list from Last.fm or ListenBrainz.
+
+    Tracks loved tracks, top tracks, playlists, or charts from external sources.
+    Synced periodically, with tracks resolved to Spotify IDs via the mapping pipeline.
+    """
+
+    id: models.BigAutoField = models.BigAutoField(primary_key=True)
+    name: models.CharField = models.CharField(max_length=500)
+    source: models.CharField = models.CharField(
+        max_length=20, choices=ExternalListSource.choices
+    )
+    list_type: models.CharField = models.CharField(
+        max_length=20, choices=ExternalListType.choices
+    )
+    username: models.CharField = models.CharField(max_length=255)
+    period: models.CharField = models.CharField(max_length=20, null=True, blank=True)
+    list_identifier: models.CharField = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=(
+            "Source-specific ID: ListenBrainz playlist MBID, "
+            "chart tag, country code, or 'global'"
+        ),
+    )
+    status: models.CharField = models.CharField(
+        max_length=30,
+        choices=ExternalListStatus.choices,
+        default=ExternalListStatus.ACTIVE,
+    )
+    status_message: models.CharField = models.CharField(
+        max_length=255, null=True, blank=True
+    )
+    auto_track_artists: models.BooleanField = models.BooleanField(default=False)
+    content_hash: models.CharField = models.CharField(
+        max_length=64, null=True, blank=True
+    )
+    last_synced_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    total_tracks: models.IntegerField = models.IntegerField(default=0)
+    mapped_tracks: models.IntegerField = models.IntegerField(default=0)
+    failed_tracks: models.IntegerField = models.IntegerField(default=0)
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "external_lists"
+        unique_together = (
+            "source",
+            "list_type",
+            "username",
+            "period",
+            "list_identifier",
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{self.get_source_display()} {self.get_list_type_display()}: "
+            f"{self.username} ({self.status})"
+        )
+
+
+class ExternalListTrack(models.Model):
+    """Junction model tracking per-track mapping state for an external list."""
+
+    id: models.BigAutoField = models.BigAutoField(primary_key=True)
+    external_list: models.ForeignKey = models.ForeignKey(
+        ExternalList, on_delete=models.CASCADE, related_name="tracks"
+    )
+    artist_name: models.CharField = models.CharField(max_length=500)
+    track_name: models.CharField = models.CharField(max_length=500)
+    musicbrainz_id: models.CharField = models.CharField(
+        max_length=36, null=True, blank=True
+    )
+    mapping_status: models.CharField = models.CharField(
+        max_length=20,
+        choices=TrackMappingStatus.choices,
+        default=TrackMappingStatus.PENDING,
+    )
+    spotify_track_id: models.CharField = models.CharField(
+        max_length=120, null=True, blank=True
+    )
+    mapping_confidence: models.FloatField = models.FloatField(null=True, blank=True)
+    mapping_method: models.CharField = models.CharField(
+        max_length=30, null=True, blank=True
+    )
+    mapping_error: models.CharField = models.CharField(
+        max_length=255, null=True, blank=True
+    )
+    song: models.ForeignKey = models.ForeignKey(
+        "Song", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    mapped_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "external_list_tracks"
+        unique_together = ("external_list", "artist_name", "track_name")
+        indexes = [
+            models.Index(fields=["mapping_status"]),
+            models.Index(fields=["external_list", "mapping_status"]),
+            models.Index(fields=["spotify_track_id"]),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.artist_name} - {self.track_name} "
+            f"({self.get_mapping_status_display()})"
+        )
+
+
+class TrackMappingCache(models.Model):
+    """Cross-list cache for track mapping results.
+
+    Avoids redundant API calls when the same track appears in multiple lists.
+    Positive results cached indefinitely; negatives expire after 90 days.
+    """
+
+    id: models.BigAutoField = models.BigAutoField(primary_key=True)
+    musicbrainz_id: models.CharField = models.CharField(
+        max_length=36, null=True, blank=True, unique=True
+    )
+    name_lookup_key: models.CharField = models.CharField(
+        max_length=1024, null=True, blank=True, unique=True
+    )
+    spotify_track_id: models.CharField = models.CharField(
+        max_length=120, null=True, blank=True
+    )
+    isrc: models.CharField = models.CharField(max_length=20, null=True, blank=True)
+    confidence: models.FloatField = models.FloatField(default=1.0)
+    mapping_method: models.CharField = models.CharField(max_length=30)
+    no_match: models.BooleanField = models.BooleanField(default=False)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "track_mapping_cache"
+
+    def __str__(self) -> str:
+        key = self.musicbrainz_id or self.name_lookup_key or "unknown"
+        if self.no_match:
+            return f"TrackMappingCache({key}) -> NO MATCH"
+        return f"TrackMappingCache({key}) -> {self.spotify_track_id}"
+
+
+class APIRateLimitState(models.Model):
+    """Generalized rate limiter for external APIs (Last.fm, MusicBrainz, ListenBrainz).
+
+    Each API gets its own row with configurable limits.
+    The existing SpotifyRateLimitState remains separate for its multi-tier logic.
+    """
+
+    api_name: models.CharField = models.CharField(max_length=50, unique=True)
+    max_requests_per_second: models.FloatField = models.FloatField()
+    is_rate_limited: models.BooleanField = models.BooleanField(default=False)
+    limited_until: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    request_count: models.IntegerField = models.IntegerField(default=0)
+    window_start: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+
+    # Default rates per API
+    DEFAULT_RATES: dict[str, float] = {
+        "lastfm": 5.0,
+        "musicbrainz": 1.0,
+        "listenbrainz": 2.0,
+        "listenbrainz_labs": 1.0,
+    }
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "api_rate_limit_state"
+
+    def __str__(self) -> str:
+        status = "RATE LIMITED" if self.is_rate_limited else "OK"
+        return (
+            f"{self.api_name}: {status} "
+            f"({self.request_count} calls, "
+            f"max {self.max_requests_per_second}/s)"
+        )

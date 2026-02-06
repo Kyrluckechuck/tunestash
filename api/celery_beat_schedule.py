@@ -62,4 +62,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),  # Every 15 minutes
         "options": {"priority": 0},
     },
+    "sync-all-external-lists": {
+        "task": "library_manager.tasks.sync_all_external_lists",
+        "schedule": crontab(minute=0, hour="*/8"),  # Every 8 hours
+        "options": {"priority": TaskPriority.PLAYLIST_DOWNLOAD},
+    },
+    "cleanup-mapping-cache": {
+        "task": "library_manager.tasks.cleanup_mapping_cache",
+        "schedule": crontab(minute=0, hour=6),  # Daily at 6 AM
+        "options": {"priority": TaskPriority.MAINTENANCE},
+    },
 }

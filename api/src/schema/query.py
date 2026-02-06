@@ -8,6 +8,8 @@ from ..graphql_types.models import (
     Artist,
     ArtistConnection,
     AuthenticationStatus,
+    ExternalListConnection,
+    ExternalListType,
     FailureReasonCount,
     FallbackMetrics,
     HistoryConnection,
@@ -44,7 +46,7 @@ from ..services import services
 
 
 @strawberry.type
-class Query:
+class Query:  # pylint: disable=too-many-public-methods
     @strawberry.field
     async def artists(
         self,
@@ -599,6 +601,45 @@ class Query:
             status=status,
             include_resolved=include_resolved,
         )
+
+    @strawberry.field
+    async def external_lists(
+        self,
+        first: Optional[int] = 20,
+        after: Optional[str] = None,
+        source: Optional[str] = None,
+        list_type: Optional[str] = None,
+        status: Optional[str] = None,
+        search: Optional[str] = None,
+        sort_by: Optional[str] = None,
+        sort_direction: Optional[str] = None,
+    ) -> ExternalListConnection:
+        first_int: int = int(first or 20)
+        items, has_next_page, total_count = await services.external_list.get_connection(
+            first=first_int,
+            after=after,
+            source=source,
+            list_type=list_type,
+            status=status,
+            search=search,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+        )
+
+        page_info = PageInfo(
+            has_next_page=has_next_page,
+            has_previous_page=after is not None,
+            start_cursor=None,
+            end_cursor=None,
+        )
+
+        return ExternalListConnection(
+            edges=items, page_info=page_info, total_count=total_count
+        )
+
+    @strawberry.field
+    async def external_list(self, id: str) -> Optional[ExternalListType]:
+        return await services.external_list.get_by_id(id)
 
     @strawberry.field
     async def fallback_metrics(self, days: Optional[int] = 7) -> FallbackMetrics:

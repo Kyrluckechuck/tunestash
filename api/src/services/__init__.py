@@ -4,6 +4,7 @@ from typing import Optional
 from .album import AlbumService
 from .artist import ArtistService
 from .downloader import DownloaderService
+from .external_list import ExternalListService
 from .history import DownloadHistoryService
 from .library_stats import LibraryStatsService
 from .metadata_update import MetadataUpdateService
@@ -14,6 +15,7 @@ from .song import SongService
 from .spotify_search import SpotifySearchService
 from .task_history import TaskHistoryService
 from .task_management import TaskManagementService
+from .track_mapping import TrackMappingService
 
 
 class ServiceRegistry:
@@ -75,6 +77,14 @@ class ServiceRegistry:
     @cached_property
     def metadata_update(self) -> MetadataUpdateService:
         return MetadataUpdateService()
+
+    @cached_property
+    def external_list(self) -> ExternalListService:
+        return ExternalListService()
+
+    @cached_property
+    def track_mapping(self) -> TrackMappingService:
+        return TrackMappingService()
 
 
 services = ServiceRegistry()
