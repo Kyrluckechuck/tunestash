@@ -88,19 +88,14 @@ class ArtistService(BaseService[Artist]):
                 settings, "ALBUM_GROUPS_TO_IGNORE", ["appears_on"]
             )
 
-            # Subquery: artist has at least one undownloaded wanted album
-            # Note: Album.artist FK uses to_field="gid", so we match on gid
-            # Must match filters in _get_undownloaded_count (album_type, album_group)
             has_undownloaded_album = Exists(
                 Album.objects.filter(
-                    artist__gid=OuterRef("gid"),
+                    artist_id=OuterRef("pk"),
                     wanted=True,
                     downloaded=False,
                     album_type__in=album_types_to_download,
                 ).exclude(album_group__in=album_groups_to_ignore)
             )
-            # Subquery: artist has at least one failed (but retryable) song
-            # Note: Song.primary_artist FK uses default (id)
             has_failed_song = Exists(
                 Song.objects.filter(
                     primary_artist_id=OuterRef("pk"),
@@ -417,7 +412,7 @@ class ArtistService(BaseService[Artist]):
         raw_id = getattr(django_artist, "id", None)
         safe_id: int = int(raw_id) if isinstance(raw_id, (int, str)) else 0
 
-        spotify_uri = django_artist.spotify_uri
+        spotify_uri = django_artist.spotify_uri or None
 
         undownloaded_count = await self._get_undownloaded_count(django_artist)
         failed_song_count = await self._get_failed_song_count(django_artist)
@@ -456,7 +451,7 @@ class ArtistService(BaseService[Artist]):
         raw_id = getattr(django_artist, "id", None)
         safe_id: int = int(raw_id) if isinstance(raw_id, (int, str)) else 0
 
-        spotify_uri = django_artist.spotify_uri
+        spotify_uri = django_artist.spotify_uri or None
 
         return Artist(
             id=safe_id,

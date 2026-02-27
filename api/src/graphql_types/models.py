@@ -53,8 +53,8 @@ class DownloadProvider(Enum):
 class Artist:
     id: int
     name: str
-    gid: str
-    spotify_uri: str
+    gid: Optional[str]
+    spotify_uri: Optional[str]
     is_tracked: bool
     last_synced: Optional[DateTime]
     last_downloaded: Optional[DateTime] = None
@@ -70,7 +70,7 @@ class Artist:
 class Album:
     id: int
     name: str
-    spotify_gid: str
+    spotify_gid: Optional[str]
     total_tracks: int
     wanted: bool
     downloaded: bool
@@ -85,17 +85,17 @@ class Album:
 class Song:
     id: int
     name: str
-    gid: str
+    gid: Optional[str]
     primary_artist: str
     primary_artist_id: int
-    primary_artist_gid: str
+    primary_artist_gid: Optional[str]
     created_at: DateTime
     failed_count: int
     bitrate: int
     unavailable: bool
     file_path: Optional[str]
     downloaded: bool
-    spotify_uri: str
+    spotify_uri: Optional[str]
     download_provider: Optional[DownloadProvider] = None
 
 
