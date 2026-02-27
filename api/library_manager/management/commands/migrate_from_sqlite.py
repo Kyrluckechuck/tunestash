@@ -292,11 +292,22 @@ class Command(BaseCommand):
 
         rows_inserted = 0
         with connection.cursor() as pg_cursor:
+            # Build gid→id lookup for artist FK (column is now artist_id integer)
+            pg_cursor.execute("SELECT gid, id FROM artists WHERE gid IS NOT NULL")
+            artist_gid_to_id = dict(pg_cursor.fetchall())
+
             for row in rows:
                 try:
-                    # Insert with original SQLite ID
+                    artist_id = artist_gid_to_id.get(row["artist_gid"])
+                    if artist_id is None:
+                        self.stdout.write(
+                            f"    Warning: Artist GID {row['artist_gid']} not found, "
+                            f"skipping album {row['spotify_gid']}"
+                        )
+                        continue
+
                     insert_sql = """
-                        INSERT INTO albums (id, spotify_gid, artist_gid, spotify_uri, downloaded,
+                        INSERT INTO albums (id, spotify_gid, artist_id, spotify_uri, downloaded,
                                          total_tracks, wanted, name, failed_count, album_type, album_group)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """
@@ -304,9 +315,9 @@ class Command(BaseCommand):
                     pg_cursor.execute(
                         insert_sql,
                         (
-                            row["id"],  # Preserve original ID
+                            row["id"],
                             row["spotify_gid"],
-                            row["artist_gid"],
+                            artist_id,
                             row["spotify_uri"],
                             (
                                 bool(row["downloaded"])

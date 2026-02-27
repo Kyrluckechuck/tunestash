@@ -113,7 +113,19 @@ class Artist(models.Model):
     gid: models.CharField = models.CharField(
         max_length=120,
         unique=True,
+        null=True,
+        blank=True,
         help_text="Spotify Artist ID (22-char base62, e.g., '4iV5W9uYEdYUVa79Axb7Rh')",
+    )
+    deezer_id: models.BigIntegerField = models.BigIntegerField(
+        unique=True, null=True, blank=True, help_text="Deezer artist ID"
+    )
+    youtube_id: models.CharField = models.CharField(
+        max_length=120,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="YouTube Music channel ID",
     )
     tracked: models.BooleanField = models.BooleanField(default=False)
     added_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
@@ -139,16 +151,8 @@ class Artist(models.Model):
 
     @property
     def spotify_uri(self) -> str:
-        """
-        Get Spotify URI for this artist.
-
-        Returns:
-            str: Spotify URI in format "spotify:artist:{gid}"
-
-        Note:
-            This assumes gid is a valid Spotify ID. Use validate_spotify_gid()
-            to ensure data quality before API calls.
-        """
+        if not self.gid:
+            return ""
         return f"spotify:artist:{self.gid}"
 
     @property
@@ -172,20 +176,25 @@ class Artist(models.Model):
         app_label = "library_manager"
         db_table = "artists"
         indexes = [
-            models.Index(
-                fields=[
-                    "gid",
-                ]
-            ),
-            models.Index(
-                fields=[
-                    "tracked",
-                ]
+            models.Index(fields=["gid"]),
+            models.Index(fields=["tracked"]),
+            models.Index(fields=["deezer_id"], name="idx_artist_deezer_id"),
+            models.Index(fields=["youtube_id"], name="idx_artist_youtube_id"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=~(
+                    models.Q(gid__isnull=True)
+                    & models.Q(deezer_id__isnull=True)
+                    & models.Q(youtube_id__isnull=True)
+                ),
+                name="artist_has_at_least_one_external_id",
             ),
         ]
 
     def __str__(self) -> str:
-        return f"name: {self.name} | gid: {self.gid} | tracked: {self.tracked}"
+        gid_display = self.gid or "no-spotify-id"
+        return f"name: {self.name} | gid: {gid_display} | tracked: {self.tracked}"
 
 
 class FailureReason(TextChoices):
@@ -261,7 +270,19 @@ class Song(models.Model):
     gid: models.CharField = models.CharField(
         max_length=120,
         unique=True,
+        null=True,
+        blank=True,
         help_text="Spotify Track ID (22-char base62, e.g., '6rqhFgbbKwnb9MLmUQDhG6')",
+    )
+    deezer_id: models.BigIntegerField = models.BigIntegerField(
+        unique=True, null=True, blank=True, help_text="Deezer track ID"
+    )
+    youtube_id: models.CharField = models.CharField(
+        max_length=120,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="YouTube Music video ID",
     )
     isrc: models.CharField = models.CharField(
         max_length=20,
@@ -352,6 +373,8 @@ class Song(models.Model):
 
     @property
     def spotify_uri(self) -> str:
+        if not self.gid:
+            return ""
         return f"spotify:track:{self.gid}"
 
     def increment_failed_count(
@@ -452,15 +475,27 @@ class Song(models.Model):
         app_label = "library_manager"
         db_table = "songs"
         indexes = [
-            models.Index(
-                fields=[
-                    "gid",
-                ]
+            models.Index(fields=["gid"]),
+            models.Index(fields=["deezer_id"], name="idx_song_deezer_id"),
+            models.Index(fields=["youtube_id"], name="idx_song_youtube_id"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=~(
+                    models.Q(gid__isnull=True)
+                    & models.Q(deezer_id__isnull=True)
+                    & models.Q(youtube_id__isnull=True)
+                ),
+                name="song_has_at_least_one_external_id",
             ),
         ]
 
     def __str__(self) -> str:
-        return f"name: {self.name} | gid: {self.gid} | primary_artist: '{self.primary_artist}'"
+        gid_display = self.gid or "no-spotify-id"
+        return (
+            f"name: {self.name} | gid: {gid_display} "
+            f"| primary_artist: '{self.primary_artist}'"
+        )
 
 
 class ContributingArtist(models.Model):
@@ -763,11 +798,21 @@ class Album(models.Model):
     spotify_gid: models.CharField = models.CharField(
         max_length=2048,
         unique=True,
+        null=True,
+        blank=True,
         help_text="Spotify Album ID (22-char base62, e.g., '7K3BhSpAxZBzniskgIPUYj')",
     )
-    artist: models.ForeignKey = models.ForeignKey(
-        Artist, on_delete=models.CASCADE, to_field="gid", db_column="artist_gid"
+    deezer_id: models.BigIntegerField = models.BigIntegerField(
+        unique=True, null=True, blank=True, help_text="Deezer album ID"
     )
+    youtube_id: models.CharField = models.CharField(
+        max_length=120,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="YouTube Music album/playlist ID",
+    )
+    artist: models.ForeignKey = models.ForeignKey(Artist, on_delete=models.CASCADE)
     spotify_uri: models.CharField = models.CharField(max_length=2048)
     downloaded: models.BooleanField = models.BooleanField(default=False)
     total_tracks: models.IntegerField = models.IntegerField(default=0)
@@ -792,6 +837,20 @@ class Album(models.Model):
     class Meta(TypedModelMeta):
         app_label = "library_manager"
         db_table = "albums"
+        indexes = [
+            models.Index(fields=["deezer_id"], name="idx_album_deezer_id"),
+            models.Index(fields=["youtube_id"], name="idx_album_youtube_id"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=~(
+                    models.Q(spotify_gid__isnull=True)
+                    & models.Q(deezer_id__isnull=True)
+                    & models.Q(youtube_id__isnull=True)
+                ),
+                name="album_has_at_least_one_external_id",
+            ),
+        ]
 
 
 class PlaylistStatus(models.TextChoices):

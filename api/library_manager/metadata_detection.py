@@ -296,7 +296,6 @@ def dismiss_superseded_updates(
     dismissed_count = 0
 
     if artist_id:
-        # Get all albums for this artist (using artist__id since FK uses to_field="gid")
         albums = Album.objects.filter(artist__id=artist_id)
         album_content_type = ContentType.objects.get_for_model(Album)
 

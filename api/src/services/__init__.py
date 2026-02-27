@@ -7,6 +7,7 @@ from .downloader import DownloaderService
 from .external_list import ExternalListService
 from .history import DownloadHistoryService
 from .library_stats import LibraryStatsService
+from .metadata import MetadataService
 from .metadata_update import MetadataUpdateService
 from .one_off_task import OneOffTaskService
 from .periodic_task import PeriodicTaskService
@@ -85,6 +86,10 @@ class ServiceRegistry:
     @cached_property
     def track_mapping(self) -> TrackMappingService:
         return TrackMappingService()
+
+    @cached_property
+    def metadata(self) -> MetadataService:
+        return MetadataService()
 
 
 services = ServiceRegistry()

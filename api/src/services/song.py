@@ -189,6 +189,6 @@ class SongService(BaseService[Song]):
             unavailable=django_song.unavailable,
             file_path=file_path,
             downloaded=django_song.downloaded,
-            spotify_uri=django_song.spotify_uri,
+            spotify_uri=django_song.spotify_uri or None,
             download_provider=download_provider,
         )

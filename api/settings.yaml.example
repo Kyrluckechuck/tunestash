@@ -92,5 +92,8 @@ default:
   # Get yours at https://listenbrainz.org/settings/
   LISTENBRAINZ_USER_TOKEN: ""
 
+  # Deezer API (no API key needed — public endpoints)
+  DEEZER_RATE_LIMIT_PER_SECOND: 10
+
   # Optional: paths (ensure these exist in your environment)
   final_path: "/mnt/music_spotify"
