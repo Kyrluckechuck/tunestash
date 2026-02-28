@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { useDownloadModal } from './ui/useDownloadModal';
-import { useSpotifySearch } from './ui/useSpotifySearch';
+import { useSearch } from './ui/useSearch';
 
 const navLinks = [
   { to: '/', label: 'Home' },
@@ -14,7 +14,7 @@ const navLinks = [
 
 export const Navbar = () => {
   const downloadModal = useDownloadModal();
-  const spotifySearch = useSpotifySearch();
+  const search = useSearch();
   const titleClasses =
     'font-extrabold text-2xl tracking-tight text-indigo-700 hover:text-indigo-800';
   const navLinkClasses =
@@ -51,9 +51,9 @@ export const Navbar = () => {
             </Link>
           ))}
           <button
-            onClick={spotifySearch.open}
+            onClick={search.open}
             className={searchButtonClasses}
-            title='Search Spotify (Ctrl+K)'
+            title='Search (Ctrl+K)'
           >
             <svg
               className='w-4 h-4'

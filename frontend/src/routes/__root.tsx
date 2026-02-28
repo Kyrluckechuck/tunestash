@@ -1,7 +1,7 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router';
 import { ToastProvider } from '../components/ui/ToastProvider';
 import { DownloadModalProvider } from '../components/ui/DownloadModalProvider';
-import { SpotifySearchProvider } from '../components/ui/SpotifySearchProvider';
+import { SearchProvider } from '../components/ui/SearchProvider';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { Navbar } from '../components/Navbar';
 import { AuthStatusBanner } from '../components/ui/AuthStatusBanner';
@@ -10,7 +10,7 @@ function RootComponent() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <SpotifySearchProvider>
+        <SearchProvider>
           <DownloadModalProvider>
             <div className='min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50'>
               <Navbar />
@@ -22,7 +22,7 @@ function RootComponent() {
               </main>
             </div>
           </DownloadModalProvider>
-        </SpotifySearchProvider>
+        </SearchProvider>
       </ToastProvider>
     </ErrorBoundary>
   );

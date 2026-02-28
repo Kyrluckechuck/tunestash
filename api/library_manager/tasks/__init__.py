@@ -35,6 +35,11 @@ from .core import (
     update_task_progress,
 )
 
+# Re-export Deezer tasks
+from .deezer import (
+    fetch_artist_albums_from_deezer,
+)
+
 # Re-export diagnostic tasks
 from .diagnostics import (
     memory_compare_before_after,
@@ -169,6 +174,8 @@ __all__ = [
     "retry_failed_external_mappings",
     "sync_all_external_lists",
     "sync_external_list",
+    # Deezer tasks
+    "fetch_artist_albums_from_deezer",
     # Upgrade tasks
     "upgrade_low_quality_songs",
 ]

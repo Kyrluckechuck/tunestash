@@ -1,13 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { SpotifySearchContext } from './SpotifySearchContext';
-import type { SpotifySearchContextValue } from './SpotifySearchContext';
-import { SpotifySearchModal } from './SpotifySearchModal';
+import { SearchContext } from './SearchContext';
+import type { SearchContextValue } from './SearchContext';
+import { SearchModal } from './SearchModal';
 
-export function SpotifySearchProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function SearchProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
 
   const open = useCallback(() => {
@@ -31,7 +27,7 @@ export function SpotifySearchProvider({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const value = useMemo<SpotifySearchContextValue>(
+  const value = useMemo<SearchContextValue>(
     () => ({
       isOpen,
       open,
@@ -41,9 +37,9 @@ export function SpotifySearchProvider({
   );
 
   return (
-    <SpotifySearchContext.Provider value={value}>
+    <SearchContext.Provider value={value}>
       {children}
-      <SpotifySearchModal isOpen={isOpen} onClose={close} />
-    </SpotifySearchContext.Provider>
+      <SearchModal isOpen={isOpen} onClose={close} />
+    </SearchContext.Provider>
   );
 }

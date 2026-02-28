@@ -3,6 +3,7 @@ from typing import Optional
 
 from .album import AlbumService
 from .artist import ArtistService
+from .catalog_search import CatalogSearchService
 from .downloader import DownloaderService
 from .external_list import ExternalListService
 from .history import DownloadHistoryService
@@ -13,7 +14,6 @@ from .one_off_task import OneOffTaskService
 from .periodic_task import PeriodicTaskService
 from .playlist import PlaylistService
 from .song import SongService
-from .spotify_search import SpotifySearchService
 from .task_history import TaskHistoryService
 from .task_management import TaskManagementService
 from .track_mapping import TrackMappingService
@@ -64,8 +64,8 @@ class ServiceRegistry:
         return PeriodicTaskService()
 
     @cached_property
-    def spotify_search(self) -> SpotifySearchService:
-        return SpotifySearchService()
+    def catalog_search(self) -> CatalogSearchService:
+        return CatalogSearchService()
 
     @cached_property
     def one_off_task(self) -> OneOffTaskService:

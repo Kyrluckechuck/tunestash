@@ -163,7 +163,7 @@ export const SongsTable: React.FC<SongsTableProps> = ({
               <td className='px-6 py-4 whitespace-nowrap'>
                 <div className='text-sm font-medium'>
                   <a
-                    href={song.spotifyUri.replace(
+                    href={(song.spotifyUri ?? '').replace(
                       'spotify:track:',
                       'https://open.spotify.com/track/'
                     )}

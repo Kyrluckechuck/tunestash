@@ -403,35 +403,33 @@ class SystemHealth:
     storage: StorageStatus
 
 
-# Spotify Search Result Types
-# These represent search results from Spotify's API (not our local database)
+# Catalog Search Result Types
+# These represent search results from Deezer's API (not our local database)
 
 
 @strawberry.type
-class SpotifySearchArtist:
-    """Artist result from Spotify search API."""
+class CatalogSearchArtist:
+    """Artist result from catalog search."""
 
-    id: str
+    provider_id: str
     name: str
-    spotify_uri: str
     image_url: Optional[str]
-    follower_count: int
-    genres: List[str]
-    in_library: bool  # True if this artist is already in our local database
-    local_id: Optional[int]  # Database ID if in_library is True
-    is_tracked: bool  # True if this artist is being tracked (only when in_library=True)
+    external_url: Optional[str]
+    in_library: bool
+    local_id: Optional[int]
+    is_tracked: bool
 
 
 @strawberry.type
-class SpotifySearchAlbum:
-    """Album result from Spotify search API."""
+class CatalogSearchAlbum:
+    """Album result from catalog search."""
 
-    id: str
+    provider_id: str
     name: str
-    spotify_uri: str
     image_url: Optional[str]
+    external_url: Optional[str]
     artist_name: str
-    artist_id: str
+    artist_provider_id: str
     release_date: Optional[str]
     album_type: str
     total_tracks: int
@@ -440,44 +438,28 @@ class SpotifySearchAlbum:
 
 
 @strawberry.type
-class SpotifySearchTrack:
-    """Track result from Spotify search API."""
+class CatalogSearchTrack:
+    """Track result from catalog search."""
 
-    id: str
+    provider_id: str
     name: str
-    spotify_uri: str
+    external_url: Optional[str]
     artist_name: str
-    artist_id: str
+    artist_provider_id: str
     album_name: str
-    album_id: str
+    album_provider_id: str
     duration_ms: int
     in_library: bool
     local_id: Optional[int]
 
 
 @strawberry.type
-class SpotifySearchPlaylist:
-    """Playlist result from Spotify search API."""
+class CatalogSearchResults:
+    """Combined search results from catalog API."""
 
-    id: str
-    name: str
-    spotify_uri: str
-    image_url: Optional[str]
-    owner_name: str
-    track_count: int
-    description: Optional[str]
-    in_library: bool
-    local_id: Optional[int]
-
-
-@strawberry.type
-class SpotifySearchResults:
-    """Combined search results from Spotify API."""
-
-    artists: List[SpotifySearchArtist]
-    albums: List[SpotifySearchAlbum]
-    tracks: List[SpotifySearchTrack]
-    playlists: List[SpotifySearchPlaylist]
+    artists: List[CatalogSearchArtist]
+    albums: List[CatalogSearchAlbum]
+    tracks: List[CatalogSearchTrack]
 
 
 @strawberry.type
