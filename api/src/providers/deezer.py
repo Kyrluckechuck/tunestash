@@ -96,8 +96,10 @@ def _parse_artist(data: dict[str, Any]) -> ArtistResult:
 
 def _parse_album(data: dict[str, Any]) -> AlbumResult:
     artist_name = ""
+    artist_deezer_id = None
     if isinstance(data.get("artist"), dict):
         artist_name = data["artist"].get("name", "")
+        artist_deezer_id = data["artist"].get("id")
     elif isinstance(data.get("artist"), str):
         artist_name = data["artist"]
 
@@ -109,19 +111,24 @@ def _parse_album(data: dict[str, Any]) -> AlbumResult:
         total_tracks=data.get("nb_tracks", 0),
         release_date=data.get("release_date"),
         album_type=_normalize_album_type(data.get("record_type")),
+        artist_deezer_id=artist_deezer_id,
     )
 
 
 def _parse_track(data: dict[str, Any]) -> TrackResult:
     artist_name = ""
+    artist_deezer_id = None
     if isinstance(data.get("artist"), dict):
         artist_name = data["artist"].get("name", "")
+        artist_deezer_id = data["artist"].get("id")
     elif isinstance(data.get("artist"), str):
         artist_name = data["artist"]
 
     album_name = None
+    album_deezer_id = None
     if isinstance(data.get("album"), dict):
         album_name = data["album"].get("title")
+        album_deezer_id = data["album"].get("id")
 
     duration_seconds = data.get("duration", 0)
 
@@ -134,6 +141,8 @@ def _parse_track(data: dict[str, Any]) -> TrackResult:
         duration_ms=duration_seconds * 1000,
         track_number=data.get("track_position"),
         disc_number=data.get("disk_number"),
+        artist_deezer_id=artist_deezer_id,
+        album_deezer_id=album_deezer_id,
     )
 
 

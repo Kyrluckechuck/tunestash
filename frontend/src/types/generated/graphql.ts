@@ -13,6 +13,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** The `DateTime` scalar type represents a date and time following the ISO 8601 standard. */
   DateTime: { input: string; output: string; }
 };
 
@@ -26,7 +27,7 @@ export type Album = {
   downloaded: Scalars['Boolean']['output'];
   id: Scalars['Int']['output'];
   name: Scalars['String']['output'];
-  spotifyGid: Scalars['String']['output'];
+  spotifyGid: Maybe<Scalars['String']['output']>;
   totalTracks: Scalars['Int']['output'];
   wanted: Scalars['Boolean']['output'];
 };
@@ -44,14 +45,14 @@ export type Artist = {
   albumCount: Scalars['Int']['output'];
   downloadedAlbumCount: Scalars['Int']['output'];
   failedSongCount: Scalars['Int']['output'];
-  gid: Scalars['String']['output'];
+  gid: Maybe<Scalars['String']['output']>;
   id: Scalars['Int']['output'];
   isTracked: Scalars['Boolean']['output'];
   lastDownloaded: Maybe<Scalars['DateTime']['output']>;
   lastSynced: Maybe<Scalars['DateTime']['output']>;
   name: Scalars['String']['output'];
   songCount: Scalars['Int']['output'];
-  spotifyUri: Scalars['String']['output'];
+  spotifyUri: Maybe<Scalars['String']['output']>;
   undownloadedCount: Scalars['Int']['output'];
 };
 
@@ -77,6 +78,53 @@ export type AuthenticationStatus = {
   spotifyTokenExpiresInHours: Maybe<Scalars['Int']['output']>;
   spotifyTokenValid: Scalars['Boolean']['output'];
   spotifyUserAuthEnabled: Scalars['Boolean']['output'];
+};
+
+export type CatalogSearchAlbum = {
+  __typename?: 'CatalogSearchAlbum';
+  albumType: Scalars['String']['output'];
+  artistName: Scalars['String']['output'];
+  artistProviderId: Scalars['String']['output'];
+  externalUrl: Maybe<Scalars['String']['output']>;
+  imageUrl: Maybe<Scalars['String']['output']>;
+  inLibrary: Scalars['Boolean']['output'];
+  localId: Maybe<Scalars['Int']['output']>;
+  name: Scalars['String']['output'];
+  providerId: Scalars['String']['output'];
+  releaseDate: Maybe<Scalars['String']['output']>;
+  totalTracks: Scalars['Int']['output'];
+};
+
+export type CatalogSearchArtist = {
+  __typename?: 'CatalogSearchArtist';
+  externalUrl: Maybe<Scalars['String']['output']>;
+  imageUrl: Maybe<Scalars['String']['output']>;
+  inLibrary: Scalars['Boolean']['output'];
+  isTracked: Scalars['Boolean']['output'];
+  localId: Maybe<Scalars['Int']['output']>;
+  name: Scalars['String']['output'];
+  providerId: Scalars['String']['output'];
+};
+
+export type CatalogSearchResults = {
+  __typename?: 'CatalogSearchResults';
+  albums: Array<CatalogSearchAlbum>;
+  artists: Array<CatalogSearchArtist>;
+  tracks: Array<CatalogSearchTrack>;
+};
+
+export type CatalogSearchTrack = {
+  __typename?: 'CatalogSearchTrack';
+  albumName: Scalars['String']['output'];
+  albumProviderId: Scalars['String']['output'];
+  artistName: Scalars['String']['output'];
+  artistProviderId: Scalars['String']['output'];
+  durationMs: Scalars['Int']['output'];
+  externalUrl: Maybe<Scalars['String']['output']>;
+  inLibrary: Scalars['Boolean']['output'];
+  localId: Maybe<Scalars['Int']['output']>;
+  name: Scalars['String']['output'];
+  providerId: Scalars['String']['output'];
 };
 
 export type DownloadHistory = {
@@ -280,6 +328,8 @@ export type Mutation = {
   downloadAllTrackedArtists: MutationResult;
   downloadArtist: MutationResult;
   downloadUrl: MutationResult;
+  importAlbum: MutationResult;
+  importArtist: MutationResult;
   retryFailedSongs: MutationResult;
   runOneOffTask: MutationResult;
   runPeriodicTaskNow: MutationResult;
@@ -391,6 +441,17 @@ export type MutationDownloadArtistArgs = {
 export type MutationDownloadUrlArgs = {
   autoTrackArtists?: Scalars['Boolean']['input'];
   url: Scalars['String']['input'];
+};
+
+
+export type MutationImportAlbumArgs = {
+  deezerId: Scalars['Int']['input'];
+};
+
+
+export type MutationImportArtistArgs = {
+  deezerId: Scalars['Int']['input'];
+  name: Scalars['String']['input'];
 };
 
 
@@ -581,6 +642,7 @@ export type Query = {
   albums: AlbumConnection;
   artist: Maybe<Artist>;
   artists: ArtistConnection;
+  catalogSearch: CatalogSearchResults;
   downloadHistory: HistoryConnection;
   externalList: Maybe<ExternalListType>;
   externalLists: ExternalListConnection;
@@ -595,7 +657,6 @@ export type Query = {
   song: Maybe<Song>;
   songs: SongConnection;
   spotifyPlaylistInfo: Maybe<SpotifyPlaylistInfo>;
-  spotifySearch: SpotifySearchResults;
   systemHealth: SystemHealth;
   taskHistory: TaskHistoryConnection;
   upgradeStats: UpgradeStats;
@@ -632,6 +693,13 @@ export type QueryArtistsArgs = {
   search?: InputMaybe<Scalars['String']['input']>;
   sortBy?: InputMaybe<Scalars['String']['input']>;
   sortDirection?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryCatalogSearchArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  query: Scalars['String']['input'];
+  types?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
 
@@ -716,13 +784,6 @@ export type QuerySpotifyPlaylistInfoArgs = {
 };
 
 
-export type QuerySpotifySearchArgs = {
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  query: Scalars['String']['input'];
-  types?: InputMaybe<Array<Scalars['String']['input']>>;
-};
-
-
 export type QueryTaskHistoryArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
   entityType?: InputMaybe<Scalars['String']['input']>;
@@ -748,13 +809,13 @@ export type Song = {
   downloaded: Scalars['Boolean']['output'];
   failedCount: Scalars['Int']['output'];
   filePath: Maybe<Scalars['String']['output']>;
-  gid: Scalars['String']['output'];
+  gid: Maybe<Scalars['String']['output']>;
   id: Scalars['Int']['output'];
   name: Scalars['String']['output'];
   primaryArtist: Scalars['String']['output'];
-  primaryArtistGid: Scalars['String']['output'];
+  primaryArtistGid: Maybe<Scalars['String']['output']>;
   primaryArtistId: Scalars['Int']['output'];
-  spotifyUri: Scalars['String']['output'];
+  spotifyUri: Maybe<Scalars['String']['output']>;
   unavailable: Scalars['Boolean']['output'];
 };
 
@@ -789,69 +850,6 @@ export type SpotifyRateLimitStatus = {
   windowCallCount: Scalars['Int']['output'];
   windowMaxCalls: Scalars['Int']['output'];
   windowUsagePercent: Scalars['Float']['output'];
-};
-
-export type SpotifySearchAlbum = {
-  __typename?: 'SpotifySearchAlbum';
-  albumType: Scalars['String']['output'];
-  artistId: Scalars['String']['output'];
-  artistName: Scalars['String']['output'];
-  id: Scalars['String']['output'];
-  imageUrl: Maybe<Scalars['String']['output']>;
-  inLibrary: Scalars['Boolean']['output'];
-  localId: Maybe<Scalars['Int']['output']>;
-  name: Scalars['String']['output'];
-  releaseDate: Maybe<Scalars['String']['output']>;
-  spotifyUri: Scalars['String']['output'];
-  totalTracks: Scalars['Int']['output'];
-};
-
-export type SpotifySearchArtist = {
-  __typename?: 'SpotifySearchArtist';
-  followerCount: Scalars['Int']['output'];
-  genres: Array<Scalars['String']['output']>;
-  id: Scalars['String']['output'];
-  imageUrl: Maybe<Scalars['String']['output']>;
-  inLibrary: Scalars['Boolean']['output'];
-  isTracked: Scalars['Boolean']['output'];
-  localId: Maybe<Scalars['Int']['output']>;
-  name: Scalars['String']['output'];
-  spotifyUri: Scalars['String']['output'];
-};
-
-export type SpotifySearchPlaylist = {
-  __typename?: 'SpotifySearchPlaylist';
-  description: Maybe<Scalars['String']['output']>;
-  id: Scalars['String']['output'];
-  imageUrl: Maybe<Scalars['String']['output']>;
-  inLibrary: Scalars['Boolean']['output'];
-  localId: Maybe<Scalars['Int']['output']>;
-  name: Scalars['String']['output'];
-  ownerName: Scalars['String']['output'];
-  spotifyUri: Scalars['String']['output'];
-  trackCount: Scalars['Int']['output'];
-};
-
-export type SpotifySearchResults = {
-  __typename?: 'SpotifySearchResults';
-  albums: Array<SpotifySearchAlbum>;
-  artists: Array<SpotifySearchArtist>;
-  playlists: Array<SpotifySearchPlaylist>;
-  tracks: Array<SpotifySearchTrack>;
-};
-
-export type SpotifySearchTrack = {
-  __typename?: 'SpotifySearchTrack';
-  albumId: Scalars['String']['output'];
-  albumName: Scalars['String']['output'];
-  artistId: Scalars['String']['output'];
-  artistName: Scalars['String']['output'];
-  durationMs: Scalars['Int']['output'];
-  id: Scalars['String']['output'];
-  inLibrary: Scalars['Boolean']['output'];
-  localId: Maybe<Scalars['Int']['output']>;
-  name: Scalars['String']['output'];
-  spotifyUri: Scalars['String']['output'];
 };
 
 export type StorageStatus = {
@@ -963,14 +961,14 @@ export type GetArtistQueryVariables = Exact<{
 }>;
 
 
-export type GetArtistQuery = { __typename?: 'Query', artist: { __typename?: 'Artist', id: number, name: string, gid: string, spotifyUri: string, isTracked: boolean, addedAt: string | null, lastSynced: string | null, lastDownloaded: string | null, undownloadedCount: number, albumCount: number, downloadedAlbumCount: number, songCount: number } | null };
+export type GetArtistQuery = { __typename?: 'Query', artist: { __typename?: 'Artist', id: number, name: string, gid: string | null, spotifyUri: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null, lastDownloaded: string | null, undownloadedCount: number, albumCount: number, downloadedAlbumCount: number, songCount: number } | null };
 
 export type GetAlbumQueryVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type GetAlbumQuery = { __typename?: 'Query', album: { __typename?: 'Album', id: number, name: string, spotifyGid: string, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null, artistGid: string | null } | null };
+export type GetAlbumQuery = { __typename?: 'Query', album: { __typename?: 'Album', id: number, name: string, spotifyGid: string | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null, artistGid: string | null } | null };
 
 export type GetArtistsQueryVariables = Exact<{
   isTracked?: InputMaybe<Scalars['Boolean']['input']>;
@@ -983,7 +981,7 @@ export type GetArtistsQueryVariables = Exact<{
 }>;
 
 
-export type GetArtistsQuery = { __typename?: 'Query', artists: { __typename?: 'ArtistConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Artist', id: number, name: string, gid: string, spotifyUri: string, isTracked: boolean, addedAt: string | null, lastSynced: string | null, lastDownloaded: string | null, undownloadedCount: number, failedSongCount: number }> } };
+export type GetArtistsQuery = { __typename?: 'Query', artists: { __typename?: 'ArtistConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Artist', id: number, name: string, gid: string | null, spotifyUri: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null, lastDownloaded: string | null, undownloadedCount: number, failedSongCount: number }> } };
 
 export type GetAlbumsQueryVariables = Exact<{
   artistId?: InputMaybe<Scalars['Int']['input']>;
@@ -997,7 +995,7 @@ export type GetAlbumsQueryVariables = Exact<{
 }>;
 
 
-export type GetAlbumsQuery = { __typename?: 'Query', albums: { __typename?: 'AlbumConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Album', id: number, name: string, spotifyGid: string, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null, artistGid: string | null }> } };
+export type GetAlbumsQuery = { __typename?: 'Query', albums: { __typename?: 'AlbumConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Album', id: number, name: string, spotifyGid: string | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null, artistGid: string | null }> } };
 
 export type GetPlaylistsQueryVariables = Exact<{
   enabled?: InputMaybe<Scalars['Boolean']['input']>;
@@ -1016,7 +1014,7 @@ export type SyncArtistMutationVariables = Exact<{
 }>;
 
 
-export type SyncArtistMutation = { __typename?: 'Mutation', syncArtist: { __typename?: 'Artist', id: number, name: string, gid: string, spotifyUri: string, isTracked: boolean, addedAt: string | null, lastSynced: string | null, undownloadedCount: number } };
+export type SyncArtistMutation = { __typename?: 'Mutation', syncArtist: { __typename?: 'Artist', id: number, name: string, gid: string | null, spotifyUri: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null, undownloadedCount: number } };
 
 export type DownloadArtistMutationVariables = Exact<{
   artistId: Scalars['String']['input'];
@@ -1066,7 +1064,7 @@ export type DownloadAlbumMutationVariables = Exact<{
 }>;
 
 
-export type DownloadAlbumMutation = { __typename?: 'Mutation', downloadAlbum: { __typename?: 'Album', id: number, name: string, spotifyGid: string, wanted: boolean, downloaded: boolean } };
+export type DownloadAlbumMutation = { __typename?: 'Mutation', downloadAlbum: { __typename?: 'Album', id: number, name: string, spotifyGid: string | null, wanted: boolean, downloaded: boolean } };
 
 export type TogglePlaylistMutationVariables = Exact<{
   playlistId: Scalars['Int']['input'];
@@ -1130,6 +1128,30 @@ export type DownloadAllPlaylistsMutationVariables = Exact<{ [key: string]: never
 
 export type DownloadAllPlaylistsMutation = { __typename?: 'Mutation', downloadAllPlaylists: { __typename?: 'MutationResult', success: boolean, message: string } };
 
+export type CatalogSearchQueryVariables = Exact<{
+  query: Scalars['String']['input'];
+  types?: InputMaybe<Array<Scalars['String']['input']> | Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type CatalogSearchQuery = { __typename?: 'Query', catalogSearch: { __typename?: 'CatalogSearchResults', artists: Array<{ __typename?: 'CatalogSearchArtist', providerId: string, name: string, imageUrl: string | null, externalUrl: string | null, inLibrary: boolean, localId: number | null, isTracked: boolean }>, albums: Array<{ __typename?: 'CatalogSearchAlbum', providerId: string, name: string, imageUrl: string | null, externalUrl: string | null, artistName: string, artistProviderId: string, releaseDate: string | null, albumType: string, totalTracks: number, inLibrary: boolean, localId: number | null }>, tracks: Array<{ __typename?: 'CatalogSearchTrack', providerId: string, name: string, externalUrl: string | null, artistName: string, artistProviderId: string, albumName: string, albumProviderId: string, durationMs: number, inLibrary: boolean, localId: number | null }> } };
+
+export type ImportArtistMutationVariables = Exact<{
+  deezerId: Scalars['Int']['input'];
+  name: Scalars['String']['input'];
+}>;
+
+
+export type ImportArtistMutation = { __typename?: 'Mutation', importArtist: { __typename?: 'MutationResult', success: boolean, message: string, artist: { __typename?: 'Artist', id: number, name: string, isTracked: boolean } | null } };
+
+export type ImportAlbumMutationVariables = Exact<{
+  deezerId: Scalars['Int']['input'];
+}>;
+
+
+export type ImportAlbumMutation = { __typename?: 'Mutation', importAlbum: { __typename?: 'MutationResult', success: boolean, message: string } };
+
 export type GetLibraryStatsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -1148,7 +1170,7 @@ export type DownloadUrlMutationVariables = Exact<{
 }>;
 
 
-export type DownloadUrlMutation = { __typename?: 'Mutation', downloadUrl: { __typename?: 'MutationResult', success: boolean, message: string, artist: { __typename?: 'Artist', id: number, name: string, gid: string, isTracked: boolean, addedAt: string | null, lastSynced: string | null } | null, album: { __typename?: 'Album', id: number, name: string, spotifyGid: string, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null } | null, playlist: { __typename?: 'Playlist', id: number, name: string, url: string, enabled: boolean, autoTrackArtists: boolean, lastSyncedAt: string | null } | null } };
+export type DownloadUrlMutation = { __typename?: 'Mutation', downloadUrl: { __typename?: 'MutationResult', success: boolean, message: string, artist: { __typename?: 'Artist', id: number, name: string, gid: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null } | null, album: { __typename?: 'Album', id: number, name: string, spotifyGid: string | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null } | null, playlist: { __typename?: 'Playlist', id: number, name: string, url: string, enabled: boolean, autoTrackArtists: boolean, lastSyncedAt: string | null } | null } };
 
 export type CreatePlaylistFromDownloadMutationVariables = Exact<{
   name: Scalars['String']['input'];
@@ -1331,23 +1353,14 @@ export type GetSongsQueryVariables = Exact<{
 }>;
 
 
-export type GetSongsQuery = { __typename?: 'Query', songs: { __typename?: 'SongConnection', totalCount: number, edges: Array<{ __typename?: 'Song', id: number, name: string, gid: string, primaryArtist: string, primaryArtistId: number, primaryArtistGid: string, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string, downloadProvider: DownloadProvider | null }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null } } };
+export type GetSongsQuery = { __typename?: 'Query', songs: { __typename?: 'SongConnection', totalCount: number, edges: Array<{ __typename?: 'Song', id: number, name: string, gid: string | null, primaryArtist: string, primaryArtistId: number, primaryArtistGid: string | null, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string | null, downloadProvider: DownloadProvider | null }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null } } };
 
 export type GetSongQueryVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type GetSongQuery = { __typename?: 'Query', song: { __typename?: 'Song', id: number, name: string, gid: string, primaryArtist: string, primaryArtistId: number, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string, downloadProvider: DownloadProvider | null } | null };
-
-export type SpotifySearchQueryVariables = Exact<{
-  query: Scalars['String']['input'];
-  types?: InputMaybe<Array<Scalars['String']['input']> | Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-}>;
-
-
-export type SpotifySearchQuery = { __typename?: 'Query', spotifySearch: { __typename?: 'SpotifySearchResults', artists: Array<{ __typename?: 'SpotifySearchArtist', id: string, name: string, spotifyUri: string, imageUrl: string | null, followerCount: number, genres: Array<string>, inLibrary: boolean, localId: number | null, isTracked: boolean }>, albums: Array<{ __typename?: 'SpotifySearchAlbum', id: string, name: string, spotifyUri: string, imageUrl: string | null, artistName: string, artistId: string, releaseDate: string | null, albumType: string, totalTracks: number, inLibrary: boolean, localId: number | null }>, tracks: Array<{ __typename?: 'SpotifySearchTrack', id: string, name: string, spotifyUri: string, artistName: string, artistId: string, albumName: string, albumId: string, durationMs: number, inLibrary: boolean, localId: number | null }>, playlists: Array<{ __typename?: 'SpotifySearchPlaylist', id: string, name: string, spotifyUri: string, imageUrl: string | null, ownerName: string, trackCount: number, description: string | null, inLibrary: boolean, localId: number | null }> } };
+export type GetSongQuery = { __typename?: 'Query', song: { __typename?: 'Song', id: number, name: string, gid: string | null, primaryArtist: string, primaryArtistId: number, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string | null, downloadProvider: DownloadProvider | null } | null };
 
 export type GetSystemHealthQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -1444,7 +1457,7 @@ export type GetArtistsTestQueryVariables = Exact<{
 }>;
 
 
-export type GetArtistsTestQuery = { __typename?: 'Query', artists: { __typename?: 'ArtistConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Artist', id: number, name: string, gid: string, isTracked: boolean, addedAt: string | null, lastSynced: string | null }> } };
+export type GetArtistsTestQuery = { __typename?: 'Query', artists: { __typename?: 'ArtistConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Artist', id: number, name: string, gid: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null }> } };
 
 export type GetAlbumsTestQueryVariables = Exact<{
   artistId?: InputMaybe<Scalars['Int']['input']>;
@@ -1458,7 +1471,7 @@ export type GetAlbumsTestQueryVariables = Exact<{
 }>;
 
 
-export type GetAlbumsTestQuery = { __typename?: 'Query', albums: { __typename?: 'AlbumConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Album', id: number, name: string, spotifyGid: string, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null }> } };
+export type GetAlbumsTestQuery = { __typename?: 'Query', albums: { __typename?: 'AlbumConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Album', id: number, name: string, spotifyGid: string | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null }> } };
 
 export type GetPlaylistsTestQueryVariables = Exact<{
   enabled?: InputMaybe<Scalars['Boolean']['input']>;
@@ -1484,7 +1497,7 @@ export type GetSongsTestQueryVariables = Exact<{
 }>;
 
 
-export type GetSongsTestQuery = { __typename?: 'Query', songs: { __typename?: 'SongConnection', totalCount: number, edges: Array<{ __typename?: 'Song', id: number, name: string, gid: string, primaryArtist: string, primaryArtistId: number, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null } } };
+export type GetSongsTestQuery = { __typename?: 'Query', songs: { __typename?: 'SongConnection', totalCount: number, edges: Array<{ __typename?: 'Song', id: number, name: string, gid: string | null, primaryArtist: string, primaryArtistId: number, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string | null }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null } } };
 
 export type TogglePlaylistTestMutationVariables = Exact<{
   playlistId: Scalars['Int']['input'];
@@ -1516,6 +1529,9 @@ export const CreatePlaylistDocument = {"kind":"Document","definitions":[{"kind":
 export const SyncAllTrackedArtistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SyncAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"syncAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<SyncAllTrackedArtistsMutation, SyncAllTrackedArtistsMutationVariables>;
 export const DownloadAllTrackedArtistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DownloadAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"downloadAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DownloadAllTrackedArtistsMutation, DownloadAllTrackedArtistsMutationVariables>;
 export const DownloadAllPlaylistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DownloadAllPlaylists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"downloadAllPlaylists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DownloadAllPlaylistsMutation, DownloadAllPlaylistsMutationVariables>;
+export const CatalogSearchDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"CatalogSearch"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"query"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"types"}},"type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"limit"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"catalogSearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"query"},"value":{"kind":"Variable","name":{"kind":"Name","value":"query"}}},{"kind":"Argument","name":{"kind":"Name","value":"types"},"value":{"kind":"Variable","name":{"kind":"Name","value":"types"}}},{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"Variable","name":{"kind":"Name","value":"limit"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"artists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"providerId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"externalUrl"}},{"kind":"Field","name":{"kind":"Name","value":"inLibrary"}},{"kind":"Field","name":{"kind":"Name","value":"localId"}},{"kind":"Field","name":{"kind":"Name","value":"isTracked"}}]}},{"kind":"Field","name":{"kind":"Name","value":"albums"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"providerId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"externalUrl"}},{"kind":"Field","name":{"kind":"Name","value":"artistName"}},{"kind":"Field","name":{"kind":"Name","value":"artistProviderId"}},{"kind":"Field","name":{"kind":"Name","value":"releaseDate"}},{"kind":"Field","name":{"kind":"Name","value":"albumType"}},{"kind":"Field","name":{"kind":"Name","value":"totalTracks"}},{"kind":"Field","name":{"kind":"Name","value":"inLibrary"}},{"kind":"Field","name":{"kind":"Name","value":"localId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"tracks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"providerId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"externalUrl"}},{"kind":"Field","name":{"kind":"Name","value":"artistName"}},{"kind":"Field","name":{"kind":"Name","value":"artistProviderId"}},{"kind":"Field","name":{"kind":"Name","value":"albumName"}},{"kind":"Field","name":{"kind":"Name","value":"albumProviderId"}},{"kind":"Field","name":{"kind":"Name","value":"durationMs"}},{"kind":"Field","name":{"kind":"Name","value":"inLibrary"}},{"kind":"Field","name":{"kind":"Name","value":"localId"}}]}}]}}]}}]} as unknown as DocumentNode<CatalogSearchQuery, CatalogSearchQueryVariables>;
+export const ImportArtistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ImportArtist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"deezerId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"importArtist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"deezerId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"deezerId"}}},{"kind":"Argument","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"artist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isTracked"}}]}}]}}]}}]} as unknown as DocumentNode<ImportArtistMutation, ImportArtistMutationVariables>;
+export const ImportAlbumDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ImportAlbum"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"deezerId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"importAlbum"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"deezerId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"deezerId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<ImportAlbumMutation, ImportAlbumMutationVariables>;
 export const GetLibraryStatsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetLibraryStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"libraryStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"trackedArtists"}},{"kind":"Field","name":{"kind":"Name","value":"desiredSongs"}},{"kind":"Field","name":{"kind":"Name","value":"desiredDownloaded"}},{"kind":"Field","name":{"kind":"Name","value":"desiredMissing"}},{"kind":"Field","name":{"kind":"Name","value":"desiredFailed"}},{"kind":"Field","name":{"kind":"Name","value":"desiredUnavailable"}},{"kind":"Field","name":{"kind":"Name","value":"desiredCompletionPercentage"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbumsDownloaded"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbumsPartial"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbumsMissing"}},{"kind":"Field","name":{"kind":"Name","value":"desiredAlbumCompletionPercentage"}},{"kind":"Field","name":{"kind":"Name","value":"totalArtists"}},{"kind":"Field","name":{"kind":"Name","value":"totalSongs"}},{"kind":"Field","name":{"kind":"Name","value":"downloadedSongs"}},{"kind":"Field","name":{"kind":"Name","value":"missingSongs"}},{"kind":"Field","name":{"kind":"Name","value":"failedSongs"}},{"kind":"Field","name":{"kind":"Name","value":"unavailableSongs"}},{"kind":"Field","name":{"kind":"Name","value":"totalAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"downloadedAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"partialAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"missingAlbums"}},{"kind":"Field","name":{"kind":"Name","value":"songCompletionPercentage"}},{"kind":"Field","name":{"kind":"Name","value":"albumCompletionPercentage"}}]}}]}}]} as unknown as DocumentNode<GetLibraryStatsQuery, GetLibraryStatsQueryVariables>;
 export const GetFallbackMetricsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetFallbackMetrics"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"days"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"fallbackMetrics"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"days"},"value":{"kind":"Variable","name":{"kind":"Name","value":"days"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalAttempts"}},{"kind":"Field","name":{"kind":"Name","value":"totalSuccesses"}},{"kind":"Field","name":{"kind":"Name","value":"totalFailures"}},{"kind":"Field","name":{"kind":"Name","value":"successRate"}},{"kind":"Field","name":{"kind":"Name","value":"timeSeries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"timestamp"}},{"kind":"Field","name":{"kind":"Name","value":"value"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}},{"kind":"Field","name":{"kind":"Name","value":"failureReasons"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}}]}}]}}]} as unknown as DocumentNode<GetFallbackMetricsQuery, GetFallbackMetricsQueryVariables>;
 export const DownloadUrlDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DownloadUrl"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"downloadUrl"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}},{"kind":"Argument","name":{"kind":"Name","value":"autoTrackArtists"},"value":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"artist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"gid"}},{"kind":"Field","name":{"kind":"Name","value":"isTracked"}},{"kind":"Field","name":{"kind":"Name","value":"addedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastSynced"}}]}},{"kind":"Field","name":{"kind":"Name","value":"album"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyGid"}},{"kind":"Field","name":{"kind":"Name","value":"totalTracks"}},{"kind":"Field","name":{"kind":"Name","value":"wanted"}},{"kind":"Field","name":{"kind":"Name","value":"downloaded"}},{"kind":"Field","name":{"kind":"Name","value":"albumType"}},{"kind":"Field","name":{"kind":"Name","value":"albumGroup"}},{"kind":"Field","name":{"kind":"Name","value":"artist"}},{"kind":"Field","name":{"kind":"Name","value":"artistId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"playlist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"url"}},{"kind":"Field","name":{"kind":"Name","value":"enabled"}},{"kind":"Field","name":{"kind":"Name","value":"autoTrackArtists"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}}]}}]}}]}}]} as unknown as DocumentNode<DownloadUrlMutation, DownloadUrlMutationVariables>;
@@ -1543,7 +1559,6 @@ export const DeletePlaylistDocument = {"kind":"Document","definitions":[{"kind":
 export const GetSpotifyPlaylistInfoDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSpotifyPlaylistInfo"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"spotifyPlaylistInfo"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"ownerName"}},{"kind":"Field","name":{"kind":"Name","value":"trackCount"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}}]}}]}}]} as unknown as DocumentNode<GetSpotifyPlaylistInfoQuery, GetSpotifyPlaylistInfoQueryVariables>;
 export const GetSongsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSongs"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"first"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"after"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"artistId"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"downloaded"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"unavailable"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"sortBy"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"sortDirection"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"search"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"maxBitrate"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"songs"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"Variable","name":{"kind":"Name","value":"first"}}},{"kind":"Argument","name":{"kind":"Name","value":"after"},"value":{"kind":"Variable","name":{"kind":"Name","value":"after"}}},{"kind":"Argument","name":{"kind":"Name","value":"artistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"artistId"}}},{"kind":"Argument","name":{"kind":"Name","value":"downloaded"},"value":{"kind":"Variable","name":{"kind":"Name","value":"downloaded"}}},{"kind":"Argument","name":{"kind":"Name","value":"unavailable"},"value":{"kind":"Variable","name":{"kind":"Name","value":"unavailable"}}},{"kind":"Argument","name":{"kind":"Name","value":"sortBy"},"value":{"kind":"Variable","name":{"kind":"Name","value":"sortBy"}}},{"kind":"Argument","name":{"kind":"Name","value":"sortDirection"},"value":{"kind":"Variable","name":{"kind":"Name","value":"sortDirection"}}},{"kind":"Argument","name":{"kind":"Name","value":"search"},"value":{"kind":"Variable","name":{"kind":"Name","value":"search"}}},{"kind":"Argument","name":{"kind":"Name","value":"maxBitrate"},"value":{"kind":"Variable","name":{"kind":"Name","value":"maxBitrate"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"gid"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtist"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtistId"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtistGid"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"failedCount"}},{"kind":"Field","name":{"kind":"Name","value":"bitrate"}},{"kind":"Field","name":{"kind":"Name","value":"unavailable"}},{"kind":"Field","name":{"kind":"Name","value":"filePath"}},{"kind":"Field","name":{"kind":"Name","value":"downloaded"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUri"}},{"kind":"Field","name":{"kind":"Name","value":"downloadProvider"}}]}},{"kind":"Field","name":{"kind":"Name","value":"pageInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasNextPage"}},{"kind":"Field","name":{"kind":"Name","value":"hasPreviousPage"}},{"kind":"Field","name":{"kind":"Name","value":"startCursor"}},{"kind":"Field","name":{"kind":"Name","value":"endCursor"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}}]}}]}}]} as unknown as DocumentNode<GetSongsQuery, GetSongsQueryVariables>;
 export const GetSongDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSong"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"song"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"gid"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtist"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtistId"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"failedCount"}},{"kind":"Field","name":{"kind":"Name","value":"bitrate"}},{"kind":"Field","name":{"kind":"Name","value":"unavailable"}},{"kind":"Field","name":{"kind":"Name","value":"filePath"}},{"kind":"Field","name":{"kind":"Name","value":"downloaded"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUri"}},{"kind":"Field","name":{"kind":"Name","value":"downloadProvider"}}]}}]}}]} as unknown as DocumentNode<GetSongQuery, GetSongQueryVariables>;
-export const SpotifySearchDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"SpotifySearch"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"query"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"types"}},"type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"limit"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"spotifySearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"query"},"value":{"kind":"Variable","name":{"kind":"Name","value":"query"}}},{"kind":"Argument","name":{"kind":"Name","value":"types"},"value":{"kind":"Variable","name":{"kind":"Name","value":"types"}}},{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"Variable","name":{"kind":"Name","value":"limit"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"artists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUri"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"genres"}},{"kind":"Field","name":{"kind":"Name","value":"inLibrary"}},{"kind":"Field","name":{"kind":"Name","value":"localId"}},{"kind":"Field","name":{"kind":"Name","value":"isTracked"}}]}},{"kind":"Field","name":{"kind":"Name","value":"albums"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUri"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"artistName"}},{"kind":"Field","name":{"kind":"Name","value":"artistId"}},{"kind":"Field","name":{"kind":"Name","value":"releaseDate"}},{"kind":"Field","name":{"kind":"Name","value":"albumType"}},{"kind":"Field","name":{"kind":"Name","value":"totalTracks"}},{"kind":"Field","name":{"kind":"Name","value":"inLibrary"}},{"kind":"Field","name":{"kind":"Name","value":"localId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"tracks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUri"}},{"kind":"Field","name":{"kind":"Name","value":"artistName"}},{"kind":"Field","name":{"kind":"Name","value":"artistId"}},{"kind":"Field","name":{"kind":"Name","value":"albumName"}},{"kind":"Field","name":{"kind":"Name","value":"albumId"}},{"kind":"Field","name":{"kind":"Name","value":"durationMs"}},{"kind":"Field","name":{"kind":"Name","value":"inLibrary"}},{"kind":"Field","name":{"kind":"Name","value":"localId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"playlists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUri"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"ownerName"}},{"kind":"Field","name":{"kind":"Name","value":"trackCount"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"inLibrary"}},{"kind":"Field","name":{"kind":"Name","value":"localId"}}]}}]}}]}}]} as unknown as DocumentNode<SpotifySearchQuery, SpotifySearchQueryVariables>;
 export const GetSystemHealthDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSystemHealth"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"systemHealth"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"canDownload"}},{"kind":"Field","name":{"kind":"Name","value":"downloadBlockerReason"}},{"kind":"Field","name":{"kind":"Name","value":"authentication"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cookiesValid"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesErrorType"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesErrorMessage"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesExpireInDays"}},{"kind":"Field","name":{"kind":"Name","value":"poTokenConfigured"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyAuthMode"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyTokenValid"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyTokenExpired"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyTokenExpiresInHours"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyTokenErrorMessage"}}]}}]}}]}}]} as unknown as DocumentNode<GetSystemHealthQuery, GetSystemHealthQueryVariables>;
 export const GetQueueStatusDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetQueueStatus"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"queueStatus"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalPendingTasks"}},{"kind":"Field","name":{"kind":"Name","value":"taskCounts"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"taskName"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}},{"kind":"Field","name":{"kind":"Name","value":"pendingTasks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"taskId"}},{"kind":"Field","name":{"kind":"Name","value":"taskName"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"entityName"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"queueSize"}}]}}]}}]} as unknown as DocumentNode<GetQueueStatusQuery, GetQueueStatusQueryVariables>;
 export const CancelAllPendingTasksDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CancelAllPendingTasks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cancelAllPendingTasks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<CancelAllPendingTasksMutation, CancelAllPendingTasksMutationVariables>;

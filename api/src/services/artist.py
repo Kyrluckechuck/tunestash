@@ -206,6 +206,57 @@ class ArtistService(BaseService[Artist]):
             total_count,
         )
 
+    async def import_from_deezer(self, deezer_id: int, name: str) -> MutationResult:
+        """Import an artist from Deezer search and start tracking."""
+        try:
+            existing = await sync_to_async(
+                lambda: self.model.objects.filter(
+                    Q(deezer_id=deezer_id) | Q(name__iexact=name)
+                ).first()
+            )()
+
+            if existing:
+                updated_fields = []
+                if not existing.deezer_id:
+                    existing.deezer_id = deezer_id
+                    updated_fields.append("deezer_id")
+                if not existing.tracked:
+                    existing.tracked = True
+                    updated_fields.append("tracked")
+                if updated_fields:
+                    await existing.asave()
+
+                from library_manager.tasks import fetch_artist_albums_from_deezer
+
+                await sync_to_async(fetch_artist_albums_from_deezer.delay)(existing.id)
+
+                return MutationResult(
+                    success=True,
+                    message=f'Now tracking "{existing.name}"',
+                    artist=await self._to_graphql_type_async(existing),
+                )
+
+            django_artist = await sync_to_async(self.model.objects.create)(
+                name=name,
+                deezer_id=deezer_id,
+                tracked=True,
+            )
+
+            from library_manager.tasks import fetch_artist_albums_from_deezer
+
+            await sync_to_async(fetch_artist_albums_from_deezer.delay)(django_artist.id)
+
+            return MutationResult(
+                success=True,
+                message=f'Imported and tracking "{name}"',
+                artist=await self._to_graphql_type_async(django_artist),
+            )
+        except Exception as e:
+            return MutationResult(
+                success=False,
+                message=f"Failed to import artist: {str(e)}",
+            )
+
     async def track_artist(self, artist_id: int) -> MutationResult:
         try:
             django_artist = await self.model.objects.aget(id=artist_id)

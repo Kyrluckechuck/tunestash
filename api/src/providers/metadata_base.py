@@ -28,6 +28,7 @@ class AlbumResult:
     total_tracks: int = 0
     release_date: Optional[str] = None
     album_type: Optional[str] = None
+    artist_deezer_id: Optional[int] = None
 
 
 @dataclass
@@ -43,6 +44,8 @@ class TrackResult:
     duration_ms: int = 0
     track_number: Optional[int] = None
     disc_number: Optional[int] = None
+    artist_deezer_id: Optional[int] = None
+    album_deezer_id: Optional[int] = None
 
 
 class MetadataProvider(ABC):

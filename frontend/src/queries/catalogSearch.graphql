@@ -1,0 +1,57 @@
+query CatalogSearch($query: String!, $types: [String!], $limit: Int) {
+  catalogSearch(query: $query, types: $types, limit: $limit) {
+    artists {
+      providerId
+      name
+      imageUrl
+      externalUrl
+      inLibrary
+      localId
+      isTracked
+    }
+    albums {
+      providerId
+      name
+      imageUrl
+      externalUrl
+      artistName
+      artistProviderId
+      releaseDate
+      albumType
+      totalTracks
+      inLibrary
+      localId
+    }
+    tracks {
+      providerId
+      name
+      externalUrl
+      artistName
+      artistProviderId
+      albumName
+      albumProviderId
+      durationMs
+      inLibrary
+      localId
+    }
+  }
+}
+
+mutation ImportArtist($deezerId: Int!, $name: String!) {
+  importArtist(deezerId: $deezerId, name: $name) {
+    success
+    message
+    artist {
+      id
+      name
+      isTracked
+    }
+  }
+}
+
+mutation ImportAlbum($deezerId: Int!) {
+  importAlbum(deezerId: $deezerId) {
+    success
+    message
+  }
+}

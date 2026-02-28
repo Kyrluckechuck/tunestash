@@ -3,17 +3,17 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { Navbar } from '../Navbar';
 import { DownloadModalProvider } from '../ui/DownloadModalProvider';
-import { SpotifySearchProvider } from '../ui/SpotifySearchProvider';
+import { SearchProvider } from '../ui/SearchProvider';
 import { ToastProvider } from '../ui/ToastProvider';
 
 const renderNavbar = () => {
   return render(
     <ToastProvider>
-      <SpotifySearchProvider>
+      <SearchProvider>
         <DownloadModalProvider>
           <Navbar />
         </DownloadModalProvider>
-      </SpotifySearchProvider>
+      </SearchProvider>
     </ToastProvider>
   );
 };

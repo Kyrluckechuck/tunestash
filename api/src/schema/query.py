@@ -8,6 +8,10 @@ from ..graphql_types.models import (
     Artist,
     ArtistConnection,
     AuthenticationStatus,
+    CatalogSearchAlbum,
+    CatalogSearchArtist,
+    CatalogSearchResults,
+    CatalogSearchTrack,
     ExternalListConnection,
     ExternalListType,
     FailureReasonCount,
@@ -30,11 +34,6 @@ from ..graphql_types.models import (
     SongConnection,
     SpotifyPlaylistInfo,
     SpotifyRateLimitStatus,
-    SpotifySearchAlbum,
-    SpotifySearchArtist,
-    SpotifySearchPlaylist,
-    SpotifySearchResults,
-    SpotifySearchTrack,
     StorageStatus,
     SystemHealth,
     TaskCount,
@@ -428,40 +427,36 @@ class Query:  # pylint: disable=too-many-public-methods
         )
 
     @strawberry.field
-    async def spotify_search(
+    async def catalog_search(
         self,
         query: str,
         types: Optional[List[str]] = None,
         limit: Optional[int] = 10,
-    ) -> SpotifySearchResults:
+    ) -> CatalogSearchResults:
         """
-        Search Spotify's catalog for artists, albums, tracks, and playlists.
+        Search for artists, albums, and tracks via Deezer.
 
-        This searches the Spotify API directly, not the local database.
         Results include an 'in_library' flag to indicate if items already exist locally.
 
         Args:
             query: Search query string
-            types: List of types to search ('artist', 'album', 'track', 'playlist').
+            types: List of types to search ('artist', 'album', 'track').
                    Defaults to all types.
-            limit: Max results per type (default 10, max 50)
+            limit: Max results per type (default 10)
         """
-        results = await services.spotify_search.search(
+        results = await services.catalog_search.search(
             query=query,
             types=types,
             limit=limit or 10,
         )
 
-        # Convert service dataclasses to GraphQL types
-        return SpotifySearchResults(
+        return CatalogSearchResults(
             artists=[
-                SpotifySearchArtist(
-                    id=a.id,
+                CatalogSearchArtist(
+                    provider_id=a.provider_id,
                     name=a.name,
-                    spotify_uri=a.spotify_uri,
                     image_url=a.image_url,
-                    follower_count=a.follower_count,
-                    genres=a.genres,
+                    external_url=a.external_url,
                     in_library=a.in_library,
                     local_id=a.local_id,
                     is_tracked=a.is_tracked,
@@ -469,13 +464,13 @@ class Query:  # pylint: disable=too-many-public-methods
                 for a in results.artists
             ],
             albums=[
-                SpotifySearchAlbum(
-                    id=a.id,
+                CatalogSearchAlbum(
+                    provider_id=a.provider_id,
                     name=a.name,
-                    spotify_uri=a.spotify_uri,
                     image_url=a.image_url,
+                    external_url=a.external_url,
                     artist_name=a.artist_name,
-                    artist_id=a.artist_id,
+                    artist_provider_id=a.artist_provider_id,
                     release_date=a.release_date,
                     album_type=a.album_type,
                     total_tracks=a.total_tracks,
@@ -485,33 +480,19 @@ class Query:  # pylint: disable=too-many-public-methods
                 for a in results.albums
             ],
             tracks=[
-                SpotifySearchTrack(
-                    id=t.id,
+                CatalogSearchTrack(
+                    provider_id=t.provider_id,
                     name=t.name,
-                    spotify_uri=t.spotify_uri,
+                    external_url=t.external_url,
                     artist_name=t.artist_name,
-                    artist_id=t.artist_id,
+                    artist_provider_id=t.artist_provider_id,
                     album_name=t.album_name,
-                    album_id=t.album_id,
+                    album_provider_id=t.album_provider_id,
                     duration_ms=t.duration_ms,
                     in_library=t.in_library,
                     local_id=t.local_id,
                 )
                 for t in results.tracks
-            ],
-            playlists=[
-                SpotifySearchPlaylist(
-                    id=p.id,
-                    name=p.name,
-                    spotify_uri=p.spotify_uri,
-                    image_url=p.image_url,
-                    owner_name=p.owner_name,
-                    track_count=p.track_count,
-                    description=p.description,
-                    in_library=p.in_library,
-                    local_id=p.local_id,
-                )
-                for p in results.playlists
             ],
         )
 

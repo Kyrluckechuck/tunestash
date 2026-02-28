@@ -91,21 +91,21 @@ export function useEntityData(entityType: string, entityId: string) {
         entity = {
           id: artistQuery.data.artist.id.toString(),
           name: artistQuery.data.artist.name,
-          gid: artistQuery.data.artist.gid,
+          gid: artistQuery.data.artist.gid ?? undefined,
           url: `https://open.spotify.com/artist/${artistQuery.data.artist.gid}`,
         };
       } else if (upperEntityType === 'ALBUM' && albumQuery.data?.album) {
         entity = {
           id: albumQuery.data.album.id.toString(),
           name: albumQuery.data.album.name,
-          gid: albumQuery.data.album.spotifyGid,
+          gid: albumQuery.data.album.spotifyGid ?? undefined,
           url: `https://open.spotify.com/album/${albumQuery.data.album.spotifyGid}`,
         };
       } else if (upperEntityType === 'TRACK' && songQuery.data?.song) {
         entity = {
           id: songQuery.data.song.id.toString(),
           name: songQuery.data.song.name,
-          gid: songQuery.data.song.gid,
+          gid: songQuery.data.song.gid ?? undefined,
           primaryArtist: songQuery.data.song.primaryArtist,
         };
       }

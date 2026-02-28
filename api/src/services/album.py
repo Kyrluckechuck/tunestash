@@ -1,4 +1,5 @@
 # mypy: disable-error-code=attr-defined
+import logging
 from typing import Any, List, Optional, Tuple
 
 from django.db.models import F, Q
@@ -7,15 +8,101 @@ from asgiref.sync import sync_to_async
 from celery.result import AsyncResult
 
 from library_manager.models import Album as DjangoAlbum
+from library_manager.models import Artist as DjangoArtist
 
 from ..graphql_types.models import Album, MutationResult
 from .base import BaseService
+
+logger = logging.getLogger(__name__)
 
 
 class AlbumService(BaseService[Album]):
     def __init__(self) -> None:
         super().__init__()
         self.model = DjangoAlbum
+
+    async def import_from_deezer(self, deezer_id: int) -> MutationResult:
+        """Import an album from Deezer into the library."""
+        try:
+            from ..providers.deezer import DeezerMetadataProvider
+
+            provider = DeezerMetadataProvider()
+            album_data = await sync_to_async(provider.get_album)(deezer_id)
+            if not album_data:
+                return MutationResult(
+                    success=False, message="Album not found on Deezer"
+                )
+
+            # Find or create the parent artist
+            artist_deezer_id = album_data.artist_deezer_id
+            artist = await sync_to_async(
+                lambda: (
+                    DjangoArtist.objects.filter(
+                        Q(deezer_id=artist_deezer_id)
+                        | Q(name__iexact=album_data.artist_name)
+                    ).first()
+                    if artist_deezer_id
+                    else DjangoArtist.objects.filter(
+                        name__iexact=album_data.artist_name
+                    ).first()
+                )
+            )()
+
+            if not artist:
+                artist = await sync_to_async(DjangoArtist.objects.create)(
+                    name=album_data.artist_name,
+                    deezer_id=artist_deezer_id,
+                )
+            elif artist_deezer_id and not artist.deezer_id:
+                artist.deezer_id = artist_deezer_id
+                await artist.asave()
+
+            # Check if album already exists
+            existing = await sync_to_async(
+                lambda: DjangoAlbum.objects.filter(
+                    Q(deezer_id=deezer_id)
+                    | Q(name__iexact=album_data.name, artist=artist)
+                ).first()
+            )()
+
+            if existing:
+                updated = []
+                if not existing.deezer_id:
+                    existing.deezer_id = deezer_id
+                    updated.append("deezer_id")
+                if not existing.wanted:
+                    existing.wanted = True
+                    updated.append("wanted")
+                if updated:
+                    await existing.asave()
+                return MutationResult(
+                    success=True,
+                    message=f'Album "{existing.name}" marked as wanted',
+                    album=await sync_to_async(self._to_graphql_type)(existing),
+                )
+
+            # Create new album
+            django_album = await sync_to_async(DjangoAlbum.objects.create)(
+                name=album_data.name,
+                deezer_id=deezer_id,
+                artist=artist,
+                spotify_uri="",
+                total_tracks=album_data.total_tracks,
+                album_type=album_data.album_type,
+                wanted=True,
+            )
+
+            return MutationResult(
+                success=True,
+                message=f'Imported "{album_data.name}" by {album_data.artist_name}',
+                album=await sync_to_async(self._to_graphql_type)(django_album),
+            )
+        except Exception as e:
+            logger.exception("Failed to import album from Deezer")
+            return MutationResult(
+                success=False,
+                message=f"Failed to import album: {str(e)}",
+            )
 
     async def get_by_id(self, id: str) -> Optional[Album]:
         try:
