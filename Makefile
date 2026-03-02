@@ -352,16 +352,13 @@ format: fix-lint-api format-frontend
 # Auto-fix linting issues (includes formatting)
 fix-lint: fix-lint-api fix-lint-frontend
 
-fix-lint-api: fix-lint-api-black fix-lint-api-isort fix-lint-api-flake8
+fix-lint-api: fix-lint-api-black fix-lint-api-isort
 
 fix-lint-api-black:
 	cd api && python -m black . --exclude=.venv,__pycache__,node_modules
 
 fix-lint-api-isort:
 	cd api && python -m isort . --profile black
-
-fix-lint-api-flake8:
-	cd api && python -c "import re; import pathlib; [open(f, 'w').write(re.sub(r'\[offset : offset', '[offset:offset', open(f).read())) for f in pathlib.Path('.').rglob('*.py') if 'offset : offset' in open(f).read()]"
 
 fix-lint-frontend:
 	cd frontend && yarn lint:fix

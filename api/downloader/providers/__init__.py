@@ -22,6 +22,7 @@ from .qobuz import QobuzProvider
 from .tidal import TidalProvider
 from .tidal_endpoints import TidalEndpoint, TidalEndpointManager
 from .validation import AudioFormat, AudioInfo, AudioValidator, ValidationResult
+from .youtube import YouTubeMusicProvider
 
 __all__ = [
     # Base classes and types
@@ -47,6 +48,8 @@ __all__ = [
     "AudioInfo",
     "AudioValidator",
     "ValidationResult",
+    # YouTube provider
+    "YouTubeMusicProvider",
     # Fallback orchestrator
     "FallbackDownloader",
     "FallbackDownloadResult",

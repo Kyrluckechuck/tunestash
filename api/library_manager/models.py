@@ -224,6 +224,7 @@ class DownloadProvider(IntegerChoices):
     SPOTDL = 1, "spotdl (YouTube Music)"
     TIDAL = 2, "Tidal"
     QOBUZ = 3, "Qobuz"
+    YOUTUBE = 4, "YouTube Music (yt-dlp)"
 
 
 class UpgradeAttemptResult(IntegerChoices):

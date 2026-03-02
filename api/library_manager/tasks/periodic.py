@@ -1,6 +1,7 @@
 """Periodic tasks for the Spotify library manager."""
 
 import time
+import unicodedata
 from typing import Any, Optional, Set
 
 from django.utils import timezone
@@ -26,6 +27,17 @@ _API_CALL_DELAY_SECONDS = 1.0
 
 # Max albums to backfill metadata for per run (to avoid API quota issues)
 _MAX_METADATA_BACKFILL_PER_RUN = 20
+
+# Deezer-based sync constants
+_DEEZER_ARTIST_CHECK_BATCH_SIZE = 50
+_DEEZER_ALBUMS_TO_CHECK = 20
+_MAX_PENDING_ARTIST_SYNCS = 100
+
+
+def _normalize_name(name: str) -> str:
+    """Strip accents and lowercase for fuzzy name comparison."""
+    nfkd = unicodedata.normalize("NFKD", name)
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 
 def backfill_album_metadata(limit: int = _MAX_METADATA_BACKFILL_PER_RUN) -> int:
@@ -90,13 +102,13 @@ def backfill_album_metadata(limit: int = _MAX_METADATA_BACKFILL_PER_RUN) -> int:
 
 
 def get_albums_with_pending_tasks() -> Set[str]:
-    """Get set of album spotify_gids that already have pending/running download tasks.
+    """Get set of album entity_ids (DB IDs) that have pending/running download tasks.
 
     This prevents queueing duplicate download tasks for the same album when
     the periodic task runs multiple times before previous downloads complete.
 
     Returns:
-        Set of spotify_gid strings for albums with active tasks
+        Set of entity_id strings for albums with active tasks
     """
     pending_tasks = TaskHistory.objects.filter(
         entity_type="ALBUM",
@@ -238,34 +250,20 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
     from tracked artists, and queues them for download. Runs hourly.
 
     Skips albums that already have pending/running download tasks to prevent
-    duplicate task queuing.
+    duplicate task queuing. Works for both Spotify and Deezer-only albums.
     """
-    # Check if we're rate-limited before doing any work
-    # This prevents queueing tasks that will immediately fail
-    from ..models import SpotifyRateLimitState
-
-    rate_status = SpotifyRateLimitState.get_status()
-    if rate_status["is_rate_limited"]:
-        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
-        logger.info(
-            f"Skipping album queue - Spotify API rate limited for {seconds_remaining}s"
-        )
-        return
-
-    # Maximum albums to process per run
     max_albums_per_run = 50
 
     try:
         logger.info("Starting periodic queue of missing albums for tracked artists")
 
-        # Get albums that already have pending/running tasks to avoid duplicates
+        # Get albums that already have pending/running tasks (uses DB IDs)
         albums_with_pending_tasks = get_albums_with_pending_tasks()
         if albums_with_pending_tasks:
             logger.info(
                 f"Found {len(albums_with_pending_tasks)} albums with pending/running tasks, will skip"
             )
 
-        # Find all missing albums for tracked artists
         missing_albums = (
             Album.objects.filter(
                 artist__tracked=True,
@@ -280,8 +278,8 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
         queued_count = 0
         skipped_count = 0
         for album in missing_albums.iterator():
-            # Skip if album already has a pending/running task
-            if album.spotify_gid in albums_with_pending_tasks:
+            # Compare using album DB ID (entity_id is now str(album.id))
+            if str(album.id) in albums_with_pending_tasks:
                 skipped_count += 1
                 continue
 
@@ -306,7 +304,6 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
                 )
 
         # Use remaining capacity to backfill metadata for albums with type=None
-        # This handles albums created from playlist syncs missing Spotify metadata
         remaining_capacity = max_albums_per_run - queued_count
         if remaining_capacity > 0:
             backfilled = backfill_album_metadata(limit=remaining_capacity)
@@ -321,70 +318,33 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
         )
 
 
-# Maximum artists to check per run (hard cap)
-_ARTIST_CHECK_BATCH_SIZE = 50
-
-# Soft cap on API calls before stopping artist checks
-# Allows processing more artists when few have changes, but stops early
-# when many full syncs are triggered to leave headroom for other tasks
-_ARTIST_CHECK_API_CALL_SOFT_CAP = 75
-
-# Number of recent albums to fetch per artist for change detection
-# Fetching 20 costs the same as fetching 1 (1 API call), but is more robust
-_ALBUMS_TO_CHECK = 20
-
-# Maximum number of pending/running artist sync tasks before we stop queueing more
-# This provides backpressure during initial population or high-load periods,
-# preventing unbounded queue growth when we can't process tasks fast enough
-_MAX_PENDING_ARTIST_SYNCS = 100
-
-
 @celery_app.task(
     bind=True, name="library_manager.tasks.sync_tracked_artists_metadata"
 )  # Scheduled via Celery Beat - Every hour at :30
 def sync_tracked_artists_metadata(
-    self: Any, batch_size: int = _ARTIST_CHECK_BATCH_SIZE
+    self: Any, batch_size: int = _DEEZER_ARTIST_CHECK_BATCH_SIZE
 ) -> None:
     """
     Periodically sync metadata for tracked artists to discover new releases.
 
-    Uses a two-phase approach to minimize API usage:
-    1. Lightweight check: Fetch recent album IDs (1 API call per artist, 20 albums)
-    2. Compare against DB: Check if any fetched albums are missing
-    3. Full sync: Only for artists with new/missing albums
+    Uses Deezer API to check for new albums. For each tracked artist:
+    1. If no deezer_id: search Deezer by name and link if found
+    2. Fetch recent albums from Deezer
+    3. Compare against DB albums (by deezer_id or name match)
+    4. Queue full Deezer sync for artists with new albums
 
-    This dramatically reduces API calls since most artists (~95-99%) won't have
-    new releases on any given day. Instead of 2+ API calls per artist for full sync,
-    we use 1 call for the check and only do full syncs for the ~1-5% that changed.
-
-    With default batch_size=50 and soft cap of 75 API calls:
-    - Checks up to 50 artists, but stops early if sustained calls reach 75
-    - When few artists have changes: processes all 50 (~50 calls)
-    - When many have changes: stops early to leave headroom for full syncs
-    - Adaptive approach maximizes throughput while preventing rate limit hits
-
-    All API calls are tracked via SpotifyRateLimitState to coordinate with other
-    tasks and prevent rate limit violations.
+    Deezer's generous rate limits (~10 req/s) allow checking many artists per run.
     """
-    from ..models import SpotifyRateLimitState
-    from .artist import fetch_all_albums_for_artist
-    from .core import spotdl_wrapper
+    from django.db.models import Q
 
-    # Check if we're rate-limited before doing any work
-    rate_status = SpotifyRateLimitState.get_status()
-    if rate_status["is_rate_limited"]:
-        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
-        logger.info(
-            f"Skipping artist metadata sync - Spotify API rate limited for {seconds_remaining}s"
-        )
-        return
+    from src.providers.deezer import DeezerMetadataProvider
+
+    from .deezer import fetch_artist_albums_from_deezer
 
     try:
-        # Backpressure: check if there are too many pending artist syncs already
-        # This prevents unbounded queue growth during initial population
-        # task_id format is "{task_name}-{hash}", so we use startswith to match
+        # Backpressure: check pending artist syncs
         pending_syncs = TaskHistory.objects.filter(
-            task_id__startswith="library_manager.tasks.fetch_all_albums_for_artist",
+            task_id__startswith="library_manager.tasks.fetch_artist_albums_from_deezer",
             status__in=["PENDING", "RUNNING"],
         ).count()
 
@@ -395,7 +355,6 @@ def sync_tracked_artists_metadata(
             )
             return
 
-        # Get tracked artists ordered by last_synced_at (oldest/never synced first)
         artists_to_check = Artist.objects.filter(tracked=True).order_by(
             "last_synced_at", "id"
         )[:batch_size]
@@ -406,95 +365,122 @@ def sync_tracked_artists_metadata(
 
         total_count = Artist.objects.filter(tracked=True).count()
         logger.info(
-            f"Starting periodic artist metadata sync: checking {len(artists_to_check)} of {total_count} tracked artists"
+            f"Starting Deezer-based artist metadata sync: "
+            f"checking {len(artists_to_check)} of {total_count} tracked artists"
         )
 
+        provider = DeezerMetadataProvider()
         queued_count = 0
         skipped_unchanged = 0
         skipped_pending = 0
+        linked_count = 0
         checked_count = 0
 
         for artist in artists_to_check:
-            # Soft cap: stop if we've used too much of the rate limit budget
-            # This leaves headroom for full syncs and other tasks
-            status = SpotifyRateLimitState.get_status()
-            if status["sustained_calls"] >= _ARTIST_CHECK_API_CALL_SOFT_CAP:
-                logger.info(
-                    f"Stopping artist checks early: sustained calls "
-                    f"({status['sustained_calls']}) reached soft cap "
-                    f"({_ARTIST_CHECK_API_CALL_SOFT_CAP})"
-                )
-                break
-
             # Generate deterministic task ID for deduplication
             task_id = generate_task_id(
-                "library_manager.tasks.fetch_all_albums_for_artist", artist.id
+                "library_manager.tasks.fetch_artist_albums_from_deezer", artist.id
             )
 
-            # Skip if task is already queued or running
             is_pending, reason = is_task_pending_or_running(task_id)
             if is_pending:
                 logger.debug(
-                    f"[DEDUP] Skipping artist {artist.name}: task already queued ({reason})"
+                    f"[DEDUP] Skipping artist {artist.name}: "
+                    f"task already queued ({reason})"
                 )
                 skipped_pending += 1
                 continue
 
-            # Rate limiting: check if we need to wait before making API call
-            delay = SpotifyRateLimitState.get_delay_seconds()
-            if delay > 0:
-                logger.debug(f"Rate limit delay: sleeping {delay:.1f}s before API call")
-                time.sleep(delay)
+            # Link Deezer ID if missing (one-time per artist)
+            if not artist.deezer_id:
+                try:
+                    results = provider.search_artists(artist.name, limit=3)
+                    match = next(
+                        (
+                            r
+                            for r in results
+                            if _normalize_name(r.name) == _normalize_name(artist.name)
+                            and r.deezer_id
+                        ),
+                        None,
+                    )
+                    if match and match.deezer_id:
+                        artist.deezer_id = match.deezer_id
+                        artist.save(update_fields=["deezer_id"])
+                        linked_count += 1
+                        logger.info(
+                            f"Linked artist '{artist.name}' to Deezer ID {match.deezer_id}"
+                        )
+                    else:
+                        artist.last_synced_at = timezone.now()
+                        artist.save(update_fields=["last_synced_at"])
+                        skipped_unchanged += 1
+                        continue
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to search Deezer for artist '{artist.name}': {e}"
+                    )
+                    artist.last_synced_at = timezone.now()
+                    artist.save(update_fields=["last_synced_at"])
+                    skipped_unchanged += 1
+                    continue
 
             checked_count += 1
 
-            # Lightweight check: fetch recent album IDs from Spotify (1 API call)
-            recent_album_ids = spotdl_wrapper.downloader.get_artist_recent_album_ids(
-                artist.gid, limit=_ALBUMS_TO_CHECK
-            )
-
-            # Record this API call in the rate limit tracker
-            SpotifyRateLimitState.record_call()
-
-            if recent_album_ids is None:
-                # API call failed, skip this artist for now
-                logger.debug(
-                    f"Failed to check recent albums for {artist.name}, skipping"
+            try:
+                recent_albums = provider.get_artist_albums(
+                    artist.deezer_id, limit=_DEEZER_ALBUMS_TO_CHECK
                 )
+            except Exception as e:
+                logger.debug(f"Failed to fetch Deezer albums for {artist.name}: {e}")
                 continue
 
-            if not recent_album_ids:
-                # Artist has no albums, just update last_synced_at
+            if not recent_albums:
                 artist.last_synced_at = timezone.now()
                 artist.save(update_fields=["last_synced_at"])
                 skipped_unchanged += 1
                 continue
 
-            # Check if any of the fetched albums are missing from our database
-            known_album_ids = set(
-                Album.objects.filter(
-                    artist=artist, spotify_gid__in=recent_album_ids
-                ).values_list("spotify_gid", flat=True)
-            )
-            missing_albums = set(recent_album_ids) - known_album_ids
+            # Check if any fetched albums are missing from our database
+            deezer_album_ids = [
+                a.deezer_id for a in recent_albums if a.deezer_id is not None
+            ]
+            album_names = [a.name for a in recent_albums]
 
-            if missing_albums:
-                # Artist has new releases we don't know about
+            known_albums = Album.objects.filter(
+                Q(artist=artist, deezer_id__in=deezer_album_ids)
+                | Q(artist=artist, name__in=album_names)
+            )
+            known_deezer_ids = set(
+                known_albums.filter(deezer_id__isnull=False).values_list(
+                    "deezer_id", flat=True
+                )
+            )
+            known_names = set(known_albums.values_list("name", flat=True))
+
+            new_album_count = 0
+            for album_data in recent_albums:
+                is_known = (
+                    album_data.deezer_id and album_data.deezer_id in known_deezer_ids
+                ) or album_data.name in known_names
+                if not is_known:
+                    new_album_count += 1
+
+            if new_album_count > 0:
                 logger.info(
-                    f"Artist '{artist.name}' has {len(missing_albums)} new album(s), "
-                    f"queueing full sync"
+                    f"Artist '{artist.name}' has {new_album_count} new album(s), "
+                    f"queueing Deezer sync"
                 )
                 try:
-                    fetch_all_albums_for_artist.apply_async(
+                    fetch_artist_albums_from_deezer.apply_async(
                         args=[artist.id], task_id=task_id
                     )
                     queued_count += 1
                 except Exception as e:
                     logger.warning(
-                        f"Failed to queue sync for artist {artist.name}: {e}"
+                        f"Failed to queue Deezer sync for artist {artist.name}: {e}"
                     )
             else:
-                # All fetched albums are known, no changes
                 artist.last_synced_at = timezone.now()
                 artist.save(update_fields=["last_synced_at"])
                 skipped_unchanged += 1
@@ -502,161 +488,11 @@ def sync_tracked_artists_metadata(
         logger.info(
             f"Artist metadata sync complete: "
             f"checked {checked_count} artists, "
-            f"queued {queued_count} for full sync, "
+            f"queued {queued_count} for Deezer sync, "
+            f"linked {linked_count} new Deezer IDs, "
             f"skipped {skipped_unchanged} unchanged, "
             f"skipped {skipped_pending} with pending tasks"
         )
 
     except Exception as e:
         logger.error(f"Error in sync_tracked_artists_metadata: {e}", exc_info=True)
-
-
-# Number of pages to fetch from New Releases endpoint (50 albums per page)
-# Spotify limits new releases to 100 total, so 2 pages covers everything
-_NEW_RELEASES_PAGES = 2
-
-
-@celery_app.task(
-    bind=True, name="library_manager.tasks.scan_new_releases_for_tracked_artists"
-)  # Scheduled via Celery Beat - Every hour at :00
-def scan_new_releases_for_tracked_artists(
-    self: Any, pages: int = _NEW_RELEASES_PAGES
-) -> None:
-    """
-    Scan Spotify's New Releases for albums from tracked artists.
-
-    This provides fast detection of new music from popular/featured artists by
-    checking Spotify's curated "New Releases" page instead of waiting for the
-    artist to come up in the rotation.
-
-    Complements sync_tracked_artists_metadata:
-    - New Releases scan: Fast detection for featured releases (major artists)
-    - Artist rotation: Complete coverage for all releases (including indie)
-
-    Spotify limits new releases to 100 albums total. With default pages=2:
-    - 2 API calls per hour (covers all 100 new releases)
-    - Immediate detection of tracked artists in featured releases
-    - Triggers artist sync only when new album is found
-    """
-    from ..models import SpotifyRateLimitState
-    from .artist import fetch_all_albums_for_artist
-    from .core import spotdl_wrapper
-
-    # Check if we're rate-limited before doing any work
-    rate_status = SpotifyRateLimitState.get_status()
-    if rate_status["is_rate_limited"]:
-        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
-        logger.info(
-            f"Skipping new releases scan - Spotify API rate limited for {seconds_remaining}s"
-        )
-        return
-
-    try:
-        # Get all tracked artist GIDs for quick lookup
-        tracked_artist_gids = set(
-            Artist.objects.filter(tracked=True).values_list("gid", flat=True)
-        )
-
-        if not tracked_artist_gids:
-            logger.info("No tracked artists found, skipping new releases scan")
-            return
-
-        logger.info(
-            f"Scanning new releases for {len(tracked_artist_gids)} tracked artists "
-            f"({pages} pages = {pages * 50} albums)"
-        )
-
-        artists_to_sync: set[str] = set()  # Artist GIDs that need syncing
-        albums_checked = 0
-
-        for page in range(pages):
-            # Rate limiting: check if we need to wait before making API call
-            delay = SpotifyRateLimitState.get_delay_seconds()
-            if delay > 0:
-                logger.debug(f"Rate limit delay: sleeping {delay:.1f}s before API call")
-                time.sleep(delay)
-
-            # Fetch new releases page
-            new_releases = spotdl_wrapper.downloader.get_new_releases(
-                limit=50, offset=page * 50
-            )
-
-            # Record this API call in the rate limit tracker
-            SpotifyRateLimitState.record_call()
-
-            if new_releases is None:
-                logger.warning(f"Failed to fetch new releases page {page}, stopping")
-                break
-
-            if not new_releases:
-                logger.debug(f"No more new releases at page {page}")
-                break
-
-            albums_checked += len(new_releases)
-
-            # Check each release for tracked artists
-            for release in new_releases:
-                album_id = release.get("id")
-                if not album_id:
-                    continue
-
-                # Get tracked artist GIDs from this release
-                release_artist_gids = [
-                    a.get("id")
-                    for a in release.get("artists", [])
-                    if a.get("id") in tracked_artist_gids
-                ]
-                if not release_artist_gids:
-                    continue
-
-                # Check if we already have this album
-                if Album.objects.filter(spotify_gid=album_id).exists():
-                    continue
-
-                # New release from tracked artist(s)!
-                artist_names = [
-                    a.get("name")
-                    for a in release.get("artists", [])
-                    if a.get("id") in release_artist_gids
-                ]
-                logger.info(
-                    f"New release found: '{release.get('name')}' "
-                    f"by {', '.join(artist_names)} (tracked)"
-                )
-                artists_to_sync.update(release_artist_gids)
-
-        # Queue syncs for artists with new releases
-        queued_count = 0
-        for artist_gid in artists_to_sync:
-            try:
-                artist = Artist.objects.get(gid=artist_gid)
-                task_id = generate_task_id(
-                    "library_manager.tasks.fetch_all_albums_for_artist", artist.id
-                )
-
-                # Skip if task is already queued or running
-                is_pending, reason = is_task_pending_or_running(task_id)
-                if is_pending:
-                    logger.debug(
-                        f"[DEDUP] Skipping artist {artist.name}: task already queued ({reason})"
-                    )
-                    continue
-
-                fetch_all_albums_for_artist.apply_async(
-                    args=[artist.id], task_id=task_id
-                )
-                queued_count += 1
-            except Artist.DoesNotExist:
-                continue
-            except Exception as e:
-                logger.warning(f"Failed to queue sync for artist {artist_gid}: {e}")
-
-        logger.info(
-            f"New releases scan complete: checked {albums_checked} albums, "
-            f"queued {queued_count} artist syncs"
-        )
-
-    except Exception as e:
-        logger.error(
-            f"Error in scan_new_releases_for_tracked_artists: {e}", exc_info=True
-        )
