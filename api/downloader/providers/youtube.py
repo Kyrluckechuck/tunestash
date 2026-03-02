@@ -120,7 +120,7 @@ class YouTubeMusicProvider(DownloadProvider):
         duration_ms: Optional[int] = None,
     ) -> Optional[TrackMatch]:
         """Search YouTube Music for a track."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             functools.partial(
@@ -217,7 +217,7 @@ class YouTubeMusicProvider(DownloadProvider):
         quality: QualityPreference = QualityPreference.HIGH,
     ) -> DownloadResult:
         """Download a track from YouTube."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             functools.partial(

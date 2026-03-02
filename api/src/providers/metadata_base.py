@@ -28,6 +28,7 @@ class AlbumResult:
     total_tracks: int = 0
     release_date: Optional[str] = None
     album_type: Optional[str] = None
+    album_group: Optional[str] = None
     artist_deezer_id: Optional[int] = None
 
 

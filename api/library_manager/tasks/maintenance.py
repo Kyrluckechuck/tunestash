@@ -77,15 +77,11 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
                 song.increment_failed_count()
                 song.save()
 
-        loop.run_until_complete(downloader.close())
-        loop.close()
-    except Exception:
+    finally:
         try:
             loop.run_until_complete(downloader.close())
+        finally:
             loop.close()
-        except Exception:
-            pass
-        raise
 
     return downloaded, failed
 
@@ -136,6 +132,8 @@ def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> N
             spotify_songs.append(song)
         elif song.deezer_id:
             deezer_only_songs.append(song)
+        else:
+            logger.warning(f"Song {song.id} has no gid or deezer_id, skipping")
 
     # Spotify path
     if spotify_songs:
@@ -301,11 +299,14 @@ def validate_undownloaded_songs(
     spotify_songs = []
     deezer_only_songs = []
     for song in non_downloaded_songs.iterator():
-        song_ids.append(song.id)
         if song.gid:
             spotify_songs.append(song)
+            song_ids.append(song.id)
         elif song.deezer_id:
             deezer_only_songs.append(song)
+            song_ids.append(song.id)
+        else:
+            logger.warning(f"Song {song.id} has no gid or deezer_id, skipping")
 
     Song.objects.filter(id__in=song_ids).update(last_download_attempt=timezone.now())
 
@@ -434,8 +435,15 @@ def retry_failed_songs(self: Any) -> None:
         logger.info(f"Retry batch failure reason distribution: {failure_reasons}")
 
         # Split into Spotify and Deezer-only songs
-        spotify_songs = [s for s in songs_to_retry if s.gid]
-        deezer_only_songs = [s for s in songs_to_retry if not s.gid and s.deezer_id]
+        spotify_songs = []
+        deezer_only_songs = []
+        for s in songs_to_retry:
+            if s.gid:
+                spotify_songs.append(s)
+            elif s.deezer_id:
+                deezer_only_songs.append(s)
+            else:
+                logger.warning(f"Song {s.id} has no gid or deezer_id, skipping")
 
         # Spotify path: batch retry via spotdl
         if spotify_songs:
@@ -535,8 +543,15 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
         )
 
         # Split into Spotify and Deezer-only songs
-        spotify_songs = [s for s in failed_songs if s.gid]
-        deezer_only_songs = [s for s in failed_songs if not s.gid and s.deezer_id]
+        spotify_songs = []
+        deezer_only_songs = []
+        for s in failed_songs:
+            if s.gid:
+                spotify_songs.append(s)
+            elif s.deezer_id:
+                deezer_only_songs.append(s)
+            else:
+                logger.warning(f"Song {s.id} has no gid or deezer_id, skipping")
 
         # Spotify path
         if spotify_songs:

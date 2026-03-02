@@ -265,7 +265,13 @@ def download_single_album(self: Any, album_id: int) -> None:
             album.save()
 
         if is_deezer_only:
-            _download_deezer_album(album, task_history)
+            dl_count, fail_count = _download_deezer_album(album, task_history)
+            total = dl_count + fail_count
+            if fail_count > 0:
+                msg = f"Downloaded {dl_count}/{total} tracks"
+                complete_task(task_history, success=False, error_message=msg)
+                logger.warning(f"Partial failure for album {album.name}: {msg}")
+                return
         else:
             if check_and_update_progress(
                 task_history, 25.0, "Preparing download configuration"
@@ -336,11 +342,14 @@ def download_single_album(self: Any, album_id: int) -> None:
         raise
 
 
-def _download_deezer_album(album: Album, task_history: TaskHistory) -> None:
+def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int, int]:
     """Download a Deezer-only album via YouTube/Tidal/Qobuz fallback providers.
 
     Fetches track listing from Deezer, creates Song records, and downloads
     each track using the FallbackDownloader pipeline.
+
+    Returns:
+        (downloaded_count, failed_count) tuple.
     """
     from downloader.providers.base import SpotifyTrackMetadata
     from downloader.providers.fallback import FallbackDownloader
@@ -382,17 +391,32 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> None:
         if not track.deezer_id:
             continue
 
-        song, created = Song.objects.get_or_create(
-            deezer_id=track.deezer_id,
-            defaults={
-                "name": track.name,
-                "primary_artist": album.artist,
-                "album": album,
-                "isrc": track.isrc,
-            },
-        )
+        # ISRC-first matching to avoid duplicates with existing Spotify-imported songs
+        song = None
+        if track.isrc:
+            song = Song.objects.filter(
+                isrc=track.isrc, primary_artist=album.artist
+            ).first()
+            if song and not song.deezer_id:
+                song.deezer_id = track.deezer_id
+                if not song.album:
+                    song.album = album
+                song.save(update_fields=["deezer_id", "album"])
+                logger.debug(
+                    f"Linked deezer_id to existing song '{song.name}' via ISRC"
+                )
+        if not song:
+            song = Song.objects.filter(deezer_id=track.deezer_id).first()
+        if not song:
+            song = Song.objects.create(
+                name=track.name,
+                deezer_id=track.deezer_id,
+                primary_artist=album.artist,
+                album=album,
+                isrc=track.isrc,
+            )
 
-        if not created and song.downloaded:
+        if song.downloaded:
             logger.debug(f"Song '{track.name}' already downloaded, skipping")
             continue
 
@@ -416,7 +440,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> None:
         logger.info(f"All tracks for album '{album.name}' already downloaded")
         album.downloaded = True
         album.save()
-        return
+        return 0, 0
 
     update_task_progress(
         task_history,
@@ -471,15 +495,11 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> None:
                     f"Failed to download '{song.name}': {result.error_message}"
                 )
 
-        loop.run_until_complete(downloader.close())
-        loop.close()
-    except Exception:
+    finally:
         try:
             loop.run_until_complete(downloader.close())
+        finally:
             loop.close()
-        except Exception:
-            pass
-        raise
 
     # Mark album downloaded if all tracks succeeded
     if failed_count == 0:
@@ -491,6 +511,8 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> None:
         95.0,
         f"Completed: {downloaded_count} downloaded, {failed_count} failed",
     )
+
+    return downloaded_count, failed_count
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_playlist")

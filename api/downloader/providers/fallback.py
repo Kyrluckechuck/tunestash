@@ -74,7 +74,7 @@ class FallbackDownloader:
             quality_preference: Preferred quality level for downloads
             output_dir: Directory to save downloaded files
             provider_order: List of provider names to try in order.
-                          Defaults to ["tidal", "qobuz"].
+                          Defaults to ["youtube", "tidal", "qobuz"].
             qobuz_use_mp3: If True, Qobuz downloads MP3 directly for HIGH quality
                           instead of FLAC (which gets converted to M4A).
         """

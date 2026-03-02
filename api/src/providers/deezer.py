@@ -130,7 +130,7 @@ def _parse_track(data: dict[str, Any]) -> TrackResult:
         album_name = data["album"].get("title")
         album_deezer_id = data["album"].get("id")
 
-    duration_seconds = data.get("duration", 0)
+    duration_seconds = data.get("duration") or 0
 
     return TrackResult(
         name=data.get("title", ""),
@@ -168,7 +168,7 @@ class DeezerMetadataProvider(MetadataProvider):
     def get_artist(self, provider_id: Union[int, str]) -> Optional[ArtistResult]:
         try:
             data = _deezer_request(f"artist/{provider_id}")
-        except ValueError:
+        except (ValueError, requests.exceptions.RequestException):
             return None
         if not isinstance(data, dict) or "id" not in data:
             return None
@@ -199,7 +199,7 @@ class DeezerMetadataProvider(MetadataProvider):
     def get_album(self, provider_id: Union[int, str]) -> Optional[AlbumResult]:
         try:
             data = _deezer_request(f"album/{provider_id}")
-        except ValueError:
+        except (ValueError, requests.exceptions.RequestException):
             return None
         if not isinstance(data, dict) or "id" not in data:
             return None
@@ -212,7 +212,7 @@ class DeezerMetadataProvider(MetadataProvider):
     def get_track(self, provider_id: Union[int, str]) -> Optional[TrackResult]:
         try:
             data = _deezer_request(f"track/{provider_id}")
-        except ValueError:
+        except (ValueError, requests.exceptions.RequestException):
             return None
         if not isinstance(data, dict) or "id" not in data:
             return None
@@ -221,7 +221,7 @@ class DeezerMetadataProvider(MetadataProvider):
     def get_track_by_isrc(self, isrc: str) -> Optional[TrackResult]:
         try:
             data = _deezer_request(f"track/isrc:{isrc}")
-        except ValueError:
+        except (ValueError, requests.exceptions.RequestException):
             return None
         if not isinstance(data, dict) or "id" not in data:
             return None
