@@ -32,6 +32,7 @@ class OneOffTaskService:
         from library_manager.tasks import (
             backfill_song_album,
             backfill_song_isrc,
+            migrate_all_tracked_artists_to_deezer,
             retry_failed_external_mappings,
             send_test_notification,
             upgrade_low_quality_songs,
@@ -83,6 +84,19 @@ class OneOffTaskService:
             ),
             category="external-lists",
             task_func=retry_failed_external_mappings,
+        )
+
+        self._tasks["migrate_catalog_to_deezer"] = OneOffTaskDefinition(
+            id="migrate_catalog_to_deezer",
+            name="Migrate Catalog to Deezer",
+            description=(
+                "Link existing albums and songs to Deezer IDs using ISRC and "
+                "name matching. For each tracked artist with a Deezer ID, fetches "
+                "their full Deezer catalog, matches existing records, and creates "
+                "new ones for missing content. Safe to re-run."
+            ),
+            category="data-migration",
+            task_func=migrate_all_tracked_artists_to_deezer,
         )
 
         self._tasks["send_test_notification"] = OneOffTaskDefinition(
