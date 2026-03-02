@@ -814,7 +814,7 @@ class Album(models.Model):
         help_text="YouTube Music album/playlist ID",
     )
     artist: models.ForeignKey = models.ForeignKey(Artist, on_delete=models.CASCADE)
-    spotify_uri: models.CharField = models.CharField(max_length=2048)
+    spotify_uri: models.CharField = models.CharField(max_length=2048, blank=True)
     downloaded: models.BooleanField = models.BooleanField(default=False)
     total_tracks: models.IntegerField = models.IntegerField(default=0)
     wanted: models.BooleanField = models.BooleanField(default=True)

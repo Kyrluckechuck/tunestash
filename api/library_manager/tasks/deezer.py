@@ -86,6 +86,7 @@ def fetch_artist_albums_from_deezer(self: Any, artist_id: int) -> None:
                 spotify_uri="",
                 total_tracks=album_data.total_tracks,
                 album_type=album_data.album_type,
+                album_group=album_data.album_group or album_data.album_type,
                 wanted=True,
             )
             created_count += 1

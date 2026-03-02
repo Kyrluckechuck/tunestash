@@ -224,7 +224,7 @@ class ArtistService(BaseService[Artist]):
                     existing.tracked = True
                     updated_fields.append("tracked")
                 if updated_fields:
-                    await existing.asave()
+                    await existing.asave(update_fields=updated_fields)
 
                 from library_manager.tasks import fetch_artist_albums_from_deezer
 
