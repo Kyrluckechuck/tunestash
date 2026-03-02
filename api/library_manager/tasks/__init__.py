@@ -86,6 +86,12 @@ from .metadata import (
     cleanup_old_files,
 )
 
+# Re-export migration tasks
+from .migration import (
+    migrate_all_tracked_artists_to_deezer,
+    migrate_artist_to_deezer,
+)
+
 # Re-export notification tasks
 from .notification import (
     check_notifications,
@@ -172,6 +178,9 @@ __all__ = [
     "retry_failed_external_mappings",
     "sync_all_external_lists",
     "sync_external_list",
+    # Migration tasks
+    "migrate_all_tracked_artists_to_deezer",
+    "migrate_artist_to_deezer",
     # Deezer tasks
     "fetch_artist_albums_from_deezer",
     # Upgrade tasks

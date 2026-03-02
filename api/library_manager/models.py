@@ -133,6 +133,18 @@ class Artist(models.Model):
     last_downloaded_at: models.DateTimeField = models.DateTimeField(
         default=None, null=True
     )
+    deezer_migration_status: models.CharField = models.CharField(
+        max_length=20,
+        choices=[
+            ("pending", "Pending"),
+            ("in_progress", "In Progress"),
+            ("complete", "Complete"),
+            ("failed", "Failed"),
+        ],
+        null=True,
+        blank=True,
+        db_index=True,
+    )
 
     def clean(self) -> None:
         """Validate model fields before saving."""
