@@ -25,6 +25,7 @@ from .qobuz import QobuzProvider
 from .tidal import TidalProvider
 from .tidal_endpoints import TidalEndpointManager
 from .validation import AudioValidator, ValidationResult
+from .youtube import YouTubeMusicProvider
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class FallbackDownloader:
     """
 
     # Supported provider names
-    SUPPORTED_PROVIDERS = {"tidal", "qobuz"}
+    SUPPORTED_PROVIDERS = {"youtube", "tidal", "qobuz"}
 
     def __init__(
         self,
@@ -87,7 +88,7 @@ class FallbackDownloader:
                 p for p in provider_order if p in self.SUPPORTED_PROVIDERS
             ]
         else:
-            self._provider_order = ["tidal", "qobuz"]
+            self._provider_order = ["youtube", "tidal", "qobuz"]
 
         # Initialize components
         self._tidal_endpoint_manager = TidalEndpointManager()
@@ -112,7 +113,14 @@ class FallbackDownloader:
             return True
 
         try:
-            if provider_name == "tidal":
+            if provider_name == "youtube":
+                provider = YouTubeMusicProvider()
+                if not await provider.is_available():
+                    logger.warning("YouTube Music provider is not available")
+                    return False
+                self._providers["youtube"] = provider
+
+            elif provider_name == "tidal":
                 provider = TidalProvider(
                     endpoint_manager=self._tidal_endpoint_manager,
                 )
@@ -395,6 +403,8 @@ class FallbackDownloader:
         if provider_name == "qobuz":
             # Qobuz HIGH: returns MP3 if use_mp3=True, else FLAC (to be converted to M4A)
             return "mp3" if self._qobuz_use_mp3 else "flac"
+        elif provider_name == "youtube":
+            return "m4a"
         else:
             # Tidal returns M4A for HIGH quality
             return "m4a"

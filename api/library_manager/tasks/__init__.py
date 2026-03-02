@@ -95,7 +95,6 @@ from .notification import (
 # Re-export periodic tasks
 from .periodic import (
     queue_missing_albums_for_tracked_artists,
-    scan_new_releases_for_tracked_artists,
     sync_tracked_artists_metadata,
     sync_tracked_playlists,
 )
@@ -154,7 +153,6 @@ __all__ = [
     "validate_undownloaded_songs",
     # Periodic tasks
     "queue_missing_albums_for_tracked_artists",
-    "scan_new_releases_for_tracked_artists",
     "sync_tracked_artists_metadata",
     "sync_tracked_playlists",
     # Metadata tasks

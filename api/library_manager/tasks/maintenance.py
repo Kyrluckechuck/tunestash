@@ -1,5 +1,6 @@
 """Maintenance tasks for the Spotify library manager."""
 
+import asyncio
 from typing import Any, Optional
 
 from celery_app import app as celery_app
@@ -16,6 +17,77 @@ from .core import (
     spotdl_wrapper,
     update_task_progress,
 )
+
+
+def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
+    """Download Deezer-only songs (no Spotify GID) via YouTube/Tidal/Qobuz fallback.
+
+    Returns (downloaded_count, failed_count).
+    """
+    from downloader.providers.base import SpotifyTrackMetadata
+    from downloader.providers.fallback import FallbackDownloader
+
+    from ..models import DownloadProvider as DownloadProviderEnum
+
+    provider_enum_map = {
+        "youtube": DownloadProviderEnum.YOUTUBE,
+        "tidal": DownloadProviderEnum.TIDAL,
+        "qobuz": DownloadProviderEnum.QOBUZ,
+    }
+
+    downloader = FallbackDownloader(
+        provider_order=["youtube", "tidal", "qobuz"],
+    )
+
+    downloaded = 0
+    failed = 0
+
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        for song in songs:
+            album_name = song.album.name if song.album else ""  # type: ignore[attr-defined]
+            artist_name = song.primary_artist.name  # type: ignore[attr-defined]
+
+            metadata = SpotifyTrackMetadata(
+                spotify_id="",
+                title=song.name,
+                artist=artist_name,
+                album=album_name,
+                album_artist=artist_name,
+                duration_ms=0,
+                isrc=song.isrc,
+            )
+
+            result = loop.run_until_complete(downloader.download_track(metadata))
+
+            if result.success and result.file_path:
+                dl_provider = provider_enum_map.get(
+                    result.provider_used or "", DownloadProviderEnum.UNKNOWN
+                )
+                song.mark_downloaded(
+                    bitrate=256,
+                    file_path=str(result.file_path),
+                    provider=dl_provider,
+                )
+                downloaded += 1
+            else:
+                failed += 1
+                song.increment_failed_count()
+                song.save()
+
+        loop.run_until_complete(downloader.close())
+        loop.close()
+    except Exception:
+        try:
+            loop.run_until_complete(downloader.close())
+            loop.close()
+        except Exception:
+            pass
+        raise
+
+    return downloaded, failed
 
 
 @celery_app.task(
@@ -56,43 +128,58 @@ def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> N
         logger.info("All songs downloaded, exiting missing known song loop!")
         return
 
-    failed_song_array = [
-        song.spotify_uri for song in missing_known_songs_list.iterator()
-    ]
+    # Split into Spotify and Deezer-only songs
+    spotify_songs = []
+    deezer_only_songs = []
+    for song in missing_known_songs_list.iterator():
+        if song.gid:
+            spotify_songs.append(song)
+        elif song.deezer_id:
+            deezer_only_songs.append(song)
 
-    logger.info(f"Downloading {len(failed_song_array)} missing songs")
-    downloader_config = Config(urls=failed_song_array, track_artists=False)
+    # Spotify path
+    if spotify_songs:
+        failed_song_array = [s.spotify_uri for s in spotify_songs]
+        logger.info(f"Downloading {len(failed_song_array)} missing Spotify songs")
+        downloader_config = Config(urls=failed_song_array, track_artists=False)
 
-    # Create progress callback if task history is available
-    task_progress_callback = None
-    if hasattr(self, "request") and self.request.id:
-        task_history = TaskHistory.objects.filter(task_id=self.request.id).first()
-        if task_history:
-            # Capture task_history in closure to avoid cell-var-from-loop
-            captured_task_history = task_history
+        task_progress_callback = None
+        if hasattr(self, "request") and self.request.id:
+            task_history = TaskHistory.objects.filter(task_id=self.request.id).first()
+            if task_history:
+                captured_task_history = task_history
 
-            def update_task_progress_callback(
-                progress_pct: float, message: str
-            ) -> None:
-                captured_task_history.update_progress(progress_pct)
+                def update_task_progress_callback(
+                    progress_pct: float, message: str
+                ) -> None:
+                    captured_task_history.update_progress(progress_pct)
 
-            task_progress_callback = update_task_progress_callback
+                task_progress_callback = update_task_progress_callback
 
-    try:
-        spotdl_wrapper.execute(downloader_config, task_progress_callback)
-    except YouTubeRateLimitError as rate_limit_error:
-        # YouTube rate limit - reschedule task for later
-        retry_after = rate_limit_error.retry_after_seconds
-        logger.warning(
-            f"YouTube rate limit hit during missing songs retry, "
-            f"rescheduling in {retry_after}s"
+        try:
+            spotdl_wrapper.execute(downloader_config, task_progress_callback)
+        except YouTubeRateLimitError as rate_limit_error:
+            retry_after = rate_limit_error.retry_after_seconds
+            logger.warning(
+                f"YouTube rate limit hit during missing songs retry, "
+                f"rescheduling in {retry_after}s"
+            )
+            raise self.retry(
+                exc=rate_limit_error,
+                countdown=retry_after,
+                max_retries=3,
+            )
+
+    # Deezer path
+    if deezer_only_songs:
+        logger.info(
+            f"Downloading {len(deezer_only_songs)} missing Deezer-only songs "
+            f"via fallback providers"
         )
-        raise self.retry(
-            exc=rate_limit_error,
-            countdown=retry_after,
-            max_retries=3,
+        downloaded, failed = _download_deezer_songs_via_fallback(deezer_only_songs)
+        logger.info(
+            f"Deezer-only missing songs: {downloaded} downloaded, {failed} failed"
         )
-    # Note: Don't self-queue - let Celery Beat handle scheduling to avoid infinite loops
 
 
 @celery_app.task(
@@ -209,47 +296,61 @@ def validate_undownloaded_songs(
         )
         return
 
-    # Mark these songs as being attempted now and build URI list in single pass
+    # Split songs by provider: Spotify (have gid) vs Deezer-only
     song_ids = []
-    missing_song_array = []
+    spotify_songs = []
+    deezer_only_songs = []
     for song in non_downloaded_songs.iterator():
         song_ids.append(song.id)
-        missing_song_array.append(song.spotify_uri)
+        if song.gid:
+            spotify_songs.append(song)
+        elif song.deezer_id:
+            deezer_only_songs.append(song)
 
     Song.objects.filter(id__in=song_ids).update(last_download_attempt=timezone.now())
 
-    logger.info(f"Downloading {len(missing_song_array)} missing songs")
-    downloader_config = Config(urls=missing_song_array, track_artists=False)
+    # Spotify path: batch download via spotdl
+    if spotify_songs:
+        missing_song_array = [s.spotify_uri for s in spotify_songs]
+        logger.info(f"Downloading {len(missing_song_array)} missing Spotify songs")
+        downloader_config = Config(urls=missing_song_array, track_artists=False)
 
-    # Create progress callback if task history is available
-    task_progress_callback = None
-    if hasattr(self, "request") and self.request.id:
-        task_history = TaskHistory.objects.filter(task_id=self.request.id).first()
-        if task_history:
-            # Capture task_history in closure to avoid cell-var-from-loop
-            captured_task_history = task_history
+        task_progress_callback = None
+        if hasattr(self, "request") and self.request.id:
+            task_history = TaskHistory.objects.filter(task_id=self.request.id).first()
+            if task_history:
+                captured_task_history = task_history
 
-            def update_task_progress_callback(
-                progress_pct: float, message: str
-            ) -> None:
-                captured_task_history.update_progress(progress_pct)
+                def update_task_progress_callback(
+                    progress_pct: float, message: str
+                ) -> None:
+                    captured_task_history.update_progress(progress_pct)
 
-            task_progress_callback = update_task_progress_callback
+                task_progress_callback = update_task_progress_callback
 
-    try:
-        spotdl_wrapper.execute(downloader_config, task_progress_callback)
-    except YouTubeRateLimitError as rate_limit_error:
-        # YouTube rate limit - reschedule task for later
-        retry_after = rate_limit_error.retry_after_seconds
-        logger.warning(
-            f"YouTube rate limit hit during undownloaded songs validation, "
-            f"rescheduling in {retry_after}s"
+        try:
+            spotdl_wrapper.execute(downloader_config, task_progress_callback)
+        except YouTubeRateLimitError as rate_limit_error:
+            retry_after = rate_limit_error.retry_after_seconds
+            logger.warning(
+                f"YouTube rate limit hit during undownloaded songs validation, "
+                f"rescheduling in {retry_after}s"
+            )
+            raise self.retry(
+                exc=rate_limit_error,
+                countdown=retry_after,
+                max_retries=3,
+            )
+
+    # Deezer path: download via fallback providers
+    if deezer_only_songs:
+        logger.info(
+            f"Downloading {len(deezer_only_songs)} missing Deezer-only songs "
+            f"via fallback providers"
         )
-        raise self.retry(
-            exc=rate_limit_error,
-            countdown=retry_after,
-            max_retries=3,
-        )
+        downloaded, failed = _download_deezer_songs_via_fallback(deezer_only_songs)
+        logger.info(f"Deezer-only validation: {downloaded} downloaded, {failed} failed")
+
     logger.info(f"Completed validation attempt for {non_downloaded_songs_count} songs")
 
 
@@ -316,9 +417,6 @@ def retry_failed_songs(self: Any) -> None:
         song_count = len(songs_to_retry)
         logger.info(f"Found {song_count} failed songs ready for retry")
 
-        # Build list of Spotify URIs to retry
-        song_uris = [song.spotify_uri for song in songs_to_retry]
-
         # Log some stats about what we're retrying
         failure_counts: dict[int, int] = {}
         failure_reasons: dict[str, int] = {}
@@ -335,26 +433,44 @@ def retry_failed_songs(self: Any) -> None:
         logger.info(f"Retry batch failure count distribution: {failure_counts}")
         logger.info(f"Retry batch failure reason distribution: {failure_reasons}")
 
-        # Download the songs
-        downloader_config = Config(urls=song_uris, track_artists=False)
+        # Split into Spotify and Deezer-only songs
+        spotify_songs = [s for s in songs_to_retry if s.gid]
+        deezer_only_songs = [s for s in songs_to_retry if not s.gid and s.deezer_id]
 
-        # Create progress callback if task history is available
-        task_progress_callback = None
-        if hasattr(self, "request") and self.request.id:
-            task_history = TaskHistory.objects.filter(task_id=self.request.id).first()
-            if task_history:
-                # Capture task_history in closure to avoid cell-var-from-loop
-                captured_task_history = task_history
+        # Spotify path: batch retry via spotdl
+        if spotify_songs:
+            song_uris = [song.spotify_uri for song in spotify_songs]
+            downloader_config = Config(urls=song_uris, track_artists=False)
 
-                def update_task_progress_callback(
-                    progress_pct: float, message: str
-                ) -> None:
-                    captured_task_history.update_progress(progress_pct)
+            task_progress_callback = None
+            if hasattr(self, "request") and self.request.id:
+                task_history = TaskHistory.objects.filter(
+                    task_id=self.request.id
+                ).first()
+                if task_history:
+                    captured_task_history = task_history
 
-                task_progress_callback = update_task_progress_callback
+                    def update_task_progress_callback(
+                        progress_pct: float, message: str
+                    ) -> None:
+                        captured_task_history.update_progress(progress_pct)
 
-        logger.info(f"Starting download retry for {song_count} songs")
-        spotdl_wrapper.execute(downloader_config, task_progress_callback)
+                    task_progress_callback = update_task_progress_callback
+
+            logger.info(
+                f"Starting download retry for {len(spotify_songs)} Spotify songs"
+            )
+            spotdl_wrapper.execute(downloader_config, task_progress_callback)
+
+        # Deezer path: retry via fallback providers
+        if deezer_only_songs:
+            logger.info(
+                f"Retrying {len(deezer_only_songs)} Deezer-only songs "
+                f"via fallback providers"
+            )
+            downloaded, failed = _download_deezer_songs_via_fallback(deezer_only_songs)
+            logger.info(f"Deezer-only retry: {downloaded} downloaded, {failed} failed")
+
         logger.info(f"Completed retry attempt for {song_count} songs")
 
     except YouTubeRateLimitError as rate_limit_error:
@@ -418,15 +534,36 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
             task_history, 25.0, f"Found {song_count} failed songs to retry"
         )
 
-        song_uris = [song.spotify_uri for song in failed_songs]
+        # Split into Spotify and Deezer-only songs
+        spotify_songs = [s for s in failed_songs if s.gid]
+        deezer_only_songs = [s for s in failed_songs if not s.gid and s.deezer_id]
 
-        downloader_config = Config(urls=song_uris, track_artists=False)
+        # Spotify path
+        if spotify_songs:
+            song_uris = [song.spotify_uri for song in spotify_songs]
+            downloader_config = Config(urls=song_uris, track_artists=False)
 
-        def task_callback(progress_pct: float, message: str) -> None:
-            update_task_progress(task_history, 25.0 + (progress_pct * 0.70), message)
+            def task_callback(progress_pct: float, message: str) -> None:
+                update_task_progress(
+                    task_history, 25.0 + (progress_pct * 0.50), message
+                )
 
-        logger.info(f"Retrying {song_count} failed songs for artist {artist.name}")
-        spotdl_wrapper.execute(downloader_config, task_callback)
+            logger.info(
+                f"Retrying {len(spotify_songs)} Spotify songs for artist {artist.name}"
+            )
+            spotdl_wrapper.execute(downloader_config, task_callback)
+
+        # Deezer path
+        if deezer_only_songs:
+            logger.info(
+                f"Retrying {len(deezer_only_songs)} Deezer-only songs "
+                f"for artist {artist.name}"
+            )
+            downloaded, failed = _download_deezer_songs_via_fallback(deezer_only_songs)
+            logger.info(
+                f"Deezer-only retry for {artist.name}: "
+                f"{downloaded} downloaded, {failed} failed"
+            )
 
         task_history.add_log_message(f"Retried {song_count} failed songs")
         complete_task(task_history, success=True)

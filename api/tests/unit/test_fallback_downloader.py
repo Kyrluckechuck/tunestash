@@ -100,7 +100,7 @@ class TestFallbackDownloaderInit:
         assert downloader._quality_preference == QualityPreference.HIGH
         assert downloader._output_dir == Path("/music")
         assert downloader._initialized == set()
-        assert downloader._provider_order == ["tidal", "qobuz"]
+        assert downloader._provider_order == ["youtube", "tidal", "qobuz"]
 
     def test_custom_init(self):
         """Test custom initialization."""
