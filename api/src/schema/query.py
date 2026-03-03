@@ -29,6 +29,7 @@ from ..graphql_types.models import (
     PeriodicTask,
     Playlist,
     PlaylistConnection,
+    PlaylistInfo,
     QueueStatus,
     Song,
     SongConnection,
@@ -497,19 +498,36 @@ class Query:  # pylint: disable=too-many-public-methods
         )
 
     @strawberry.field
-    async def spotify_playlist_info(self, url: str) -> Optional[SpotifyPlaylistInfo]:
+    async def playlist_info(self, url: str) -> Optional[PlaylistInfo]:
         """
-        Fetch playlist metadata from Spotify by URL or URI.
+        Fetch playlist metadata by URL. Auto-detects provider (Spotify or Deezer).
 
         Used by the frontend to auto-populate playlist name when creating a new playlist.
         Does not create any database records.
 
         Args:
-            url: Spotify playlist URL or URI (e.g., "spotify:playlist:..." or
-                 "https://open.spotify.com/playlist/...")
+            url: Playlist URL (Spotify or Deezer)
 
         Returns:
-            Playlist info (name, owner, track count, image) or null if not found
+            Playlist info (name, owner, track count, image, provider) or null if not found
+        """
+        result = await services.playlist.get_playlist_info(url)
+        if result is None:
+            return None
+
+        return PlaylistInfo(
+            name=result["name"],
+            owner_name=result.get("owner_name"),
+            track_count=result.get("track_count", 0),
+            image_url=result.get("image_url"),
+            provider=result.get("provider", "spotify"),
+        )
+
+    @strawberry.field
+    async def spotify_playlist_info(self, url: str) -> Optional[SpotifyPlaylistInfo]:
+        """Fetch playlist metadata from Spotify by URL or URI.
+
+        Deprecated: use playlistInfo instead, which auto-detects the provider.
         """
         result = await services.playlist.get_spotify_playlist_info(url)
         if result is None:

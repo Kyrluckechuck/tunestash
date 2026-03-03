@@ -4,15 +4,15 @@ import {
   UpdatePlaylistDocument,
   CreatePlaylistDocument,
   GetPlaylistsDocument,
-  GetSpotifyPlaylistInfoDocument,
+  GetPlaylistInfoDocument,
   type UpdatePlaylistMutation,
   type UpdatePlaylistMutationVariables,
   type Playlist,
 } from '../../types/generated/graphql';
 
-// Regex to detect valid Spotify playlist URLs/URIs
-const SPOTIFY_PLAYLIST_REGEX =
-  /^(spotify:playlist:[a-zA-Z0-9]+|https?:\/\/open\.spotify\.com\/playlist\/[a-zA-Z0-9]+)/;
+// Regex to detect valid Spotify or Deezer playlist URLs/URIs
+const PLAYLIST_URL_REGEX =
+  /^(spotify:playlist:[a-zA-Z0-9]+|https?:\/\/open\.spotify\.com\/playlist\/[a-zA-Z0-9]+|https?:\/\/www\.deezer\.com\/\w+\/playlist\/\d+|https?:\/\/deezer\.com\/\w+\/playlist\/\d+)/;
 
 interface PlaylistModalProps {
   isOpen: boolean;
@@ -49,14 +49,14 @@ export function PlaylistModal({
   });
 
   const [fetchPlaylistInfo, { loading: fetchingInfo, data: playlistInfoData }] =
-    useLazyQuery(GetSpotifyPlaylistInfoDocument, {
+    useLazyQuery(GetPlaylistInfoDocument, {
       fetchPolicy: 'network-only',
     });
 
   // Handle playlist info fetch results
   useEffect(() => {
-    if (playlistInfoData?.spotifyPlaylistInfo && !nameManuallyEdited) {
-      setName(playlistInfoData.spotifyPlaylistInfo.name);
+    if (playlistInfoData?.playlistInfo && !nameManuallyEdited) {
+      setName(playlistInfoData.playlistInfo.name);
     }
   }, [playlistInfoData, nameManuallyEdited]);
 
@@ -84,8 +84,8 @@ export function PlaylistModal({
 
     const trimmedUrl = url.trim();
 
-    // Check if URL matches Spotify playlist pattern
-    if (!SPOTIFY_PLAYLIST_REGEX.test(trimmedUrl)) return;
+    // Check if URL matches a playlist pattern (Spotify or Deezer)
+    if (!PLAYLIST_URL_REGEX.test(trimmedUrl)) return;
 
     // Don't fetch if we already fetched this URL
     if (trimmedUrl === lastFetchedUrlRef.current) return;
@@ -202,14 +202,14 @@ export function PlaylistModal({
               htmlFor='url'
               className='block text-sm font-medium text-gray-700 mb-2'
             >
-              Spotify URL or URI
+              Playlist URL
             </label>
             <input
               type='text'
               id='url'
               value={url}
               onChange={e => setUrl(e.target.value)}
-              placeholder='https://open.spotify.com/playlist/... or spotify:playlist:...'
+              placeholder='Spotify or Deezer playlist URL'
               className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
               disabled={isSubmitting}
             />

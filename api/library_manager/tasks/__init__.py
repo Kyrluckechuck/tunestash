@@ -108,6 +108,7 @@ from .periodic import (
 # Re-export playlist tasks
 from .playlist import (
     _sync_tracked_playlist_internal,
+    sync_deezer_playlist,
     sync_tracked_playlist,
     sync_tracked_playlist_artists,
 )
@@ -138,6 +139,7 @@ __all__ = [
     "update_tracked_artists",
     # Playlist tasks
     "_sync_tracked_playlist_internal",
+    "sync_deezer_playlist",
     "sync_tracked_playlist",
     "sync_tracked_playlist_artists",
     # Download tasks

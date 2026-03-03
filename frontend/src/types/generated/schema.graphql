@@ -293,6 +293,7 @@ type Mutation {
   downloadUrl(url: String!, autoTrackArtists: Boolean! = false): MutationResult!
   createPlaylist(name: String!, url: String!, autoTrackArtists: Boolean! = false): Playlist!
   savePlaylist(spotifyId: String!, autoTrackArtists: Boolean! = false): Playlist!
+  saveDeezerPlaylist(deezerId: String!, autoTrackArtists: Boolean! = false): Playlist!
   cancelAllPendingTasks: MutationResult!
   cancelTasksByName(taskName: String!): MutationResult!
   cancelRunningTasksByName(taskName: String!): MutationResult!
@@ -375,12 +376,21 @@ type Playlist {
   enabled: Boolean!
   autoTrackArtists: Boolean!
   lastSyncedAt: DateTime
+  provider: String!
 }
 
 type PlaylistConnection {
   edges: [Playlist!]!
   pageInfo: PageInfo!
   totalCount: Int!
+}
+
+type PlaylistInfo {
+  name: String!
+  ownerName: String
+  trackCount: Int!
+  imageUrl: String
+  provider: String!
 }
 
 type Query {
@@ -400,6 +410,7 @@ type Query {
   upgradeStats: UpgradeStats!
   systemHealth: SystemHealth!
   catalogSearch(query: String!, types: [String!] = null, limit: Int = 10): CatalogSearchResults!
+  playlistInfo(url: String!): PlaylistInfo
   spotifyPlaylistInfo(url: String!): SpotifyPlaylistInfo
   libraryStats: LibraryStats!
   pendingMetadataUpdates(entityType: MetadataEntityType = null, status: MetadataUpdateStatus = null, includeResolved: Boolean! = false): MetadataUpdateConnection!

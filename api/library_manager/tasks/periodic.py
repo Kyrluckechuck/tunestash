@@ -19,7 +19,7 @@ from ..models import (
     TaskHistory,
     TrackedPlaylist,
 )
-from .core import logger, spotdl_wrapper
+from .core import logger
 from .download import download_single_album
 
 # Rate limiting: delay between Spotify API calls (in seconds)
@@ -41,62 +41,51 @@ def _normalize_name(name: str) -> str:
 
 
 def backfill_album_metadata(limit: int = _MAX_METADATA_BACKFILL_PER_RUN) -> int:
-    """
-    Backfill metadata for albums with album_type=None.
-
-    These are typically albums created from playlist syncs that only have
-    basic info (GID, name) but no type/group metadata from Spotify.
+    """Backfill metadata for albums with album_type=None using Deezer API.
 
     Returns the number of albums updated.
     """
-    from ..models import SpotifyRateLimitState
+    from src.providers.deezer import DeezerMetadataProvider
 
-    # Find albums missing metadata from tracked artists
     albums_needing_metadata = Album.objects.filter(
         artist__tracked=True,
         downloaded=False,
         wanted=True,
         album_type__isnull=True,
+        deezer_id__isnull=False,
     ).order_by("id")[:limit]
 
     if not albums_needing_metadata.exists():
         return 0
 
+    provider = DeezerMetadataProvider()
     updated_count = 0
+
     for album in albums_needing_metadata:
         try:
-            # Rate limiting: check if we need to wait
-            delay = SpotifyRateLimitState.get_delay_seconds()
-            if delay > 30:
-                # Don't wait too long during backfill, just stop
-                logger.info(
-                    f"Stopping metadata backfill due to rate limit delay ({delay:.0f}s)"
-                )
-                break
-            if delay > 0:
-                time.sleep(delay)
-
-            # Fetch album details from Spotify
-            album_data = spotdl_wrapper.downloader.get_album(album.spotify_gid)
-            SpotifyRateLimitState.record_call()
-
+            album_data = provider.get_album(album.deezer_id)
             if album_data:
-                # Update album metadata
-                album.album_type = album_data.get("album_type")
-                album.album_group = album_data.get("album_group")
-                album.save(update_fields=["album_type", "album_group"])
-                updated_count += 1
-                logger.debug(
-                    f"Backfilled metadata for '{album.name}': "
-                    f"type={album.album_type}, group={album.album_group}"
-                )
+                update_fields: list[str] = []
+                if album_data.album_type:
+                    album.album_type = album_data.album_type
+                    update_fields.append("album_type")
+                if album_data.album_group:
+                    album.album_group = album_data.album_group
+                    update_fields.append("album_group")
+                elif album_data.album_type:
+                    album.album_group = album_data.album_type
+                    update_fields.append("album_group")
+                if update_fields:
+                    album.save(update_fields=update_fields)
+                    updated_count += 1
         except Exception as e:
             logger.warning(
-                f"Failed to backfill metadata for album {album.spotify_gid}: {e}"
+                f"Failed to backfill metadata for album {album.name} "
+                f"(deezer_id={album.deezer_id}): {e}"
             )
 
     if updated_count > 0:
-        logger.info(f"Backfilled metadata for {updated_count} album(s)")
+        logger.info(f"Backfilled metadata for {updated_count} album(s) via Deezer")
 
     return updated_count
 
@@ -123,38 +112,52 @@ def get_albums_with_pending_tasks() -> Set[str]:
     bind=True, name="library_manager.tasks.sync_tracked_playlists"
 )  # Scheduled via Celery Beat
 def sync_tracked_playlists(self: Any, task_id: Optional[str] = None) -> None:
-    # Check if we're rate-limited before doing any work
-    # This prevents the costly loop of queueing tasks that immediately fail
-    from ..models import SpotifyRateLimitState
-
-    rate_status = SpotifyRateLimitState.get_status()
-    if rate_status["is_rate_limited"]:
-        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
-        logger.info(
-            f"Skipping playlist sync - Spotify API rate limited for {seconds_remaining}s"
-        )
-        return
-
-    # Only sync playlists that have an active status
-    # Skip playlists with spotify_api_restricted, not_found, or disabled_by_user status
-    # to avoid hitting rate limits from repeated failed API calls
-    # Note: status=ACTIVE is equivalent to enabled=True (enabled is a computed property)
     all_enabled_playlists = TrackedPlaylist.objects.filter(
         status=PlaylistStatus.ACTIVE,
     ).order_by("last_synced_at", "id")
 
-    # Pre-filter playlists using snapshot_id to avoid queueing unchanged playlists
-    # This reduces Celery task overhead and API calls
-    playlists_to_sync = _filter_changed_playlists(list(all_enabled_playlists))
+    # Split by provider
+    spotify_playlists = [p for p in all_enabled_playlists if p.provider != "deezer"]
+    deezer_playlists = [p for p in all_enabled_playlists if p.provider == "deezer"]
 
-    if playlists_to_sync:
-        logger.info(
-            f"Queueing {len(playlists_to_sync)} playlists for sync "
-            f"(skipped {len(all_enabled_playlists) - len(playlists_to_sync)} unchanged)"
-        )
-        helpers.enqueue_playlists(playlists_to_sync, priority=None)
-    else:
-        logger.info("All playlists unchanged, nothing to sync")
+    # --- Spotify playlists ---
+    if spotify_playlists:
+        from ..models import SpotifyRateLimitState
+
+        rate_status = SpotifyRateLimitState.get_status()
+        if rate_status["is_rate_limited"]:
+            seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+            logger.info(
+                f"Skipping Spotify playlist sync - rate limited for {seconds_remaining}s"
+            )
+        else:
+            playlists_to_sync = _filter_changed_playlists(spotify_playlists)
+            if playlists_to_sync:
+                logger.info(
+                    f"Queueing {len(playlists_to_sync)} Spotify playlists for sync "
+                    f"(skipped {len(spotify_playlists) - len(playlists_to_sync)} unchanged)"
+                )
+                helpers.enqueue_playlists(playlists_to_sync, priority=None)
+            else:
+                logger.info("All Spotify playlists unchanged, nothing to sync")
+
+    # --- Deezer playlists ---
+    if deezer_playlists:
+        deezer_to_sync = _filter_changed_deezer_playlists(deezer_playlists)
+        if deezer_to_sync:
+            from .playlist import sync_deezer_playlist
+
+            logger.info(
+                f"Queueing {len(deezer_to_sync)} Deezer playlists for sync "
+                f"(skipped {len(deezer_playlists) - len(deezer_to_sync)} unchanged)"
+            )
+            for playlist in deezer_to_sync:
+                sync_deezer_playlist.delay(playlist.pk)
+        else:
+            logger.info("All Deezer playlists unchanged, nothing to sync")
+
+    if not spotify_playlists and not deezer_playlists:
+        logger.info("No active playlists to sync")
 
 
 def _filter_changed_playlists(
@@ -235,6 +238,65 @@ def _filter_changed_playlists(
         logger.warning(f"Error checking playlist snapshots: {e}, syncing all")
         # On error, sync all playlists that we were checking
         playlists_to_sync.extend(playlists_to_check)
+
+    return playlists_to_sync
+
+
+def _filter_changed_deezer_playlists(
+    playlists: list[TrackedPlaylist],
+) -> list[TrackedPlaylist]:
+    """Filter Deezer playlists to only those that have changed since last sync.
+
+    Uses Deezer's checksum (stored in snapshot_id) to detect changes.
+    Playlists synced within the last hour are skipped to avoid unnecessary API calls.
+    """
+    from datetime import timedelta
+
+    from src.providers.deezer import DeezerMetadataProvider
+
+    if not playlists:
+        return []
+
+    playlists_to_sync: list[TrackedPlaylist] = []
+    one_hour_ago = timezone.now() - timedelta(hours=1)
+    provider = DeezerMetadataProvider()
+
+    for playlist in playlists:
+        # Always sync if no snapshot_id or never synced
+        if not playlist.snapshot_id or not playlist.last_synced_at:
+            playlists_to_sync.append(playlist)
+            continue
+
+        # Skip recently synced playlists
+        if playlist.last_synced_at > one_hour_ago:
+            logger.debug(f"Deezer playlist '{playlist.name}' synced recently, skipping")
+            continue
+
+        # Extract Deezer playlist ID from URL
+        import re
+
+        match = re.search(r"deezer\.com/(?:\w+/)?playlist/(\d+)", playlist.url)
+        if not match:
+            playlists_to_sync.append(playlist)
+            continue
+
+        try:
+            playlist_info = provider.get_playlist(match.group(1))
+            if playlist_info is None:
+                playlists_to_sync.append(playlist)
+            elif playlist_info.checksum != playlist.snapshot_id:
+                logger.info(
+                    f"Deezer playlist '{playlist.name}' changed, queueing for sync"
+                )
+                playlists_to_sync.append(playlist)
+            else:
+                logger.debug(f"Deezer playlist '{playlist.name}' unchanged, skipping")
+        except Exception as e:
+            logger.warning(
+                f"Error checking Deezer playlist '{playlist.name}': {e}, "
+                f"including for sync"
+            )
+            playlists_to_sync.append(playlist)
 
     return playlists_to_sync
 

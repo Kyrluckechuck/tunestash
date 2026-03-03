@@ -889,13 +889,18 @@ class TrackedPlaylist(models.Model):
     status_message: models.CharField = models.CharField(
         max_length=255, null=True, blank=True
     )
+    provider: models.CharField = models.CharField(
+        max_length=10,
+        choices=[("spotify", "Spotify"), ("deezer", "Deezer")],
+        default="spotify",
+    )
     auto_track_artists: models.BooleanField = models.BooleanField(default=False)
     last_synced_at: models.DateTimeField = models.DateTimeField(default=None, null=True)
     snapshot_id: models.CharField = models.CharField(
         max_length=255,
         null=True,
         blank=True,
-        help_text="Spotify playlist version identifier for efficient change detection",
+        help_text="Provider-specific change detection value (Spotify snapshot_id or Deezer checksum)",
     )
 
     @property

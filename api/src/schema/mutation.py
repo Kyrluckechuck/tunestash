@@ -234,6 +234,15 @@ class Mutation:  # pylint: disable=too-many-public-methods
         )
 
     @strawberry.mutation
+    async def save_deezer_playlist(
+        self, deezer_id: str, auto_track_artists: bool = False
+    ) -> Playlist:
+        """Save a playlist by its Deezer ID for ongoing tracking."""
+        return await services.playlist.save_playlist_by_deezer_id(
+            deezer_id=deezer_id.strip(), auto_track_artists=auto_track_artists
+        )
+
+    @strawberry.mutation
     async def cancel_all_pending_tasks(self) -> "MutationResult":
         """Cancel all pending tasks in the Celery queue."""
         return await services.task_management.cancel_all_pending_tasks()

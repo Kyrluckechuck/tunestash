@@ -55,6 +55,7 @@ export const createMockPlaylist = (overrides = {}) => ({
   enabled: true,
   autoTrackArtists: true,
   lastSyncedAt: '2024-01-01T00:00:00Z',
+  provider: 'spotify',
   ...overrides,
 });
 

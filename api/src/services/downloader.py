@@ -8,6 +8,10 @@ from .artist import ArtistService
 from .playlist import PlaylistService
 from .spotify_validation import validate_spotify_resource_async
 
+_DEEZER_URL_REGEX = re.compile(
+    r"deezer\.com/(?:\w+/)?(playlist|album|artist|track)/(\d+)"
+)
+
 
 class DownloaderService:
     def __init__(self) -> None:
@@ -19,14 +23,17 @@ class DownloaderService:
         self, url: str, auto_track_artists: bool = False
     ) -> MutationResult:
         """
-        Download content from a Spotify URL/URI.
+        Download content from a Spotify or Deezer URL.
         Supports playlists, artists, albums, and tracks.
         """
         try:
-            # Normalize the URL/URI
+            # Check for Deezer URLs first
+            if "deezer.com" in url:
+                return await self._handle_deezer_url(url, auto_track_artists)
+
+            # Spotify path: normalize and validate
             normalized_url = self._normalize_spotify_url(url)
 
-            # Validate that the resource exists on Spotify before queueing
             validation = await validate_spotify_resource_async(normalized_url)
             if not validation.valid:
                 return MutationResult(
@@ -34,7 +41,6 @@ class DownloaderService:
                     message=validation.error_message or "Invalid Spotify URL",
                 )
 
-            # Determine the type of content
             content_type = self._get_content_type(normalized_url)
 
             if content_type == "playlist":
@@ -54,12 +60,67 @@ class DownloaderService:
             else:
                 return MutationResult(
                     success=False,
-                    message=f"Unsupported Spotify content type: {content_type}",
+                    message=f"Unsupported content type: {content_type}",
                 )
 
         except Exception as e:
             return MutationResult(
                 success=False, message=f"Failed to download URL: {str(e)}"
+            )
+
+    async def _handle_deezer_url(
+        self, url: str, auto_track_artists: bool
+    ) -> MutationResult:
+        """Route Deezer URLs to the appropriate handler."""
+        match = _DEEZER_URL_REGEX.search(url)
+        if not match:
+            return MutationResult(
+                success=False,
+                message="Unrecognized Deezer URL format",
+            )
+
+        content_type, deezer_id = match.groups()
+
+        if content_type == "playlist":
+            playlist = await self.playlist_service.save_playlist_by_deezer_id(
+                deezer_id=deezer_id, auto_track_artists=auto_track_artists
+            )
+            return MutationResult(
+                success=True,
+                message=f"Deezer playlist '{playlist.name}' saved and sync started",
+                playlist=playlist,
+            )
+        elif content_type == "album":
+            album = await self.album_service.import_from_deezer(
+                deezer_id=int(deezer_id)
+            )
+            return album
+        elif content_type == "artist":
+            from asgiref.sync import sync_to_async
+
+            from src.providers.deezer import DeezerMetadataProvider
+
+            provider = DeezerMetadataProvider()
+            artist_info = await sync_to_async(provider.get_artist)(int(deezer_id))
+            if not artist_info:
+                return MutationResult(success=False, message="Deezer artist not found")
+            return await self.artist_service.import_from_deezer(
+                deezer_id=int(deezer_id), name=artist_info.name
+            )
+        elif content_type == "track":
+            from asgiref.sync import sync_to_async
+
+            from library_manager.tasks import download_single_track
+
+            await sync_to_async(download_single_track.delay)(deezer_id)
+            return MutationResult(
+                success=True,
+                message=f"Started downloading Deezer track (ID: {deezer_id})",
+            )
+        else:
+            return MutationResult(
+                success=False,
+                message=f"Unsupported Deezer content type: {content_type}",
             )
 
     def _normalize_spotify_url(self, url: str) -> str:

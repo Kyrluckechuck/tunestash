@@ -49,6 +49,19 @@ class TrackResult:
     album_deezer_id: Optional[int] = None
 
 
+@dataclass
+class PlaylistResult:
+    """Playlist metadata from an external provider."""
+
+    name: str
+    deezer_id: Optional[int] = None
+    description: Optional[str] = None
+    creator_name: Optional[str] = None
+    track_count: int = 0
+    checksum: Optional[str] = None
+    image_url: Optional[str] = None
+
+
 class MetadataProvider(ABC):
     """Abstract base for metadata providers (Deezer, YouTube Music, etc.).
 

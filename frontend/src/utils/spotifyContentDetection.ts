@@ -8,8 +8,8 @@ export interface DetectedContent {
 }
 
 /**
- * Detects the type of Spotify content from a URL
- * @param url - Spotify URL to analyze
+ * Detects the type of music content from a Spotify or Deezer URL
+ * @param url - URL to analyze
  * @returns Detected content information including type, icon, and labels
  */
 export function detectSpotifyContentType(url: string): DetectedContent {
@@ -19,17 +19,20 @@ export function detectSpotifyContentType(url: string): DetectedContent {
     return {
       type: 'unknown',
       icon: '💡',
-      label: 'Enter a Spotify URL to detect content type',
+      label: 'Enter a Spotify or Deezer URL to detect content type',
       buttonText: 'Download',
     };
   }
+
+  const isDeezer = trimmedUrl.includes('deezer.com');
+  const providerLabel = isDeezer ? 'Deezer' : '';
 
   // Check for playlist
   if (trimmedUrl.includes('/playlist/') || trimmedUrl.includes('playlist:')) {
     return {
       type: 'playlist',
       icon: '📜',
-      label: 'Playlist detected',
+      label: `${providerLabel} Playlist detected`.trim(),
       buttonText: 'Download Playlist',
     };
   }
@@ -39,7 +42,7 @@ export function detectSpotifyContentType(url: string): DetectedContent {
     return {
       type: 'artist',
       icon: '🎤',
-      label: 'Artist detected',
+      label: `${providerLabel} Artist detected`.trim(),
       buttonText: 'Download Artist',
     };
   }
@@ -49,7 +52,7 @@ export function detectSpotifyContentType(url: string): DetectedContent {
     return {
       type: 'album',
       icon: '💿',
-      label: 'Album detected',
+      label: `${providerLabel} Album detected`.trim(),
       buttonText: 'Download Album',
     };
   }
@@ -59,13 +62,13 @@ export function detectSpotifyContentType(url: string): DetectedContent {
     return {
       type: 'track',
       icon: '🎵',
-      label: 'Track detected',
+      label: `${providerLabel} Track detected`.trim(),
       buttonText: 'Download Track',
     };
   }
 
-  // If URL contains spotify but not recognized
-  if (trimmedUrl.includes('spotify')) {
+  // If URL contains spotify or deezer but not recognized
+  if (trimmedUrl.includes('spotify') || trimmedUrl.includes('deezer')) {
     return {
       type: 'unknown',
       icon: '❌',
