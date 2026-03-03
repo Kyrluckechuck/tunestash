@@ -33,3 +33,13 @@ query GetSpotifyPlaylistInfo($url: String!) {
     imageUrl
   }
 }
+
+query GetPlaylistInfo($url: String!) {
+  playlistInfo(url: $url) {
+    name
+    ownerName
+    trackCount
+    imageUrl
+    provider
+  }
+}

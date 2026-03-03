@@ -13,6 +13,7 @@ from .metadata_base import (
     AlbumResult,
     ArtistResult,
     MetadataProvider,
+    PlaylistResult,
     TrackResult,
 )
 
@@ -226,3 +227,46 @@ class DeezerMetadataProvider(MetadataProvider):
         if not isinstance(data, dict) or "id" not in data:
             return None
         return _parse_track(data)
+
+    def get_playlist(self, playlist_id: Union[int, str]) -> Optional[PlaylistResult]:
+        """Get playlist metadata by Deezer playlist ID."""
+        try:
+            data = _deezer_request(f"playlist/{playlist_id}")
+        except (ValueError, requests.exceptions.RequestException):
+            return None
+        if not isinstance(data, dict) or "id" not in data:
+            return None
+
+        creator_name = None
+        if isinstance(data.get("creator"), dict):
+            creator_name = data["creator"].get("name")
+
+        return PlaylistResult(
+            name=data.get("title", ""),
+            deezer_id=data.get("id"),
+            description=data.get("description"),
+            creator_name=creator_name,
+            track_count=data.get("nb_tracks", 0),
+            checksum=data.get("checksum"),
+            image_url=data.get("picture_xl") or data.get("picture_big"),
+        )
+
+    def get_playlist_tracks(self, playlist_id: Union[int, str]) -> list[TrackResult]:
+        """Get all tracks for a playlist, handling pagination."""
+        tracks: list[TrackResult] = []
+        url = f"playlist/{playlist_id}/tracks"
+        params: dict[str, Any] = {"limit": 100}
+
+        while url:
+            data = _deezer_request(url, params)
+            for item in data.get("data", []):
+                tracks.append(_parse_track(item))
+
+            next_url = data.get("next")
+            if next_url:
+                url = next_url.replace(DEEZER_API_BASE + "/", "")
+                params = {}
+            else:
+                break
+
+        return tracks

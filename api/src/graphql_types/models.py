@@ -123,6 +123,7 @@ class Playlist:
     enabled: bool  # Computed from status for backwards compatibility
     auto_track_artists: bool
     last_synced_at: Optional[DateTime]
+    provider: str = "spotify"
 
 
 @strawberry.type
@@ -463,8 +464,22 @@ class CatalogSearchResults:
 
 
 @strawberry.type
+class PlaylistInfo:
+    """Playlist info fetched from Spotify or Deezer by URL."""
+
+    name: str
+    owner_name: Optional[str]
+    track_count: int
+    image_url: Optional[str]
+    provider: str = "spotify"
+
+
+@strawberry.type
 class SpotifyPlaylistInfo:
-    """Playlist info fetched directly from Spotify by URL/URI."""
+    """Playlist info fetched directly from Spotify by URL/URI.
+
+    Deprecated: use PlaylistInfo instead.
+    """
 
     name: str
     owner_name: Optional[str]

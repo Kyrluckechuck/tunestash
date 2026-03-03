@@ -216,16 +216,7 @@ def download_non_enqueued_playlists(
 ) -> None:
     # Local import to avoid circular import during module initialization
     from .models import PlaylistStatus, SpotifyRateLimitState
-    from .tasks import download_playlist
-
-    # Check rate limit before queuing any tasks
-    rate_status = SpotifyRateLimitState.get_status()
-    if rate_status["is_rate_limited"]:
-        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
-        logger.warning(
-            f"[ENQUEUE] Skipping playlist enqueue - rate limited for {seconds_remaining}s"
-        )
-        return
+    from .tasks import download_playlist, sync_deezer_playlist
 
     logger.info(
         f"[ENQUEUE] download_non_enqueued_playlists called with "
@@ -238,6 +229,17 @@ def download_non_enqueued_playlists(
         priority if priority is not None else TaskPriority.PLAYLIST_DOWNLOAD
     )
 
+    # Check Spotify rate limit only once (only needed for Spotify playlists)
+    spotify_rate_limited = False
+    rate_status = SpotifyRateLimitState.get_status()
+    if rate_status["is_rate_limited"]:
+        spotify_rate_limited = True
+        seconds_remaining = rate_status.get("seconds_until_clear", 0) or 0
+        logger.warning(
+            f"[ENQUEUE] Spotify rate limited for {seconds_remaining}s "
+            f"(Deezer playlists will still be processed)"
+        )
+
     for playlist in playlists_to_enqueue:
         logger.info(
             f"[ENQUEUE] Processing playlist: {playlist.name} (id={playlist.id}, "
@@ -248,7 +250,7 @@ def download_non_enqueued_playlists(
             logger.info(f"[ENQUEUE] SKIP: {playlist.name} - already in enqueued list")
             continue
 
-        # Skip playlists with problematic statuses to avoid hitting rate limits
+        # Skip playlists with problematic statuses
         if playlist.status in (
             PlaylistStatus.SPOTIFY_API_RESTRICTED,
             PlaylistStatus.NOT_FOUND,
@@ -258,37 +260,53 @@ def download_non_enqueued_playlists(
             )
             continue
 
-        # Generate deterministic task ID for deduplication
-        task_id = generate_task_id(
-            "library_manager.tasks.download_playlist",
-            playlist.url,
-            tracked=playlist.auto_track_artists,
-        )
-        logger.info(f"[ENQUEUE] Generated task_id: {task_id}")
-
-        # Skip if task is already queued or running
-        is_pending, reason = is_task_pending_or_running(task_id)
-        if is_pending:
-            logger.info(
-                f"[DEDUP] Skipping download_playlist for '{playlist.name}': "
-                f"task_id={task_id}, reason={reason}"
+        # Route by provider
+        if playlist.provider == "deezer":
+            task_id = generate_task_id(
+                "library_manager.tasks.sync_deezer_playlist", playlist.id
             )
-            continue
+            is_pending, reason = is_task_pending_or_running(task_id)
+            if is_pending:
+                logger.info(
+                    f"[DEDUP] Skipping sync_deezer_playlist for '{playlist.name}': "
+                    f"task_id={task_id}, reason={reason}"
+                )
+                continue
+            sync_deezer_playlist.apply_async(
+                args=[playlist.id],
+                task_id=task_id,
+                priority=effective_priority,
+            )
+            logger.info(f"[ENQUEUE] Queued Deezer sync: {playlist.name}")
+        else:
+            # Spotify playlist — skip if rate limited
+            if spotify_rate_limited:
+                logger.info(f"[ENQUEUE] SKIP: {playlist.name} - Spotify rate limited")
+                continue
 
-        # Queue the task asynchronously with deterministic ID for deduplication
-        logger.info(
-            f"[ENQUEUE] Queuing download_playlist for {playlist.name} "
-            f"with task_id={task_id}, priority={effective_priority}"
-        )
-        download_playlist.apply_async(
-            kwargs={
-                "playlist_url": playlist.url,
-                "tracked": playlist.auto_track_artists,
-            },
-            task_id=task_id,
-            priority=effective_priority,
-        )
-        logger.info(f"[ENQUEUE] Successfully queued: {playlist.name}")
+            task_id = generate_task_id(
+                "library_manager.tasks.download_playlist",
+                playlist.url,
+                tracked=playlist.auto_track_artists,
+            )
+
+            is_pending, reason = is_task_pending_or_running(task_id)
+            if is_pending:
+                logger.info(
+                    f"[DEDUP] Skipping download_playlist for '{playlist.name}': "
+                    f"task_id={task_id}, reason={reason}"
+                )
+                continue
+
+            download_playlist.apply_async(
+                kwargs={
+                    "playlist_url": playlist.url,
+                    "tracked": playlist.auto_track_artists,
+                },
+                task_id=task_id,
+                priority=effective_priority,
+            )
+            logger.info(f"[ENQUEUE] Queued Spotify download: {playlist.name}")
 
 
 def enqueue_playlists(

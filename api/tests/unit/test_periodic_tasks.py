@@ -539,7 +539,7 @@ class TestRetryFailedSongsTask(TestCase):
 
 
 class TestBackfillAlbumMetadata(TestCase):
-    """Test backfill_album_metadata function for albums with type=None."""
+    """Test backfill_album_metadata function for albums with type=None (Deezer-based)."""
 
     def setUp(self):
         """Set up test data with albums missing metadata."""
@@ -553,7 +553,7 @@ class TestBackfillAlbumMetadata(TestCase):
             name="Untracked Artist", gid="untracked_bf_456", tracked=False
         )
 
-        # Album missing metadata (should be backfilled)
+        # Album missing metadata with deezer_id (should be backfilled)
         self.album_no_type = Album.objects.create(
             name="Album Missing Type",
             spotify_gid="bf_album_001",
@@ -564,6 +564,7 @@ class TestBackfillAlbumMetadata(TestCase):
             album_type=None,
             album_group=None,
             total_tracks=10,
+            deezer_id=11111,
         )
 
         # Album with metadata (should be skipped)
@@ -577,6 +578,7 @@ class TestBackfillAlbumMetadata(TestCase):
             album_type="album",
             album_group="album",
             total_tracks=12,
+            deezer_id=22222,
         )
 
         # Album from untracked artist (should be skipped)
@@ -590,6 +592,7 @@ class TestBackfillAlbumMetadata(TestCase):
             album_type=None,
             album_group=None,
             total_tracks=8,
+            deezer_id=33333,
         )
 
         # Already downloaded album missing metadata (should be skipped)
@@ -603,64 +606,57 @@ class TestBackfillAlbumMetadata(TestCase):
             album_type=None,
             album_group=None,
             total_tracks=6,
+            deezer_id=44444,
         )
 
-    @patch("library_manager.models.SpotifyRateLimitState")
-    @patch("library_manager.tasks.periodic.spotdl_wrapper")
-    def test_backfill_updates_album_metadata(self, mock_spotdl, mock_rate_limit_state):
-        """Test that backfill fetches and updates album metadata."""
+    @patch("src.providers.deezer.DeezerMetadataProvider.get_album")
+    def test_backfill_updates_album_metadata(self, mock_get_album):
+        """Test that backfill fetches and updates album metadata via Deezer."""
         from library_manager.tasks.periodic import backfill_album_metadata
+        from src.providers.metadata_base import AlbumResult
 
-        # Mock rate limit to allow calls
-        mock_rate_limit_state.get_delay_seconds.return_value = 0
+        mock_get_album.return_value = AlbumResult(
+            name="Album Missing Type",
+            artist_name="Tracked Artist",
+            album_type="compilation",
+            album_group="appears_on",
+        )
 
-        # Mock Spotify API response
-        mock_spotdl.downloader.get_album.return_value = {
-            "album_type": "compilation",
-            "album_group": "appears_on",
-        }
-
-        # Run backfill
         updated = backfill_album_metadata(limit=10)
 
-        # Should have updated 1 album (album_no_type)
         assert updated == 1
 
-        # Verify the album was updated
         self.album_no_type.refresh_from_db()
         assert self.album_no_type.album_type == "compilation"
         assert self.album_no_type.album_group == "appears_on"
 
-        # Verify other albums were not modified
         self.album_with_type.refresh_from_db()
         assert self.album_with_type.album_type == "album"
 
-    @patch("library_manager.models.SpotifyRateLimitState")
-    @patch("library_manager.tasks.periodic.spotdl_wrapper")
-    def test_backfill_skips_untracked_artists(self, mock_spotdl, mock_rate_limit_state):
+    @patch("src.providers.deezer.DeezerMetadataProvider.get_album")
+    def test_backfill_skips_untracked_artists(self, mock_get_album):
         """Test that backfill only processes albums from tracked artists."""
         from library_manager.tasks.periodic import backfill_album_metadata
+        from src.providers.metadata_base import AlbumResult
 
-        mock_rate_limit_state.get_delay_seconds.return_value = 0
-        mock_spotdl.downloader.get_album.return_value = {
-            "album_type": "album",
-            "album_group": "album",
-        }
+        mock_get_album.return_value = AlbumResult(
+            name="Album",
+            artist_name="Artist",
+            album_type="album",
+            album_group="album",
+        )
 
-        # Run backfill
         backfill_album_metadata(limit=10)
 
-        # Untracked artist's album should NOT have been updated
         self.untracked_album.refresh_from_db()
         assert self.untracked_album.album_type is None
 
-    @patch("library_manager.models.SpotifyRateLimitState")
-    @patch("library_manager.tasks.periodic.spotdl_wrapper")
-    def test_backfill_respects_limit(self, mock_spotdl, mock_rate_limit_state):
+    @patch("src.providers.deezer.DeezerMetadataProvider.get_album")
+    def test_backfill_respects_limit(self, mock_get_album):
         """Test that backfill respects the limit parameter."""
         from library_manager.tasks.periodic import backfill_album_metadata
+        from src.providers.metadata_base import AlbumResult
 
-        # Create multiple albums needing backfill
         for i in range(5):
             Album.objects.create(
                 name=f"Bulk Album {i}",
@@ -672,62 +668,26 @@ class TestBackfillAlbumMetadata(TestCase):
                 album_type=None,
                 album_group=None,
                 total_tracks=10,
+                deezer_id=50000 + i,
             )
 
-        mock_rate_limit_state.get_delay_seconds.return_value = 0
-        mock_spotdl.downloader.get_album.return_value = {
-            "album_type": "album",
-            "album_group": "album",
-        }
+        mock_get_album.return_value = AlbumResult(
+            name="Album",
+            artist_name="Artist",
+            album_type="album",
+            album_group="album",
+        )
 
-        # Run backfill with limit=3
         updated = backfill_album_metadata(limit=3)
 
-        # Should only update 3 albums
         assert updated == 3
 
-    @patch("library_manager.models.SpotifyRateLimitState")
-    @patch("library_manager.tasks.periodic.spotdl_wrapper")
-    def test_backfill_stops_on_high_rate_limit_delay(
-        self, mock_spotdl, mock_rate_limit_state
-    ):
-        """Test that backfill stops if rate limit delay exceeds threshold."""
-        from library_manager.tasks.periodic import backfill_album_metadata
-
-        # Create multiple albums
-        for i in range(5):
-            Album.objects.create(
-                name=f"Rate Limit Album {i}",
-                spotify_gid=f"bf_rate_{i:04d}",
-                spotify_uri=f"spotify:album:bf_rate_{i:04d}",
-                artist=self.tracked_artist,
-                wanted=True,
-                downloaded=False,
-                album_type=None,
-                album_group=None,
-                total_tracks=10,
-            )
-
-        # First call returns 0, second call returns high delay (> 30s)
-        mock_rate_limit_state.get_delay_seconds.side_effect = [0, 60]
-        mock_spotdl.downloader.get_album.return_value = {
-            "album_type": "album",
-            "album_group": "album",
-        }
-
-        # Run backfill
-        updated = backfill_album_metadata(limit=10)
-
-        # Should stop after first album due to high delay
-        assert updated == 1
-
-    @patch("library_manager.models.SpotifyRateLimitState")
-    @patch("library_manager.tasks.periodic.spotdl_wrapper")
-    def test_backfill_handles_api_failure(self, mock_spotdl, mock_rate_limit_state):
+    @patch("src.providers.deezer.DeezerMetadataProvider.get_album")
+    def test_backfill_handles_api_failure(self, mock_get_album):
         """Test that backfill continues after API failures."""
         from library_manager.tasks.periodic import backfill_album_metadata
+        from src.providers.metadata_base import AlbumResult
 
-        # Create second album needing backfill
         album2 = Album.objects.create(
             name="Second Album",
             spotify_gid="bf_second_001",
@@ -738,47 +698,59 @@ class TestBackfillAlbumMetadata(TestCase):
             album_type=None,
             album_group=None,
             total_tracks=10,
+            deezer_id=55555,
         )
 
-        mock_rate_limit_state.get_delay_seconds.return_value = 0
-
-        # First call fails, second succeeds
-        mock_spotdl.downloader.get_album.side_effect = [
+        mock_get_album.side_effect = [
             Exception("API Error"),
-            {"album_type": "single", "album_group": "single"},
+            AlbumResult(
+                name="Second Album",
+                artist_name="Artist",
+                album_type="single",
+                album_group="single",
+            ),
         ]
 
-        # Run backfill
         updated = backfill_album_metadata(limit=10)
 
-        # Should have updated 1 album (the second one)
         assert updated == 1
 
-        # Verify second album was updated
         album2.refresh_from_db()
         assert album2.album_type == "single"
 
-    @patch("library_manager.models.SpotifyRateLimitState")
-    @patch("library_manager.tasks.periodic.spotdl_wrapper")
-    def test_backfill_returns_zero_when_no_albums(
-        self, mock_spotdl, mock_rate_limit_state
-    ):
+    @patch("src.providers.deezer.DeezerMetadataProvider.get_album")
+    def test_backfill_returns_zero_when_no_albums(self, mock_get_album):
         """Test that backfill returns 0 when no albums need metadata."""
         from library_manager.tasks.periodic import backfill_album_metadata
 
-        # Delete the album without metadata
         self.album_no_type.delete()
 
-        mock_rate_limit_state.get_delay_seconds.return_value = 0
-
-        # Run backfill
         updated = backfill_album_metadata(limit=10)
 
-        # Should return 0
         assert updated == 0
+        mock_get_album.assert_not_called()
 
-        # Should not have called the API
-        mock_spotdl.downloader.get_album.assert_not_called()
+    @patch("src.providers.deezer.DeezerMetadataProvider.get_album")
+    def test_backfill_skips_albums_without_deezer_id(self, mock_get_album):
+        """Test that backfill only processes albums that have a deezer_id."""
+        from library_manager.tasks.periodic import backfill_album_metadata
+        from src.providers.metadata_base import AlbumResult
+
+        # Remove deezer_id from the album that needs backfill
+        self.album_no_type.deezer_id = None
+        self.album_no_type.save(update_fields=["deezer_id"])
+
+        mock_get_album.return_value = AlbumResult(
+            name="Album",
+            artist_name="Artist",
+            album_type="album",
+            album_group="album",
+        )
+
+        updated = backfill_album_metadata(limit=10)
+
+        assert updated == 0
+        mock_get_album.assert_not_called()
 
 
 class TestSongFailureBackoff(TestCase):

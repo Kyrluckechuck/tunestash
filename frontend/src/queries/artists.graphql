@@ -146,6 +146,7 @@ query GetPlaylists(
       enabled
       autoTrackArtists
       lastSyncedAt
+      provider
     }
   }
 }

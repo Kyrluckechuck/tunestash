@@ -13,11 +13,30 @@ from library_manager.validators import is_spotify_owned_playlist
 from ..graphql_types.models import MutationResult, Playlist
 from .base import BaseService
 
+_DEEZER_PLAYLIST_REGEX = re.compile(r"deezer\.com/(?:\w+/)?playlist/(\d+)")
+
 
 class PlaylistService(BaseService[Playlist]):
     def __init__(self) -> None:
         super().__init__()
         self.model = DjangoPlaylist
+
+    @staticmethod
+    def _is_deezer_url(url: str) -> bool:
+        return "deezer.com" in url
+
+    @staticmethod
+    def _extract_deezer_playlist_id(url: str) -> Optional[str]:
+        match = _DEEZER_PLAYLIST_REGEX.search(url)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _normalize_deezer_url(url: str) -> str:
+        """Extract canonical Deezer playlist URL."""
+        match = _DEEZER_PLAYLIST_REGEX.search(url)
+        if match:
+            return f"https://www.deezer.com/playlist/{match.group(1)}"
+        return url
 
     def _normalize_spotify_url(self, url: str) -> str:
         """Convert various Spotify URL formats to a standard format, stripping tracking parameters."""
@@ -254,46 +273,58 @@ class PlaylistService(BaseService[Playlist]):
     ) -> Playlist:
         """Create a new playlist, checking for duplicates using normalized URLs.
 
+        Supports both Spotify and Deezer playlist URLs.
+
         Raises:
             ValueError: If the playlist is a Spotify-owned algorithmic playlist
         """
-        # Normalize the URL to strip tracking parameters for deduplication
-        normalized_url = self._normalize_spotify_url(url)
+        is_deezer = self._is_deezer_url(url)
 
-        # Block Spotify-owned playlists (Discover Weekly, Daily Mix, etc.)
-        if is_spotify_owned_playlist(normalized_url):
-            raise ValueError(
-                "This is a Spotify-generated playlist (like Discover Weekly or Daily Mix) "
-                "which cannot be accessed via Spotify's API. "
-                "Try copying the tracks to your own playlist instead."
-            )
+        if is_deezer:
+            normalized_url = self._normalize_deezer_url(url)
+        else:
+            normalized_url = self._normalize_spotify_url(url)
 
-        # Check for duplicates against both normalized URI and potential HTTP format
+            # Block Spotify-owned playlists (Discover Weekly, Daily Mix, etc.)
+            if is_spotify_owned_playlist(normalized_url):
+                raise ValueError(
+                    "This is a Spotify-generated playlist (like Discover Weekly or Daily Mix) "
+                    "which cannot be accessed via Spotify's API. "
+                    "Try copying the tracks to your own playlist instead."
+                )
+
+        # Check for duplicates
         existing_playlist = await sync_to_async(
             lambda: self._find_duplicate_playlist(normalized_url)
         )()
 
         if existing_playlist:
-            # Return the existing playlist instead of creating a duplicate
             return self._to_graphql_type(existing_playlist)
 
         django_playlist = self.model(
             name=name,
-            url=normalized_url,  # Store the normalized URL
+            url=normalized_url,
             status=PlaylistStatus.ACTIVE,
             auto_track_artists=auto_track_artists,
+            provider="deezer" if is_deezer else "spotify",
         )
         await django_playlist.asave()
 
-        # Queue tasks - local imports to avoid circular import during module initialization
-        from library_manager.tasks import (
-            sync_tracked_playlist,
-            sync_tracked_playlist_artists,
-        )
+        if is_deezer:
+            from library_manager.tasks import sync_deezer_playlist
 
-        await sync_to_async(sync_tracked_playlist.delay)(django_playlist.id)
-        if auto_track_artists:
-            await sync_to_async(sync_tracked_playlist_artists.delay)(django_playlist.id)
+            await sync_to_async(sync_deezer_playlist.delay)(django_playlist.id)
+        else:
+            from library_manager.tasks import (
+                sync_tracked_playlist,
+                sync_tracked_playlist_artists,
+            )
+
+            await sync_to_async(sync_tracked_playlist.delay)(django_playlist.id)
+            if auto_track_artists:
+                await sync_to_async(sync_tracked_playlist_artists.delay)(
+                    django_playlist.id
+                )
 
         return self._to_graphql_type(django_playlist)
 
@@ -345,61 +376,6 @@ class PlaylistService(BaseService[Playlist]):
             return MutationResult(
                 success=False,
                 message=f"Error updating playlist: {str(e)}",
-                playlist=None,
-            )
-
-    async def sync_playlist(
-        self, playlist_id: int, force: bool = False, recheck: bool = False
-    ) -> MutationResult:
-        try:
-            django_playlist = await self.model.objects.aget(id=playlist_id)
-
-            # If recheck=True, reset error status to ACTIVE before syncing
-            # This allows re-checking playlists that were marked NOT_FOUND or SPOTIFY_API_RESTRICTED
-            if recheck and django_playlist.status in (
-                PlaylistStatus.NOT_FOUND,
-                PlaylistStatus.SPOTIFY_API_RESTRICTED,
-            ):
-                django_playlist.status = PlaylistStatus.ACTIVE
-                django_playlist.status_message = None
-                await sync_to_async(django_playlist.save)()
-
-            if force or recheck:
-                # For force/recheck sync, directly queue the download_playlist task
-                # with force_playlist_resync=True to bypass snapshot comparison
-                from library_manager.tasks import download_playlist
-
-                await sync_to_async(download_playlist.delay)(
-                    playlist_url=django_playlist.url,
-                    tracked=django_playlist.auto_track_artists,
-                    force_playlist_resync=True,
-                )
-                message = (
-                    "Playlist recheck started successfully"
-                    if recheck
-                    else "Playlist force sync started successfully"
-                )
-            else:
-                # Trigger normal sync task (queue it for Celery worker)
-                # Local import to avoid circular import during module initialization
-                from library_manager.tasks import sync_tracked_playlist
-
-                await sync_to_async(sync_tracked_playlist.delay)(django_playlist.id)
-                message = "Playlist sync started successfully"
-
-            return MutationResult(
-                success=True,
-                message=message,
-                playlist=self._to_graphql_type(django_playlist),
-            )
-        except self.model.DoesNotExist:
-            return MutationResult(
-                success=False, message="Playlist not found", playlist=None
-            )
-        except Exception as e:
-            return MutationResult(
-                success=False,
-                message=f"Error syncing playlist: {str(e)}",
                 playlist=None,
             )
 
@@ -531,6 +507,140 @@ class PlaylistService(BaseService[Playlist]):
 
         return await sync_to_async(fetch_from_spotify)()
 
+    async def get_deezer_playlist_info(self, url: str) -> Optional[dict[str, Any]]:
+        """Fetch playlist metadata from Deezer without creating a database record."""
+        playlist_id = self._extract_deezer_playlist_id(url)
+        if not playlist_id:
+            return None
+
+        def fetch_from_deezer() -> Optional[dict[str, Any]]:
+            try:
+                from src.providers.deezer import DeezerMetadataProvider
+
+                provider = DeezerMetadataProvider()
+                info = provider.get_playlist(playlist_id)
+                if info is None:
+                    return None
+                return {
+                    "name": info.name,
+                    "owner_name": info.creator_name,
+                    "track_count": info.track_count,
+                    "image_url": info.image_url,
+                }
+            except Exception:
+                return None
+
+        return await sync_to_async(fetch_from_deezer)()
+
+    async def get_playlist_info(self, url: str) -> Optional[dict[str, Any]]:
+        """Auto-detect provider from URL and fetch playlist info."""
+        if self._is_deezer_url(url):
+            result = await self.get_deezer_playlist_info(url)
+            if result:
+                result["provider"] = "deezer"
+            return result
+
+        result = await self.get_spotify_playlist_info(url)
+        if result:
+            result["provider"] = "spotify"
+        return result
+
+    async def save_playlist_by_deezer_id(
+        self, deezer_id: str, auto_track_artists: bool = False
+    ) -> Playlist:
+        """Save a playlist by its Deezer ID, fetching name from Deezer API."""
+        deezer_url = f"https://www.deezer.com/playlist/{deezer_id}"
+
+        # Check if playlist already exists
+        existing = await sync_to_async(
+            lambda: self._find_duplicate_playlist(deezer_url)
+        )()
+
+        if existing:
+            if not existing.enabled:
+                existing.status = PlaylistStatus.ACTIVE
+                existing.status_message = None
+                existing.auto_track_artists = auto_track_artists
+                await existing.asave()
+
+                from library_manager.tasks import sync_deezer_playlist
+
+                await sync_to_async(sync_deezer_playlist.delay)(existing.id)
+
+            return self._to_graphql_type(existing)
+
+        # Fetch name from Deezer
+        def get_playlist_name() -> str:
+            from src.providers.deezer import DeezerMetadataProvider
+
+            provider = DeezerMetadataProvider()
+            info = provider.get_playlist(deezer_id)
+            return info.name if info else f"Deezer Playlist {deezer_id}"
+
+        playlist_name = await sync_to_async(get_playlist_name)()
+
+        return await self.create_playlist(
+            name=playlist_name,
+            url=deezer_url,
+            auto_track_artists=auto_track_artists,
+        )
+
+    async def sync_playlist(
+        self, playlist_id: int, force: bool = False, recheck: bool = False
+    ) -> MutationResult:
+        try:
+            django_playlist = await self.model.objects.aget(id=playlist_id)
+
+            # If recheck=True, reset error status to ACTIVE before syncing
+            if recheck and django_playlist.status in (
+                PlaylistStatus.NOT_FOUND,
+                PlaylistStatus.SPOTIFY_API_RESTRICTED,
+            ):
+                django_playlist.status = PlaylistStatus.ACTIVE
+                django_playlist.status_message = None
+                await sync_to_async(django_playlist.save)()
+
+            # Route by provider
+            if django_playlist.provider == "deezer":
+                from library_manager.tasks import sync_deezer_playlist
+
+                await sync_to_async(sync_deezer_playlist.delay)(django_playlist.id)
+                message = "Deezer playlist sync started successfully"
+            elif force or recheck:
+                from library_manager.tasks import download_playlist
+
+                await sync_to_async(download_playlist.delay)(
+                    playlist_url=django_playlist.url,
+                    tracked=django_playlist.auto_track_artists,
+                    force_playlist_resync=True,
+                )
+                message = (
+                    "Playlist recheck started successfully"
+                    if recheck
+                    else "Playlist force sync started successfully"
+                )
+            else:
+                from library_manager.tasks import sync_tracked_playlist
+
+                await sync_to_async(sync_tracked_playlist.delay)(django_playlist.id)
+                message = "Playlist sync started successfully"
+
+            return MutationResult(
+                success=True,
+                message=message,
+                playlist=self._to_graphql_type(django_playlist),
+            )
+        except self.model.DoesNotExist:
+            return MutationResult(
+                success=False, message="Playlist not found", playlist=None
+            )
+        except Exception as e:
+            return MutationResult(
+                success=False,
+                message=f"Error syncing playlist: {str(e)}",
+                playlist=None,
+            )
+
     def _to_graphql_type(self, django_playlist: DjangoPlaylist) -> Playlist:
         return Playlist(
             id=int(django_playlist.id),
@@ -538,7 +648,8 @@ class PlaylistService(BaseService[Playlist]):
             url=django_playlist.url,
             status=django_playlist.status,
             status_message=django_playlist.status_message,
-            enabled=django_playlist.enabled,  # Computed property for backwards compat
+            enabled=django_playlist.enabled,
             auto_track_artists=django_playlist.auto_track_artists,
             last_synced_at=django_playlist.last_synced_at,
+            provider=django_playlist.provider,
         )

@@ -674,7 +674,11 @@ def backfill_song_isrc(
             isrc_map = {}
             for track in result["tracks"]:
                 if track and track.get("id"):
-                    isrc = track.get("external_ids", {}).get("isrc")
+                    external_ids = track.get("external_ids")
+                    if not external_ids or not isinstance(external_ids, dict):
+                        total_no_isrc += 1
+                        continue
+                    isrc = external_ids.get("isrc")
                     if isrc:
                         isrc_map[track["id"]] = isrc
                     else:
