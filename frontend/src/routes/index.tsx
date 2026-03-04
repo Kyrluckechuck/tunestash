@@ -178,6 +178,23 @@ function Home() {
                       <span className={`${statusColor} font-medium`}>
                         {statusText}
                       </span>
+                      {isLimited && rl?.rateLimitedUntil ? (
+                        <span className='text-gray-500 ml-1 text-xs'>
+                          (until{' '}
+                          {new Date(rl.rateLimitedUntil).toLocaleTimeString(
+                            [],
+                            {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            }
+                          )}
+                          )
+                        </span>
+                      ) : (
+                        <span className='text-gray-500 ml-1 text-xs'>
+                          ({rl?.hourlyCalls}/{rl?.hourlyMax} this hour)
+                        </span>
+                      )}
                     </span>
                   </>
                 );
@@ -187,33 +204,50 @@ function Home() {
 
           {/* API Rate Limits (Deezer, YouTube, etc.) */}
           {!loading &&
-            data?.systemHealth.apiRateLimits.map(api => (
-              <div key={api.apiName} className='flex items-center gap-2'>
-                <svg
-                  className={`h-4 w-4 ${api.isRateLimited ? 'text-red-500' : 'text-green-500'} flex-shrink-0`}
-                  fill='currentColor'
-                  viewBox='0 0 20 20'
-                >
-                  <path
-                    fillRule='evenodd'
-                    d={
-                      api.isRateLimited
-                        ? 'M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z'
-                        : 'M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
-                    }
-                    clipRule='evenodd'
-                  />
-                </svg>
-                <span className='text-sm text-gray-700'>
-                  {api.apiName.charAt(0).toUpperCase() + api.apiName.slice(1)}:{' '}
-                  <span
-                    className={`${api.isRateLimited ? 'text-red-700' : 'text-green-700'} font-medium`}
+            data?.systemHealth.apiRateLimits.map(api => {
+              const displayNames: Record<string, string> = {
+                deezer: 'Deezer',
+                youtube_music: 'YouTube Music',
+                musicbrainz: 'MusicBrainz',
+                listenbrainz: 'ListenBrainz',
+                listenbrainz_labs: 'ListenBrainz Labs',
+                lastfm: 'Last.fm',
+              };
+              const name =
+                displayNames[api.apiName] ||
+                api.apiName.charAt(0).toUpperCase() + api.apiName.slice(1);
+              return (
+                <div key={api.apiName} className='flex items-center gap-2'>
+                  <svg
+                    className={`h-4 w-4 ${api.isRateLimited ? 'text-red-500' : 'text-green-500'} flex-shrink-0`}
+                    fill='currentColor'
+                    viewBox='0 0 20 20'
                   >
-                    {api.isRateLimited ? 'Limited' : 'OK'}
+                    <path
+                      fillRule='evenodd'
+                      d={
+                        api.isRateLimited
+                          ? 'M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z'
+                          : 'M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
+                      }
+                      clipRule='evenodd'
+                    />
+                  </svg>
+                  <span className='text-sm text-gray-700'>
+                    {name}:{' '}
+                    <span
+                      className={`${api.isRateLimited ? 'text-red-700' : 'text-green-700'} font-medium`}
+                    >
+                      {api.isRateLimited ? 'Limited' : 'OK'}
+                    </span>
+                    <span className='text-gray-500 ml-1 text-xs'>
+                      ({api.requestCount} req, max {api.maxRequestsPerSecond}
+                      /s)
+                    </span>
                   </span>
-                </span>
-              </div>
-            ))}
+                </div>
+              );
+            })}
 
           {/* Task Queue */}
           <div className='flex items-center gap-2'>
