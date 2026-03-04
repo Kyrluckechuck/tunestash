@@ -337,5 +337,5 @@ class AlbumService(BaseService[Album]):
             artist=django_album.artist.name if django_album.artist else None,
             artist_id=django_album.artist.id if django_album.artist else None,
             artist_gid=django_album.artist.gid if django_album.artist else None,
-            deezer_id=django_album.deezer_id,
+            deezer_id=str(django_album.deezer_id) if django_album.deezer_id else None,
         )

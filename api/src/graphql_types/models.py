@@ -64,7 +64,7 @@ class Artist:
     downloaded_album_count: int = 0
     song_count: int = 0
     failed_song_count: int = 0
-    deezer_id: Optional[int] = None
+    deezer_id: Optional[str] = None
 
 
 @strawberry.type
@@ -80,7 +80,7 @@ class Album:
     artist: Optional[str]
     artist_id: Optional[int]
     artist_gid: Optional[str]
-    deezer_id: Optional[int] = None
+    deezer_id: Optional[str] = None
 
 
 @strawberry.type
@@ -99,7 +99,7 @@ class Song:
     downloaded: bool
     spotify_uri: Optional[str]
     download_provider: Optional[DownloadProvider] = None
-    deezer_id: Optional[int] = None
+    deezer_id: Optional[str] = None
 
 
 @strawberry.type

@@ -191,5 +191,5 @@ class SongService(BaseService[Song]):
             downloaded=django_song.downloaded,
             spotify_uri=django_song.spotify_uri or None,
             download_provider=download_provider,
-            deezer_id=django_song.deezer_id,
+            deezer_id=str(django_song.deezer_id) if django_song.deezer_id else None,
         )
