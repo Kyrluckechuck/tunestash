@@ -11,7 +11,7 @@ type Album {
   artist: String
   artistGid: String
   artistId: Int
-  deezerId: Int
+  deezerId: String
   downloaded: Boolean!
   id: Int!
   name: String!
@@ -29,7 +29,7 @@ type AlbumConnection {
 type Artist {
   addedAt: DateTime
   albumCount: Int!
-  deezerId: Int
+  deezerId: String
   downloadedAlbumCount: Int!
   failedSongCount: Int!
   gid: String
@@ -436,7 +436,7 @@ type QueueStatus {
 type Song {
   bitrate: Int!
   createdAt: DateTime!
-  deezerId: Int
+  deezerId: String
   downloadProvider: DownloadProvider
   downloaded: Boolean!
   failedCount: Int!

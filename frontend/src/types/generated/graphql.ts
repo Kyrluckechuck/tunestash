@@ -13,7 +13,6 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** The `DateTime` scalar type represents a date and time following the ISO 8601 standard. */
   DateTime: { input: string; output: string; }
 };
 
@@ -32,7 +31,7 @@ export type Album = {
   artist: Maybe<Scalars['String']['output']>;
   artistGid: Maybe<Scalars['String']['output']>;
   artistId: Maybe<Scalars['Int']['output']>;
-  deezerId: Maybe<Scalars['Int']['output']>;
+  deezerId: Maybe<Scalars['String']['output']>;
   downloaded: Scalars['Boolean']['output'];
   id: Scalars['Int']['output'];
   name: Scalars['String']['output'];
@@ -52,7 +51,7 @@ export type Artist = {
   __typename?: 'Artist';
   addedAt: Maybe<Scalars['DateTime']['output']>;
   albumCount: Scalars['Int']['output'];
-  deezerId: Maybe<Scalars['Int']['output']>;
+  deezerId: Maybe<Scalars['String']['output']>;
   downloadedAlbumCount: Scalars['Int']['output'];
   failedSongCount: Scalars['Int']['output'];
   gid: Maybe<Scalars['String']['output']>;
@@ -825,7 +824,7 @@ export type Song = {
   __typename?: 'Song';
   bitrate: Scalars['Int']['output'];
   createdAt: Scalars['DateTime']['output'];
-  deezerId: Maybe<Scalars['Int']['output']>;
+  deezerId: Maybe<Scalars['String']['output']>;
   downloadProvider: Maybe<DownloadProvider>;
   downloaded: Scalars['Boolean']['output'];
   failedCount: Scalars['Int']['output'];
@@ -975,14 +974,14 @@ export type GetArtistQueryVariables = Exact<{
 }>;
 
 
-export type GetArtistQuery = { __typename?: 'Query', artist: { __typename?: 'Artist', id: number, name: string, gid: string | null, spotifyUri: string | null, deezerId: number | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null, lastDownloaded: string | null, undownloadedCount: number, albumCount: number, downloadedAlbumCount: number, songCount: number } | null };
+export type GetArtistQuery = { __typename?: 'Query', artist: { __typename?: 'Artist', id: number, name: string, gid: string | null, spotifyUri: string | null, deezerId: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null, lastDownloaded: string | null, undownloadedCount: number, albumCount: number, downloadedAlbumCount: number, songCount: number } | null };
 
 export type GetAlbumQueryVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type GetAlbumQuery = { __typename?: 'Query', album: { __typename?: 'Album', id: number, name: string, spotifyGid: string | null, deezerId: number | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null, artistGid: string | null } | null };
+export type GetAlbumQuery = { __typename?: 'Query', album: { __typename?: 'Album', id: number, name: string, spotifyGid: string | null, deezerId: string | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null, artistGid: string | null } | null };
 
 export type GetArtistsQueryVariables = Exact<{
   isTracked?: InputMaybe<Scalars['Boolean']['input']>;
@@ -995,7 +994,7 @@ export type GetArtistsQueryVariables = Exact<{
 }>;
 
 
-export type GetArtistsQuery = { __typename?: 'Query', artists: { __typename?: 'ArtistConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Artist', id: number, name: string, gid: string | null, spotifyUri: string | null, deezerId: number | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null, lastDownloaded: string | null, undownloadedCount: number, failedSongCount: number }> } };
+export type GetArtistsQuery = { __typename?: 'Query', artists: { __typename?: 'ArtistConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Artist', id: number, name: string, gid: string | null, spotifyUri: string | null, deezerId: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null, lastDownloaded: string | null, undownloadedCount: number, failedSongCount: number }> } };
 
 export type GetAlbumsQueryVariables = Exact<{
   artistId?: InputMaybe<Scalars['Int']['input']>;
@@ -1009,7 +1008,7 @@ export type GetAlbumsQueryVariables = Exact<{
 }>;
 
 
-export type GetAlbumsQuery = { __typename?: 'Query', albums: { __typename?: 'AlbumConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Album', id: number, name: string, spotifyGid: string | null, deezerId: number | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null, artistGid: string | null }> } };
+export type GetAlbumsQuery = { __typename?: 'Query', albums: { __typename?: 'AlbumConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Album', id: number, name: string, spotifyGid: string | null, deezerId: string | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null, artistGid: string | null }> } };
 
 export type GetPlaylistsQueryVariables = Exact<{
   enabled?: InputMaybe<Scalars['Boolean']['input']>;
@@ -1184,7 +1183,7 @@ export type DownloadUrlMutationVariables = Exact<{
 }>;
 
 
-export type DownloadUrlMutation = { __typename?: 'Mutation', downloadUrl: { __typename?: 'MutationResult', success: boolean, message: string, artist: { __typename?: 'Artist', id: number, name: string, gid: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null } | null, album: { __typename?: 'Album', id: number, name: string, spotifyGid: string | null, deezerId: number | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null } | null, playlist: { __typename?: 'Playlist', id: number, name: string, url: string, enabled: boolean, autoTrackArtists: boolean, lastSyncedAt: string | null } | null } };
+export type DownloadUrlMutation = { __typename?: 'Mutation', downloadUrl: { __typename?: 'MutationResult', success: boolean, message: string, artist: { __typename?: 'Artist', id: number, name: string, gid: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null } | null, album: { __typename?: 'Album', id: number, name: string, spotifyGid: string | null, deezerId: string | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null } | null, playlist: { __typename?: 'Playlist', id: number, name: string, url: string, enabled: boolean, autoTrackArtists: boolean, lastSyncedAt: string | null } | null } };
 
 export type CreatePlaylistFromDownloadMutationVariables = Exact<{
   name: Scalars['String']['input'];
@@ -1359,14 +1358,14 @@ export type GetSongsQueryVariables = Exact<{
 }>;
 
 
-export type GetSongsQuery = { __typename?: 'Query', songs: { __typename?: 'SongConnection', totalCount: number, edges: Array<{ __typename?: 'Song', id: number, name: string, gid: string | null, deezerId: number | null, primaryArtist: string, primaryArtistId: number, primaryArtistGid: string | null, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string | null, downloadProvider: DownloadProvider | null }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null } } };
+export type GetSongsQuery = { __typename?: 'Query', songs: { __typename?: 'SongConnection', totalCount: number, edges: Array<{ __typename?: 'Song', id: number, name: string, gid: string | null, deezerId: string | null, primaryArtist: string, primaryArtistId: number, primaryArtistGid: string | null, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string | null, downloadProvider: DownloadProvider | null }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null } } };
 
 export type GetSongQueryVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
-export type GetSongQuery = { __typename?: 'Query', song: { __typename?: 'Song', id: number, name: string, gid: string | null, deezerId: number | null, primaryArtist: string, primaryArtistId: number, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string | null, downloadProvider: DownloadProvider | null } | null };
+export type GetSongQuery = { __typename?: 'Query', song: { __typename?: 'Song', id: number, name: string, gid: string | null, deezerId: string | null, primaryArtist: string, primaryArtistId: number, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string | null, downloadProvider: DownloadProvider | null } | null };
 
 export type GetSystemHealthQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -1463,7 +1462,7 @@ export type GetArtistsTestQueryVariables = Exact<{
 }>;
 
 
-export type GetArtistsTestQuery = { __typename?: 'Query', artists: { __typename?: 'ArtistConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Artist', id: number, name: string, gid: string | null, deezerId: number | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null }> } };
+export type GetArtistsTestQuery = { __typename?: 'Query', artists: { __typename?: 'ArtistConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Artist', id: number, name: string, gid: string | null, deezerId: string | null, isTracked: boolean, addedAt: string | null, lastSynced: string | null }> } };
 
 export type GetAlbumsTestQueryVariables = Exact<{
   artistId?: InputMaybe<Scalars['Int']['input']>;
@@ -1477,7 +1476,7 @@ export type GetAlbumsTestQueryVariables = Exact<{
 }>;
 
 
-export type GetAlbumsTestQuery = { __typename?: 'Query', albums: { __typename?: 'AlbumConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Album', id: number, name: string, spotifyGid: string | null, deezerId: number | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null }> } };
+export type GetAlbumsTestQuery = { __typename?: 'Query', albums: { __typename?: 'AlbumConnection', totalCount: number, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null }, edges: Array<{ __typename?: 'Album', id: number, name: string, spotifyGid: string | null, deezerId: string | null, totalTracks: number, wanted: boolean, downloaded: boolean, albumType: string | null, albumGroup: string | null, artist: string | null, artistId: number | null }> } };
 
 export type GetPlaylistsTestQueryVariables = Exact<{
   enabled?: InputMaybe<Scalars['Boolean']['input']>;
@@ -1503,7 +1502,7 @@ export type GetSongsTestQueryVariables = Exact<{
 }>;
 
 
-export type GetSongsTestQuery = { __typename?: 'Query', songs: { __typename?: 'SongConnection', totalCount: number, edges: Array<{ __typename?: 'Song', id: number, name: string, gid: string | null, deezerId: number | null, primaryArtist: string, primaryArtistId: number, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string | null }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null } } };
+export type GetSongsTestQuery = { __typename?: 'Query', songs: { __typename?: 'SongConnection', totalCount: number, edges: Array<{ __typename?: 'Song', id: number, name: string, gid: string | null, deezerId: string | null, primaryArtist: string, primaryArtistId: number, createdAt: string, failedCount: number, bitrate: number, unavailable: boolean, filePath: string | null, downloaded: boolean, spotifyUri: string | null }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor: string | null, endCursor: string | null } } };
 
 export type TogglePlaylistTestMutationVariables = Exact<{
   playlistId: Scalars['Int']['input'];
