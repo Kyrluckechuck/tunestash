@@ -1015,3 +1015,113 @@ def download_single_track(self: Any, track_id: str) -> None:
         if task_history:
             complete_task(task_history, success=False, error_message=error_msg)
         raise
+
+
+@celery_app.task(bind=True, name="library_manager.tasks.download_deezer_track")
+def download_deezer_track(self: Any, song_id: int) -> None:
+    """Download a single track by Song database ID using FallbackDownloader.
+
+    Used for songs sourced from Deezer that don't have a Spotify URI.
+    Fetches metadata from Deezer API and downloads via YouTube/Tidal/Qobuz.
+    """
+    from downloader.providers.base import SpotifyTrackMetadata
+    from downloader.providers.fallback import FallbackDownloader
+
+    from src.providers.deezer import DeezerMetadataProvider
+
+    from ..models import DownloadProvider as DownloadProviderEnum
+
+    task_history = None
+    try:
+        song = Song.objects.select_related("primary_artist", "album").get(id=song_id)
+
+        task_history = create_task_history(
+            task_id=self.request.id,
+            task_type="DOWNLOAD",
+            entity_id=str(song_id),
+            entity_type="TRACK",
+        )
+        update_task_progress(
+            task_history, 0.0, f"Starting Deezer download for: {song.name}"
+        )
+
+        if not song.deezer_id:
+            raise ValueError(f"Song {song_id} ({song.name}) has no deezer_id")
+
+        require_download_capability(task_history)
+
+        if check_task_cancellation(task_history):
+            logger.info(f"Task cancelled for song {song_id}")
+            return
+
+        # Fetch track metadata from Deezer for artist/album context
+        provider = DeezerMetadataProvider()
+        deezer_track = provider.get_track(song.deezer_id)
+
+        artist_name: str = (
+            song.primary_artist.name  # type: ignore[attr-defined]
+            if song.primary_artist
+            else "Unknown Artist"
+        )
+        album_name: str = (
+            song.album.name if song.album else ""  # type: ignore[attr-defined]
+        )
+
+        metadata = SpotifyTrackMetadata(
+            spotify_id="",
+            title=song.name,
+            artist=deezer_track.artist_name if deezer_track else artist_name,
+            album=album_name,
+            album_artist=artist_name,
+            duration_ms=deezer_track.duration_ms if deezer_track else 0,
+            isrc=song.isrc or (deezer_track.isrc if deezer_track else None),
+        )
+
+        update_task_progress(
+            task_history, 25.0, f"Downloading: {song.name} via fallback providers"
+        )
+
+        provider_enum_map = {
+            "youtube": DownloadProviderEnum.YOUTUBE,
+            "tidal": DownloadProviderEnum.TIDAL,
+            "qobuz": DownloadProviderEnum.QOBUZ,
+        }
+
+        downloader = FallbackDownloader(
+            provider_order=["youtube", "tidal", "qobuz"],
+        )
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(downloader.download_track(metadata))
+        finally:
+            try:
+                loop.run_until_complete(downloader.close())
+            finally:
+                loop.close()
+
+        if result.success and result.file_path:
+            dl_provider = provider_enum_map.get(
+                result.provider_used or "", DownloadProviderEnum.UNKNOWN
+            )
+            song.mark_downloaded(
+                bitrate=256,
+                file_path=str(result.file_path),
+                provider=dl_provider,
+            )
+            complete_task(task_history, success=True)
+            logger.info(f"Downloaded '{song.name}' via {result.provider_used}")
+        else:
+            song.increment_failed_count()
+            song.save()
+            error_msg = f"Failed to download '{song.name}': {result.error_message}"
+            logger.warning(error_msg)
+            complete_task(task_history, success=False, error_message=error_msg)
+
+    except Exception as e:
+        error_msg = f"Error downloading Deezer track {song_id}: {str(e)}"
+        logger.error(error_msg)
+        if task_history:
+            complete_task(task_history, success=False, error_message=error_msg)
+        raise

@@ -12,7 +12,7 @@ import {
 
 // Regex to detect valid Spotify or Deezer playlist URLs/URIs
 const PLAYLIST_URL_REGEX =
-  /^(spotify:playlist:[a-zA-Z0-9]+|https?:\/\/open\.spotify\.com\/playlist\/[a-zA-Z0-9]+|https?:\/\/www\.deezer\.com\/\w+\/playlist\/\d+|https?:\/\/deezer\.com\/\w+\/playlist\/\d+)/;
+  /^(spotify:playlist:[a-zA-Z0-9]+|https?:\/\/open\.spotify\.com\/playlist\/[a-zA-Z0-9]+|https?:\/\/(www\.)?deezer\.com\/(\w+\/)?playlist\/\d+)/;
 
 interface PlaylistModalProps {
   isOpen: boolean;

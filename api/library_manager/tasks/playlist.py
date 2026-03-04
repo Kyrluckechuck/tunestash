@@ -80,7 +80,7 @@ def sync_deezer_playlist(
     self: Any, playlist_id: int, task_id: Optional[str] = None
 ) -> None:
     """Sync a Deezer playlist: fetch tracks, match/create songs, queue downloads."""
-    from .download import download_single_track
+    from .download import download_deezer_track
 
     task_history = None
     try:
@@ -209,7 +209,7 @@ def sync_deezer_playlist(
                 and matched_song.bitrate == 0
                 and not matched_song.unavailable
             ):
-                download_single_track.delay(matched_song.id)
+                download_deezer_track.delay(matched_song.id)
                 downloads_queued += 1
 
             # Update progress
