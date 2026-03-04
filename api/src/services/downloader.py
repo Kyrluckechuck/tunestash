@@ -110,12 +110,44 @@ class DownloaderService:
         elif content_type == "track":
             from asgiref.sync import sync_to_async
 
-            from library_manager.tasks import download_single_track
+            from library_manager.models import Artist, Song
+            from library_manager.tasks import download_deezer_track
+            from src.providers.deezer import DeezerMetadataProvider
 
-            await sync_to_async(download_single_track.delay)(deezer_id)
+            provider = DeezerMetadataProvider()
+            track_info = await sync_to_async(provider.get_track)(int(deezer_id))
+            if not track_info:
+                return MutationResult(
+                    success=False,
+                    message=f"Deezer track {deezer_id} not found",
+                )
+
+            def _create_song_and_queue() -> int:
+                artist = None
+                if track_info.artist_deezer_id:
+                    artist = Artist.objects.filter(
+                        deezer_id=track_info.artist_deezer_id
+                    ).first()
+                if not artist:
+                    artist, _ = Artist.objects.get_or_create(
+                        deezer_id=track_info.artist_deezer_id,
+                        defaults={"name": track_info.artist_name or "Unknown"},
+                    )
+                song, _ = Song.objects.get_or_create(
+                    deezer_id=int(deezer_id),
+                    defaults={
+                        "name": track_info.name,
+                        "isrc": track_info.isrc,
+                        "primary_artist": artist,
+                    },
+                )
+                download_deezer_track.delay(song.pk)
+                return int(song.pk)
+
+            song_id = await sync_to_async(_create_song_and_queue)()
             return MutationResult(
                 success=True,
-                message=f"Started downloading Deezer track (ID: {deezer_id})",
+                message=f"Started downloading Deezer track: {track_info.name} (song {song_id})",
             )
         else:
             return MutationResult(
