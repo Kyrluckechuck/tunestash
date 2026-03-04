@@ -16,10 +16,10 @@ import { ExternalListsSection } from '../components/external-lists/ExternalLists
 // Hooks
 import { usePlaylistsPage } from '../hooks/usePlaylistsPage';
 
-type PlaylistTab = 'spotify' | 'external';
+type PlaylistTab = 'synced' | 'external';
 
 function Playlists() {
-  const [activeTab, setActiveTab] = useState<PlaylistTab>('spotify');
+  const [activeTab, setActiveTab] = useState<PlaylistTab>('synced');
 
   const {
     // Data
@@ -86,10 +86,10 @@ function Playlists() {
 
       <div className='flex gap-1 border-b border-gray-200 mb-6'>
         <button
-          className={tabClass('spotify')}
-          onClick={() => setActiveTab('spotify')}
+          className={tabClass('synced')}
+          onClick={() => setActiveTab('synced')}
         >
-          Spotify Playlists
+          Synced Playlists
         </button>
         <button
           className={tabClass('external')}
@@ -99,8 +99,8 @@ function Playlists() {
         </button>
       </div>
 
-      {activeTab === 'spotify' && (
-        <SpotifyPlaylistsTab
+      {activeTab === 'synced' && (
+        <SyncedPlaylistsTab
           playlists={playlists}
           totalCount={totalCount}
           pageInfo={pageInfo}
@@ -149,7 +149,7 @@ function Playlists() {
   );
 }
 
-function SpotifyPlaylistsTab({
+function SyncedPlaylistsTab({
   playlists,
   totalCount,
   pageInfo,
@@ -205,7 +205,7 @@ function SpotifyPlaylistsTab({
       <div className='flex items-center justify-between mb-4'>
         <div className='flex items-center gap-3'>
           <h2 className='text-lg font-medium text-gray-700'>
-            Spotify Playlists ({playlists.length} of {totalCount})
+            Synced Playlists ({playlists.length} of {totalCount})
           </h2>
           {isRefreshing && <InlineSpinner label='Updating...' />}
         </div>
