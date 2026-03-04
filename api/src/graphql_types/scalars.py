@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import strawberry
 
@@ -18,13 +20,16 @@ def _parse_datetime(value: Any) -> datetime:
     raise ValueError(f"Cannot parse {value} as DateTime")
 
 
-DateTime = strawberry.scalar(
-    datetime,
-    name="DateTime",
-    description=(
-        "The `DateTime` scalar type represents a date and time following the "
-        "ISO 8601 standard."
-    ),
-    serialize=_serialize_datetime,
-    parse_value=_parse_datetime,
-)
+if TYPE_CHECKING:
+    DateTime = datetime
+else:
+    DateTime = strawberry.scalar(
+        datetime,
+        name="DateTime",
+        description=(
+            "The `DateTime` scalar type represents a date and time following the "
+            "ISO 8601 standard."
+        ),
+        serialize=_serialize_datetime,
+        parse_value=_parse_datetime,
+    )
