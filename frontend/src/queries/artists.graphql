@@ -4,6 +4,7 @@ query GetArtist($id: String!) {
     name
     gid
     spotifyUri
+    deezerId
     isTracked
     addedAt
     lastSynced
@@ -20,6 +21,7 @@ query GetAlbum($id: String!) {
     id
     name
     spotifyGid
+    deezerId
     totalTracks
     wanted
     downloaded
@@ -61,6 +63,7 @@ query GetArtists(
       name
       gid
       spotifyUri
+      deezerId
       isTracked
       addedAt
       lastSynced
@@ -102,6 +105,7 @@ query GetAlbums(
       id
       name
       spotifyGid
+      deezerId
       totalTracks
       wanted
       downloaded

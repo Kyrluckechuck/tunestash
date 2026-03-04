@@ -3,10 +3,10 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from downloader.providers.base import SpotifyTrackMetadata, TrackMatch
+from downloader.providers.base import TrackMatch, TrackMetadata
 from downloader.providers.metadata import (
     MetadataEmbedder,
-    create_spotify_metadata_from_match,
+    create_metadata_from_match,
 )
 
 
@@ -19,7 +19,7 @@ def embedder():
 @pytest.fixture
 def spotify_metadata():
     """Create sample Spotify metadata."""
-    return SpotifyTrackMetadata(
+    return TrackMetadata(
         spotify_id="4iV5W9uYEdYUVa79Axb7Rh",
         title="Blinding Lights",
         artist="The Weeknd",
@@ -147,7 +147,7 @@ class TestMetadataEmbedderMP4:
     ):
         """Test cover art fallback to track match."""
         # Remove cover from spotify metadata
-        spotify_metadata_no_cover = SpotifyTrackMetadata(
+        spotify_metadata_no_cover = TrackMetadata(
             spotify_id="test",
             title="Test",
             artist="Artist",
@@ -427,12 +427,12 @@ class TestCoverArtFetch:
 
 
 class TestCreateSpotifyMetadataFromMatch:
-    """Tests for create_spotify_metadata_from_match utility."""
+    """Tests for create_metadata_from_match utility."""
 
     @pytest.mark.unit
     def test_create_from_match_full(self, track_match):
         """Test creating metadata from a full track match."""
-        metadata = create_spotify_metadata_from_match(
+        metadata = create_metadata_from_match(
             track_match,
             spotify_id="spotify123",
             album_artist="Album Artist",
@@ -453,7 +453,7 @@ class TestCreateSpotifyMetadataFromMatch:
     @pytest.mark.unit
     def test_create_from_match_default_album_artist(self, track_match):
         """Test album artist defaults to artist."""
-        metadata = create_spotify_metadata_from_match(track_match)
+        metadata = create_metadata_from_match(track_match)
 
         assert metadata.album_artist == track_match.artist
 
@@ -470,7 +470,7 @@ class TestCreateSpotifyMetadataFromMatch:
             confidence=0.9,
         )
 
-        metadata = create_spotify_metadata_from_match(match)
+        metadata = create_metadata_from_match(match)
 
         assert metadata.title == "Song"
         assert metadata.artist == "Artist"

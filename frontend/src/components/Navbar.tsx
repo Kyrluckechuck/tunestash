@@ -34,7 +34,7 @@ export const Navbar = () => {
           className={titleClasses}
           activeProps={{ className: titleClasses }}
         >
-          Spotify Library Manager
+          TuneStash
         </Link>
         <div className='flex items-center gap-4'>
           {navLinks.map(link => (
@@ -76,7 +76,7 @@ export const Navbar = () => {
           <button
             onClick={downloadModal.open}
             className={downloadButtonClasses}
-            title='Download Spotify content'
+            title='Download music'
           >
             <svg
               className='w-4 h-4'

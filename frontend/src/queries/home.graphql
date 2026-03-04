@@ -26,6 +26,12 @@ query GetSystemStatus {
       hourlyCalls
       hourlyMax
     }
+    apiRateLimits {
+      apiName
+      isRateLimited
+      requestCount
+      maxRequestsPerSecond
+    }
     storage {
       path
       exists

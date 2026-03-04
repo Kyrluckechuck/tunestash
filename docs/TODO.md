@@ -1,4 +1,4 @@
-# Spotify Library Manager - TODO
+# Tunestash - TODO
 
 ## High Priority (Immediate)
 - [x] **Fix Makefile dev commands** - Update local development commands to be Docker-compatible

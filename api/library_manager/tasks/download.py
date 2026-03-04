@@ -1,4 +1,4 @@
-"""Download tasks for the Spotify library manager."""
+"""Download tasks for the Tunestash."""
 
 import asyncio
 import time
@@ -86,102 +86,100 @@ def download_missing_albums_for_artist(
             return
 
         if missing_albums.count() > 0:
-            # Split into Spotify and Deezer-only albums
-            spotify_albums = []
-            deezer_only_albums = []
+            # Deezer-first: albums with deezer_id go through FallbackDownloader,
+            # albums with only spotify_uri go through legacy spotdl path
+            deezer_albums = []
+            spotify_only_albums = []
             for album in missing_albums.iterator():
-                if album.spotify_uri:
-                    spotify_albums.append(album)
-                else:
-                    deezer_only_albums.append(album)
+                if album.deezer_id:
+                    deezer_albums.append(album)
+                elif album.spotify_uri:
+                    spotify_only_albums.append(album)
 
-            # Spotify path: batch download via spotdl
-            if spotify_albums:
-                rate_limit_delay = check_spotify_rate_limit()
-                if rate_limit_delay is not None:
-                    logger.info(
-                        f"Spotify rate limited for {rate_limit_delay}s, "
-                        f"rescheduling artist {artist.name}"
-                    )
-                    raise self.retry(
-                        exc=SpotifyRateLimitError(
-                            f"Rate limited for {rate_limit_delay}s", rate_limit_delay
-                        ),
-                        countdown=rate_limit_delay,
-                        max_retries=2,
-                    )
-
-                downloader_config = Config()
-                downloader_config.urls = [a.spotify_uri for a in spotify_albums]
-
+            # Deezer path (primary): download each album via fallback providers
+            if deezer_albums:
                 logger.info(
-                    f"Downloading {len(downloader_config.urls)} Spotify albums "
-                    f"for artist {artist.name}"
-                )
-
-                if check_and_update_progress(
-                    task_history,
-                    50.0,
-                    f"Downloading {len(downloader_config.urls)} Spotify albums",
-                ):
-                    return
-
-                def progress_callback(progress_pct: float, message: str) -> None:
-                    try:
-                        check_if_cancelled(self.request.id)
-                    except TaskCancelledException:
-                        logger.info(
-                            f"Download cancelled by user for artist {artist.name}"
-                        )
-                        raise
-                    update_task_progress(task_history, progress_pct, message)
-
-                try:
-                    spotdl_wrapper.execute(
-                        downloader_config, task_progress_callback=progress_callback
-                    )
-                except TaskCancelledException as e:
-                    logger.info(f"Task cancelled during download: {e}")
-                    if task_history:
-                        task_history.status = "CANCELLED"
-                        task_history.error_message = "Cancelled by user"
-                        task_history.save()
-                    return
-                except YouTubeRateLimitError as rate_limit_error:
-                    retry_after = rate_limit_error.retry_after_seconds
-                    logger.warning(
-                        f"YouTube rate limit hit for artist {artist.name}, "
-                        f"rescheduling in {retry_after}s"
-                    )
-                    if task_history:
-                        task_history.status = "PENDING"
-                        task_history.add_log_message(
-                            f"Rate limited by YouTube, rescheduling in {retry_after // 60} minutes"
-                        )
-                        task_history.save()
-                    raise self.retry(
-                        exc=rate_limit_error,
-                        countdown=retry_after,
-                        max_retries=3,
-                    )
-
-            # Deezer path: download each album individually via fallback providers
-            if deezer_only_albums:
-                logger.info(
-                    f"Downloading {len(deezer_only_albums)} Deezer-only albums "
+                    f"Downloading {len(deezer_albums)} albums via Deezer "
                     f"for artist {artist.name}"
                 )
                 update_task_progress(
                     task_history,
-                    75.0,
-                    f"Downloading {len(deezer_only_albums)} Deezer-only albums",
+                    50.0,
+                    f"Downloading {len(deezer_albums)} albums via fallback providers",
                 )
-                for deezer_album in deezer_only_albums:
+                for deezer_album in deezer_albums:
                     try:
                         _download_deezer_album(deezer_album, task_history)
                     except Exception as e:
                         logger.error(
-                            f"Failed to download Deezer album '{deezer_album.name}': {e}"
+                            f"Failed to download album '{deezer_album.name}': {e}"
+                        )
+
+            # Spotify-only path (legacy): batch download via spotdl
+            if spotify_only_albums:
+                rate_limit_delay = check_spotify_rate_limit()
+                if rate_limit_delay is not None:
+                    logger.info(
+                        f"Skipping {len(spotify_only_albums)} Spotify-only albums "
+                        f"for artist {artist.name} - rate limited for {rate_limit_delay}s"
+                    )
+                else:
+                    downloader_config = Config()
+                    downloader_config.urls = [
+                        a.spotify_uri for a in spotify_only_albums
+                    ]
+
+                    logger.info(
+                        f"Downloading {len(downloader_config.urls)} Spotify-only albums "
+                        f"for artist {artist.name}"
+                    )
+
+                    if check_and_update_progress(
+                        task_history,
+                        75.0,
+                        f"Downloading {len(downloader_config.urls)} Spotify-only albums",
+                    ):
+                        return
+
+                    def progress_callback(progress_pct: float, message: str) -> None:
+                        try:
+                            check_if_cancelled(self.request.id)
+                        except TaskCancelledException:
+                            logger.info(
+                                f"Download cancelled by user for artist {artist.name}"
+                            )
+                            raise
+                        update_task_progress(task_history, progress_pct, message)
+
+                    try:
+                        spotdl_wrapper.execute(
+                            downloader_config,
+                            task_progress_callback=progress_callback,
+                        )
+                    except TaskCancelledException as e:
+                        logger.info(f"Task cancelled during download: {e}")
+                        if task_history:
+                            task_history.status = "CANCELLED"
+                            task_history.error_message = "Cancelled by user"
+                            task_history.save()
+                        return
+                    except YouTubeRateLimitError as rate_limit_error:
+                        retry_after = rate_limit_error.retry_after_seconds
+                        logger.warning(
+                            f"YouTube rate limit hit for artist {artist.name}, "
+                            f"rescheduling in {retry_after}s"
+                        )
+                        if task_history:
+                            task_history.status = "PENDING"
+                            task_history.add_log_message(
+                                f"Rate limited by YouTube, "
+                                f"rescheduling in {retry_after // 60} minutes"
+                            )
+                            task_history.save()
+                        raise self.retry(
+                            exc=rate_limit_error,
+                            countdown=retry_after,
+                            max_retries=3,
                         )
         else:
             logger.info(f"No missing albums for artist {artist.id}, skipping")
@@ -212,10 +210,11 @@ def download_missing_albums_for_artist(
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_single_album")
 def download_single_album(self: Any, album_id: int) -> None:
+    # pylint: disable=too-many-return-statements
     """Download a single specific album by ID.
 
-    Routes to spotdl (Spotify path) or fallback providers (Deezer path)
-    based on whether the album has a Spotify URI.
+    Deezer-first: albums with deezer_id use FallbackDownloader (YouTube/Tidal/Qobuz).
+    Albums with only spotify_uri fall back to legacy spotdl path.
     """
     task_history = None
     try:
@@ -225,10 +224,10 @@ def download_single_album(self: Any, album_id: int) -> None:
             logger.warning(f"Album with ID {album_id} does not exist. Skipping task.")
             return
 
-        is_deezer_only = not album.spotify_uri
+        use_spotdl = not album.deezer_id and album.spotify_uri
 
-        # Only check Spotify rate limit for Spotify-path albums
-        if not is_deezer_only:
+        # Only check Spotify rate limit for legacy spotdl path
+        if use_spotdl:
             rate_limit_delay = check_spotify_rate_limit()
             if rate_limit_delay is not None:
                 logger.info(
@@ -243,7 +242,6 @@ def download_single_album(self: Any, album_id: int) -> None:
                     max_retries=2,
                 )
 
-        # Use album DB ID as entity_id (works for both Spotify and Deezer albums)
         task_history = create_task_history(
             task_id=self.request.id,
             task_type="DOWNLOAD",
@@ -264,7 +262,7 @@ def download_single_album(self: Any, album_id: int) -> None:
             album.wanted = True
             album.save()
 
-        if is_deezer_only:
+        if album.deezer_id:
             dl_count, fail_count = _download_deezer_album(album, task_history)
             total = dl_count + fail_count
             if fail_count > 0:
@@ -272,7 +270,7 @@ def download_single_album(self: Any, album_id: int) -> None:
                 complete_task(task_history, success=False, error_message=msg)
                 logger.warning(f"Partial failure for album {album.name}: {msg}")
                 return
-        else:
+        elif album.spotify_uri:
             if check_and_update_progress(
                 task_history, 25.0, "Preparing download configuration"
             ):
@@ -293,6 +291,11 @@ def download_single_album(self: Any, album_id: int) -> None:
 
             album.downloaded = True
             album.save()
+        else:
+            msg = f"Album {album.name} has no deezer_id or spotify_uri"
+            logger.error(msg)
+            complete_task(task_history, success=False, error_message=msg)
+            return
 
         if check_and_update_progress(task_history, 100.0, "Download completed"):
             return
@@ -351,7 +354,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
     Returns:
         (downloaded_count, failed_count) tuple.
     """
-    from downloader.providers.base import SpotifyTrackMetadata
+    from downloader.providers.base import TrackMetadata
     from downloader.providers.fallback import FallbackDownloader
 
     from src.providers.deezer import DeezerMetadataProvider
@@ -385,7 +388,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
     cover_url = album_data.image_url if album_data else None
 
     # Create Song records and prepare download list
-    songs_to_download: list[tuple[Song, SpotifyTrackMetadata]] = []
+    songs_to_download: list[tuple[Song, TrackMetadata]] = []
 
     for track in deezer_tracks:
         if not track.deezer_id:
@@ -421,7 +424,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
             continue
 
         # Build metadata for fallback providers
-        metadata = SpotifyTrackMetadata(
+        metadata = TrackMetadata(
             spotify_id="",
             title=track.name,
             artist=track.artist_name or album_artist_name,
@@ -1189,7 +1192,7 @@ def download_deezer_track(self: Any, song_id: int) -> None:
     Used for songs sourced from Deezer that don't have a Spotify URI.
     Fetches metadata from Deezer API and downloads via YouTube/Tidal/Qobuz.
     """
-    from downloader.providers.base import SpotifyTrackMetadata
+    from downloader.providers.base import TrackMetadata
     from downloader.providers.fallback import FallbackDownloader
 
     from src.providers.deezer import DeezerMetadataProvider
@@ -1232,7 +1235,7 @@ def download_deezer_track(self: Any, song_id: int) -> None:
             song.album.name if song.album else ""  # type: ignore[attr-defined]
         )
 
-        metadata = SpotifyTrackMetadata(
+        metadata = TrackMetadata(
             spotify_id="",
             title=song.name,
             artist=deezer_track.artist_name if deezer_track else artist_name,

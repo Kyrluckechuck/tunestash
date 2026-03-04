@@ -244,7 +244,7 @@ class SongUpgradeService:
         """
         from django.conf import settings as django_settings
 
-        from downloader.providers.base import QualityPreference, SpotifyTrackMetadata
+        from downloader.providers.base import QualityPreference, TrackMetadata
         from downloader.providers.fallback import FallbackDownloader
         from lib.config_class import Config
         from pymediainfo import MediaInfo
@@ -330,12 +330,12 @@ class SongUpgradeService:
             except Exception:
                 pass
 
-        spotify_metadata = SpotifyTrackMetadata(
+        track_metadata = TrackMetadata(
             spotify_id=song.gid,
             title=song.name,
             artist=artist_name,
             album=album_name or "",
-            album_artist=artist_name,  # Use primary artist as album artist fallback
+            album_artist=artist_name,
             isrc=song.isrc,
             duration_ms=duration_ms or 0,
         )
@@ -369,7 +369,7 @@ class SongUpgradeService:
                     qobuz_use_mp3=config.qobuz_use_mp3,
                 )
 
-                result = await downloader.download_track(spotify_metadata)
+                result = await downloader.download_track(track_metadata)
 
                 if result.success and result.file_path:
                     # Get new bitrate

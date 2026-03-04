@@ -62,6 +62,7 @@ const testQueries = [
             id
             name
             gid
+            deezerId
             isTracked
             addedAt
             lastSynced
@@ -105,6 +106,7 @@ const testQueries = [
             id
             name
             spotifyGid
+            deezerId
             totalTracks
             wanted
             downloaded
@@ -186,6 +188,7 @@ const testQueries = [
             id
             name
             gid
+            deezerId
             primaryArtist
             primaryArtistId
             createdAt

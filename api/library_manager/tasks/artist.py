@@ -1,4 +1,4 @@
-"""Artist tasks for the Spotify library manager."""
+"""Artist tasks for the Tunestash."""
 
 from typing import Any, Optional
 

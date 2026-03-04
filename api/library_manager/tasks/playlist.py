@@ -1,4 +1,4 @@
-"""Playlist tasks for the Spotify library manager."""
+"""Playlist tasks for the Tunestash."""
 
 import re
 from typing import Any, Optional

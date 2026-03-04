@@ -142,14 +142,29 @@ export function AlbumsTable({
                 <td className='px-6 py-4 whitespace-nowrap'>
                   <div className='text-sm font-medium'>
                     <a
-                      href={`https://open.spotify.com/album/${album.spotifyGid}`}
+                      href={
+                        album.deezerId
+                          ? `https://www.deezer.com/album/${album.deezerId}`
+                          : `https://open.spotify.com/album/${album.spotifyGid}`
+                      }
                       target='_blank'
                       rel='noopener noreferrer'
                       className='text-green-600 hover:text-green-800 hover:underline'
-                      title={`Open ${album.name} on Spotify`}
+                      title={`Open ${album.name} on ${album.deezerId ? 'Deezer' : 'Spotify'}`}
                     >
                       {album.name}
                     </a>
+                    {album.deezerId && album.spotifyGid && (
+                      <a
+                        href={`https://open.spotify.com/album/${album.spotifyGid}`}
+                        target='_blank'
+                        rel='noopener noreferrer'
+                        className='ml-1.5 text-xs text-gray-400 hover:text-gray-600'
+                        title='Also on Spotify'
+                      >
+                        (Spotify)
+                      </a>
+                    )}
                   </div>
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap'>

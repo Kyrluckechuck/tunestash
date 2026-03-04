@@ -5,6 +5,7 @@ import strawberry
 from ..graphql_types.models import (
     Album,
     AlbumConnection,
+    APIRateLimitInfo,
     Artist,
     ArtistConnection,
     AuthenticationStatus,
@@ -33,7 +34,6 @@ from ..graphql_types.models import (
     QueueStatus,
     Song,
     SongConnection,
-    SpotifyPlaylistInfo,
     SpotifyRateLimitStatus,
     StorageStatus,
     SystemHealth,
@@ -360,7 +360,7 @@ class Query:  # pylint: disable=too-many-public-methods
         """Get overall system health including authentication status."""
         from asgiref.sync import sync_to_async
 
-        from library_manager.models import SpotifyRateLimitState
+        from library_manager.models import APIRateLimitState, SpotifyRateLimitState
 
         from ..services.system_health import SystemHealthService
 
@@ -378,6 +378,20 @@ class Query:  # pylint: disable=too-many-public-methods
 
         # Get storage status
         storage_data = await sync_to_async(SystemHealthService.check_storage_status)()
+
+        # Get API rate limit states (Deezer, YouTube, etc.)
+        api_rate_limit_states = await sync_to_async(
+            lambda: list(APIRateLimitState.objects.all())
+        )()
+        api_rate_limits = [
+            APIRateLimitInfo(
+                api_name=state.api_name,
+                is_rate_limited=state.is_rate_limited,
+                request_count=state.request_count,
+                max_requests_per_second=state.max_requests_per_second,
+            )
+            for state in api_rate_limit_states
+        ]
 
         return SystemHealth(
             can_download=can_download,
@@ -413,6 +427,7 @@ class Query:  # pylint: disable=too-many-public-methods
                 hourly_calls=rate_limit_data.get("hourly_calls", 0),
                 hourly_max=rate_limit_data.get("hourly_max", 600),
             ),
+            api_rate_limits=api_rate_limits,
             storage=StorageStatus(
                 path=storage_data.path,
                 exists=storage_data.exists,
@@ -521,23 +536,6 @@ class Query:  # pylint: disable=too-many-public-methods
             track_count=result.get("track_count", 0),
             image_url=result.get("image_url"),
             provider=result.get("provider", "spotify"),
-        )
-
-    @strawberry.field
-    async def spotify_playlist_info(self, url: str) -> Optional[SpotifyPlaylistInfo]:
-        """Fetch playlist metadata from Spotify by URL or URI.
-
-        Deprecated: use playlistInfo instead, which auto-detects the provider.
-        """
-        result = await services.playlist.get_spotify_playlist_info(url)
-        if result is None:
-            return None
-
-        return SpotifyPlaylistInfo(
-            name=result["name"],
-            owner_name=result.get("owner_name"),
-            track_count=result.get("track_count", 0),
-            image_url=result.get("image_url"),
         )
 
     @strawberry.field

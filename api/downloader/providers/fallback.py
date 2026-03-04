@@ -17,8 +17,8 @@ from .audio_converter import AudioConversionError, convert_flac_to_m4a
 from .base import (
     DownloadProvider,
     QualityPreference,
-    SpotifyTrackMetadata,
     TrackMatch,
+    TrackMetadata,
 )
 from .metadata import MetadataEmbedder
 from .qobuz import QobuzProvider
@@ -149,7 +149,7 @@ class FallbackDownloader:
 
     async def download_track(
         self,
-        spotify_metadata: SpotifyTrackMetadata,
+        track_metadata: TrackMetadata,
         output_filename: Optional[str] = None,
     ) -> FallbackDownloadResult:
         """
@@ -158,7 +158,7 @@ class FallbackDownloader:
         Tries each provider in the configured order until one succeeds.
 
         Args:
-            spotify_metadata: Metadata from Spotify for the track
+            track_metadata: Metadata for the track to download
             output_filename: Optional custom filename (without extension)
 
         Returns:
@@ -179,7 +179,7 @@ class FallbackDownloader:
         for provider_name in self._provider_order:
             logger.info(
                 f"[{provider_name}] Trying to download: "
-                f"'{spotify_metadata.artist} - {spotify_metadata.title}'"
+                f"'{track_metadata.artist} - {track_metadata.title}'"
             )
 
             # Initialize provider if needed
@@ -194,7 +194,7 @@ class FallbackDownloader:
             # Try this provider
             result = await self._try_provider(
                 provider=provider,
-                spotify_metadata=spotify_metadata,
+                track_metadata=track_metadata,
                 output_filename=output_filename,
             )
 
@@ -217,7 +217,7 @@ class FallbackDownloader:
     async def _try_provider(
         self,
         provider: DownloadProvider,
-        spotify_metadata: SpotifyTrackMetadata,
+        track_metadata: TrackMetadata,
         output_filename: Optional[str],
     ) -> FallbackDownloadResult:
         """
@@ -225,7 +225,7 @@ class FallbackDownloader:
 
         Args:
             provider: The download provider to use
-            spotify_metadata: Spotify track metadata
+            track_metadata: Track metadata for searching and downloading
             output_filename: Optional custom filename
 
         Returns:
@@ -236,16 +236,16 @@ class FallbackDownloader:
         # Step 1: Search for the track
         try:
             match = await provider.search_track(
-                title=spotify_metadata.title,
-                artist=spotify_metadata.artist,
-                album=spotify_metadata.album,
-                isrc=spotify_metadata.isrc,
-                duration_ms=spotify_metadata.duration_ms,
+                title=track_metadata.title,
+                artist=track_metadata.artist,
+                album=track_metadata.album,
+                isrc=track_metadata.isrc,
+                duration_ms=track_metadata.duration_ms,
             )
             if match is None:
                 logger.info(
                     f"[{provider_name}] No match found for "
-                    f"'{spotify_metadata.artist} - {spotify_metadata.title}'"
+                    f"'{track_metadata.artist} - {track_metadata.title}'"
                 )
                 return FallbackDownloadResult(
                     success=False,
@@ -278,8 +278,8 @@ class FallbackDownloader:
                 base_filename = output_filename
             else:
                 # Create filename from metadata
-                safe_artist = self._sanitize_filename(spotify_metadata.artist)
-                safe_title = self._sanitize_filename(spotify_metadata.title)
+                safe_artist = self._sanitize_filename(track_metadata.artist)
+                safe_title = self._sanitize_filename(track_metadata.title)
                 base_filename = f"{safe_artist} - {safe_title}"
 
             # Determine file extension based on quality and provider
@@ -350,7 +350,7 @@ class FallbackDownloader:
         try:
             metadata_success = self._metadata_embedder.embed_metadata(
                 file_path=file_path,
-                spotify_metadata=spotify_metadata,
+                track_metadata=track_metadata,
                 track_match=match,
             )
             if not metadata_success:
@@ -366,7 +366,7 @@ class FallbackDownloader:
         try:
             validation_result = self._audio_validator.validate(
                 file_path=file_path,
-                expected_duration_ms=spotify_metadata.duration_ms,
+                expected_duration_ms=track_metadata.duration_ms,
             )
 
             if not validation_result.is_valid:
@@ -379,7 +379,7 @@ class FallbackDownloader:
 
         logger.info(
             f"[{provider_name}] Successfully downloaded and processed: "
-            f"'{spotify_metadata.artist} - {spotify_metadata.title}'"
+            f"'{track_metadata.artist} - {track_metadata.title}'"
         )
 
         return FallbackDownloadResult(

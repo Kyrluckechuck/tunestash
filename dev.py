@@ -25,7 +25,7 @@ def stream_output(process, prefix):
 def run_api():
     env = os.environ.copy()
     env["PYTHONPATH"] = "api"
-    
+
     process = subprocess.Popen(
         ["python", "api/run.py"],
         cwd=Path("."),
@@ -53,7 +53,7 @@ def run_celery_worker():
     env = os.environ.copy()
     env["PYTHONPATH"] = "api"
     env["DJANGO_SETTINGS_MODULE"] = "settings"
-    
+
     process = subprocess.Popen(
         ["celery", "-A", "celery_app", "worker", "--loglevel=info"],
         cwd=Path("api"),
@@ -70,9 +70,9 @@ def run_migrations():
     env = os.environ.copy()
     env["PYTHONPATH"] = "api"
     env["DJANGO_SETTINGS_MODULE"] = "settings"
-    
+
     print_with_prefix("MIGRATIONS", "Running migrations...")
-    
+
     # Run migrations (Django handles database creation automatically)
     migrate_process = subprocess.run(
         ["python", "api/manage.py", "migrate"],
@@ -81,48 +81,48 @@ def run_migrations():
         capture_output=True,
         text=True
     )
-    
+
     if migrate_process.returncode != 0:
         print_with_prefix("ERROR", "Failed to run migrations")
         print_with_prefix("ERROR", migrate_process.stderr)
         return False
-    
+
     print_with_prefix("MIGRATIONS", "Migrations completed successfully")
     return True
 
 def main():
-    print("\033[1;32m🚀 Starting Spotify Library Manager Development Servers...\033[0m\n")
-    
+    print("\033[1;32m🚀 Starting Tunestash Development Servers...\033[0m\n")
+
     # Run migrations first
     print_with_prefix("SETUP", "Checking and running database migrations...")
     if not run_migrations():
         print_with_prefix("ERROR", "Migration check failed. Exiting.")
         sys.exit(1)
-    
+
     # Start API server
     print_with_prefix("SETUP", "Starting API server...")
     api_process = run_api()
-    
-    # Start frontend dev server  
+
+    # Start frontend dev server
     print_with_prefix("SETUP", "Starting frontend dev server...")
     frontend_process = run_frontend()
-    
+
     # Start Celery worker for background tasks
     print_with_prefix("SETUP", "Starting Celery worker for background tasks...")
     celery_worker_process = run_celery_worker()
-    
+
     # Wait a moment for servers to start
     time.sleep(3)
-    
+
     # Start output streaming threads
     api_thread = threading.Thread(target=stream_output, args=(api_process, "API"), daemon=True)
     frontend_thread = threading.Thread(target=stream_output, args=(frontend_process, "FRONTEND"), daemon=True)
     celery_worker_thread = threading.Thread(target=stream_output, args=(celery_worker_process, "CELERY-WORKER"), daemon=True)
-    
+
     api_thread.start()
     frontend_thread.start()
     celery_worker_thread.start()
-    
+
     print_with_prefix("SETUP", "Development servers starting up...")
     print_with_prefix("INFO", "API will be available at: http://localhost:5000/graphql")
     print_with_prefix("INFO", "Frontend will be available at: http://localhost:3000")
@@ -165,7 +165,7 @@ def main():
             if celery_worker_process.poll() is not None:
                 print_with_prefix("ERROR", "Celery worker exited unexpectedly")
                 break
-            
+
             time.sleep(1)
     except KeyboardInterrupt:
         pass
@@ -173,4 +173,4 @@ def main():
         cleanup()
 
 if __name__ == "__main__":
-    main() 
+    main()

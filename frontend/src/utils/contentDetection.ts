@@ -12,7 +12,7 @@ export interface DetectedContent {
  * @param url - URL to analyze
  * @returns Detected content information including type, icon, and labels
  */
-export function detectSpotifyContentType(url: string): DetectedContent {
+export function detectContentType(url: string): DetectedContent {
   const trimmedUrl = url.trim().toLowerCase();
 
   if (!trimmedUrl) {

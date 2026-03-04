@@ -495,6 +495,7 @@ class ArtistService(BaseService[Artist]):
             downloaded_album_count=downloaded_album_count,
             song_count=song_count,
             failed_song_count=failed_song_count,
+            deezer_id=django_artist.deezer_id,
         )
 
     def _to_graphql_type(self, django_artist: DjangoArtist) -> Artist:
@@ -520,4 +521,5 @@ class ArtistService(BaseService[Artist]):
             downloaded_album_count=0,
             song_count=0,
             failed_song_count=0,
+            deezer_id=django_artist.deezer_id,
         )

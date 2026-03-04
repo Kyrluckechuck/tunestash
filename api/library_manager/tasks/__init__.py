@@ -1,4 +1,4 @@
-"""Celery tasks for the Spotify library manager.
+"""Celery tasks for the Tunestash.
 
 This package contains all Celery tasks organized by functionality:
 - artist: Artist synchronization and fetching

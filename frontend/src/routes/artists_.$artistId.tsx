@@ -144,14 +144,26 @@ function ArtistDetail() {
               {artistRefreshing && <InlineSpinner label='Updating...' />}
             </div>
             <div className='flex items-center gap-4 text-sm text-indigo-700'>
-              <a
-                href={`https://open.spotify.com/artist/${artist.gid}`}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='hover:text-indigo-900 underline'
-              >
-                Open in Spotify
-              </a>
+              {artist.deezerId && (
+                <a
+                  href={`https://www.deezer.com/artist/${artist.deezerId}`}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='hover:text-indigo-900 underline'
+                >
+                  Deezer
+                </a>
+              )}
+              {artist.gid && (
+                <a
+                  href={`https://open.spotify.com/artist/${artist.gid}`}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='hover:text-indigo-900 underline'
+                >
+                  Spotify
+                </a>
+              )}
               <span
                 className={`px-2 py-0.5 rounded text-xs font-medium ${
                   artist.isTracked

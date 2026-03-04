@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-# Incremental pre-commit hook for Spotify Library Manager (tracked in repo)
+# Incremental pre-commit hook for Tunestash (tracked in repo)
 echo "🔍 Running pre-commit checks (staged files only)..."
 
 # Collect staged files
@@ -46,7 +46,7 @@ if [ -d "frontend" ]; then
                 yarn -s tsc --noEmit --project tsconfig.app.json || {
                     echo "❌ TypeScript type check failed."; exit 1; }
             fi
-            
+
             # Autofix on staged files first
             if [ -n "$FE_LINT_FILES" ]; then
                 echo "🛠️  ESLint auto-fix (changed files)..."
@@ -58,7 +58,7 @@ if [ -d "frontend" ]; then
                 # shellcheck disable=SC2086
                 yarn -s prettier --write $FE_PRETTIER_FILES >/dev/null 2>&1 || true
             fi
-            
+
             # Re-stage any changes produced by autofixers (frontend files only)
             if [ -n "$FE_LINT_FILES" ] || [ -n "$FE_PRETTIER_FILES" ]; then
                 # shellcheck disable=SC2086

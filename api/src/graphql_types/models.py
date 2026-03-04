@@ -64,6 +64,7 @@ class Artist:
     downloaded_album_count: int = 0
     song_count: int = 0
     failed_song_count: int = 0
+    deezer_id: Optional[int] = None
 
 
 @strawberry.type
@@ -79,6 +80,7 @@ class Album:
     artist: Optional[str]
     artist_id: Optional[int]
     artist_gid: Optional[str]
+    deezer_id: Optional[int] = None
 
 
 @strawberry.type
@@ -97,6 +99,7 @@ class Song:
     downloaded: bool
     spotify_uri: Optional[str]
     download_provider: Optional[DownloadProvider] = None
+    deezer_id: Optional[int] = None
 
 
 @strawberry.type
@@ -394,6 +397,16 @@ class StorageStatus:
 
 
 @strawberry.type
+class APIRateLimitInfo:
+    """Rate limit status for a generic API (Deezer, YouTube, etc.)."""
+
+    api_name: str
+    is_rate_limited: bool
+    request_count: int
+    max_requests_per_second: float
+
+
+@strawberry.type
 class SystemHealth:
     """Overall system health status."""
 
@@ -401,6 +414,7 @@ class SystemHealth:
     download_blocker_reason: Optional[str] = None
     authentication: AuthenticationStatus
     spotify_rate_limit: SpotifyRateLimitStatus
+    api_rate_limits: List[APIRateLimitInfo] = strawberry.field(default_factory=list)
     storage: StorageStatus
 
 
@@ -472,19 +486,6 @@ class PlaylistInfo:
     track_count: int
     image_url: Optional[str]
     provider: str = "spotify"
-
-
-@strawberry.type
-class SpotifyPlaylistInfo:
-    """Playlist info fetched directly from Spotify by URL/URI.
-
-    Deprecated: use PlaylistInfo instead.
-    """
-
-    name: str
-    owner_name: Optional[str]
-    track_count: int
-    image_url: Optional[str]
 
 
 @strawberry.type

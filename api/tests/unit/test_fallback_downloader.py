@@ -9,8 +9,8 @@ import pytest
 from downloader.providers.base import (
     DownloadResult,
     QualityPreference,
-    SpotifyTrackMetadata,
     TrackMatch,
+    TrackMetadata,
 )
 from downloader.providers.fallback import FallbackDownloader, FallbackDownloadResult
 from downloader.providers.validation import ValidationResult
@@ -19,7 +19,7 @@ from downloader.providers.validation import ValidationResult
 @pytest.fixture
 def spotify_metadata():
     """Create sample Spotify metadata."""
-    return SpotifyTrackMetadata(
+    return TrackMetadata(
         spotify_id="abc123",
         title="Test Song",
         artist="Test Artist",

@@ -1,4 +1,4 @@
-"""Periodic tasks for the Spotify library manager."""
+"""Periodic tasks for the Tunestash."""
 
 import time
 import unicodedata

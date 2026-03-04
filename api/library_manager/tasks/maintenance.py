@@ -1,4 +1,4 @@
-"""Maintenance tasks for the Spotify library manager."""
+"""Maintenance tasks for the Tunestash."""
 
 import asyncio
 from typing import Any, Optional
@@ -23,7 +23,7 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
 
     Returns (downloaded_count, failed_count).
     """
-    from downloader.providers.base import SpotifyTrackMetadata
+    from downloader.providers.base import TrackMetadata
     from downloader.providers.fallback import FallbackDownloader
 
     from ..models import DownloadProvider as DownloadProviderEnum
@@ -49,7 +49,7 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
             album_name = song.album.name if song.album else ""  # type: ignore[attr-defined]
             artist_name = song.primary_artist.name  # type: ignore[attr-defined]
 
-            metadata = SpotifyTrackMetadata(
+            metadata = TrackMetadata(
                 spotify_id="",
                 title=song.name,
                 artist=artist_name,

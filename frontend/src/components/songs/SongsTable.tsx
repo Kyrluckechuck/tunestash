@@ -163,21 +163,37 @@ export const SongsTable: React.FC<SongsTableProps> = ({
               <td className='px-6 py-4 whitespace-nowrap'>
                 <div className='text-sm font-medium'>
                   <a
-                    href={(song.spotifyUri ?? '').replace(
-                      'spotify:track:',
-                      'https://open.spotify.com/track/'
-                    )}
+                    href={
+                      song.deezerId
+                        ? `https://www.deezer.com/track/${song.deezerId}`
+                        : (song.spotifyUri ?? '').replace(
+                            'spotify:track:',
+                            'https://open.spotify.com/track/'
+                          )
+                    }
                     target='_blank'
                     rel='noopener noreferrer'
                     className='text-green-600 hover:text-green-800 hover:underline'
-                    title={`Open ${song.name} on Spotify`}
+                    title={`Open ${song.name} on ${song.deezerId ? 'Deezer' : 'Spotify'}`}
                   >
                     {song.name}
                   </a>
+                  {song.deezerId && song.spotifyUri && (
+                    <a
+                      href={(song.spotifyUri ?? '').replace(
+                        'spotify:track:',
+                        'https://open.spotify.com/track/'
+                      )}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      className='ml-1.5 text-xs text-gray-400 hover:text-gray-600'
+                      title='Also on Spotify'
+                    >
+                      (Spotify)
+                    </a>
+                  )}
                 </div>
-                <div className='text-sm text-gray-500'>
-                  DB ID: {song.id} | Spotify: {song.gid}
-                </div>
+                <div className='text-sm text-gray-500'>ID: {song.id}</div>
               </td>
               <td className='px-6 py-4 whitespace-nowrap'>
                 <Link

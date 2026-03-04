@@ -6,9 +6,9 @@ import {
 } from '../../types/generated/graphql';
 import { useToast } from './useToast';
 import {
-  detectSpotifyContentType,
+  detectContentType,
   extractPlaylistName,
-} from '../../utils/spotifyContentDetection';
+} from '../../utils/contentDetection';
 
 interface DownloadModalProps {
   isOpen: boolean;
@@ -70,7 +70,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
   const isLoading = downloadLoading || createLoading;
 
   // Detect content type from URL
-  const detectedContent = detectSpotifyContentType(url);
+  const detectedContent = detectContentType(url);
   const isPlaylist = detectedContent.type === 'playlist';
 
   // Dynamic button text for playlists based on save setting
@@ -89,7 +89,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
     setErrorMessage(null);
 
     if (!url.trim()) {
-      setErrorMessage('Please enter a Spotify URL or URI');
+      setErrorMessage('Please enter a music URL');
       return;
     }
 
@@ -153,7 +153,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
     <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'>
       <div className='bg-white rounded-lg p-6 w-full max-w-md mx-4'>
         <div className='flex justify-between items-center mb-4'>
-          <h2 className='text-xl font-semibold'>Download Spotify Content</h2>
+          <h2 className='text-xl font-semibold'>Download Music</h2>
           <button
             onClick={handleClose}
             className='text-gray-400 hover:text-gray-600'
@@ -181,14 +181,14 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
               htmlFor='url'
               className='block text-sm font-medium text-gray-700 mb-2'
             >
-              Spotify URL or URI
+              Music URL
             </label>
             <input
               type='text'
               id='url'
               value={url}
               onChange={e => setUrl(e.target.value)}
-              placeholder='https://open.spotify.com/playlist/... or spotify:artist:...'
+              placeholder='https://www.deezer.com/playlist/... or https://open.spotify.com/...'
               className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
               disabled={isLoading}
             />

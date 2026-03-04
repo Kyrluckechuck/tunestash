@@ -5,32 +5,10 @@ mutation DownloadAllPlaylists {
   }
 }
 
-mutation SavePlaylist($spotifyId: String!, $autoTrackArtists: Boolean) {
-  savePlaylist(spotifyId: $spotifyId, autoTrackArtists: $autoTrackArtists) {
-    id
-    name
-    url
-    status
-    statusMessage
-    enabled
-    autoTrackArtists
-    lastSyncedAt
-  }
-}
-
 mutation DeletePlaylist($playlistId: Int!) {
   deletePlaylist(playlistId: $playlistId) {
     success
     message
-  }
-}
-
-query GetSpotifyPlaylistInfo($url: String!) {
-  spotifyPlaylistInfo(url: $url) {
-    name
-    ownerName
-    trackCount
-    imageUrl
   }
 }
 
