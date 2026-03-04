@@ -22,7 +22,7 @@ describe('Navbar', () => {
   it('renders the application title', () => {
     renderNavbar();
 
-    expect(screen.getByText('Spotify Library Manager')).toBeInTheDocument();
+    expect(screen.getByText('TuneStash')).toBeInTheDocument();
   });
 
   it('renders all navigation links and download button', () => {
@@ -65,7 +65,7 @@ describe('Navbar', () => {
     const navbar = screen.getByRole('navigation');
     expect(navbar).toHaveClass('bg-white', 'border-b', 'border-gray-300');
 
-    const title = screen.getByText('Spotify Library Manager');
+    const title = screen.getByText('TuneStash');
     expect(title).toHaveClass('font-extrabold', 'text-2xl');
   });
 });

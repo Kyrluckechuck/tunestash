@@ -24,6 +24,7 @@ query GetSongs(
       id
       name
       gid
+      deezerId
       primaryArtist
       primaryArtistId
       primaryArtistGid
@@ -51,6 +52,7 @@ query GetSong($id: String!) {
     id
     name
     gid
+    deezerId
     primaryArtist
     primaryArtistId
     createdAt

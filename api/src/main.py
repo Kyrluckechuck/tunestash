@@ -47,7 +47,7 @@ class Settings:
             return
         self._initialized = True
 
-        self.title = "Spotify Library Manager API"
+        self.title = "Tunestash API"
         self.version = "1.0.0"
         self.debug = os.getenv("DEBUG", "False").lower() == "true"
         self.host = os.getenv("HOST", "127.0.0.1")

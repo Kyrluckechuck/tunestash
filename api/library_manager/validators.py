@@ -1,5 +1,5 @@
 """
-Validation utilities for Spotify Library Manager.
+Validation utilities for Tunestash.
 
 This module provides validation functions for Spotify identifiers and URIs.
 """

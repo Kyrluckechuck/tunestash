@@ -13,7 +13,7 @@ from typing import Optional
 
 import requests
 
-from .base import SpotifyTrackMetadata, TrackMatch
+from .base import TrackMatch, TrackMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class MetadataEmbedder:
     def embed_metadata(
         self,
         file_path: Path,
-        spotify_metadata: SpotifyTrackMetadata,
+        track_metadata: TrackMetadata,
         track_match: Optional[TrackMatch] = None,
     ) -> bool:
         """
@@ -41,7 +41,7 @@ class MetadataEmbedder:
 
         Args:
             file_path: Path to the audio file
-            spotify_metadata: Metadata from Spotify (primary source)
+            track_metadata: Track metadata for embedding (title, artist, album, etc.)
             track_match: Optional match from the download provider (for cover art fallback)
 
         Returns:
@@ -51,13 +51,9 @@ class MetadataEmbedder:
 
         try:
             if suffix in (".m4a", ".mp4", ".aac"):
-                return self._embed_mp4_metadata(
-                    file_path, spotify_metadata, track_match
-                )
+                return self._embed_mp4_metadata(file_path, track_metadata, track_match)
             elif suffix == ".flac":
-                return self._embed_flac_metadata(
-                    file_path, spotify_metadata, track_match
-                )
+                return self._embed_flac_metadata(file_path, track_metadata, track_match)
             else:
                 logger.warning(f"Unsupported audio format for metadata: {suffix}")
                 return False
@@ -68,7 +64,7 @@ class MetadataEmbedder:
     def _embed_mp4_metadata(
         self,
         file_path: Path,
-        spotify_metadata: SpotifyTrackMetadata,
+        track_metadata: TrackMetadata,
         track_match: Optional[TrackMatch],
     ) -> bool:
         """Embed metadata into MP4/M4A files."""
@@ -82,36 +78,34 @@ class MetadataEmbedder:
 
         # MP4 tag mapping
         # https://mutagen.readthedocs.io/en/latest/api/mp4.html
-        audio["\xa9nam"] = [spotify_metadata.title]  # Title
-        audio["\xa9ART"] = [spotify_metadata.artist]  # Artist
-        audio["\xa9alb"] = [spotify_metadata.album]  # Album
-        audio["aART"] = [spotify_metadata.album_artist]  # Album Artist
+        audio["\xa9nam"] = [track_metadata.title]  # Title
+        audio["\xa9ART"] = [track_metadata.artist]  # Artist
+        audio["\xa9alb"] = [track_metadata.album]  # Album
+        audio["aART"] = [track_metadata.album_artist]  # Album Artist
 
-        if spotify_metadata.track_number:
-            total = spotify_metadata.total_tracks or 0
-            audio["trkn"] = [(spotify_metadata.track_number, total)]
+        if track_metadata.track_number:
+            total = track_metadata.total_tracks or 0
+            audio["trkn"] = [(track_metadata.track_number, total)]
 
-        if spotify_metadata.disc_number:
-            total = spotify_metadata.total_discs or 0
-            audio["disk"] = [(spotify_metadata.disc_number, total)]
+        if track_metadata.disc_number:
+            total = track_metadata.total_discs or 0
+            audio["disk"] = [(track_metadata.disc_number, total)]
 
-        if spotify_metadata.release_date:
-            audio["\xa9day"] = [spotify_metadata.release_date]
+        if track_metadata.release_date:
+            audio["\xa9day"] = [track_metadata.release_date]
 
-        if spotify_metadata.genres:
-            audio["\xa9gen"] = [", ".join(spotify_metadata.genres)]
+        if track_metadata.genres:
+            audio["\xa9gen"] = [", ".join(track_metadata.genres)]
 
-        if spotify_metadata.copyright:
-            audio["cprt"] = [spotify_metadata.copyright]
+        if track_metadata.copyright:
+            audio["cprt"] = [track_metadata.copyright]
 
-        if spotify_metadata.isrc:
+        if track_metadata.isrc:
             # ISRC is stored in a custom atom
-            audio["----:com.apple.iTunes:ISRC"] = [
-                spotify_metadata.isrc.encode("utf-8")
-            ]
+            audio["----:com.apple.iTunes:ISRC"] = [track_metadata.isrc.encode("utf-8")]
 
         # Embed cover art
-        cover_url = spotify_metadata.cover_url
+        cover_url = track_metadata.cover_url
         if not cover_url and track_match:
             cover_url = track_match.cover_url
 
@@ -135,7 +129,7 @@ class MetadataEmbedder:
     def _embed_flac_metadata(
         self,
         file_path: Path,
-        spotify_metadata: SpotifyTrackMetadata,
+        track_metadata: TrackMetadata,
         track_match: Optional[TrackMatch],
     ) -> bool:
         """Embed metadata into FLAC files."""
@@ -148,35 +142,35 @@ class MetadataEmbedder:
             return False
 
         # FLAC uses Vorbis comments
-        audio["TITLE"] = [spotify_metadata.title]
-        audio["ARTIST"] = [spotify_metadata.artist]
-        audio["ALBUM"] = [spotify_metadata.album]
-        audio["ALBUMARTIST"] = [spotify_metadata.album_artist]
+        audio["TITLE"] = [track_metadata.title]
+        audio["ARTIST"] = [track_metadata.artist]
+        audio["ALBUM"] = [track_metadata.album]
+        audio["ALBUMARTIST"] = [track_metadata.album_artist]
 
-        if spotify_metadata.track_number:
-            audio["TRACKNUMBER"] = [str(spotify_metadata.track_number)]
-        if spotify_metadata.total_tracks:
-            audio["TRACKTOTAL"] = [str(spotify_metadata.total_tracks)]
+        if track_metadata.track_number:
+            audio["TRACKNUMBER"] = [str(track_metadata.track_number)]
+        if track_metadata.total_tracks:
+            audio["TRACKTOTAL"] = [str(track_metadata.total_tracks)]
 
-        if spotify_metadata.disc_number:
-            audio["DISCNUMBER"] = [str(spotify_metadata.disc_number)]
-        if spotify_metadata.total_discs:
-            audio["DISCTOTAL"] = [str(spotify_metadata.total_discs)]
+        if track_metadata.disc_number:
+            audio["DISCNUMBER"] = [str(track_metadata.disc_number)]
+        if track_metadata.total_discs:
+            audio["DISCTOTAL"] = [str(track_metadata.total_discs)]
 
-        if spotify_metadata.release_date:
-            audio["DATE"] = [spotify_metadata.release_date]
+        if track_metadata.release_date:
+            audio["DATE"] = [track_metadata.release_date]
 
-        if spotify_metadata.genres:
-            audio["GENRE"] = list(spotify_metadata.genres)
+        if track_metadata.genres:
+            audio["GENRE"] = list(track_metadata.genres)
 
-        if spotify_metadata.copyright:
-            audio["COPYRIGHT"] = [spotify_metadata.copyright]
+        if track_metadata.copyright:
+            audio["COPYRIGHT"] = [track_metadata.copyright]
 
-        if spotify_metadata.isrc:
-            audio["ISRC"] = [spotify_metadata.isrc]
+        if track_metadata.isrc:
+            audio["ISRC"] = [track_metadata.isrc]
 
         # Embed cover art
-        cover_url = spotify_metadata.cover_url
+        cover_url = track_metadata.cover_url
         if not cover_url and track_match:
             cover_url = track_match.cover_url
 
@@ -213,26 +207,26 @@ class MetadataEmbedder:
             return None
 
 
-def create_spotify_metadata_from_match(
+def create_metadata_from_match(
     track_match: TrackMatch,
     spotify_id: str = "",
     album_artist: Optional[str] = None,
-) -> SpotifyTrackMetadata:
+) -> TrackMetadata:
     """
-    Create SpotifyTrackMetadata from a TrackMatch.
+    Create TrackMetadata from a TrackMatch.
 
     Useful when we only have provider metadata (e.g., from Tidal)
-    and need to create a SpotifyTrackMetadata object for embedding.
+    and need to create a TrackMetadata object for embedding.
 
     Args:
         track_match: Track match from a provider
-        spotify_id: Optional Spotify ID
+        spotify_id: Optional Spotify ID (empty string for non-Spotify sources)
         album_artist: Optional album artist (defaults to track artist)
 
     Returns:
-        SpotifyTrackMetadata populated from the track match
+        TrackMetadata populated from the track match
     """
-    return SpotifyTrackMetadata(
+    return TrackMetadata(
         spotify_id=spotify_id,
         title=track_match.title,
         artist=track_match.artist,
@@ -245,3 +239,7 @@ def create_spotify_metadata_from_match(
         release_date=track_match.release_date,
         cover_url=track_match.cover_url,
     )
+
+
+# Backward-compat alias
+create_spotify_metadata_from_match = create_metadata_from_match

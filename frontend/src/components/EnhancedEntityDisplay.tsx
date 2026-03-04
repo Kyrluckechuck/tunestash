@@ -17,7 +17,7 @@ const EnhancedEntityDisplay: React.FC<EnhancedEntityDisplayProps> = ({
   taskType,
   compact = false,
 }) => {
-  const { entityData, loading, isSpotifyUrl, isTestName } = useEntityData(
+  const { entityData, loading, isProviderUrl, isTestName } = useEntityData(
     entityType,
     entityId
   );
@@ -27,7 +27,7 @@ const EnhancedEntityDisplay: React.FC<EnhancedEntityDisplayProps> = ({
 
   // Helper function to create display name for special entity ID formats
   const getSpecialEntityDisplay = (): { name: string; url?: string } | null => {
-    if (isSpotifyUrl) {
+    if (isProviderUrl) {
       // Extract playlist ID from Spotify URL
       const playlistIdMatch = entityId.match(/playlist\/([a-zA-Z0-9]+)/);
       const playlistId = playlistIdMatch ? playlistIdMatch[1] : entityId;

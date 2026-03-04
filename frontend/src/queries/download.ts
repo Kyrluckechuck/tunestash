@@ -17,6 +17,7 @@ export const DOWNLOAD_URL = gql`
         id
         name
         spotifyGid
+        deezerId
         totalTracks
         wanted
         downloaded

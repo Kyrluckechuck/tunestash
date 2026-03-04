@@ -1,15 +1,23 @@
+type APIRateLimitInfo {
+  apiName: String!
+  isRateLimited: Boolean!
+  maxRequestsPerSecond: Float!
+  requestCount: Int!
+}
+
 type Album {
+  albumGroup: String
+  albumType: String
+  artist: String
+  artistGid: String
+  artistId: Int
+  deezerId: Int
+  downloaded: Boolean!
   id: Int!
   name: String!
   spotifyGid: String
   totalTracks: Int!
   wanted: Boolean!
-  downloaded: Boolean!
-  albumType: String
-  albumGroup: String
-  artist: String
-  artistId: Int
-  artistGid: String
 }
 
 type AlbumConnection {
@@ -19,19 +27,20 @@ type AlbumConnection {
 }
 
 type Artist {
-  id: Int!
-  name: String!
-  gid: String
-  spotifyUri: String
-  isTracked: Boolean!
-  lastSynced: DateTime
-  lastDownloaded: DateTime
   addedAt: DateTime
-  undownloadedCount: Int!
   albumCount: Int!
+  deezerId: Int
   downloadedAlbumCount: Int!
-  songCount: Int!
   failedSongCount: Int!
+  gid: String
+  id: Int!
+  isTracked: Boolean!
+  lastDownloaded: DateTime
+  lastSynced: DateTime
+  name: String!
+  songCount: Int!
+  spotifyUri: String
+  undownloadedCount: Int!
 }
 
 type ArtistConnection {
@@ -41,62 +50,62 @@ type ArtistConnection {
 }
 
 type AuthenticationStatus {
-  cookiesValid: Boolean!
-  cookiesErrorType: String
   cookiesErrorMessage: String
+  cookiesErrorType: String
   cookiesExpireInDays: Int
+  cookiesValid: Boolean!
   poTokenConfigured: Boolean!
-  poTokenValid: Boolean!
   poTokenErrorMessage: String
-  spotifyUserAuthEnabled: Boolean!
+  poTokenValid: Boolean!
   spotifyAuthMode: String!
-  spotifyTokenValid: Boolean!
+  spotifyTokenErrorMessage: String
   spotifyTokenExpired: Boolean!
   spotifyTokenExpiresInHours: Int
-  spotifyTokenErrorMessage: String
+  spotifyTokenValid: Boolean!
+  spotifyUserAuthEnabled: Boolean!
 }
 
 type CatalogSearchAlbum {
-  providerId: String!
-  name: String!
-  imageUrl: String
-  externalUrl: String
+  albumType: String!
   artistName: String!
   artistProviderId: String!
-  releaseDate: String
-  albumType: String!
-  totalTracks: Int!
+  externalUrl: String
+  imageUrl: String
   inLibrary: Boolean!
   localId: Int
+  name: String!
+  providerId: String!
+  releaseDate: String
+  totalTracks: Int!
 }
 
 type CatalogSearchArtist {
-  providerId: String!
-  name: String!
-  imageUrl: String
   externalUrl: String
+  imageUrl: String
   inLibrary: Boolean!
-  localId: Int
   isTracked: Boolean!
+  localId: Int
+  name: String!
+  providerId: String!
 }
 
 type CatalogSearchResults {
-  artists: [CatalogSearchArtist!]!
   albums: [CatalogSearchAlbum!]!
+  artists: [CatalogSearchArtist!]!
   tracks: [CatalogSearchTrack!]!
 }
 
 type CatalogSearchTrack {
-  providerId: String!
-  name: String!
-  externalUrl: String
-  artistName: String!
-  artistProviderId: String!
   albumName: String!
   albumProviderId: String!
+  artistName: String!
+  artistProviderId: String!
   durationMs: Int!
+  externalUrl: String
   inLibrary: Boolean!
   localId: Int
+  name: String!
+  providerId: String!
 }
 
 """
@@ -105,41 +114,41 @@ The `DateTime` scalar type represents a date and time following the ISO 8601 sta
 scalar DateTime
 
 type DownloadHistory {
-  id: String!
+  completedAt: DateTime
   entityId: String!
   entityType: String!
-  status: DownloadStatus!
-  startedAt: DateTime!
-  completedAt: DateTime
   errorMessage: String
+  id: String!
+  startedAt: DateTime!
+  status: DownloadStatus!
 }
 
 type DownloadProgress {
   entityId: String!
   entityType: String!
+  message: String!
   progress: Float!
   status: DownloadStatus!
-  message: String!
 }
 
 enum DownloadProvider {
-  UNKNOWN
+  QOBUZ
   SPOTDL
   TIDAL
-  QOBUZ
+  UNKNOWN
 }
 
 enum DownloadStatus {
-  PENDING
-  IN_PROGRESS
   COMPLETED
   FAILED
+  IN_PROGRESS
+  PENDING
   SKIPPED
 }
 
 enum EntityType {
-  ARTIST
   ALBUM
+  ARTIST
   PLAYLIST
   TRACK
 }
@@ -151,35 +160,35 @@ type ExternalListConnection {
 }
 
 type ExternalListType {
+  autoTrackArtists: Boolean!
+  createdAt: DateTime
+  failedTracks: Int!
   id: Int!
-  name: String!
-  source: String!
-  listType: String!
-  username: String!
-  period: String
+  lastSyncedAt: DateTime
   listIdentifier: String
+  listType: String!
+  mappedTracks: Int!
+  name: String!
+  period: String
+  source: String!
   status: String!
   statusMessage: String
-  autoTrackArtists: Boolean!
-  lastSyncedAt: DateTime
-  createdAt: DateTime
   totalTracks: Int!
-  mappedTracks: Int!
-  failedTracks: Int!
+  username: String!
 }
 
 type FailureReasonCount {
-  reason: String!
   count: Int!
+  reason: String!
 }
 
 type FallbackMetrics {
-  totalAttempts: Int!
-  totalSuccesses: Int!
-  totalFailures: Int!
+  failureReasons: [FailureReasonCount!]!
   successRate: Float!
   timeSeries: [MetricTimePoint!]!
-  failureReasons: [FailureReasonCount!]!
+  totalAttempts: Int!
+  totalFailures: Int!
+  totalSuccesses: Int!
 }
 
 type HistoryConnection {
@@ -189,63 +198,63 @@ type HistoryConnection {
 }
 
 type HistoryEdge {
-  node: DownloadHistory!
   cursor: String!
+  node: DownloadHistory!
 }
 
 type LibraryStats {
-  totalSongs: Int!
-  downloadedSongs: Int!
-  missingSongs: Int!
-  failedSongs: Int!
-  unavailableSongs: Int!
-  totalAlbums: Int!
-  downloadedAlbums: Int!
-  partialAlbums: Int!
-  missingAlbums: Int!
-  totalArtists: Int!
-  trackedArtists: Int!
-  songCompletionPercentage: Float!
   albumCompletionPercentage: Float!
-  desiredSongs: Int!
-  desiredDownloaded: Int!
-  desiredMissing: Int!
-  desiredFailed: Int!
-  desiredUnavailable: Int!
-  desiredCompletionPercentage: Float!
+  desiredAlbumCompletionPercentage: Float!
   desiredAlbums: Int!
   desiredAlbumsDownloaded: Int!
-  desiredAlbumsPartial: Int!
   desiredAlbumsMissing: Int!
-  desiredAlbumCompletionPercentage: Float!
+  desiredAlbumsPartial: Int!
+  desiredCompletionPercentage: Float!
+  desiredDownloaded: Int!
+  desiredFailed: Int!
+  desiredMissing: Int!
+  desiredSongs: Int!
+  desiredUnavailable: Int!
+  downloadedAlbums: Int!
+  downloadedSongs: Int!
+  failedSongs: Int!
+  missingAlbums: Int!
+  missingSongs: Int!
+  partialAlbums: Int!
+  songCompletionPercentage: Float!
+  totalAlbums: Int!
+  totalArtists: Int!
+  totalSongs: Int!
+  trackedArtists: Int!
+  unavailableSongs: Int!
 }
 
 type MetadataCheckResult {
-  success: Boolean!
-  message: String!
   changeDetected: Boolean!
-  oldValue: String
+  message: String!
   newValue: String
+  oldValue: String
+  success: Boolean!
 }
 
 enum MetadataEntityType {
-  ARTIST
   ALBUM
+  ARTIST
   SONG
 }
 
 type MetadataUpdate {
-  id: Int!
-  entityType: MetadataEntityType!
+  affectedSongsCount: Int!
+  detectedAt: DateTime!
   entityId: Int!
   entityName: String!
+  entityType: MetadataEntityType!
   fieldName: String!
-  oldValue: String!
+  id: Int!
   newValue: String!
-  status: MetadataUpdateStatus!
-  detectedAt: DateTime!
+  oldValue: String!
   resolvedAt: DateTime
-  affectedSongsCount: Int!
+  status: MetadataUpdateStatus!
 }
 
 type MetadataUpdateConnection {
@@ -254,129 +263,128 @@ type MetadataUpdateConnection {
 }
 
 enum MetadataUpdateStatus {
-  PENDING
   APPLIED
   DISMISSED
+  PENDING
 }
 
 type MetadataUpdateSummary {
-  artistUpdates: Int!
   albumUpdates: Int!
+  artistUpdates: Int!
   songUpdates: Int!
   totalAffectedSongs: Int!
 }
 
 type MetricTimePoint {
+  count: Int!
   timestamp: DateTime!
   value: Float!
-  count: Int!
 }
 
 type Mutation {
-  importArtist(deezerId: Int!, name: String!): MutationResult!
-  importAlbum(deezerId: Int!): MutationResult!
-  trackArtist(artistId: Int!): MutationResult!
-  untrackArtist(artistId: Int!): MutationResult!
-  updateArtist(input: UpdateArtistInput!): Artist!
-  setAlbumWanted(albumId: Int!, wanted: Boolean!): MutationResult!
-  updateAlbum(input: UpdateAlbumInput!): Album!
-  togglePlaylist(playlistId: Int!): MutationResult!
-  togglePlaylistAutoTrack(playlistId: Int!): MutationResult!
-  deletePlaylist(playlistId: Int!): MutationResult!
-  trackPlaylist(input: TrackPlaylistInput!): Playlist!
-  updatePlaylist(playlistId: Int!, name: String!, url: String!, autoTrackArtists: Boolean!): MutationResult!
-  syncArtist(artistId: String!): Artist!
-  downloadArtist(artistId: String!): MutationResult!
-  retryFailedSongs(artistId: String!): MutationResult!
-  syncPlaylist(playlistId: Int!, force: Boolean! = false, recheck: Boolean! = false): MutationResult!
-  downloadAlbum(albumId: String!): Album!
-  downloadUrl(url: String!, autoTrackArtists: Boolean! = false): MutationResult!
-  createPlaylist(name: String!, url: String!, autoTrackArtists: Boolean! = false): Playlist!
-  savePlaylist(spotifyId: String!, autoTrackArtists: Boolean! = false): Playlist!
-  saveDeezerPlaylist(deezerId: String!, autoTrackArtists: Boolean! = false): Playlist!
-  cancelAllPendingTasks: MutationResult!
-  cancelTasksByName(taskName: String!): MutationResult!
-  cancelRunningTasksByName(taskName: String!): MutationResult!
-  cancelAllTasks: MutationResult!
-  cancelTaskById(taskId: String!): MutationResult!
-  syncAllTrackedArtists: MutationResult!
-  batchArtistOperations(artistIds: [Int!]!, operations: [String!] = null): MutationResult!
-  downloadAllTrackedArtists: MutationResult!
-  downloadAllPlaylists: MutationResult!
-  disconnectSpotify: MutationResult!
-  setPeriodicTaskEnabled(taskId: Int!, enabled: Boolean!): PeriodicTask!
-  runPeriodicTaskNow(taskId: Int!): MutationResult!
-  runOneOffTask(taskId: String!): MutationResult!
-  applyMetadataUpdate(updateId: Int!): MutationResult!
-  dismissMetadataUpdate(updateId: Int!): MutationResult!
   applyAllMetadataUpdates: MutationResult!
-  checkArtistMetadata(artistId: Int!): MetadataCheckResult!
+  applyMetadataUpdate(updateId: Int!): MutationResult!
+  batchArtistOperations(artistIds: [Int!]!, operations: [String!] = null): MutationResult!
+  cancelAllPendingTasks: MutationResult!
+  cancelAllTasks: MutationResult!
+  cancelRunningTasksByName(taskName: String!): MutationResult!
+  cancelTaskById(taskId: String!): MutationResult!
+  cancelTasksByName(taskName: String!): MutationResult!
   checkAlbumMetadata(albumId: Int!): MetadataCheckResult!
-  createExternalList(source: String!, listType: String!, username: String!, period: String = null, listIdentifier: String = null, autoTrackArtists: Boolean! = false): ExternalListType!
-  updateExternalList(listId: Int!, name: String = null, username: String = null, period: String = null, listIdentifier: String = null): MutationResult!
+  checkArtistMetadata(artistId: Int!): MetadataCheckResult!
+  checkSongMetadata(songId: Int!): MetadataCheckResult!
+  createExternalList(autoTrackArtists: Boolean! = false, listIdentifier: String = null, listType: String!, period: String = null, source: String!, username: String!): ExternalListType!
+  createPlaylist(autoTrackArtists: Boolean! = false, name: String!, url: String!): Playlist!
   deleteExternalList(listId: Int!): MutationResult!
+  deletePlaylist(playlistId: Int!): MutationResult!
+  disconnectSpotify: MutationResult!
+  dismissMetadataUpdate(updateId: Int!): MutationResult!
+  downloadAlbum(albumId: String!): Album!
+  downloadAllPlaylists: MutationResult!
+  downloadAllTrackedArtists: MutationResult!
+  downloadArtist(artistId: String!): MutationResult!
+  downloadUrl(autoTrackArtists: Boolean! = false, url: String!): MutationResult!
+  importAlbum(deezerId: Int!): MutationResult!
+  importArtist(deezerId: Int!, name: String!): MutationResult!
+  retryFailedSongs(artistId: String!): MutationResult!
+  runOneOffTask(taskId: String!): MutationResult!
+  runPeriodicTaskNow(taskId: Int!): MutationResult!
+  saveDeezerPlaylist(autoTrackArtists: Boolean! = false, deezerId: String!): Playlist!
+  setAlbumWanted(albumId: Int!, wanted: Boolean!): MutationResult!
+  setPeriodicTaskEnabled(enabled: Boolean!, taskId: Int!): PeriodicTask!
+  syncAllExternalLists: MutationResult!
+  syncAllTrackedArtists: MutationResult!
+  syncArtist(artistId: String!): Artist!
+  syncExternalList(force: Boolean! = false, listId: Int!): MutationResult!
+  syncPlaylist(force: Boolean! = false, playlistId: Int!, recheck: Boolean! = false): MutationResult!
   toggleExternalList(listId: Int!): MutationResult!
   toggleExternalListAutoTrack(listId: Int!): MutationResult!
-  syncExternalList(listId: Int!, force: Boolean! = false): MutationResult!
-  syncAllExternalLists: MutationResult!
-  checkSongMetadata(songId: Int!): MetadataCheckResult!
+  togglePlaylist(playlistId: Int!): MutationResult!
+  togglePlaylistAutoTrack(playlistId: Int!): MutationResult!
+  trackArtist(artistId: Int!): MutationResult!
+  trackPlaylist(input: TrackPlaylistInput!): Playlist!
+  untrackArtist(artistId: Int!): MutationResult!
+  updateAlbum(input: UpdateAlbumInput!): Album!
+  updateArtist(input: UpdateArtistInput!): Artist!
+  updateExternalList(listId: Int!, listIdentifier: String = null, name: String = null, period: String = null, username: String = null): MutationResult!
+  updatePlaylist(autoTrackArtists: Boolean!, name: String!, playlistId: Int!, url: String!): MutationResult!
 }
 
 type MutationResult {
-  success: Boolean!
-  message: String!
-  artist: Artist
   album: Album
+  artist: Artist
+  message: String!
   playlist: Playlist
+  success: Boolean!
 }
 
 type OneOffTask {
+  category: String!
+  description: String!
   id: String!
   name: String!
-  description: String!
-  category: String!
 }
 
 type PageInfo {
+  endCursor: String
   hasNextPage: Boolean!
   hasPreviousPage: Boolean!
   startCursor: String
-  endCursor: String
 }
 
 type PendingTask {
-  taskId: String!
-  taskName: String!
+  createdAt: String
   displayName: String!
-  entityType: String
   entityId: String
   entityName: String
+  entityType: String
   status: String!
-  createdAt: String
+  taskId: String!
+  taskName: String!
 }
 
 type PeriodicTask {
-  id: Int!
-  name: String!
-  task: String!
-  enabled: Boolean!
-  isCore: Boolean!
   description: String
-  scheduleDescription: String!
+  enabled: Boolean!
+  id: Int!
+  isCore: Boolean!
   lastRunAt: DateTime
+  name: String!
+  scheduleDescription: String!
+  task: String!
   totalRunCount: Int!
 }
 
 type Playlist {
+  autoTrackArtists: Boolean!
+  enabled: Boolean!
   id: Int!
+  lastSyncedAt: DateTime
   name: String!
-  url: String!
+  provider: String!
   status: String!
   statusMessage: String
-  enabled: Boolean!
-  autoTrackArtists: Boolean!
-  lastSyncedAt: DateTime
-  provider: String!
+  url: String!
 }
 
 type PlaylistConnection {
@@ -386,61 +394,61 @@ type PlaylistConnection {
 }
 
 type PlaylistInfo {
+  imageUrl: String
   name: String!
   ownerName: String
-  trackCount: Int!
-  imageUrl: String
   provider: String!
+  trackCount: Int!
 }
 
 type Query {
-  artists(first: Int = 20, after: String = null, isTracked: Boolean = null, hasUndownloaded: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null): ArtistConnection!
-  artist(id: String!): Artist
-  albums(first: Int = 20, after: String = null, artistId: Int = null, downloaded: Boolean = null, wanted: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null): AlbumConnection!
   album(id: String!): Album
-  songs(first: Int = 20, after: String = null, artistId: Int = null, downloaded: Boolean = null, unavailable: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null, maxBitrate: Int = null): SongConnection!
-  song(id: String!): Song
-  playlists(first: Int = 20, after: String = null, enabled: Boolean = null, status: String = null, sortBy: String = null, sortDirection: String = null, search: String = null): PlaylistConnection!
-  playlist(id: String!): Playlist
-  downloadHistory(first: Int = 20, after: String = null, entityType: String = null, status: String = null): HistoryConnection!
-  taskHistory(first: Int = 20, after: String = null, status: String = null, type: String = null, entityType: String = null, search: String = null): TaskHistoryConnection!
-  queueStatus: QueueStatus!
-  periodicTasks(enabledOnly: Boolean = false): [PeriodicTask!]!
-  oneOffTasks: [OneOffTask!]!
-  upgradeStats: UpgradeStats!
-  systemHealth: SystemHealth!
-  catalogSearch(query: String!, types: [String!] = null, limit: Int = 10): CatalogSearchResults!
-  playlistInfo(url: String!): PlaylistInfo
-  spotifyPlaylistInfo(url: String!): SpotifyPlaylistInfo
-  libraryStats: LibraryStats!
-  pendingMetadataUpdates(entityType: MetadataEntityType = null, status: MetadataUpdateStatus = null, includeResolved: Boolean! = false): MetadataUpdateConnection!
-  externalLists(first: Int = 20, after: String = null, source: String = null, listType: String = null, status: String = null, search: String = null, sortBy: String = null, sortDirection: String = null): ExternalListConnection!
+  albums(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, wanted: Boolean = null): AlbumConnection!
+  artist(id: String!): Artist
+  artists(after: String = null, first: Int = 20, hasUndownloaded: Boolean = null, isTracked: Boolean = null, search: String = null, sortBy: String = null, sortDirection: String = null): ArtistConnection!
+  catalogSearch(limit: Int = 10, query: String!, types: [String!] = null): CatalogSearchResults!
+  downloadHistory(after: String = null, entityType: String = null, first: Int = 20, status: String = null): HistoryConnection!
   externalList(id: String!): ExternalListType
+  externalLists(after: String = null, first: Int = 20, listType: String = null, search: String = null, sortBy: String = null, sortDirection: String = null, source: String = null, status: String = null): ExternalListConnection!
   fallbackMetrics(days: Int = 7): FallbackMetrics!
+  libraryStats: LibraryStats!
+  oneOffTasks: [OneOffTask!]!
+  pendingMetadataUpdates(entityType: MetadataEntityType = null, includeResolved: Boolean! = false, status: MetadataUpdateStatus = null): MetadataUpdateConnection!
+  periodicTasks(enabledOnly: Boolean = false): [PeriodicTask!]!
+  playlist(id: String!): Playlist
+  playlistInfo(url: String!): PlaylistInfo
+  playlists(after: String = null, enabled: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, status: String = null): PlaylistConnection!
+  queueStatus: QueueStatus!
+  song(id: String!): Song
+  songs(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, maxBitrate: Int = null, search: String = null, sortBy: String = null, sortDirection: String = null, unavailable: Boolean = null): SongConnection!
+  systemHealth: SystemHealth!
+  taskHistory(after: String = null, entityType: String = null, first: Int = 20, search: String = null, status: String = null, type: String = null): TaskHistoryConnection!
+  upgradeStats: UpgradeStats!
 }
 
 type QueueStatus {
-  totalPendingTasks: Int!
-  taskCounts: [TaskCount!]!
   pendingTasks: [PendingTask!]!
   queueSize: Int!
+  taskCounts: [TaskCount!]!
+  totalPendingTasks: Int!
 }
 
 type Song {
+  bitrate: Int!
+  createdAt: DateTime!
+  deezerId: Int
+  downloadProvider: DownloadProvider
+  downloaded: Boolean!
+  failedCount: Int!
+  filePath: String
+  gid: String
   id: Int!
   name: String!
-  gid: String
   primaryArtist: String!
-  primaryArtistId: Int!
   primaryArtistGid: String
-  createdAt: DateTime!
-  failedCount: Int!
-  bitrate: Int!
-  unavailable: Boolean!
-  filePath: String
-  downloaded: Boolean!
+  primaryArtistId: Int!
   spotifyUri: String
-  downloadProvider: DownloadProvider
+  unavailable: Boolean!
 }
 
 type SongConnection {
@@ -449,73 +457,67 @@ type SongConnection {
   totalCount: Int!
 }
 
-type SpotifyPlaylistInfo {
-  name: String!
-  ownerName: String
-  trackCount: Int!
-  imageUrl: String
-}
-
 type SpotifyRateLimitStatus {
+  burstCalls: Int!
+  burstMax: Int!
+  currentDelaySeconds: Float!
+  hourlyCalls: Int!
+  hourlyMax: Int!
   isRateLimited: Boolean!
+  isThrottling: Boolean!
   rateLimitedUntil: DateTime
   secondsUntilClear: Int
-  isThrottling: Boolean!
-  currentDelaySeconds: Float!
+  sustainedCalls: Int!
+  sustainedMax: Int!
   windowCallCount: Int!
   windowMaxCalls: Int!
   windowUsagePercent: Float!
-  burstCalls: Int!
-  burstMax: Int!
-  sustainedCalls: Int!
-  sustainedMax: Int!
-  hourlyCalls: Int!
-  hourlyMax: Int!
 }
 
 type StorageStatus {
-  path: String!
-  exists: Boolean!
-  isWritable: Boolean!
-  totalGb: Float
-  usedGb: Float
   availableGb: Float
-  usagePercent: Float
-  isLow: Boolean!
-  isCriticallyLow: Boolean!
   errorMessage: String
+  exists: Boolean!
+  isCriticallyLow: Boolean!
+  isLow: Boolean!
+  isWritable: Boolean!
+  path: String!
+  totalGb: Float
+  usagePercent: Float
+  usedGb: Float
 }
 
 type Subscription {
-  downloadProgress(entityId: String!): DownloadProgress!
   allDownloadProgress: DownloadProgress!
+  downloadProgress(entityId: String!): DownloadProgress!
 }
 
 type SystemHealth {
+  apiRateLimits: [APIRateLimitInfo!]!
+  authentication: AuthenticationStatus!
   canDownload: Boolean!
   downloadBlockerReason: String
-  authentication: AuthenticationStatus!
   spotifyRateLimit: SpotifyRateLimitStatus!
   storage: StorageStatus!
 }
 
 type TaskCount {
-  taskName: String!
   count: Int!
+  taskName: String!
 }
 
 type TaskHistory {
-  id: String!
-  taskId: String!
-  type: TaskType!
-  entityId: String!
-  entityType: EntityType!
-  status: TaskStatus!
-  startedAt: DateTime!
   completedAt: DateTime
   durationSeconds: Int
-  progressPercentage: Float
+  entityId: String!
+  entityType: EntityType!
+  id: String!
   logMessages: [String!]!
+  progressPercentage: Float
+  startedAt: DateTime!
+  status: TaskStatus!
+  taskId: String!
+  type: TaskType!
 }
 
 type TaskHistoryConnection {
@@ -525,27 +527,27 @@ type TaskHistoryConnection {
 }
 
 type TaskHistoryEdge {
-  node: TaskHistory!
   cursor: String!
+  node: TaskHistory!
 }
 
 enum TaskStatus {
-  RUNNING
+  CANCELLED
   COMPLETED
   FAILED
   PENDING
-  CANCELLED
+  RUNNING
 }
 
 enum TaskType {
-  SYNC
   DOWNLOAD
   FETCH
+  SYNC
 }
 
 input TrackPlaylistInput {
-  playlistId: String!
   autoTrackArtists: Boolean! = false
+  playlistId: String!
 }
 
 input UpdateAlbumInput {
@@ -555,13 +557,13 @@ input UpdateAlbumInput {
 
 input UpdateArtistInput {
   artistId: String!
-  isTracked: Boolean = null
   autoDownload: Boolean = null
+  isTracked: Boolean = null
 }
 
 type UpgradeStats {
+  notUpgradeable: Int!
   totalLowQuality: Int!
   upgradeable: Int!
   upgraded: Int!
-  notUpgradeable: Int!
 }

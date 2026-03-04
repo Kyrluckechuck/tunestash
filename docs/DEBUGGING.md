@@ -1,6 +1,6 @@
 # Debugging Guide
 
-This guide covers debugging worker crashes, performance issues, and other runtime problems in the Spotify Library Manager.
+This guide covers debugging worker crashes, performance issues, and other runtime problems in the Tunestash.
 
 ## Worker Diagnostics
 

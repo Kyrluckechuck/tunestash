@@ -12,8 +12,8 @@ from downloader.providers.base import (
     ProviderType,
     QualityOption,
     QualityPreference,
-    SpotifyTrackMetadata,
     TrackMatch,
+    TrackMetadata,
     _string_similarity,
     calculate_match_confidence,
 )
@@ -249,13 +249,13 @@ class TestDownloadResult:
             )
 
 
-class TestSpotifyTrackMetadata:
-    """Tests for SpotifyTrackMetadata dataclass."""
+class TestTrackMetadata:
+    """Tests for TrackMetadata dataclass."""
 
     @pytest.mark.unit
     def test_full_metadata(self):
         """Test creating full track metadata."""
-        metadata = SpotifyTrackMetadata(
+        metadata = TrackMetadata(
             spotify_id="6rqhFgbbKwnb9MLmUQDhG6",
             title="Blinding Lights",
             artist="The Weeknd",
@@ -278,7 +278,7 @@ class TestSpotifyTrackMetadata:
     @pytest.mark.unit
     def test_minimal_metadata(self):
         """Test creating minimal required metadata."""
-        metadata = SpotifyTrackMetadata(
+        metadata = TrackMetadata(
             spotify_id="abc123",
             title="Test Song",
             artist="Test Artist",

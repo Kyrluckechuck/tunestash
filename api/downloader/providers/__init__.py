@@ -14,10 +14,11 @@ from .base import (
     QualityPreference,
     SpotifyTrackMetadata,
     TrackMatch,
+    TrackMetadata,
     calculate_match_confidence,
 )
 from .fallback import FallbackDownloader, FallbackDownloadResult
-from .metadata import MetadataEmbedder, create_spotify_metadata_from_match
+from .metadata import MetadataEmbedder, create_metadata_from_match
 from .qobuz import QobuzProvider
 from .tidal import TidalProvider
 from .tidal_endpoints import TidalEndpoint, TidalEndpointManager
@@ -34,10 +35,11 @@ __all__ = [
     "QualityPreference",
     "SpotifyTrackMetadata",
     "TrackMatch",
+    "TrackMetadata",
     "calculate_match_confidence",
     # Metadata embedding
     "MetadataEmbedder",
-    "create_spotify_metadata_from_match",
+    "create_metadata_from_match",
     # Providers
     "QobuzProvider",
     "TidalEndpoint",

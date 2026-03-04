@@ -12,7 +12,7 @@ function Home() {
   return (
     <section className='space-y-6'>
       <div>
-        <h1 className='text-2xl font-semibold mb-1'>Spotify Library Manager</h1>
+        <h1 className='text-2xl font-semibold mb-1'>TuneStash</h1>
         <p className='text-gray-700'>
           Quickly navigate and manage your library.
         </p>
@@ -50,8 +50,8 @@ function Home() {
                   />
                 </svg>
                 <span className='text-sm text-gray-700'>
-                  Spotify:{' '}
-                  <span className='text-green-700 font-medium'>Private</span>
+                  Spotify OAuth:{' '}
+                  <span className='text-green-700 font-medium'>Connected</span>
                 </span>
               </>
             ) : (
@@ -68,8 +68,10 @@ function Home() {
                   />
                 </svg>
                 <span className='text-sm text-gray-700'>
-                  Spotify:{' '}
-                  <span className='text-blue-700 font-medium'>Public Only</span>
+                  Spotify OAuth:{' '}
+                  <span className='text-blue-700 font-medium'>
+                    Not Connected
+                  </span>
                 </span>
               </>
             )}
@@ -132,137 +134,86 @@ function Home() {
           <div className='flex items-center gap-2'>
             {loading ? (
               <span className='text-sm text-gray-500'>Loading...</span>
-            ) : data?.systemHealth.spotifyRateLimit.isRateLimited ? (
-              // State 4: Actually blocked by Spotify (429 received)
-              <>
-                <svg
-                  className='h-4 w-4 text-red-500 flex-shrink-0'
-                  fill='currentColor'
-                  viewBox='0 0 20 20'
-                >
-                  <path
-                    fillRule='evenodd'
-                    d='M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z'
-                    clipRule='evenodd'
-                  />
-                </svg>
-                <span
-                  className='text-sm text-gray-700'
-                  title='Spotify has temporarily blocked API access. All tasks will wait until the block expires.'
-                >
-                  Spotify API:{' '}
-                  <span className='text-red-700 font-medium'>
-                    Blocked by Spotify
-                    {data.systemHealth.spotifyRateLimit.rateLimitedUntil && (
-                      <>
-                        {' '}
-                        (until{' '}
-                        {new Date(
-                          data.systemHealth.spotifyRateLimit.rateLimitedUntil
-                        ).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                        )
-                      </>
-                    )}
-                  </span>
-                </span>
-              </>
-            ) : data?.systemHealth.spotifyRateLimit.isThrottling &&
-              data.systemHealth.spotifyRateLimit.currentDelaySeconds >= 60 ? (
-              // State 3: Hit internal rate limit (large delay, effectively paused)
-              <>
-                <svg
-                  className='h-4 w-4 text-orange-500 flex-shrink-0'
-                  fill='currentColor'
-                  viewBox='0 0 20 20'
-                >
-                  <path
-                    fillRule='evenodd'
-                    d='M10 18a8 8 0 100-16 8 8 0 000 16zM9 7a1 1 0 112 0v4a1 1 0 11-2 0V7zm1 8a1 1 0 100-2 1 1 0 000 2z'
-                    clipRule='evenodd'
-                  />
-                </svg>
-                <span
-                  className='text-sm text-gray-700'
-                  title={`Internal rate limit reached. Tasks are paused to prevent Spotify from blocking the account. Burst: ${data?.systemHealth.spotifyRateLimit.burstCalls}/${data?.systemHealth.spotifyRateLimit.burstMax} (30s) | Sustained: ${data?.systemHealth.spotifyRateLimit.sustainedCalls}/${data?.systemHealth.spotifyRateLimit.sustainedMax} (5min) | Hourly: ${data?.systemHealth.spotifyRateLimit.hourlyCalls}/${data?.systemHealth.spotifyRateLimit.hourlyMax}`}
-                >
-                  Spotify API:{' '}
-                  <span className='text-orange-700 font-medium'>
-                    Limit Reached
-                  </span>
-                  <span className='text-gray-500 ml-1 text-xs'>
-                    (~
-                    {Math.round(
-                      data.systemHealth.spotifyRateLimit.currentDelaySeconds /
-                        60
-                    )}
-                    m wait, {data?.systemHealth.spotifyRateLimit.hourlyCalls}/
-                    {data?.systemHealth.spotifyRateLimit.hourlyMax} this hour)
-                  </span>
-                </span>
-              </>
-            ) : data?.systemHealth.spotifyRateLimit.isThrottling ? (
-              // State 2: Proactively throttling (small delays)
-              <>
-                <svg
-                  className='h-4 w-4 text-yellow-500 flex-shrink-0'
-                  fill='currentColor'
-                  viewBox='0 0 20 20'
-                >
-                  <path
-                    fillRule='evenodd'
-                    d='M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z'
-                    clipRule='evenodd'
-                  />
-                </svg>
-                <span
-                  className='text-sm text-gray-700'
-                  title={`Tasks are being briefly delayed to stay within rate limits. Burst: ${data?.systemHealth.spotifyRateLimit.burstCalls}/${data?.systemHealth.spotifyRateLimit.burstMax} (30s) | Sustained: ${data?.systemHealth.spotifyRateLimit.sustainedCalls}/${data?.systemHealth.spotifyRateLimit.sustainedMax} (5min) | Hourly: ${data?.systemHealth.spotifyRateLimit.hourlyCalls}/${data?.systemHealth.spotifyRateLimit.hourlyMax}`}
-                >
-                  Spotify API:{' '}
-                  <span className='text-yellow-700 font-medium'>
-                    Throttling
-                  </span>
-                  <span className='text-gray-500 ml-1 text-xs'>
-                    (~
-                    {Math.round(
-                      data.systemHealth.spotifyRateLimit.currentDelaySeconds
-                    )}
-                    s delay, {data?.systemHealth.spotifyRateLimit.hourlyCalls}/
-                    {data?.systemHealth.spotifyRateLimit.hourlyMax} this hour)
-                  </span>
-                </span>
-              </>
             ) : (
-              // State 1: Normal operation
-              <>
-                <svg
-                  className='h-4 w-4 text-green-500 flex-shrink-0'
-                  fill='currentColor'
-                  viewBox='0 0 20 20'
-                >
-                  <path
-                    fillRule='evenodd'
-                    d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
-                    clipRule='evenodd'
-                  />
-                </svg>
-                <span
-                  className='text-sm text-gray-700'
-                  title={`Spotify API usage is healthy. Burst: ${data?.systemHealth.spotifyRateLimit.burstCalls}/${data?.systemHealth.spotifyRateLimit.burstMax} (30s) | Sustained: ${data?.systemHealth.spotifyRateLimit.sustainedCalls}/${data?.systemHealth.spotifyRateLimit.sustainedMax} (5min) | Hourly: ${data?.systemHealth.spotifyRateLimit.hourlyCalls}/${data?.systemHealth.spotifyRateLimit.hourlyMax}`}
-                >
-                  Spotify API:{' '}
-                  <span className='text-green-700 font-medium'>OK</span>
-                  <span className='text-gray-500 ml-1 text-xs'>
-                    ({data?.systemHealth.spotifyRateLimit.hourlyCalls}/
-                    {data?.systemHealth.spotifyRateLimit.hourlyMax} this hour)
-                  </span>
-                </span>
-              </>
+              (() => {
+                const rl = data?.systemHealth.spotifyRateLimit;
+                const isLimited = rl?.isRateLimited;
+                const isThrottling = rl?.isThrottling;
+                const iconColor = isLimited
+                  ? 'text-red-500'
+                  : isThrottling
+                    ? 'text-yellow-500'
+                    : 'text-green-500';
+                const statusColor = isLimited
+                  ? 'text-red-700'
+                  : isThrottling
+                    ? 'text-yellow-700'
+                    : 'text-green-700';
+                const statusText = isLimited
+                  ? 'Limited'
+                  : isThrottling
+                    ? 'Throttling'
+                    : 'OK';
+                const iconPath = isLimited
+                  ? 'M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z'
+                  : 'M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z';
+                return (
+                  <>
+                    <svg
+                      className={`h-4 w-4 ${iconColor} flex-shrink-0`}
+                      fill='currentColor'
+                      viewBox='0 0 20 20'
+                    >
+                      <path
+                        fillRule='evenodd'
+                        d={iconPath}
+                        clipRule='evenodd'
+                      />
+                    </svg>
+                    <span
+                      className='text-sm text-gray-700'
+                      title={`Burst: ${rl?.burstCalls}/${rl?.burstMax} | Sustained: ${rl?.sustainedCalls}/${rl?.sustainedMax} | Hourly: ${rl?.hourlyCalls}/${rl?.hourlyMax}`}
+                    >
+                      Spotify API:{' '}
+                      <span className={`${statusColor} font-medium`}>
+                        {statusText}
+                      </span>
+                    </span>
+                  </>
+                );
+              })()
             )}
           </div>
+
+          {/* API Rate Limits (Deezer, YouTube, etc.) */}
+          {!loading &&
+            data?.systemHealth.apiRateLimits.map(api => (
+              <div key={api.apiName} className='flex items-center gap-2'>
+                <svg
+                  className={`h-4 w-4 ${api.isRateLimited ? 'text-red-500' : 'text-green-500'} flex-shrink-0`}
+                  fill='currentColor'
+                  viewBox='0 0 20 20'
+                >
+                  <path
+                    fillRule='evenodd'
+                    d={
+                      api.isRateLimited
+                        ? 'M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293z'
+                        : 'M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z'
+                    }
+                    clipRule='evenodd'
+                  />
+                </svg>
+                <span className='text-sm text-gray-700'>
+                  {api.apiName.charAt(0).toUpperCase() + api.apiName.slice(1)}:{' '}
+                  <span
+                    className={`${api.isRateLimited ? 'text-red-700' : 'text-green-700'} font-medium`}
+                  >
+                    {api.isRateLimited ? 'Limited' : 'OK'}
+                  </span>
+                </span>
+              </div>
+            ))}
 
           {/* Task Queue */}
           <div className='flex items-center gap-2'>
@@ -466,7 +417,7 @@ function Home() {
         <div className='text-gray-900 font-semibold mb-2'>Get started</div>
         <ol className='list-decimal pl-5 space-y-1 text-sm text-gray-700'>
           <li>Visit Playlists to add or enable syncing</li>
-          <li>Use Download URL to fetch a Spotify link</li>
+          <li>Use Download to fetch a Spotify or Deezer link</li>
           <li>Track artists you care about from Artists</li>
         </ol>
       </div>

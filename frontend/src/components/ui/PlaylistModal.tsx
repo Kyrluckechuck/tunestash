@@ -214,9 +214,7 @@ export function PlaylistModal({
               disabled={isSubmitting}
             />
             <p className='text-xs text-gray-500 mt-1'>
-              {mode === 'create'
-                ? 'Paste a playlist link to auto-fill the name'
-                : 'Copy from Spotify: Share → Copy link'}
+              Paste a playlist link to auto-fill the name
             </p>
           </div>
 

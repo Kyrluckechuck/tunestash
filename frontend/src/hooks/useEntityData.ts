@@ -22,10 +22,11 @@ export function useEntityData(entityType: string, entityId: string) {
   const [entityData, setEntityData] = useState<EntityData | null>(null);
 
   // Helper functions
-  const isSpotifyUrl = (id: string): boolean => {
+  const isProviderUrl = (id: string): boolean => {
     return (
       id.startsWith('//open.spotify.com/') ||
-      id.startsWith('https://open.spotify.com/')
+      id.startsWith('https://open.spotify.com/') ||
+      id.includes('deezer.com/')
     );
   };
 
@@ -34,8 +35,8 @@ export function useEntityData(entityType: string, entityId: string) {
   };
 
   const shouldSkipGraphQL = (id: string): boolean => {
-    // Skip GraphQL for Spotify URLs and test names
-    return isSpotifyUrl(id) || isTestName(id);
+    // Skip GraphQL for provider URLs and test names
+    return isProviderUrl(id) || isTestName(id);
   };
 
   const shouldSkip = shouldSkipGraphQL(entityId);
@@ -88,18 +89,24 @@ export function useEntityData(entityType: string, entityId: string) {
       let entity: EntityData | null = null;
 
       if (upperEntityType === 'ARTIST' && artistQuery.data?.artist) {
+        const a = artistQuery.data.artist;
         entity = {
-          id: artistQuery.data.artist.id.toString(),
-          name: artistQuery.data.artist.name,
-          gid: artistQuery.data.artist.gid ?? undefined,
-          url: `https://open.spotify.com/artist/${artistQuery.data.artist.gid}`,
+          id: a.id.toString(),
+          name: a.name,
+          gid: a.gid ?? undefined,
+          url: a.deezerId
+            ? `https://www.deezer.com/artist/${a.deezerId}`
+            : `https://open.spotify.com/artist/${a.gid}`,
         };
       } else if (upperEntityType === 'ALBUM' && albumQuery.data?.album) {
+        const al = albumQuery.data.album;
         entity = {
-          id: albumQuery.data.album.id.toString(),
-          name: albumQuery.data.album.name,
-          gid: albumQuery.data.album.spotifyGid ?? undefined,
-          url: `https://open.spotify.com/album/${albumQuery.data.album.spotifyGid}`,
+          id: al.id.toString(),
+          name: al.name,
+          gid: al.spotifyGid ?? undefined,
+          url: al.deezerId
+            ? `https://www.deezer.com/album/${al.deezerId}`
+            : `https://open.spotify.com/album/${al.spotifyGid}`,
         };
       } else if (upperEntityType === 'TRACK' && songQuery.data?.song) {
         entity = {
@@ -123,7 +130,7 @@ export function useEntityData(entityType: string, entityId: string) {
   return {
     entityData,
     loading,
-    isSpotifyUrl: isSpotifyUrl(entityId),
+    isProviderUrl: isProviderUrl(entityId),
     isTestName: isTestName(entityId),
   };
 }

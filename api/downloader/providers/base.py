@@ -125,8 +125,12 @@ class DownloadResult:
 
 
 @dataclass
-class SpotifyTrackMetadata:
-    """Metadata from Spotify for a track we want to download."""
+class TrackMetadata:
+    """Metadata for a track we want to download.
+
+    Originally Spotify-specific, now provider-agnostic. The spotify_id field
+    is empty string for tracks sourced from non-Spotify providers.
+    """
 
     spotify_id: str
     title: str
@@ -143,6 +147,10 @@ class SpotifyTrackMetadata:
     cover_url: Optional[str] = None
     copyright: Optional[str] = None
     genres: tuple[str, ...] = ()
+
+
+# Backward-compat alias — spotdl_wrapper.py still uses this name
+SpotifyTrackMetadata = TrackMetadata
 
 
 class DownloadProvider(ABC):
