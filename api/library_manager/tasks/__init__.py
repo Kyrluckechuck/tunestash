@@ -50,6 +50,7 @@ from .diagnostics import (
 
 # Re-export download tasks
 from .download import (
+    download_album_by_deezer_id,
     download_album_by_spotify_id,
     download_deezer_track,
     download_extra_album_types_for_artist,
@@ -144,6 +145,7 @@ __all__ = [
     "sync_tracked_playlist",
     "sync_tracked_playlist_artists",
     # Download tasks
+    "download_album_by_deezer_id",
     "download_album_by_spotify_id",
     "download_deezer_track",
     "download_extra_album_types_for_artist",

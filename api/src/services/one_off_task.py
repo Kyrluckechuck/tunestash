@@ -42,9 +42,9 @@ class OneOffTaskService:
             id="backfill_song_isrc",
             name="Backfill Song ISRC",
             description=(
-                "Fetch ISRC codes from Spotify for songs that don't have them. "
-                "Processes 500 songs per task (10 batches of 50) and chains "
-                "until complete."
+                "Fetch ISRC codes from Deezer for songs that don't have them. "
+                "Processes 250 songs per task and chains until complete. "
+                "Songs without a deezer_id are skipped."
             ),
             category="data-migration",
             task_func=backfill_song_isrc,
@@ -54,9 +54,10 @@ class OneOffTaskService:
             id="backfill_song_album",
             name="Backfill Song Album Links",
             description=(
-                "Link existing songs to their albums using Spotify track metadata. "
-                "Processes 500 songs per task (10 batches of 50) and chains "
-                "until complete. Songs whose albums aren't in the database are skipped."
+                "Link existing songs to their albums using Deezer track metadata. "
+                "Processes 250 songs per task and chains until complete. "
+                "Songs without a deezer_id or whose albums aren't in the database "
+                "are skipped."
             ),
             category="data-migration",
             task_func=backfill_song_album,
