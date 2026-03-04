@@ -6,11 +6,7 @@ from django.conf import settings
 from django.db.models.functions import Now
 from django.utils import timezone
 
-from celery.exceptions import Retry as CeleryRetry
 from celery_app import app as celery_app
-from downloader.spotdl_wrapper import YouTubeRateLimitError
-from downloader.spotipy_tasks import SpotifyRateLimitError
-from lib.config_class import Config
 
 from .. import helpers
 from ..models import (
@@ -20,166 +16,62 @@ from ..models import (
     DownloadHistory,
 )
 from .core import (
-    TaskCancelledException,
-    check_and_update_progress,
-    check_if_cancelled,
-    check_task_cancellation,
     complete_task,
     create_task_history,
     logger,
-    require_download_capability,
-    spotdl_wrapper,
     update_task_progress,
 )
+from .deezer import _fetch_albums_via_deezer
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.fetch_all_albums_for_artist")
 def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
     task_history = None
     try:
-        # Check if artist exists before proceeding
         try:
             artist = Artist.objects.get(id=artist_id)
         except Artist.DoesNotExist:
             logger.warning(f"Artist with ID {artist_id} does not exist. Skipping task.")
             return
 
-        # Create task history record (always create, even without Celery context)
         task_history = create_task_history(
             task_id=self.request.id,
             task_type="FETCH",
-            entity_id=artist.gid,
+            entity_id=str(artist.deezer_id or artist.gid or artist.id),
             entity_type="ARTIST",
             task_name="fetch_all_albums_for_artist",
         )
         update_task_progress(
             task_history, 0.0, f"Starting fetch for artist {artist.name}"
         )
-        # Mark as running
         task_history.status = "RUNNING"
         task_history.save()
 
-        # Check authentication before proceeding
-        require_download_capability(task_history)
-
-        # Check for cancellation before proceeding
-        if check_task_cancellation(task_history):
-            logger.info(f"Task cancelled for artist {artist.name}")
+        if not artist.deezer_id:
+            msg = (
+                f"Artist {artist.name} (id={artist.id}) has no deezer_id. "
+                f"Run catalog migration first."
+            )
+            logger.warning(msg)
+            complete_task(task_history, success=False, error_message=msg)
             return
 
-        downloader_config = Config()
-        downloader_config.artist_to_fetch = artist.gid
-        downloader_config.urls = []
+        update_task_progress(
+            task_history, 25.0, f"Fetching albums for {artist.name} from Deezer"
+        )
 
-        # Check for cancellation before major operation
-        if check_and_update_progress(
-            task_history, 25.0, "Fetching artist albums from Spotify"
-        ):
-            logger.info(f"Task cancelled during Spotify fetch for artist {artist.name}")
-            return
+        created_count, linked_count = _fetch_albums_via_deezer(artist, task_history)
 
-        # Create callback to update task progress during fetch (if task_history exists)
-        if task_history:
-
-            def fetch_progress_callback(progress_pct: float, message: str) -> None:
-                # Check for cancellation during fetch
-                try:
-                    check_if_cancelled(self.request.id)
-                except TaskCancelledException:
-                    logger.info(f"Fetch cancelled by user for artist {artist.name}")
-                    raise
-                update_task_progress(task_history, progress_pct, message)
-
-            try:
-                spotdl_wrapper.execute(
-                    downloader_config, task_progress_callback=fetch_progress_callback
-                )
-            except TaskCancelledException as e:
-                logger.info(f"Fetch cancelled: {e}")
-                if task_history:
-                    task_history.status = "CANCELLED"
-                    task_history.error_message = "Cancelled by user"
-                    task_history.save()
-                return
-            except YouTubeRateLimitError as rate_limit_error:
-                # YouTube rate limit - reschedule task for later
-                retry_after = rate_limit_error.retry_after_seconds
-                logger.warning(
-                    f"YouTube rate limit hit for artist {artist.name}, "
-                    f"rescheduling in {retry_after}s"
-                )
-                if task_history:
-                    task_history.status = "PENDING"
-                    task_history.add_log_message(
-                        f"Rate limited by YouTube, rescheduling in {retry_after // 60} minutes"
-                    )
-                    task_history.save()
-                raise self.retry(
-                    exc=rate_limit_error,
-                    countdown=retry_after,
-                    max_retries=3,
-                )
-            except SpotifyRateLimitError as rate_limit_error:
-                # Spotify rate limit - reschedule task for later
-                retry_after = rate_limit_error.retry_after_seconds
-                logger.warning(
-                    f"Spotify rate limit hit for artist {artist.name}, "
-                    f"rescheduling in {retry_after}s"
-                )
-                if task_history:
-                    task_history.status = "PENDING"
-                    task_history.add_log_message(
-                        f"Rate limited by Spotify, rescheduling in {retry_after // 60} minutes"
-                    )
-                    task_history.save()
-                raise self.retry(
-                    exc=rate_limit_error,
-                    countdown=retry_after,
-                    max_retries=3,
-                )
-        else:
-            try:
-                spotdl_wrapper.execute(downloader_config)
-            except YouTubeRateLimitError as rate_limit_error:
-                retry_after = rate_limit_error.retry_after_seconds
-                logger.warning(
-                    f"YouTube rate limit hit for artist {artist_id}, "
-                    f"rescheduling in {retry_after}s"
-                )
-                raise self.retry(
-                    exc=rate_limit_error,
-                    countdown=retry_after,
-                    max_retries=3,
-                )
-            except SpotifyRateLimitError as rate_limit_error:
-                retry_after = rate_limit_error.retry_after_seconds
-                logger.warning(
-                    f"Spotify rate limit hit for artist {artist_id}, "
-                    f"rescheduling in {retry_after}s"
-                )
-                raise self.retry(
-                    exc=rate_limit_error,
-                    countdown=retry_after,
-                    max_retries=3,
-                )
-
-        # Final cancellation check before completion
-        if check_task_cancellation(task_history):
-            logger.info(f"Task cancelled before completion for artist {artist.name}")
-            return
-
-        # Update last_synced_at timestamp (metadata sync completed)
         artist.last_synced_at = Now()
         artist.save()
 
+        msg = (
+            f"Fetch complete for {artist.name}: "
+            f"{created_count} new, {linked_count} linked"
+        )
+        logger.info(msg)
         complete_task(task_history, success=True)
 
-    except (YouTubeRateLimitError, SpotifyRateLimitError):
-        # Already handled above with self.retry - just re-raise
-        raise
-    except CeleryRetry:
-        # Celery Retry exception - task will be rescheduled, don't mark as failed
-        raise
     except Exception as e:
         if task_history:
             complete_task(task_history, success=False, error_message=str(e))

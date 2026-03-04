@@ -1,19 +1,73 @@
 """Deezer-specific tasks for album discovery and metadata fetching."""
 
-from typing import Any
+from typing import Any, Optional
 
 from django.db.models import Q
 from django.utils import timezone
 
 from celery_app import app as celery_app
 
-from ..models import Album, Artist
+from ..models import Album, Artist, TaskHistory
 from .core import (
     complete_task,
     create_task_history,
     logger,
     update_task_progress,
 )
+
+
+def _fetch_albums_via_deezer(
+    artist: Artist, task_history: Optional[TaskHistory] = None
+) -> tuple[int, int]:
+    """Fetch all albums for an artist from Deezer and create/link DB records.
+
+    Returns:
+        (created_count, linked_count) tuple.
+    """
+    from src.providers.deezer import DeezerMetadataProvider
+
+    provider = DeezerMetadataProvider()
+    deezer_albums = provider.get_artist_albums(artist.deezer_id)
+
+    if task_history:
+        update_task_progress(
+            task_history,
+            50.0,
+            f"Found {len(deezer_albums)} albums, processing...",
+        )
+
+    created_count = 0
+    linked_count = 0
+
+    for album_data in deezer_albums:
+        if not album_data.deezer_id:
+            continue
+
+        existing = Album.objects.filter(
+            Q(deezer_id=album_data.deezer_id)
+            | Q(name__iexact=album_data.name, artist=artist)
+        ).first()
+
+        if existing:
+            if not existing.deezer_id:
+                existing.deezer_id = album_data.deezer_id
+                existing.save(update_fields=["deezer_id"])
+                linked_count += 1
+            continue
+
+        Album.objects.create(
+            name=album_data.name,
+            deezer_id=album_data.deezer_id,
+            artist=artist,
+            spotify_uri="",
+            total_tracks=album_data.total_tracks,
+            album_type=album_data.album_type,
+            album_group=album_data.album_group or album_data.album_type,
+            wanted=True,
+        )
+        created_count += 1
+
+    return created_count, linked_count
 
 
 @celery_app.task(
@@ -49,47 +103,7 @@ def fetch_artist_albums_from_deezer(self: Any, artist_id: int) -> None:
             task_history, 0.0, f"Fetching albums for {artist.name} from Deezer"
         )
 
-        from src.providers.deezer import DeezerMetadataProvider
-
-        provider = DeezerMetadataProvider()
-        deezer_albums = provider.get_artist_albums(artist.deezer_id)
-
-        update_task_progress(
-            task_history,
-            50.0,
-            f"Found {len(deezer_albums)} albums, processing...",
-        )
-
-        created_count = 0
-        linked_count = 0
-
-        for album_data in deezer_albums:
-            if not album_data.deezer_id:
-                continue
-
-            existing = Album.objects.filter(
-                Q(deezer_id=album_data.deezer_id)
-                | Q(name__iexact=album_data.name, artist=artist)
-            ).first()
-
-            if existing:
-                if not existing.deezer_id:
-                    existing.deezer_id = album_data.deezer_id
-                    existing.save(update_fields=["deezer_id"])
-                    linked_count += 1
-                continue
-
-            Album.objects.create(
-                name=album_data.name,
-                deezer_id=album_data.deezer_id,
-                artist=artist,
-                spotify_uri="",
-                total_tracks=album_data.total_tracks,
-                album_type=album_data.album_type,
-                album_group=album_data.album_group or album_data.album_type,
-                wanted=True,
-            )
-            created_count += 1
+        created_count, linked_count = _fetch_albums_via_deezer(artist, task_history)
 
         artist.last_synced_at = timezone.now()
         artist.save(update_fields=["last_synced_at"])

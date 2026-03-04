@@ -5,7 +5,6 @@ from typing import Any, Optional
 
 from celery_app import app as celery_app
 from downloader.spotdl_wrapper import YouTubeRateLimitError
-from downloader.spotipy_tasks import SpotifyRateLimitError
 from lib.config_class import Config
 
 from ..models import Album, Artist, Song, TaskHistory
@@ -606,141 +605,104 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
 
 @celery_app.task(bind=True, name="library_manager.tasks.backfill_song_isrc")
 def backfill_song_isrc(
-    self: Any, batches_per_task: int = 5, last_song_id: int = 0
+    self: Any, songs_per_task: int = 250, last_song_id: int = 0
 ) -> None:
-    """
-    Backfill ISRC codes for existing songs that don't have them.
+    """Backfill ISRC codes for songs using Deezer track metadata.
 
-    Uses Spotify's batch track endpoint to fetch up to 50 tracks per API call.
-    Processes multiple batches per task to reduce Celery overhead, then chains
-    to the next task until all songs are processed.
+    Processes songs that have a deezer_id but no ISRC. Fetches each track
+    individually from Deezer API, then bulk-updates the database.
+    Self-chains until all songs are processed.
 
     Args:
-        batches_per_task: Number of 50-track API batches to process per task.
-                         Default 5 = 250 songs per task invocation.
+        songs_per_task: Number of songs to process per task invocation.
         last_song_id: ID of the last song processed in the previous task.
-                      Used for pagination to avoid re-querying songs without ISRC.
     """
     import time
 
-    from downloader.spotipy_tasks import PublicSpotifyClient
+    from src.providers.deezer import DeezerMetadataProvider
 
-    spotify_batch_size = 50  # Spotify API limit
-    songs_per_task = spotify_batch_size * batches_per_task
-
-    # Find songs without ISRC, ordered by ID for consistent pagination
-    # Filter by id > last_song_id to skip songs we've already attempted
     songs_without_isrc = list(
-        Song.objects.filter(isrc__isnull=True, id__gt=last_song_id)
+        Song.objects.filter(
+            isrc__isnull=True,
+            deezer_id__isnull=False,
+            id__gt=last_song_id,
+        )
         .order_by("id")
-        .values_list("id", "gid")[:songs_per_task]
+        .values_list("id", "deezer_id")[:songs_per_task]
     )
 
     if not songs_without_isrc:
-        logger.info("ISRC backfill complete - no more songs without ISRC")
+        total_no_deezer = Song.objects.filter(
+            isrc__isnull=True, deezer_id__isnull=True
+        ).count()
+        if total_no_deezer > 0:
+            logger.info(
+                f"ISRC backfill complete - {total_no_deezer} songs remain "
+                f"without ISRC (no deezer_id)"
+            )
+        else:
+            logger.info("ISRC backfill complete - no more songs without ISRC")
         return
 
-    # Extract just the GIDs for API calls, track max ID for pagination
-    song_gids = [gid for _, gid in songs_without_isrc]
-    max_song_id = songs_without_isrc[-1][0]  # Last (highest) song ID in batch
+    max_song_id = songs_without_isrc[-1][0]
 
-    logger.info(
-        f"Backfilling ISRC for {len(song_gids)} songs "
-        f"({batches_per_task} batches of {spotify_batch_size})"
-    )
+    logger.info(f"Backfilling ISRC for {len(songs_without_isrc)} songs via Deezer")
 
     try:
-        public_client = PublicSpotifyClient()
-        if public_client.sp is None:
-            logger.error("Failed to initialize Spotify client")
-            return
-
+        provider = DeezerMetadataProvider()
         total_updated = 0
         total_no_isrc = 0
+        songs_to_update = []
 
-        # Process in batches of 50 (Spotify's limit)
-        for batch_num in range(0, len(song_gids), spotify_batch_size):
-            batch_gids = song_gids[batch_num : batch_num + spotify_batch_size]
+        for song_id, deezer_id in songs_without_isrc:
+            track = provider.get_track(deezer_id)
+            if track and track.isrc:
+                songs_to_update.append((song_id, track.isrc))
+            else:
+                total_no_isrc += 1
 
-            # Fetch tracks from Spotify
-            result = public_client.sp.tracks(batch_gids)
-            if not result or "tracks" not in result:
-                logger.warning(
-                    f"No results for batch {batch_num // spotify_batch_size + 1}"
-                )
-                continue
+            time.sleep(0.1)
 
-            # Build a map of gid -> isrc
-            isrc_map = {}
-            for track in result["tracks"]:
-                if track and track.get("id"):
-                    external_ids = track.get("external_ids")
-                    if not external_ids or not isinstance(external_ids, dict):
-                        total_no_isrc += 1
-                        continue
-                    isrc = external_ids.get("isrc")
-                    if isrc:
-                        isrc_map[track["id"]] = isrc
-                    else:
-                        total_no_isrc += 1
-
-            # Bulk update using Django ORM
-            if isrc_map:
-                songs_to_update = list(Song.objects.filter(gid__in=isrc_map.keys()))
-                for song in songs_to_update:
-                    song.isrc = isrc_map[song.gid]
-                Song.objects.bulk_update(songs_to_update, ["isrc"])
-                total_updated += len(songs_to_update)
-
-            # Delay between API calls to respect rate limits
-            if batch_num + spotify_batch_size < len(song_gids):
-                time.sleep(0.5)
+        if songs_to_update:
+            song_objs = list(
+                Song.objects.filter(id__in=[s[0] for s in songs_to_update])
+            )
+            isrc_map = dict(songs_to_update)
+            for song in song_objs:
+                song.isrc = isrc_map[song.id]
+            Song.objects.bulk_update(song_objs, ["isrc"])
+            total_updated = len(song_objs)
 
         logger.info(
-            f"Updated {total_updated}/{len(song_gids)} songs with ISRC "
-            f"({total_no_isrc} tracks had no ISRC in Spotify)"
+            f"Updated {total_updated}/{len(songs_without_isrc)} songs with ISRC "
+            f"({total_no_isrc} tracks had no ISRC on Deezer)"
         )
 
-        # Check if there are more songs to process beyond our current position
         remaining_after = Song.objects.filter(
-            isrc__isnull=True, id__gt=max_song_id
+            isrc__isnull=True, deezer_id__isnull=False, id__gt=max_song_id
         ).count()
 
         if remaining_after > 0:
             logger.info(
                 f"{remaining_after} songs still need ISRC, scheduling next batch"
             )
-            # 30s cooldown between chained tasks to stay within Spotify rate limits
             backfill_song_isrc.apply_async(
                 kwargs={
-                    "batches_per_task": batches_per_task,
+                    "songs_per_task": songs_per_task,
                     "last_song_id": max_song_id,
                 },
                 countdown=30,
             )
         else:
-            # Log final stats
             total_without_isrc = Song.objects.filter(isrc__isnull=True).count()
             if total_without_isrc > 0:
                 logger.info(
                     f"ISRC backfill complete - {total_without_isrc} songs remain "
-                    f"without ISRC (not available in Spotify)"
+                    f"without ISRC (no deezer_id or not available on Deezer)"
                 )
             else:
                 logger.info("ISRC backfill complete - all songs have ISRC")
 
-    except SpotifyRateLimitError as rate_limit_error:
-        # Spotify rate limit - reschedule task for later
-        retry_after = rate_limit_error.retry_after_seconds
-        logger.warning(
-            f"Spotify rate limit hit during ISRC backfill, "
-            f"rescheduling in {retry_after}s"
-        )
-        raise self.retry(
-            exc=rate_limit_error,
-            countdown=retry_after,
-            max_retries=10,  # Allow more retries since backfill may take a while
-        )
     except Exception as e:
         logger.error(f"Error during ISRC backfill: {e}", exc_info=True)
         raise
@@ -748,160 +710,122 @@ def backfill_song_isrc(
 
 @celery_app.task(bind=True, name="library_manager.tasks.backfill_song_album")
 def backfill_song_album(
-    self: Any, batches_per_task: int = 5, last_song_id: int = 0
+    self: Any, songs_per_task: int = 250, last_song_id: int = 0
 ) -> None:
-    """
-    Backfill album associations for existing songs that don't have them.
+    """Backfill album associations for songs using Deezer track metadata.
 
-    Uses Spotify's batch track endpoint to fetch track metadata including album ID.
-    Links songs to existing Album records in the database. Songs whose albums
-    don't exist locally are skipped (they'll be linked when the album is synced).
+    For each song with a deezer_id but no album link, fetches the track from
+    Deezer to get the album_deezer_id, then links to existing Album records.
+    Songs whose albums aren't in the database are skipped.
 
     Args:
-        batches_per_task: Number of 50-track API batches to process per task.
-                         Default 5 = 250 songs per task invocation.
+        songs_per_task: Number of songs to process per task invocation.
         last_song_id: ID of the last song processed in the previous task.
-                      Used for pagination to avoid re-querying unlinkable songs.
     """
     import time
 
-    from downloader.spotipy_tasks import PublicSpotifyClient
+    from src.providers.deezer import DeezerMetadataProvider
 
-    spotify_batch_size = 50  # Spotify API limit
-    songs_per_task = spotify_batch_size * batches_per_task
-
-    # Find songs without album link, ordered by ID for consistent pagination
-    # Filter by id > last_song_id to skip songs we've already attempted
     songs_without_album = list(
-        Song.objects.filter(album__isnull=True, id__gt=last_song_id)
+        Song.objects.filter(
+            album__isnull=True,
+            deezer_id__isnull=False,
+            id__gt=last_song_id,
+        )
         .order_by("id")
-        .values_list("id", "gid")[:songs_per_task]
+        .values_list("id", "deezer_id")[:songs_per_task]
     )
 
     if not songs_without_album:
-        logger.info("Album backfill complete - no more songs without album link")
+        total_no_deezer = Song.objects.filter(
+            album__isnull=True, deezer_id__isnull=True
+        ).count()
+        if total_no_deezer > 0:
+            logger.info(
+                f"Album backfill complete - {total_no_deezer} songs remain "
+                f"unlinked (no deezer_id)"
+            )
+        else:
+            logger.info("Album backfill complete - no more songs without album link")
         return
 
-    # Extract just the GIDs for API calls, track max ID for pagination
-    song_gids = [gid for _, gid in songs_without_album]
-    max_song_id = songs_without_album[-1][0]  # Last (highest) song ID in batch
+    max_song_id = songs_without_album[-1][0]
 
     logger.info(
-        f"Backfilling album links for {len(song_gids)} songs "
-        f"({batches_per_task} batches of {spotify_batch_size})"
+        f"Backfilling album links for {len(songs_without_album)} songs via Deezer"
     )
 
     try:
-        public_client = PublicSpotifyClient()
-        if public_client.sp is None:
-            logger.error("Failed to initialize Spotify client")
-            return
-
-        total_linked = 0
-        total_album_not_found = 0
+        provider = DeezerMetadataProvider()
+        album_cache: dict[int, Album | None] = {}
+        song_album_pairs: list[tuple[int, int]] = []
         total_no_album_data = 0
+        total_album_not_found = 0
 
-        # Build a cache of album GIDs to Album objects for this batch
-        # This reduces repeated DB queries
-        album_cache: dict[str, Album] = {}
-
-        # Process in batches of 50 (Spotify's limit)
-        for batch_num in range(0, len(song_gids), spotify_batch_size):
-            batch_gids = song_gids[batch_num : batch_num + spotify_batch_size]
-
-            # Fetch tracks from Spotify
-            result = public_client.sp.tracks(batch_gids)
-            if not result or "tracks" not in result:
-                logger.warning(
-                    f"No results for batch {batch_num // spotify_batch_size + 1}"
-                )
+        for song_id, deezer_id in songs_without_album:
+            track = provider.get_track(deezer_id)
+            if not track or not track.album_deezer_id:
+                total_no_album_data += 1
+                time.sleep(0.1)
                 continue
 
-            # Build a map of song_gid -> album_gid
-            song_album_map: dict[str, str] = {}
-            album_gids_needed: set[str] = set()
+            album_deezer_id = track.album_deezer_id
 
-            for track in result["tracks"]:
-                if not track or not track.get("id"):
-                    continue
-                album_gid = track.get("album", {}).get("id")
-                if not album_gid:
-                    total_no_album_data += 1
-                    continue
-                song_album_map[track["id"]] = album_gid
-                if album_gid not in album_cache:
-                    album_gids_needed.add(album_gid)
+            if album_deezer_id not in album_cache:
+                album_cache[album_deezer_id] = Album.objects.filter(
+                    deezer_id=album_deezer_id
+                ).first()
 
-            # Bulk fetch albums we don't have cached yet
-            if album_gids_needed:
-                albums = Album.objects.filter(spotify_gid__in=album_gids_needed)
-                for album in albums:
-                    album_cache[album.spotify_gid] = album
+            if album_cache[album_deezer_id] is not None:
+                song_album_pairs.append((song_id, album_deezer_id))
+            else:
+                total_album_not_found += 1
 
-            # Link songs to albums
-            songs_to_update = []
-            for song in Song.objects.filter(gid__in=song_album_map.keys()):
-                album_gid = song_album_map.get(song.gid)
-                if album_gid and album_gid in album_cache:
-                    song.album = album_cache[album_gid]
-                    songs_to_update.append(song)
-                elif album_gid:
-                    total_album_not_found += 1
+            time.sleep(0.1)
 
-            if songs_to_update:
-                Song.objects.bulk_update(songs_to_update, ["album"])
-                total_linked += len(songs_to_update)
-
-            # Delay between API calls to respect rate limits
-            if batch_num + spotify_batch_size < len(song_gids):
-                time.sleep(0.5)
+        total_linked = 0
+        if song_album_pairs:
+            song_objs = list(
+                Song.objects.filter(id__in=[s[0] for s in song_album_pairs])
+            )
+            pair_map = dict(song_album_pairs)
+            for song in song_objs:
+                album_deezer_id = pair_map[song.id]
+                song.album = album_cache[album_deezer_id]
+            Song.objects.bulk_update(song_objs, ["album"])
+            total_linked = len(song_objs)
 
         logger.info(
-            f"Linked {total_linked}/{len(song_gids)} songs to albums "
+            f"Linked {total_linked}/{len(songs_without_album)} songs to albums "
             f"({total_album_not_found} albums not in DB, "
-            f"{total_no_album_data} tracks had no album data)"
+            f"{total_no_album_data} tracks had no album data on Deezer)"
         )
 
-        # Check if there are more songs to process beyond our current position
         remaining_after = Song.objects.filter(
-            album__isnull=True, id__gt=max_song_id
+            album__isnull=True, deezer_id__isnull=False, id__gt=max_song_id
         ).count()
 
         if remaining_after > 0:
             logger.info(
                 f"{remaining_after} songs still need album link, scheduling next batch"
             )
-            # 30s cooldown between chained tasks to stay within Spotify rate limits
             backfill_song_album.apply_async(
                 kwargs={
-                    "batches_per_task": batches_per_task,
+                    "songs_per_task": songs_per_task,
                     "last_song_id": max_song_id,
                 },
                 countdown=30,
             )
         else:
-            # Log final stats
             total_unlinked = Song.objects.filter(album__isnull=True).count()
             if total_unlinked > 0:
                 logger.info(
                     f"Album backfill complete - {total_unlinked} songs remain "
-                    f"unlinked (their albums are not in the database)"
+                    f"unlinked (no deezer_id or albums not in database)"
                 )
             else:
                 logger.info("Album backfill complete - all songs linked to albums")
 
-    except SpotifyRateLimitError as rate_limit_error:
-        # Spotify rate limit - reschedule task for later
-        retry_after = rate_limit_error.retry_after_seconds
-        logger.warning(
-            f"Spotify rate limit hit during album backfill, "
-            f"rescheduling in {retry_after}s"
-        )
-        raise self.retry(
-            exc=rate_limit_error,
-            countdown=retry_after,
-            max_retries=10,  # Allow more retries since backfill may take a while
-        )
     except Exception as e:
         logger.error(f"Error during album backfill: {e}", exc_info=True)
         raise

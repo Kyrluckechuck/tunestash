@@ -6,7 +6,6 @@ from typing import Any, Optional
 from django.utils import timezone
 
 from celery_app import app as celery_app
-from downloader.spotipy_tasks import track_artists_in_playlist
 
 from .. import helpers
 from ..models import Artist, Song, TrackedPlaylist
@@ -221,6 +220,22 @@ def sync_deezer_playlist(
                     f"Processed {idx + 1}/{total} tracks",
                 )
 
+        # Mark artists as tracked if auto_track_artists is enabled
+        if playlist.auto_track_artists:
+            artist_deezer_ids = [
+                t.artist_deezer_id for t in tracks if t.artist_deezer_id
+            ]
+            if artist_deezer_ids:
+                artists_to_track = Artist.objects.filter(
+                    deezer_id__in=artist_deezer_ids
+                ).exclude(tracked=True)
+                updated = artists_to_track.update(tracked=True)
+                if updated:
+                    logger.info(
+                        f"Marked {updated} artists as tracked from "
+                        f"playlist '{playlist.name}'"
+                    )
+
         playlist.last_synced_at = timezone.now()
         playlist.save(update_fields=["last_synced_at"])
 
@@ -240,11 +255,56 @@ def sync_deezer_playlist(
         raise
 
 
+def _track_artists_in_deezer_playlist(playlist: TrackedPlaylist) -> None:
+    """Track all artists in a Deezer playlist by fetching tracks from Deezer API."""
+    from src.providers.deezer import DeezerMetadataProvider
+
+    deezer_playlist_id = _extract_deezer_playlist_id(playlist.url)
+    if not deezer_playlist_id:
+        logger.error(f"Could not extract Deezer playlist ID from URL: {playlist.url}")
+        return
+
+    provider = DeezerMetadataProvider()
+    tracks = provider.get_playlist_tracks(deezer_playlist_id)
+
+    # Collect unique artist deezer_ids and names
+    seen_artist_ids: set[int] = set()
+    artists_data: list[tuple[int, str]] = []
+    for track in tracks:
+        if track.artist_deezer_id and track.artist_deezer_id not in seen_artist_ids:
+            seen_artist_ids.add(track.artist_deezer_id)
+            artists_data.append(
+                (track.artist_deezer_id, track.artist_name or "Unknown Artist")
+            )
+
+    tracked_count = 0
+    for deezer_id, name in artists_data:
+        _, created = Artist.objects.get_or_create(
+            deezer_id=deezer_id,
+            defaults={"name": name, "tracked": True},
+        )
+        if created:
+            tracked_count += 1
+        else:
+            Artist.objects.filter(deezer_id=deezer_id, tracked=False).update(
+                tracked=True
+            )
+
+    # Count how many were updated (not just created)
+    total_tracked = Artist.objects.filter(
+        deezer_id__in=list(seen_artist_ids), tracked=True
+    ).count()
+    logger.info(
+        f"Tracked {total_tracked} artists from Deezer playlist '{playlist.name}' "
+        f"({tracked_count} newly created)"
+    )
+
+
 @celery_app.task(bind=True, name="library_manager.tasks.sync_tracked_playlist_artists")
 def sync_tracked_playlist_artists(
     self: Any, playlist_id: int, task_id: Optional[str] = None
 ) -> None:
-    # Given a playlist, track the artists without actually downloading the playlist (potentially, again)
+    """Track artists from a playlist without downloading it."""
     try:
         playlist = TrackedPlaylist.objects.get(id=playlist_id)
     except TrackedPlaylist.DoesNotExist:
@@ -253,4 +313,10 @@ def sync_tracked_playlist_artists(
         )
         return
 
-    track_artists_in_playlist(playlist.url, task_id)
+    if playlist.provider == "deezer":
+        _track_artists_in_deezer_playlist(playlist)
+    else:
+        logger.info(
+            f"Skipping artist tracking for Spotify playlist '{playlist.name}' — "
+            f"artists are tracked during download via spotdl"
+        )
