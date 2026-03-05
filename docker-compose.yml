@@ -92,7 +92,7 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - HOME=/config
-    command: celery -A celery_app worker --loglevel=info --queues=downloads,spotify,celery --concurrency=1 --max-tasks-per-child=500
+    command: bash scripts/worker_startup.sh
     depends_on:
       postgres:
         condition: service_healthy

@@ -96,8 +96,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && find /usr/local/lib/python3.13/site-packages -type d -name test -exec rm -rf {} + 2>/dev/null || true \
     && find /usr/local/lib/python3.13/site-packages -name "*.pyc" -delete 2>/dev/null || true \
     && find /usr/local/lib/python3.13/site-packages -name "*.pyo" -delete 2>/dev/null || true \
-    # Remove pip after installation (not needed at runtime)
-    && pip uninstall -y pip setuptools wheel 2>/dev/null || true
+    # Keep pip available at runtime for yt-dlp auto-updates
+    && pip uninstall -y setuptools wheel 2>/dev/null || true
 
 # =============================================================================
 # Stage 5: Python Development Dependencies
@@ -128,8 +128,8 @@ COPY ./api/settings.py /app/settings.py
 COPY ./api/run.py /app/run.py
 COPY ./api/scripts /app/scripts
 
-# Make startup script executable
-RUN chmod +x /app/scripts/startup.sh
+# Make startup scripts executable
+RUN chmod +x /app/scripts/startup.sh /app/scripts/worker_startup.sh
 
 # =============================================================================
 # Stage 7: Production Backend (minimal, optimized)
