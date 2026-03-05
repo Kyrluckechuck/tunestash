@@ -33,7 +33,6 @@ class AlbumService(BaseService[Album]):
                     success=False, message="Album not found on Deezer"
                 )
 
-            # Find or create the parent artist
             artist_deezer_id = album_data.artist_deezer_id
             artist = await sync_to_async(
                 lambda: (
@@ -57,7 +56,6 @@ class AlbumService(BaseService[Album]):
                 artist.deezer_id = artist_deezer_id
                 await artist.asave()
 
-            # Check if album already exists
             existing = await sync_to_async(
                 lambda: DjangoAlbum.objects.filter(
                     Q(deezer_id=deezer_id)
@@ -81,7 +79,6 @@ class AlbumService(BaseService[Album]):
                     album=await sync_to_async(self._to_graphql_type)(existing),
                 )
 
-            # Create new album
             django_album = await sync_to_async(DjangoAlbum.objects.create)(
                 name=album_data.name,
                 deezer_id=deezer_id,

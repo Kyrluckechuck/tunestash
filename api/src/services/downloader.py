@@ -31,7 +31,6 @@ class DownloaderService:
             if "deezer.com" in url:
                 return await self._handle_deezer_url(url, auto_track_artists)
 
-            # Spotify path: normalize and validate
             normalized_url = self._normalize_spotify_url(url)
 
             validation = await validate_spotify_resource_async(normalized_url)

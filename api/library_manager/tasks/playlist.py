@@ -122,7 +122,6 @@ def sync_deezer_playlist(
 
         provider = DeezerMetadataProvider()
 
-        # Fetch playlist metadata and update name/checksum
         playlist_info = provider.get_playlist(deezer_playlist_id)
         if playlist_info:
             if playlist_info.name and playlist_info.name != playlist.name:
@@ -132,7 +131,6 @@ def sync_deezer_playlist(
 
         update_task_progress(task_history, 10.0, "Fetching playlist tracks from Deezer")
 
-        # Fetch all tracks
         tracks = provider.get_playlist_tracks(deezer_playlist_id)
         update_task_progress(task_history, 20.0, f"Processing {len(tracks)} tracks")
 
@@ -167,7 +165,6 @@ def sync_deezer_playlist(
                     matched_song.save(update_fields=update_fields)
                     linked_songs += 1
             else:
-                # Find or create artist
                 artist = None
                 if track.artist_deezer_id:
                     artist = Artist.objects.filter(
@@ -193,7 +190,6 @@ def sync_deezer_playlist(
                         matched_song.save(update_fields=update_fields)
                         linked_songs += 1
                 else:
-                    # Create new song
                     matched_song = Song.objects.create(
                         name=track.name,
                         deezer_id=track.deezer_id,
@@ -202,7 +198,6 @@ def sync_deezer_playlist(
                     )
                     new_songs += 1
 
-            # Queue download if not downloaded
             if (
                 matched_song
                 and matched_song.bitrate == 0
@@ -211,7 +206,6 @@ def sync_deezer_playlist(
                 download_deezer_track.delay(matched_song.id)
                 downloads_queued += 1
 
-            # Update progress
             if total > 0 and (idx + 1) % 50 == 0:
                 progress = 20.0 + (70.0 * (idx + 1) / total)
                 update_task_progress(
@@ -267,7 +261,6 @@ def _track_artists_in_deezer_playlist(playlist: TrackedPlaylist) -> None:
     provider = DeezerMetadataProvider()
     tracks = provider.get_playlist_tracks(deezer_playlist_id)
 
-    # Collect unique artist deezer_ids and names
     seen_artist_ids: set[int] = set()
     artists_data: list[tuple[int, str]] = []
     for track in tracks:

@@ -379,7 +379,6 @@ class Query:  # pylint: disable=too-many-public-methods
         # Get storage status
         storage_data = await sync_to_async(SystemHealthService.check_storage_status)()
 
-        # Get API rate limit states (Deezer, YouTube, etc.)
         api_rate_limit_states = await sync_to_async(
             lambda: list(APIRateLimitState.objects.all())
         )()

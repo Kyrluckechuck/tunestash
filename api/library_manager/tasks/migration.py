@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 from celery_app import app as celery_app
 
+from src.providers.metadata_base import TrackResult
+
 from ..helpers import generate_task_id, is_task_pending_or_running
 from ..models import Album, Artist, Song
 from .core import (
@@ -20,7 +22,7 @@ from .core import (
 from .periodic import _normalize_name
 
 
-def _find_matching_song(track: Any, artist: Artist) -> Optional[Song]:
+def _find_matching_song(track: TrackResult, artist: Artist) -> Optional[Song]:
     """Find an existing Song that matches the given Deezer track.
 
     Match priority: ISRC > deezer_id > normalized name.
@@ -46,7 +48,9 @@ def _find_matching_song(track: Any, artist: Artist) -> Optional[Song]:
     return None
 
 
-def _link_or_create_song(track: Any, artist: Artist, album: Album) -> Optional[str]:
+def _link_or_create_song(
+    track: TrackResult, artist: Artist, album: Album
+) -> Optional[str]:
     """Link an existing song to Deezer or create a new one.
 
     Returns 'linked', 'created', or None (already linked / skipped).
