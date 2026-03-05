@@ -70,6 +70,10 @@ module = [
     "django_celery_results.*",
     "psutil",
     "psutil.*",
+    "deezer",
+    "deezer.*",
+    "httpx",
+    "httpx.*",
 ]
 ignore_missing_imports = true
 
