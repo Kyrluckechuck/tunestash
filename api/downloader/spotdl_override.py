@@ -35,8 +35,8 @@ def song_from_track_data(track: Dict[str, Any]) -> Song:
     This avoids the 3 API calls that Song.from_url() makes (track, artist, album)
     by using the track data we already have from playlist/album fetches.
 
-    If the track has been enriched via Downloader.enrich_tracks_metadata(), the
-    '_enriched' key contains additional data (genres, publisher, copyright, disc_count).
+    If the track has been enriched via _enrich_tracks_from_deezer(), the
+    '_enriched' key contains additional data (genres, publisher, disc_count).
 
     Args:
         track: Spotify track dict from playlist/album fetch, optionally with '_enriched'

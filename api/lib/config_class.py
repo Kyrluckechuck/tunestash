@@ -17,7 +17,6 @@ class Config:
         no_lrc: Optional[bool] = None,
         overwrite: Optional[bool] = None,
         track_artists: bool = False,
-        artist_to_fetch: Optional[str] = None,
         print_exceptions: bool = True,
         force_playlist_resync: bool = False,
         fallback_quality: Optional[str] = None,
@@ -92,6 +91,5 @@ class Config:
         # Direct assignments
         self.urls = urls or []
         self.track_artists = track_artists
-        self.artist_to_fetch = artist_to_fetch
         self.print_exceptions = print_exceptions
         self.force_playlist_resync = force_playlist_resync

@@ -222,7 +222,6 @@ class PlaylistService(BaseService[Playlist]):
 
         spotify_uri = f"spotify:playlist:{spotify_id}"
 
-        # Check if playlist already exists
         existing_playlist = await sync_to_async(
             lambda: self._find_duplicate_playlist(spotify_uri)
         )()
@@ -293,7 +292,6 @@ class PlaylistService(BaseService[Playlist]):
                     "Try copying the tracks to your own playlist instead."
                 )
 
-        # Check for duplicates
         existing_playlist = await sync_to_async(
             lambda: self._find_duplicate_playlist(normalized_url)
         )()
@@ -551,7 +549,6 @@ class PlaylistService(BaseService[Playlist]):
         """Save a playlist by its Deezer ID, fetching name from Deezer API."""
         deezer_url = f"https://www.deezer.com/playlist/{deezer_id}"
 
-        # Check if playlist already exists
         existing = await sync_to_async(
             lambda: self._find_duplicate_playlist(deezer_url)
         )()
@@ -569,7 +566,6 @@ class PlaylistService(BaseService[Playlist]):
 
             return self._to_graphql_type(existing)
 
-        # Fetch name from Deezer
         def get_playlist_name() -> str:
             from src.providers.deezer import DeezerMetadataProvider
 
@@ -600,7 +596,6 @@ class PlaylistService(BaseService[Playlist]):
                 django_playlist.status_message = None
                 await sync_to_async(django_playlist.save)()
 
-            # Route by provider
             if django_playlist.provider == "deezer":
                 from library_manager.tasks import sync_deezer_playlist
 

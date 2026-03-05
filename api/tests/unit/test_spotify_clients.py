@@ -207,18 +207,6 @@ class TestDownloaderDualClients:
         mock_public.track.assert_called_once_with("test_id")
         mock_oauth.track.assert_not_called()
 
-    def test_get_tracks_batch_uses_public_client(self) -> None:
-        """get_tracks_batch() should use the public client."""
-        mock_oauth = MagicMock()
-        mock_public = MagicMock()
-        mock_public.tracks.return_value = {"tracks": [{"id": "1"}, {"id": "2"}]}
-
-        downloader = Downloader(mock_oauth, public_client=mock_public)
-        downloader.get_tracks_batch(["id1", "id2"])
-
-        mock_public.tracks.assert_called_once()
-        mock_oauth.tracks.assert_not_called()
-
     def test_get_album_uses_public_client(self) -> None:
         """get_album() should use the public client."""
         mock_oauth = MagicMock()

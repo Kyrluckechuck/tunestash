@@ -380,14 +380,11 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         f"Found {len(deezer_tracks)} tracks, creating song records",
     )
 
-    # Get album artist name for metadata
     album_artist_name = album.artist.name  # type: ignore[attr-defined]
 
-    # Get or create the album's cover URL from Deezer
     album_data = provider.get_album(album.deezer_id)
     cover_url = album_data.image_url if album_data else None
 
-    # Create Song records and prepare download list
     songs_to_download: list[tuple[Song, TrackMetadata]] = []
 
     for track in deezer_tracks:
@@ -451,7 +448,6 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         f"Downloading {len(songs_to_download)} tracks via fallback providers",
     )
 
-    # Map provider name to DownloadProvider enum
     provider_enum_map = {
         "youtube": DownloadProviderEnum.YOUTUBE,
         "tidal": DownloadProviderEnum.TIDAL,
@@ -504,7 +500,6 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         finally:
             loop.close()
 
-    # Mark album downloaded if all tracks succeeded
     if failed_count == 0:
         album.downloaded = True
         album.save()
@@ -548,7 +543,6 @@ def _handle_deezer_playlist_download(
         playlist.auto_track_artists = True
         playlist.save(update_fields=["auto_track_artists"])
 
-    # Fetch Deezer playlist name and sync tracks
     from src.providers.deezer import DeezerMetadataProvider
 
     provider = DeezerMetadataProvider()
@@ -571,7 +565,6 @@ def download_playlist(
     force_playlist_resync: bool = False,
     task_id: Optional[str] = None,
 ) -> None:
-    # Route Deezer URLs to the Deezer sync path
     if "deezer.com" in playlist_url:
         _handle_deezer_playlist_download(
             playlist_url, tracked, task_id or self.request.id
@@ -738,7 +731,6 @@ def download_extra_album_types_for_artist(
         artist.save()
         return
 
-    # Split into Deezer (preferred) and Spotify-only albums
     deezer_albums = []
     spotify_only_albums = []
     for album in missing_albums.iterator():
@@ -747,7 +739,6 @@ def download_extra_album_types_for_artist(
         elif album.spotify_uri:
             spotify_only_albums.append(album)
 
-    # Resolve task_history for progress callbacks
     task_history = None
     if task_id:
         task_history = TaskHistory.objects.filter(task_id=task_id).first()
@@ -865,7 +856,6 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
             logger.info(f"Task cancelled for album {spotify_album_id}")
             return
 
-        # Check if album already exists in DB
         try:
             album = Album.objects.get(spotify_gid=spotify_album_id)
             logger.info(f"Album {album.name} already exists in database")
@@ -885,7 +875,6 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
                     f"Album {spotify_album_id} not found on Spotify"
                 ) from None
 
-            # Get or create the artist
             artist_data = album_data.get("artists", [{}])[0]
             if not artist_data:
                 raise ValueError(
@@ -1016,7 +1005,6 @@ def download_album_by_deezer_id(self: Any, deezer_album_id: int) -> None:
             logger.info(f"Task cancelled for Deezer album {deezer_album_id}")
             return
 
-        # Check if album already exists in DB
         album = Album.objects.filter(deezer_id=deezer_album_id).first()
 
         if not album:
@@ -1029,7 +1017,6 @@ def download_album_by_deezer_id(self: Any, deezer_album_id: int) -> None:
             if not album_data:
                 raise ValueError(f"Album {deezer_album_id} not found on Deezer")
 
-            # Get or create the artist
             if not album_data.artist_deezer_id:
                 raise ValueError(
                     f"Album {deezer_album_id} has no artist data on Deezer"
@@ -1222,7 +1209,6 @@ def download_deezer_track(self: Any, song_id: int) -> None:
             logger.info(f"Task cancelled for song {song_id}")
             return
 
-        # Fetch track metadata from Deezer for artist/album context
         provider = DeezerMetadataProvider()
         deezer_track = provider.get_track(song.deezer_id)
 

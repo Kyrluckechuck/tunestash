@@ -78,10 +78,10 @@ class MetadataEmbedder:
 
         # MP4 tag mapping
         # https://mutagen.readthedocs.io/en/latest/api/mp4.html
-        audio["\xa9nam"] = [track_metadata.title]  # Title
-        audio["\xa9ART"] = [track_metadata.artist]  # Artist
-        audio["\xa9alb"] = [track_metadata.album]  # Album
-        audio["aART"] = [track_metadata.album_artist]  # Album Artist
+        audio["\xa9nam"] = [track_metadata.title]
+        audio["\xa9ART"] = [track_metadata.artist]
+        audio["\xa9alb"] = [track_metadata.album]
+        audio["aART"] = [track_metadata.album_artist]
 
         if track_metadata.track_number:
             total = track_metadata.total_tracks or 0

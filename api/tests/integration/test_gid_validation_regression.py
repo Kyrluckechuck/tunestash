@@ -38,11 +38,11 @@ class TestGidValidationRegression:
             tracked=True,
         )
 
-        # Mock the downloader to avoid actual API calls
+        # Mock the Deezer album fetch to avoid actual API calls
         with patch(
-            "downloader.downloader.Downloader.get_artist_albums"
-        ) as mock_get_albums:
-            mock_get_albums.return_value = []  # No albums to process
+            "library_manager.tasks.deezer._fetch_albums_via_deezer"
+        ) as mock_fetch:
+            mock_fetch.return_value = (0, 0)
 
             # Should not raise ValueError - validation passes
             try:

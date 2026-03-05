@@ -465,7 +465,7 @@ SpotdlDownloader.download_song = spotdl_override.download_song
 SpotdlDownloader.download_multiple_songs = spotdl_override.download_multiple_songs
 
 
-def generate_spotdl_settings(config: Config) -> Any:
+def generate_spotdl_settings(config: Config) -> dict[str, Any]:
     from django.conf import settings as django_settings
 
     spotify_settings, downloader_settings, _ = create_settings(Namespace(config=False))
@@ -920,6 +920,94 @@ class SpotdlWrapper:
             )
             return False, None, None, None
 
+    def _enrich_tracks_from_deezer(self, tracks: list[dict]) -> None:
+        """Enrich Spotify track dicts with Deezer metadata (ISRC, genres, label).
+
+        For each track, searches Deezer by artist+title, validates via duration,
+        then injects ISRC into external_ids and stores deezer_id for DB linking.
+        Also fetches album details for genre/label enrichment.
+
+        Modifies tracks in-place (same _enriched format as the old Spotify enrichment).
+        """
+        from src.providers.deezer import DeezerMetadataProvider
+
+        provider = DeezerMetadataProvider()
+        album_cache: dict[int, Any] = {}
+        album_disc_count: dict[int, int] = {}
+
+        for track in tracks:
+            try:
+                artist_name = (
+                    track.get("artists", [{}])[0].get("name", "")
+                    if track.get("artists")
+                    else ""
+                )
+                title = track.get("name", "")
+                if not artist_name or not title:
+                    continue
+
+                query = f'artist:"{artist_name}" track:"{title}"'
+                results = provider.search_tracks(query, limit=3)
+                if not results:
+                    continue
+
+                track_duration_ms = track.get("duration_ms", 0)
+                matched = None
+                for result in results:
+                    if track_duration_ms and result.duration_ms:
+                        diff = abs(track_duration_ms - result.duration_ms)
+                        if diff <= 3000:
+                            matched = result
+                            break
+                    else:
+                        matched = results[0]
+                        break
+
+                if not matched:
+                    continue
+
+                if matched.isrc:
+                    if "external_ids" not in track:
+                        track["external_ids"] = {}
+                    if not track["external_ids"].get("isrc"):
+                        track["external_ids"]["isrc"] = matched.isrc
+
+                if matched.deezer_id:
+                    track["_deezer_id"] = matched.deezer_id
+
+                enriched: dict = {}
+                album_deezer_id = matched.album_deezer_id
+                if album_deezer_id:
+                    if album_deezer_id not in album_cache:
+                        try:
+                            album_cache[album_deezer_id] = provider.get_album(
+                                album_deezer_id
+                            )
+                        except Exception:
+                            album_cache[album_deezer_id] = None
+                        try:
+                            album_tracks = provider.get_album_tracks(album_deezer_id)
+                            max_disc = max(
+                                (t.disc_number for t in album_tracks if t.disc_number),
+                                default=1,
+                            )
+                            album_disc_count[album_deezer_id] = max_disc
+                        except Exception:
+                            album_disc_count[album_deezer_id] = 1
+                    album_result = album_cache[album_deezer_id]
+                    if album_result:
+                        enriched["album_genres"] = album_result.genres
+                        enriched["publisher"] = album_result.label or ""
+                        enriched["disc_count"] = album_disc_count.get(
+                            album_deezer_id, 1
+                        )
+
+                enriched["artist_genres"] = []
+                track["_enriched"] = enriched
+
+            except Exception:
+                continue
+
     def _update_playlist_status_on_error(self, url: str) -> None:
         """
         Update playlist status when a 404 error indicates the playlist is inaccessible.
@@ -1066,46 +1154,6 @@ class SpotdlWrapper:
                 self.logger.error(f"Batch fetch failed: {e}")
                 # Fall back to individual fetching below
 
-        if config.artist_to_fetch is not None:
-            # Do not track the artist if it's mass downloaded
-            try:
-                albums = self.downloader.get_artist_albums(config.artist_to_fetch)
-                self.logger.info(
-                    f"Fetched latest {len(albums)} album(s) for this artist"
-                )
-                return 0
-            except SpotifyException as spotify_exception:
-                # Check if this is a 401 Unauthorized error (expired token)
-                if (
-                    "401" in str(spotify_exception)
-                    or "access token expired" in str(spotify_exception).lower()
-                ):
-                    self.logger.warning(
-                        "Spotify OAuth token expired while fetching artist albums, attempting refresh..."
-                    )
-
-                    # Try to refresh the token
-                    if self.refresh_spotify_client():
-                        # Retry the operation once with the refreshed token
-                        try:
-                            albums = self.downloader.get_artist_albums(
-                                config.artist_to_fetch
-                            )
-                            self.logger.info(
-                                f"Fetched latest {len(albums)} album(s) for this artist after token refresh"
-                            )
-                            return 0
-                        except Exception as retry_exception:
-                            self.logger.error(
-                                f"Failed to fetch artist albums after token refresh: {retry_exception}"
-                            )
-                            raise
-                    else:
-                        self.logger.error("Failed to refresh Spotify OAuth token")
-                        raise
-                else:
-                    # Not a 401 error, re-raise
-                    raise
         # Skip individual URL fetching if we already batch-fetched all tracks
         urls_already_fetched = set(download_queue_urls)
 
@@ -1419,16 +1467,15 @@ class SpotdlWrapper:
                     tracked_playlist.save()
                 continue
 
-            # Enrich metadata only for tracks we're actually downloading
-            # This batch-fetches album and artist data efficiently
+            # Enrich tracks with Deezer metadata (ISRC, genres, label, deezer_id)
             self.logger.info(
-                f"Enriching metadata for {len(queue_item)} tracks (batch fetching genres, etc.)"
+                f"Enriching metadata for {len(queue_item)} tracks via Deezer"
             )
             try:
-                self.downloader.enrich_tracks_metadata(queue_item)
+                self._enrich_tracks_from_deezer(queue_item)
             except Exception as e:
                 self.logger.warning(
-                    f"Failed to enrich track metadata (will continue without): {e}"
+                    f"Failed to enrich track metadata from Deezer (will continue without): {e}"
                 )
 
             main_queue_progress = ((queue_item_index - 1) / len(download_queue)) * 1000
@@ -1521,6 +1568,7 @@ class SpotdlWrapper:
                     # Get or create song
                     song_gid = song["song_gid"]
                     song_isrc = song.get("isrc")
+                    deezer_id = track.get("_deezer_id")
 
                     # Look up album from track metadata (may not exist in DB yet)
                     db_album = None
@@ -1544,6 +1592,8 @@ class SpotdlWrapper:
                             db_song.isrc = song_isrc
                         if db_album and not db_song.album:
                             db_song.album = db_album
+                        if deezer_id and not db_song.deezer_id:
+                            db_song.deezer_id = int(deezer_id)
                         db_song.save()
                     except Song.DoesNotExist:
                         db_song = Song.objects.create(
@@ -1552,6 +1602,7 @@ class SpotdlWrapper:
                             album=db_album,
                             name=song["song_name"],
                             isrc=song_isrc,
+                            deezer_id=int(deezer_id) if deezer_id else None,
                         )
 
                     for artist in db_extra_artists:
