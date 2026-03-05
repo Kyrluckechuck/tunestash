@@ -1,4 +1,4 @@
-"""Deezer metadata provider.
+"""Deezer metadata provider using the deezer-python library.
 
 Public API (no auth needed). Rate limit: ~50 req/s, we use 10/s conservatively.
 """
@@ -7,7 +7,9 @@ import logging
 import time
 from typing import Any, Optional, Union
 
-import requests
+import deezer  # pylint: disable=import-error
+import deezer.exceptions  # pylint: disable=import-error
+import httpx  # pylint: disable=import-error
 
 from .metadata_base import (
     AlbumResult,
@@ -18,8 +20,6 @@ from .metadata_base import (
 )
 
 logger = logging.getLogger(__name__)
-
-DEEZER_API_BASE = "https://api.deezer.com"
 
 
 def _check_rate_limit() -> None:
@@ -56,23 +56,12 @@ def _check_rate_limit() -> None:
         pass
 
 
-def _deezer_request(path: str, params: Optional[dict[str, Any]] = None) -> Any:
-    """Make a rate-limited GET request to the Deezer API."""
-    _check_rate_limit()
+class RateLimitedDeezerClient(deezer.Client):
+    """Deezer API client with database-backed rate limiting."""
 
-    url = f"{DEEZER_API_BASE}/{path.lstrip('/')}"
-    resp = requests.get(url, params=params or {}, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-
-    if isinstance(data, dict) and "error" in data:
-        err = data["error"]
-        raise ValueError(
-            f"Deezer API error: {err.get('type', 'unknown')} - "
-            f"{err.get('message', '')}"
-        )
-
-    return data
+    def request(self, *args: Any, **kwargs: Any) -> Any:
+        _check_rate_limit()
+        return super().request(*args, **kwargs)
 
 
 def _normalize_album_type(record_type: Optional[str]) -> Optional[str]:
@@ -87,186 +76,172 @@ def _normalize_album_type(record_type: Optional[str]) -> Optional[str]:
     return record_type
 
 
-def _parse_artist(data: dict[str, Any]) -> ArtistResult:
+def _to_artist_result(artist: deezer.Artist) -> ArtistResult:
     return ArtistResult(
-        name=data.get("name", ""),
-        deezer_id=data.get("id"),
-        image_url=data.get("picture_xl") or data.get("picture_big"),
+        name=artist.name,
+        deezer_id=artist.id,
+        image_url=artist.picture_xl or artist.picture_big,
     )
 
 
-def _parse_album(data: dict[str, Any]) -> AlbumResult:
+def _to_album_result(album: deezer.Album) -> AlbumResult:
+    # Check _fields to avoid triggering lazy loads for fields only present
+    # on full album responses (label, genres are absent from search/list results)
+    fields = album._fields
+
     artist_name = ""
     artist_deezer_id = None
-    if isinstance(data.get("artist"), dict):
-        artist_name = data["artist"].get("name", "")
-        artist_deezer_id = data["artist"].get("id")
-    elif isinstance(data.get("artist"), str):
-        artist_name = data["artist"]
+    if "artist" in fields and album.artist:
+        artist_name = album.artist.name
+        artist_deezer_id = album.artist.id
+
+    genres: list[str] = []
+    if "genres" in fields and album.genres:
+        genres = [g.name for g in album.genres]
 
     return AlbumResult(
-        name=data.get("title", ""),
+        name=album.title,
         artist_name=artist_name,
-        deezer_id=data.get("id"),
-        image_url=data.get("cover_xl") or data.get("cover_big"),
-        total_tracks=data.get("nb_tracks", 0),
-        release_date=data.get("release_date"),
-        album_type=_normalize_album_type(data.get("record_type")),
+        deezer_id=album.id,
+        image_url=album.cover_xl or album.cover_big,
+        total_tracks=album.nb_tracks if "nb_tracks" in fields else 0,
+        release_date=(
+            str(album.release_date)
+            if "release_date" in fields and album.release_date
+            else None
+        ),
+        album_type=_normalize_album_type(
+            album.record_type if "record_type" in fields else None
+        ),
         artist_deezer_id=artist_deezer_id,
+        label=album.label if "label" in fields else None,
+        genres=genres,
     )
 
 
-def _parse_track(data: dict[str, Any]) -> TrackResult:
+def _to_track_result(track: deezer.Track) -> TrackResult:
+    # Check _fields to avoid triggering lazy loads for fields not in partial
+    # responses (e.g. disk_number/track_position absent from search results,
+    # album absent from album-track listings)
+    fields = track._fields
+
     artist_name = ""
     artist_deezer_id = None
-    if isinstance(data.get("artist"), dict):
-        artist_name = data["artist"].get("name", "")
-        artist_deezer_id = data["artist"].get("id")
-    elif isinstance(data.get("artist"), str):
-        artist_name = data["artist"]
+    if "artist" in fields and track.artist:
+        artist_name = track.artist.name
+        artist_deezer_id = track.artist.id
 
     album_name = None
     album_deezer_id = None
-    if isinstance(data.get("album"), dict):
-        album_name = data["album"].get("title")
-        album_deezer_id = data["album"].get("id")
-
-    duration_seconds = data.get("duration") or 0
+    if "album" in fields and track.album:
+        album_name = track.album.title
+        album_deezer_id = track.album.id
 
     return TrackResult(
-        name=data.get("title", ""),
+        name=track.title,
         artist_name=artist_name,
         album_name=album_name,
-        deezer_id=data.get("id"),
-        isrc=data.get("isrc"),
-        duration_ms=duration_seconds * 1000,
-        track_number=data.get("track_position"),
-        disc_number=data.get("disk_number"),
+        deezer_id=track.id,
+        isrc=track.isrc if "isrc" in fields else None,
+        duration_ms=(track.duration or 0) * 1000,
+        track_number=(track.track_position if "track_position" in fields else None),
+        disc_number=track.disk_number if "disk_number" in fields else None,
         artist_deezer_id=artist_deezer_id,
         album_deezer_id=album_deezer_id,
     )
 
 
+def _to_playlist_result(playlist: deezer.Playlist) -> PlaylistResult:
+    creator_name = None
+    if "creator" in playlist._fields and playlist.creator:
+        creator_name = playlist.creator.name
+
+    return PlaylistResult(
+        name=playlist.title,
+        deezer_id=playlist.id,
+        description=playlist.description if "description" in playlist._fields else None,
+        creator_name=creator_name,
+        track_count=playlist.nb_tracks if "nb_tracks" in playlist._fields else 0,
+        checksum=playlist.checksum if "checksum" in playlist._fields else None,
+        image_url=playlist.picture_xl or playlist.picture_big,
+    )
+
+
 class DeezerMetadataProvider(MetadataProvider):
-    """Deezer metadata provider using their public API."""
+    """Deezer metadata provider using deezer-python library."""
+
+    def __init__(self) -> None:
+        self._client = RateLimitedDeezerClient()
 
     @property
     def name(self) -> str:
         return "Deezer"
 
     def search_artists(self, query: str, limit: int = 10) -> list[ArtistResult]:
-        data = _deezer_request("search/artist", {"q": query, "limit": limit})
-        return [_parse_artist(item) for item in data.get("data", [])]
+        results = self._client.search_artists(query)
+        return [_to_artist_result(a) for a in results[:limit]]
 
     def search_albums(self, query: str, limit: int = 10) -> list[AlbumResult]:
-        data = _deezer_request("search/album", {"q": query, "limit": limit})
-        return [_parse_album(item) for item in data.get("data", [])]
+        results = self._client.search_albums(query)
+        return [_to_album_result(a) for a in results[:limit]]
 
     def search_tracks(self, query: str, limit: int = 10) -> list[TrackResult]:
-        data = _deezer_request("search/track", {"q": query, "limit": limit})
-        return [_parse_track(item) for item in data.get("data", [])]
+        results = self._client.search(query)
+        return [_to_track_result(t) for t in results[:limit]]
 
     def get_artist(self, provider_id: Union[int, str]) -> Optional[ArtistResult]:
         try:
-            data = _deezer_request(f"artist/{provider_id}")
-        except (ValueError, requests.exceptions.RequestException):
+            artist = self._client.get_artist(int(provider_id))
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
             return None
-        if not isinstance(data, dict) or "id" not in data:
-            return None
-        return _parse_artist(data)
+        return _to_artist_result(artist)
 
     def get_artist_albums(
         self, provider_id: Union[int, str], limit: int = 100
     ) -> list[AlbumResult]:
-        albums: list[AlbumResult] = []
-        url = f"artist/{provider_id}/albums"
-        params: dict[str, Any] = {"limit": min(limit, 100)}
-
-        while url and len(albums) < limit:
-            data = _deezer_request(url, params)
-            for item in data.get("data", []):
-                albums.append(_parse_album(item))
-
-            next_url = data.get("next")
-            if next_url and len(albums) < limit:
-                # Deezer returns full URL for pagination — extract path
-                url = next_url.replace(DEEZER_API_BASE + "/", "")
-                params = {}
-            else:
-                break
-
-        return albums[:limit]
+        try:
+            artist = self._client.get_artist(int(provider_id))
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
+            return []
+        albums = artist.get_albums()
+        return [_to_album_result(a) for a in albums[:limit]]
 
     def get_album(self, provider_id: Union[int, str]) -> Optional[AlbumResult]:
         try:
-            data = _deezer_request(f"album/{provider_id}")
-        except (ValueError, requests.exceptions.RequestException):
+            album = self._client.get_album(int(provider_id))
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
             return None
-        if not isinstance(data, dict) or "id" not in data:
-            return None
-        return _parse_album(data)
+        return _to_album_result(album)
 
     def get_album_tracks(self, provider_id: Union[int, str]) -> list[TrackResult]:
-        data = _deezer_request(f"album/{provider_id}/tracks")
-        return [_parse_track(item) for item in data.get("data", [])]
+        album = self._client.get_album(int(provider_id))
+        return [_to_track_result(t) for t in album.get_tracks()]
 
     def get_track(self, provider_id: Union[int, str]) -> Optional[TrackResult]:
         try:
-            data = _deezer_request(f"track/{provider_id}")
-        except (ValueError, requests.exceptions.RequestException):
+            track = self._client.get_track(int(provider_id))
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
             return None
-        if not isinstance(data, dict) or "id" not in data:
-            return None
-        return _parse_track(data)
+        return _to_track_result(track)
 
     def get_track_by_isrc(self, isrc: str) -> Optional[TrackResult]:
         try:
-            data = _deezer_request(f"track/isrc:{isrc}")
-        except (ValueError, requests.exceptions.RequestException):
+            track = self._client.request(
+                "GET", f"track/isrc:{isrc}", resource_type=deezer.Track
+            )
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
             return None
-        if not isinstance(data, dict) or "id" not in data:
+        if not track or not getattr(track, "id", None):
             return None
-        return _parse_track(data)
+        return _to_track_result(track)
 
     def get_playlist(self, playlist_id: Union[int, str]) -> Optional[PlaylistResult]:
-        """Get playlist metadata by Deezer playlist ID."""
         try:
-            data = _deezer_request(f"playlist/{playlist_id}")
-        except (ValueError, requests.exceptions.RequestException):
+            playlist = self._client.get_playlist(int(playlist_id))
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
             return None
-        if not isinstance(data, dict) or "id" not in data:
-            return None
-
-        creator_name = None
-        if isinstance(data.get("creator"), dict):
-            creator_name = data["creator"].get("name")
-
-        return PlaylistResult(
-            name=data.get("title", ""),
-            deezer_id=data.get("id"),
-            description=data.get("description"),
-            creator_name=creator_name,
-            track_count=data.get("nb_tracks", 0),
-            checksum=data.get("checksum"),
-            image_url=data.get("picture_xl") or data.get("picture_big"),
-        )
+        return _to_playlist_result(playlist)
 
     def get_playlist_tracks(self, playlist_id: Union[int, str]) -> list[TrackResult]:
-        """Get all tracks for a playlist, handling pagination."""
-        tracks: list[TrackResult] = []
-        url = f"playlist/{playlist_id}/tracks"
-        params: dict[str, Any] = {"limit": 100}
-
-        while url:
-            data = _deezer_request(url, params)
-            for item in data.get("data", []):
-                tracks.append(_parse_track(item))
-
-            next_url = data.get("next")
-            if next_url:
-                url = next_url.replace(DEEZER_API_BASE + "/", "")
-                params = {}
-            else:
-                break
-
-        return tracks
+        playlist = self._client.get_playlist(int(playlist_id))
+        return [_to_track_result(t) for t in playlist.get_tracks()]

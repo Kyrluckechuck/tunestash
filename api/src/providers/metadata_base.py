@@ -30,6 +30,8 @@ class AlbumResult:
     album_type: Optional[str] = None
     album_group: Optional[str] = None
     artist_deezer_id: Optional[int] = None
+    label: Optional[str] = None
+    genres: list[str] = field(default_factory=list)
 
 
 @dataclass
