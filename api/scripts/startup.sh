@@ -3,11 +3,11 @@ set -e
 
 echo "🚀 Starting web service..."
 
-# Auto-update yt-dlp if enabled and not in production
-if [[ "${AUTO_UPDATE_YT_DLP:-true}" == "true" && "${DJANGO_ENVIRONMENT:-development}" != "production" ]]; then
+# Auto-update yt-dlp on startup (YouTube frequently changes formats)
+if [[ "${AUTO_UPDATE_YT_DLP:-true}" == "true" ]]; then
     echo "🔄 Checking for yt-dlp updates..."
-    if pip install --upgrade yt-dlp --quiet; then
-        echo "✅ yt-dlp updated successfully"
+    if python -m pip install --upgrade yt-dlp[default] --quiet 2>/dev/null; then
+        echo "✅ yt-dlp updated to $(yt-dlp --version)"
     else
         echo "⚠️ Failed to update yt-dlp, continuing with existing version"
     fi
