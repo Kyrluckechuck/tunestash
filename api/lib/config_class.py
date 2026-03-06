@@ -71,13 +71,17 @@ class Config:
         )
 
         # Provider order (default: try all providers for maximum success rate)
-        self.download_provider_order = (
+        raw_order = (
             download_provider_order
             if download_provider_order is not None
             else getattr(
                 settings, "download_provider_order", ["youtube", "tidal", "qobuz"]
             )
         )
+        # Map legacy "spotdl" → "youtube" (both use YouTube Music via yt-dlp)
+        self.download_provider_order = [
+            "youtube" if p == "spotdl" else p for p in raw_order
+        ]
 
         # Qobuz format preference: if True, get MP3 directly instead of FLAC→M4A conversion
         self.qobuz_use_mp3 = (
