@@ -48,7 +48,7 @@ class MetricsService:
         # Record with labels for filtering
         MetricsService.increment(
             "fallback.attempt",
-            labels={"provider": "tidal", "reason": "spotdl_failed"}
+            labels={"provider": "tidal", "reason": "youtube_failed"}
         )
 
         # Record a gauge value

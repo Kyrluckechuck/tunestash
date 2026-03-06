@@ -1,6 +1,6 @@
 default:
   # Downloader defaults (used by api/lib/config_class.py)
-  # YouTube Music cookies for spotdl downloads
+  # YouTube Music cookies for yt-dlp downloads
   # - Without YTM Premium: 128kbps AAC
   # - With YTM Premium cookies: 256kbps AAC
   youtube_cookies_location: "/config/youtube_music_cookies.txt"
@@ -32,18 +32,18 @@ default:
 
   # Download provider configuration
   # Specify which providers to try and in what order
-  # Available providers: spotdl (YouTube Music), tidal, qobuz
-  # - spotdl: Most reliable, requires YTM cookies, 128-256kbps
-  # - tidal/qobuz: Higher quality (up to FLAC), but use third-party APIs (squid.wtf)
+  # Available providers: youtube, tidal, qobuz
+  # - youtube: Most reliable, requires YTM cookies, 128-256kbps AAC
+  # - tidal/qobuz: Higher quality (up to FLAC), but use third-party APIs
   #   which may be less reliable or have downtime
   # Default: Try all providers in order for maximum success rate
   download_provider_order:
-    - spotdl
+    - youtube
     - tidal
     - qobuz
 
-  # Fallback provider quality preference (applies to Tidal and Qobuz)
-  # - high: 320kbps AAC (M4A) - default, consistent with spotdl output
+  # Download quality preference
+  # - high: 320kbps AAC (M4A) - default
   # - lossless: FLAC 16-bit 44.1kHz (larger files, kept as FLAC)
   # - hi_res: FLAC 24-bit (when available, kept as FLAC)
   fallback_quality: "high"

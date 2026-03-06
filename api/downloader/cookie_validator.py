@@ -2,7 +2,7 @@
 Cookie file validator for YouTube Music authentication.
 
 Validates youtube_music_cookies.txt file format (Netscape format) and checks for expiration.
-Used by yt-dlp/spotdl for downloading music from YouTube Music.
+Used by yt-dlp for downloading music from YouTube Music.
 """
 
 from dataclasses import dataclass
@@ -31,7 +31,7 @@ class PoTokenValidationResult:
 
 
 class CookieValidator:
-    """Validates YouTube Music cookie files for yt-dlp/spotdl."""
+    """Validates YouTube Music cookie files for yt-dlp."""
 
     REQUIRED_DOMAINS = [".youtube.com", "music.youtube.com"]
     # Don't require specific cookie names as they can vary (SAPISID, __Secure-*, etc.)

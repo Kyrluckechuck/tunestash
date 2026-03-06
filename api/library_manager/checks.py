@@ -19,7 +19,7 @@ def check_cookie_file(app_configs: Any, **kwargs: Any) -> List[CheckMessage]:
     """
     Check that youtube_music_cookies.txt file exists and is valid.
 
-    This is critical for YouTube Music downloads to work (via yt-dlp/spotdl).
+    This is critical for YouTube Music downloads to work (via yt-dlp).
     In CI/test environments, missing cookies are downgraded to warnings.
     """
     errors: List[CheckMessage] = []

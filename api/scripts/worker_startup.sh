@@ -13,5 +13,22 @@ if [[ "${AUTO_UPDATE_YT_DLP:-true}" == "true" ]]; then
     fi
 fi
 
+# One-time: purge legacy 'spotify' queue (renamed to 'metadata')
+MIGRATION_MARKER="/config/.spotify_queue_purged"
+if [[ ! -f "$MIGRATION_MARKER" ]]; then
+    python -c "
+import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'settings')
+import django; django.setup()
+from celery_app import app
+from kombu import Queue
+with app.connection_or_acquire() as conn:
+    try:
+        n = Queue('spotify').bind(conn.default_channel).purge()
+        if n: print(f'Purged {n} messages from legacy spotify queue')
+        else: print('Legacy spotify queue already clean')
+    except Exception: pass
+" 2>/dev/null && touch "$MIGRATION_MARKER" || true
+fi
+
 echo "🔧 Starting Celery worker..."
 exec celery -A celery_app worker --loglevel=info --queues=downloads,metadata,celery --concurrency=1 --max-tasks-per-child=500

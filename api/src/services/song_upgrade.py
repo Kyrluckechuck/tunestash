@@ -1,6 +1,6 @@
 """Song quality upgrade service.
 
-Provides functionality to upgrade low-quality songs (e.g., 128kbps from spotdl)
+Provides functionality to upgrade low-quality songs (e.g., 128kbps from YouTube)
 to higher quality versions from Tidal or Qobuz.
 """
 
@@ -54,7 +54,7 @@ class SongUpgradeService:
     DEFAULT_MAX_BITRATE = 220
 
     # Providers to try for upgrades (in order)
-    # spotdl is excluded since it's typically what gave us the low quality
+    # YouTube is excluded since it's typically what gave us the low quality
     UPGRADE_PROVIDERS = [DownloadProvider.TIDAL, DownloadProvider.QOBUZ]
 
     def __init__(self, max_bitrate: int = DEFAULT_MAX_BITRATE):
