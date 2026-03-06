@@ -19,7 +19,7 @@ from .core import (
     logger,
     update_task_progress,
 )
-from .periodic import _normalize_name
+from .periodic import _normalize_name, _try_link_artist_to_deezer
 
 
 def _find_matching_song(track: TrackResult, artist: Artist) -> Optional[Song]:
@@ -439,19 +439,8 @@ def resolve_all_artists_to_deezer(
 
         for idx, artist in enumerate(artists):
             try:
-                results = provider.search_artists(artist.name, limit=3)
-                match = next(
-                    (
-                        r
-                        for r in results
-                        if _normalize_name(r.name) == _normalize_name(artist.name)
-                        and r.deezer_id
-                    ),
-                    None,
-                )
-                if match and match.deezer_id:
-                    artist.deezer_id = match.deezer_id
-                    artist.save(update_fields=["deezer_id"])
+                linked_artist = _try_link_artist_to_deezer(artist, provider)
+                if linked_artist:
                     linked += 1
                 else:
                     not_found += 1
