@@ -84,6 +84,17 @@ class TestConfigProviderOrder:
         assert "tidal" not in config.download_provider_order
 
     @patch("lib.config_class.settings")
+    def test_legacy_spotdl_mapped_to_youtube(self, mock_settings, mock_django_settings):
+        """Legacy 'spotdl' in provider order should be mapped to 'youtube'."""
+        mock_django_settings.download_provider_order = ["spotdl", "tidal", "qobuz"]
+        mock_settings.configure_mock(**vars(mock_django_settings))
+
+        from lib.config_class import Config
+
+        config = Config()
+        assert config.download_provider_order == ["youtube", "tidal", "qobuz"]
+
+    @patch("lib.config_class.settings")
     def test_quality_preference_default(self, mock_settings, mock_django_settings):
         """Default quality should be high (M4A/AAC)."""
         mock_settings.configure_mock(**vars(mock_django_settings))
