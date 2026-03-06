@@ -276,7 +276,7 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
 def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
     """Orchestrator: queue per-artist Deezer migration for all eligible artists.
 
-    Finds tracked artists that have a deezer_id but haven't been migrated yet
+    Finds all artists that have a deezer_id but haven't been migrated yet
     (status is not 'complete') and queues migrate_artist_to_deezer for each.
     """
     from django.db.models import Q
@@ -292,7 +292,6 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
 
     try:
         artists = Artist.objects.filter(
-            tracked=True,
             deezer_id__isnull=False,
         ).filter(
             Q(deezer_migration_status__isnull=True)
@@ -324,7 +323,9 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
                 artist.deezer_migration_status = "pending"
                 artist.save(update_fields=["deezer_migration_status"])
 
-            migrate_artist_to_deezer.apply_async(args=[artist.id], task_id=task_id)
+            migrate_artist_to_deezer.apply_async(
+                args=[artist.id], task_id=task_id, priority=0
+            )
             queued += 1
 
         summary = (
