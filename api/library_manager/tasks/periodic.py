@@ -1,8 +1,10 @@
 """Periodic tasks for the Tunestash."""
 
+from __future__ import annotations
+
 import time
 import unicodedata
-from typing import Any, Optional, Set
+from typing import TYPE_CHECKING, Any, Optional, Set  # noqa: E402
 
 from django.utils import timezone
 
@@ -21,6 +23,9 @@ from ..models import (
 )
 from .core import logger
 from .download import download_single_album
+
+if TYPE_CHECKING:
+    from src.providers.deezer import DeezerMetadataProvider
 
 # Rate limiting: delay between Spotify API calls (in seconds)
 _API_CALL_DELAY_SECONDS = 1.0
@@ -373,6 +378,73 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
         )
 
 
+def _find_best_artist_for_deezer_id(
+    normalized_name: str, artist_name: str
+) -> Artist | None:
+    """Among all artists with the same normalized name, return the best candidate.
+
+    "Best" = most songs, with tracked artists preferred over untracked.
+    Only considers artists that don't already have a deezer_id.
+    artist_name is used for a case-insensitive pre-filter before accent normalization.
+    """
+    from django.db.models import Count
+
+    candidates = (
+        Artist.objects.filter(deezer_id__isnull=True, name__iexact=artist_name)
+        .annotate(song_count=Count("songs"))
+        .order_by("-tracked", "-song_count", "id")
+    )
+    # Verify with accent-normalized comparison
+    for candidate in candidates:
+        if _normalize_name(candidate.name) == normalized_name:
+            return candidate
+    return None
+
+
+def _try_link_artist_to_deezer(
+    artist: Artist, provider: DeezerMetadataProvider
+) -> Artist | None:
+    """Try to link an artist to their Deezer ID by name search.
+
+    If multiple Artist records share the same name, assigns the deezer_id
+    to the one with the most content (songs, tracked status).
+
+    Returns the Artist that was linked, or None if no match found.
+    """
+    results = provider.search_artists(artist.name, limit=3)
+    normalized = _normalize_name(artist.name)
+    match = next(
+        (r for r in results if _normalize_name(r.name) == normalized and r.deezer_id),
+        None,
+    )
+    if not match or not match.deezer_id:
+        return None
+
+    existing = Artist.objects.filter(deezer_id=match.deezer_id).first()
+    if existing:
+        logger.debug(
+            f"Skipping '{artist.name}' (id={artist.id}): "
+            f"deezer_id {match.deezer_id} already belongs to "
+            f"'{existing.name}' (id={existing.id})"
+        )
+        return None
+
+    # Pick the best candidate among all artists with this name
+    best = _find_best_artist_for_deezer_id(normalized, artist.name)
+    target = best if best else artist
+
+    target.deezer_id = match.deezer_id
+    target.save(update_fields=["deezer_id"])
+    if target.id != artist.id:
+        logger.info(
+            f"Linked artist '{target.name}' (id={target.id}) to Deezer ID "
+            f"{match.deezer_id} (preferred over id={artist.id} with fewer songs)"
+        )
+    else:
+        logger.info(f"Linked artist '{target.name}' to Deezer ID {match.deezer_id}")
+    return target
+
+
 @celery_app.task(
     bind=True, name="library_manager.tasks.sync_tracked_artists_metadata"
 )  # Scheduled via Celery Beat - Every hour at :30
@@ -449,27 +521,17 @@ def sync_tracked_artists_metadata(
             # Link Deezer ID if missing (one-time per artist)
             if not artist.deezer_id:
                 try:
-                    results = provider.search_artists(artist.name, limit=3)
-                    match = next(
-                        (
-                            r
-                            for r in results
-                            if _normalize_name(r.name) == _normalize_name(artist.name)
-                            and r.deezer_id
-                        ),
-                        None,
-                    )
-                    if match and match.deezer_id:
-                        artist.deezer_id = match.deezer_id
-                        artist.save(update_fields=["deezer_id"])
-                        linked_count += 1
-                        logger.info(
-                            f"Linked artist '{artist.name}' to Deezer ID {match.deezer_id}"
-                        )
-                    else:
+                    linked_artist = _try_link_artist_to_deezer(artist, provider)
+                    if not linked_artist:
                         artist.last_synced_at = timezone.now()
                         artist.save(update_fields=["last_synced_at"])
                         skipped_unchanged += 1
+                        continue
+                    linked_count += 1
+                    # If a different artist got the deezer_id, skip this one
+                    if linked_artist.id != artist.id:
+                        artist.last_synced_at = timezone.now()
+                        artist.save(update_fields=["last_synced_at"])
                         continue
                 except Exception as e:
                     logger.warning(
