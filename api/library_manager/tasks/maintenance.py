@@ -722,3 +722,89 @@ def backfill_song_album(
     except Exception as e:
         logger.error(f"Error during album backfill: {e}", exc_info=True)
         raise
+
+
+@celery_app.task(
+    bind=True,
+    name="library_manager.tasks.cleanup_appears_on_albums",
+)
+def cleanup_appears_on_albums(self: Any) -> None:
+    """Delete empty appears_on albums and unwant ones with songs.
+
+    Spotify's API created thousands of 'appears_on' compilation albums
+    (e.g. "100 Greatest Summer Songs") per artist. These are excluded
+    from downloads by ALBUM_GROUPS_TO_IGNORE but still bloat the DB.
+
+    This task:
+    1. Deletes appears_on albums that have zero songs
+    2. Sets wanted=False on appears_on albums that have songs
+    """
+    from django.db.models import Count
+
+    task_history = create_task_history(
+        task_id=self.request.id,
+        task_type="MAINTENANCE",
+        entity_type="SYSTEM",
+        task_name="cleanup_appears_on_albums",
+    )
+    task_history.status = "RUNNING"
+    task_history.save()
+
+    try:
+        appears_on = Album.objects.filter(album_group="appears_on")
+        total = appears_on.count()
+
+        if total == 0:
+            msg = "No appears_on albums found"
+            logger.info(msg)
+            update_task_progress(task_history, 100.0, msg)
+            complete_task(task_history)
+            return
+
+        update_task_progress(task_history, 0.0, f"Found {total} appears_on albums")
+
+        # Split into empty vs has-songs
+        annotated = appears_on.annotate(song_count=Count("songs"))
+        empty = annotated.filter(song_count=0)
+        with_songs = annotated.filter(song_count__gt=0)
+
+        empty_count = empty.count()
+        with_songs_count = with_songs.count()
+
+        update_task_progress(
+            task_history,
+            20.0,
+            f"{empty_count} empty, {with_songs_count} with songs",
+        )
+
+        # Delete empty albums (no songs, never downloadable)
+        if empty_count > 0:
+            deleted_count, _ = empty.delete()
+            logger.info(f"Deleted {deleted_count} empty appears_on albums")
+        else:
+            deleted_count = 0
+
+        update_task_progress(
+            task_history, 70.0, f"Deleted {deleted_count} empty albums"
+        )
+
+        # Unwant albums that have songs (keep data, stop showing as undownloaded)
+        unwanted_count = 0
+        if with_songs_count > 0:
+            unwanted_count = with_songs.filter(wanted=True).update(wanted=False)
+            logger.info(
+                f"Set wanted=False on {unwanted_count} appears_on albums with songs"
+            )
+
+        summary = (
+            f"Cleaned up appears_on albums: {deleted_count} deleted (empty), "
+            f"{unwanted_count} unwanted (had songs), {total} total processed"
+        )
+        logger.info(summary)
+        update_task_progress(task_history, 100.0, summary)
+        complete_task(task_history)
+
+    except Exception as e:
+        logger.exception(f"Error cleaning up appears_on albums: {e}")
+        complete_task(task_history, success=False, error_message=str(e))
+        raise

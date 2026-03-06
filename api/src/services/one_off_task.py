@@ -32,6 +32,7 @@ class OneOffTaskService:
         from library_manager.tasks import (
             backfill_song_album,
             backfill_song_isrc,
+            cleanup_appears_on_albums,
             migrate_all_tracked_artists_to_deezer,
             resolve_all_artists_to_deezer,
             retry_failed_external_mappings,
@@ -113,6 +114,18 @@ class OneOffTaskService:
             ),
             category="data-migration",
             task_func=resolve_all_artists_to_deezer,
+        )
+
+        self._tasks["cleanup_appears_on_albums"] = OneOffTaskDefinition(
+            id="cleanup_appears_on_albums",
+            name="Cleanup Appears-On Albums",
+            description=(
+                "Remove empty 'appears_on' compilation albums (Spotify legacy data) "
+                "that have zero songs and will never be downloaded. Albums with songs "
+                "are kept but marked as unwanted. Typically clears ~70% of album bloat."
+            ),
+            category="maintenance",
+            task_func=cleanup_appears_on_albums,
         )
 
         self._tasks["send_test_notification"] = OneOffTaskDefinition(
