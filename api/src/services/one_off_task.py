@@ -67,7 +67,7 @@ class OneOffTaskService:
             id="upgrade_low_quality_songs",
             name="Upgrade Low Quality Songs",
             description=(
-                "Attempt to upgrade songs below 220kbps (typically 128kbps from spotdl) "
+                "Attempt to upgrade songs below 220kbps (typically 128kbps from YouTube) "
                 "to higher quality versions from Tidal or Qobuz. Processes up to 50 songs "
                 "per run and tracks attempts to avoid re-trying songs that aren't available."
             ),

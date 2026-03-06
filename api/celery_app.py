@@ -44,7 +44,7 @@ app.autodiscover_tasks()
 
 # Task routing by service type to enable per-service concurrency control
 app.conf.task_routes = {
-    # Download tasks - route to 'downloads' queue (YouTube/spotdl - very rate-limited)
+    # Download tasks - route to 'downloads' queue (YouTube/Tidal/Qobuz - rate-limited)
     "library_manager.tasks.download_missing_albums_for_artist": {"queue": "downloads"},
     "library_manager.tasks.download_single_album": {"queue": "downloads"},
     "library_manager.tasks.download_playlist": {"queue": "downloads"},

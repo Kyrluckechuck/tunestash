@@ -233,7 +233,7 @@ class DownloadProvider(IntegerChoices):
     """
 
     UNKNOWN = 0, "Unknown"
-    SPOTDL = 1, "spotdl (YouTube Music)"
+    SPOTDL = 1, "YouTube Music (legacy)"
     TIDAL = 2, "Tidal"
     QOBUZ = 3, "Qobuz"
     YOUTUBE = 4, "YouTube Music (yt-dlp)"
@@ -1523,7 +1523,7 @@ class SongUpgradeAttempt(models.Model):
     """
     Tracks individual upgrade attempts for songs.
 
-    When attempting to upgrade a low-quality song (e.g., 128kbps from spotdl)
+    When attempting to upgrade a low-quality song (e.g., 128kbps from YouTube)
     to higher quality using Tidal or Qobuz, we record each attempt here.
     This allows us to:
     - Skip providers that already returned NOT_FOUND for this song

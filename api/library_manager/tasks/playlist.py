@@ -311,5 +311,5 @@ def sync_tracked_playlist_artists(
     else:
         logger.info(
             f"Skipping artist tracking for Spotify playlist '{playlist.name}' — "
-            f"artists are tracked during download via spotdl"
+            f"Spotify playlists track artists during download"
         )

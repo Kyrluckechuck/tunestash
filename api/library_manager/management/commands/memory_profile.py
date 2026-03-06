@@ -158,7 +158,7 @@ class Command(BaseCommand):
         self.stdout.write("")
 
         self.stdout.write(
-            self.style.WARNING("Loaded Modules (spotdl/yt_dlp/ytmusic/spotipy):")
+            self.style.WARNING("Loaded Modules (yt_dlp/ytmusic/spotipy):")
         )
         for mod in data.get("relevant_modules", []):
             self.stdout.write(f"  - {mod}")

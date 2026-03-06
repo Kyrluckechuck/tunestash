@@ -333,7 +333,7 @@ class SystemHealthService:
         if output_path:
             return Path(output_path)
 
-        # Fall back to default from spotdl settings
+        # Fall back to default from download settings
         from downloader.default_download_settings import DEFAULT_DOWNLOAD_SETTINGS
 
         output_template: str = str(

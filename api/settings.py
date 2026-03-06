@@ -154,7 +154,7 @@ USE_TZ = True
 # STATIC_URL is now set in the dynaconf configuration above
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Custom configuration for spotdl and downloader
+# Custom configuration for downloader
 # YouTube Music cookies (for high-quality audio downloads via yt-dlp)
 youtube_cookies_location = "/config/youtube_music_cookies.txt"
 
