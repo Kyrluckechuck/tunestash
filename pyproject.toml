@@ -60,7 +60,6 @@ exclude = [
 module = [
     "django.*",
     "library_manager.*",
-    "spotdl.*",
     "spotipy.*",
     "huey.*",
     "huey_monitor.*",

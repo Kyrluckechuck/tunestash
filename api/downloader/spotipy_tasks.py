@@ -13,7 +13,7 @@ from urllib3.util.retry import Retry
 
 from library_manager.models import Artist
 
-from .downloader import Downloader
+from .downloader import SpotifyPlaylistClient
 from .spotify_auth_helper import get_spotify_oauth_credentials
 
 logger = logging.getLogger(__name__)
@@ -346,8 +346,8 @@ def track_artists_in_playlist(playlist_url: str, task_id: Optional[str] = None) 
     oauth_client = OAuthSpotifyClient()
     # Use public client for any metadata operations
     public_client = PublicSpotifyClient()
-    downloader = Downloader(oauth_client.sp, public_client=public_client.sp)
-    playlist = downloader.get_playlist(playlist_url)
+    client = SpotifyPlaylistClient(oauth_client.sp, public_client=public_client.sp)
+    playlist = client.get_playlist(playlist_url)
     # pp(playlist)
     artists_to_track = []
     for track in playlist["tracks"]["items"]:

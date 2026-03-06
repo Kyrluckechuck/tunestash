@@ -174,10 +174,15 @@ def _filter_changed_playlists(
     Returns:
         List of playlists that need syncing (changed or never synced)
     """
-    from .core import spotdl_wrapper
+    from downloader.downloader import SpotifyPlaylistClient
 
     if not playlists:
         return []
+
+    client = SpotifyPlaylistClient()
+    if not client.is_available():
+        logger.info("Spotify OAuth not available, skipping playlist change detection")
+        return list(playlists)
 
     # Separate playlists that need snapshot_id check vs. those that must sync
     playlists_to_check = []
@@ -193,12 +198,10 @@ def _filter_changed_playlists(
     if not playlists_to_check:
         return playlists_to_sync
 
-    # Check snapshot_ids for playlists that have been synced before
     from ..models import SpotifyRateLimitState
 
     try:
         for playlist in playlists_to_check:
-            # Extract playlist ID from URL
             playlist_id = None
             if "spotify:playlist:" in playlist.url:
                 playlist_id = playlist.url.split("spotify:playlist:", 1)[1]
@@ -206,37 +209,27 @@ def _filter_changed_playlists(
                 playlist_id = playlist.url.split("/playlist/", 1)[1].split("?")[0]
 
             if not playlist_id:
-                # Can't extract ID, include for safety
                 playlists_to_sync.append(playlist)
                 continue
 
-            # Rate limiting: check if we need to wait before making API call
             delay = SpotifyRateLimitState.get_delay_seconds()
             if delay > 0:
                 time.sleep(delay)
 
-            # Get current snapshot_id from Spotify
-            current_snapshot = spotdl_wrapper.downloader.get_playlist_snapshot_id(
-                playlist_id
-            )
+            current_snapshot = client.get_playlist_snapshot_id(playlist_id)
 
-            # Record this API call in the rate limit tracker
             SpotifyRateLimitState.record_call()
 
             if current_snapshot is None:
-                # API call failed, include for safety
                 playlists_to_sync.append(playlist)
             elif current_snapshot != playlist.snapshot_id:
-                # Playlist has changed
                 logger.info(f"Playlist '{playlist.name}' changed, queueing for sync")
                 playlists_to_sync.append(playlist)
             else:
-                # Playlist unchanged, skip
                 logger.debug(f"Playlist '{playlist.name}' unchanged, skipping")
 
     except Exception as e:
         logger.warning(f"Error checking playlist snapshots: {e}, syncing all")
-        # On error, sync all playlists that we were checking
         playlists_to_sync.extend(playlists_to_check)
 
     return playlists_to_sync

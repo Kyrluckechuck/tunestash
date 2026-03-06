@@ -52,12 +52,12 @@ app.conf.task_routes = {
         "queue": "downloads"
     },
     "library_manager.tasks.download_missing_tracked_artists": {"queue": "downloads"},
-    # Spotify API tasks - route to 'spotify' queue (moderate rate limits)
-    "library_manager.tasks.fetch_all_albums_for_artist": {"queue": "spotify"},
-    "library_manager.tasks.sync_tracked_playlist": {"queue": "spotify"},
-    "library_manager.tasks.sync_tracked_playlist_artists": {"queue": "spotify"},
-    "library_manager.tasks.update_tracked_artists": {"queue": "spotify"},
-    "library_manager.tasks.sync_tracked_playlists": {"queue": "spotify"},
+    # Metadata tasks - route to 'metadata' queue (API calls, moderate rate limits)
+    "library_manager.tasks.fetch_all_albums_for_artist": {"queue": "metadata"},
+    "library_manager.tasks.sync_tracked_playlist": {"queue": "metadata"},
+    "library_manager.tasks.sync_tracked_playlist_artists": {"queue": "metadata"},
+    "library_manager.tasks.update_tracked_artists": {"queue": "metadata"},
+    "library_manager.tasks.sync_tracked_playlists": {"queue": "metadata"},
     # Maintenance/cleanup tasks - route to default 'celery' queue
     "library_manager.tasks.cleanup_stuck_tasks_periodic": {"queue": "celery"},
     "library_manager.tasks.cleanup_celery_history": {"queue": "celery"},
@@ -83,8 +83,7 @@ app.conf.task_annotations = {
         "rate_limit": "2/s"
     },
     "library_manager.tasks.download_missing_tracked_artists": {"rate_limit": "2/s"},
-    # Spotify tasks: Conservative rate to avoid 429s at startup when many tasks queue
-    # (Spotify API is 180 req/min = 3/sec, but bursts cause issues)
+    # Metadata tasks: Conservative rate to avoid API 429s at startup
     "library_manager.tasks.fetch_all_albums_for_artist": {"rate_limit": "2/s"},
     "library_manager.tasks.sync_tracked_playlist": {"rate_limit": "2/s"},
     "library_manager.tasks.sync_tracked_playlist_artists": {"rate_limit": "2/s"},

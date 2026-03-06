@@ -14,4 +14,4 @@ if [[ "${AUTO_UPDATE_YT_DLP:-true}" == "true" ]]; then
 fi
 
 echo "🔧 Starting Celery worker..."
-exec celery -A celery_app worker --loglevel=info --queues=downloads,spotify,celery --concurrency=1 --max-tasks-per-child=500
+exec celery -A celery_app worker --loglevel=info --queues=downloads,metadata,celery --concurrency=1 --max-tasks-per-child=500

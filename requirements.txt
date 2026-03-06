@@ -26,7 +26,7 @@ psutil>=5.9.0  # Process and system monitoring for worker diagnostics
 strawberry-graphql>=0.291.0
 strawberry-graphql-django>=0.75.0
 
-# FastAPI and related (constrained by spotdl 4.4.3)
+# FastAPI and related
 fastapi>=0.103.0,<0.104.0
 uvicorn>=0.23.2,<0.24.0
 uvicorn[standard]>=0.23.2,<0.24.0  # Includes httptools and websockets
@@ -34,7 +34,7 @@ uvicorn[standard]>=0.23.2,<0.24.0  # Includes httptools and websockets
 # Deezer API client (typed resource models, built-in pagination)
 deezer-python>=7.0.0,<8
 
-# Direct dependencies (also transitive from spotdl)
+# Direct dependencies
 pydantic>=2.0.0
 requests>=2.28.0
 
@@ -46,8 +46,11 @@ dynaconf
 pymediainfo
 pyyaml
 
-# Critical: spotdl and yt-dlp (using current versions)
-# spotdl brings: pydantic, rich, requests, ytmusicapi, click (via typer)
-spotipy>=2.26.0,<3  # Handles Spotify Feb 2026 playlist endpoint renames
-spotdl==4.4.3
-yt-dlp[default]>=2026.1.0  # Includes yt-dlp-ejs for JavaScript execution (YouTube bot protection)
+# Spotify API (playlist sync via OAuth, limited API)
+spotipy>=2.26.0,<3
+
+# YouTube Music API (search and metadata)
+ytmusicapi>=1.5.0
+
+# Audio download (FallbackDownloader searches YouTube/Tidal/Qobuz via yt-dlp)
+yt-dlp[default]>=2026.3.3  # Includes yt-dlp-ejs for JavaScript execution (YouTube bot protection)

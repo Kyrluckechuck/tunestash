@@ -16,7 +16,7 @@ import os
 import signal
 import sys
 import tracemalloc
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import psutil
 from celery_app import app as celery_app
@@ -371,26 +371,23 @@ def memory_profile_worker(
 @celery_app.task(bind=True, name="library_manager.tasks.memory_profile_after_init")
 def memory_profile_after_init(self: Any) -> Dict[str, Any]:
     """
-    Profile memory after SpotdlWrapper initialization.
+    Profile memory after worker initialization.
 
-    This is useful for understanding the baseline memory cost of
+    Useful for understanding the baseline memory cost of
     the download infrastructure before any tasks run.
     """
-    from library_manager.tasks.core import spotdl_wrapper  # noqa: F401 - ensures init
-
     results: Dict[str, Any] = {
         "worker_pid": os.getpid(),
         "task_id": self.request.id,
-        "description": "Memory after SpotdlWrapper initialization",
+        "description": "Memory after worker initialization",
     }
 
     results["process_memory"] = _get_process_memory()
 
-    # Check what's loaded
     loaded_modules = [
         name
         for name in sys.modules
-        if any(x in name for x in ["spotdl", "yt_dlp", "ytmusic", "spotipy"])
+        if any(x in name for x in ["yt_dlp", "spotipy", "deezer"])
     ]
     results["relevant_modules"] = sorted(loaded_modules)
 
@@ -398,21 +395,12 @@ def memory_profile_after_init(self: Any) -> Dict[str, Any]:
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.memory_compare_before_after")
-def memory_compare_before_after(
-    self: Any,
-    spotify_uri: Optional[str] = None,
-) -> Dict[str, Any]:
+def memory_compare_before_after(self: Any) -> Dict[str, Any]:
     """
-    Compare memory before and after a simulated download operation.
-
-    If spotify_uri is provided, does a metadata fetch (no actual download).
-    Otherwise just measures the current state.
-
-    Args:
-        spotify_uri: Optional Spotify URI to fetch metadata for
+    Measure current worker memory state.
 
     Returns:
-        Memory comparison results
+        Memory measurement results
     """
     results: Dict[str, Any] = {
         "worker_pid": os.getpid(),
@@ -422,27 +410,9 @@ def memory_compare_before_after(
     gc.collect()
     results["before"] = _get_process_memory()
 
-    if spotify_uri:
-        # Import and use spotdl_wrapper to simulate real usage
-        from library_manager.tasks.core import spotdl_wrapper
-
-        try:
-            # Just fetch metadata, don't actually download
-            song_info = spotdl_wrapper.downloader.get_download_queue(
-                url=spotify_uri,
-                include_metadata=True,
-            )
-            results["metadata_fetched"] = True
-            results["tracks_found"] = (
-                len(song_info[0]) if isinstance(song_info, tuple) else len(song_info)
-            )
-        except Exception as e:
-            results["metadata_error"] = str(e)
-
     gc.collect()
     results["after"] = _get_process_memory()
 
-    # Calculate delta
     results["delta_mb"] = round(
         results["after"]["rss_mb"] - results["before"]["rss_mb"], 2
     )

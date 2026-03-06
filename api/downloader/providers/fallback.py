@@ -2,8 +2,7 @@
 Fallback download orchestrator.
 
 This module provides a FallbackDownloader that tries multiple download providers
-in sequence until one succeeds. The primary use case is falling back to Tidal
-or Qobuz when spotdl fails to find a matching track on YouTube Music.
+in sequence until one succeeds (YouTube Music, Tidal, or Qobuz).
 """
 
 from __future__ import annotations
@@ -46,8 +45,7 @@ class FallbackDownloader:
     """
     Orchestrates fallback downloads using alternative providers.
 
-    When the primary download method (spotdl) fails, this class attempts
-    to download the track using fallback providers like Tidal or Qobuz.
+    Tries download providers in order until one succeeds.
 
     The download process for each provider:
     1. Search for the track using ISRC (most reliable) or metadata
@@ -82,7 +80,7 @@ class FallbackDownloader:
         self._output_dir = output_dir or Path("/music")
         self._qobuz_use_mp3 = qobuz_use_mp3
 
-        # Parse provider order - filter to only fallback providers (not spotdl)
+        # Parse provider order - filter to only supported providers
         if provider_order is not None:
             self._provider_order = [
                 p for p in provider_order if p in self.SUPPORTED_PROVIDERS

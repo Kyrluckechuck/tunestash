@@ -30,7 +30,6 @@ from .core import (
     log_memory_usage,
     logger,
     require_download_capability,
-    spotdl_wrapper,
     update_task_heartbeat,
     update_task_progress,
 )
@@ -58,6 +57,7 @@ from .download import (
     download_playlist,
     download_single_album,
     download_single_track,
+    download_track_by_spotify_gid,
 )
 
 # Re-export external list tasks
@@ -131,7 +131,6 @@ __all__ = [
     "log_memory_usage",
     "logger",
     "require_download_capability",
-    "spotdl_wrapper",
     "update_task_heartbeat",
     "update_task_progress",
     # Artist tasks
@@ -153,6 +152,7 @@ __all__ = [
     "download_playlist",
     "download_single_album",
     "download_single_track",
+    "download_track_by_spotify_gid",
     # Maintenance tasks
     "backfill_song_album",
     "backfill_song_isrc",

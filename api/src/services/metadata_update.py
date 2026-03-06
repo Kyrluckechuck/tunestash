@@ -1,7 +1,8 @@
 """Metadata update service.
 
 Provides functionality for querying, applying, and dismissing pending
-metadata updates detected from Spotify.
+metadata updates. Uses Deezer as the primary provider with Spotify fallback
+for entities that only have a Spotify GID.
 
 Note: Strawberry runtime-decorated types trigger attr-defined false-positives in MyPy
 when instantiated. We disable that check for this module to avoid noisy errors.
@@ -269,8 +270,80 @@ class MetadataUpdateService:
 
         return await sync_to_async(_apply_all)()
 
+    def _fetch_artist_name(self, artist: DjangoArtist) -> Tuple[str, str]:
+        """Fetch current artist name from Deezer (primary) or Spotify (fallback).
+
+        Returns:
+            Tuple of (provider_name, fetched_name)
+        """
+        if artist.deezer_id:
+            from src.providers.deezer import DeezerMetadataProvider
+
+            result = DeezerMetadataProvider().get_artist(artist.deezer_id)
+            if result:
+                return "Deezer", result.name
+
+        if artist.gid:
+            from downloader.spotipy_tasks import SpotifyClient
+
+            sp = SpotifyClient().sp
+            if sp is None:
+                raise RuntimeError("Spotify client not initialized")
+            spotify_data = sp.artist(artist.gid)
+            return "Spotify", spotify_data.get("name", "")
+
+        raise RuntimeError(f"Artist #{artist.id} has no Deezer ID or Spotify GID")
+
+    def _fetch_album_name(self, album: DjangoAlbum) -> Tuple[str, str]:
+        """Fetch current album name from Deezer (primary) or Spotify (fallback).
+
+        Returns:
+            Tuple of (provider_name, fetched_name)
+        """
+        if album.deezer_id:
+            from src.providers.deezer import DeezerMetadataProvider
+
+            result = DeezerMetadataProvider().get_album(album.deezer_id)
+            if result:
+                return "Deezer", result.name
+
+        if album.spotify_gid:
+            from downloader.spotipy_tasks import SpotifyClient
+
+            sp = SpotifyClient().sp
+            if sp is None:
+                raise RuntimeError("Spotify client not initialized")
+            spotify_data = sp.album(album.spotify_gid)
+            return "Spotify", spotify_data.get("name", "")
+
+        raise RuntimeError(f"Album #{album.id} has no Deezer ID or Spotify GID")
+
+    def _fetch_song_name(self, song: DjangoSong) -> Tuple[str, str]:
+        """Fetch current song name from Deezer (primary) or Spotify (fallback).
+
+        Returns:
+            Tuple of (provider_name, fetched_name)
+        """
+        if song.deezer_id:
+            from src.providers.deezer import DeezerMetadataProvider
+
+            result = DeezerMetadataProvider().get_track(song.deezer_id)
+            if result:
+                return "Deezer", result.name
+
+        if song.gid:
+            from downloader.spotipy_tasks import SpotifyClient
+
+            sp = SpotifyClient().sp
+            if sp is None:
+                raise RuntimeError("Spotify client not initialized")
+            spotify_data = sp.track(song.gid)
+            return "Spotify", spotify_data.get("name", "")
+
+        raise RuntimeError(f"Song #{song.id} has no Deezer ID or Spotify GID")
+
     async def check_artist_metadata(self, artist_id: int) -> MetadataCheckResult:
-        """Check if an artist's metadata has changed on Spotify."""
+        """Check if an artist's metadata has changed (Deezer primary, Spotify fallback)."""
 
         def _check() -> MetadataCheckResult:
             try:
@@ -282,32 +355,28 @@ class MetadataUpdateService:
                     change_detected=False,
                 )
 
-            # Fetch current metadata from Spotify
+            provider_name: str = ""
             try:
-                from downloader.spotipy_tasks import SpotifyClient
-
-                sp = SpotifyClient().sp
-                if sp is None:
-                    raise RuntimeError("Spotify client not initialized")
-                spotify_data = sp.artist(artist.gid)
-                spotify_name = spotify_data.get("name", "")
+                provider_name, provider_result_name = self._fetch_artist_name(artist)
             except Exception as e:
                 logger.error(f"Failed to fetch artist metadata: {e}")
                 return MetadataCheckResult(
                     success=False,
-                    message=f"Failed to fetch from Spotify: {str(e)}",
+                    message=f"Failed to fetch metadata: {str(e)}",
                     change_detected=False,
                 )
 
-            # Detect change
-            if artist.name != spotify_name:
-                detect_artist_name_change(artist, spotify_name)
+            if artist.name != provider_result_name:
+                detect_artist_name_change(artist, provider_result_name)
                 return MetadataCheckResult(
                     success=True,
-                    message=f"Name change detected: '{artist.name}' → '{spotify_name}'",
+                    message=(
+                        f"Name change detected ({provider_name}): "
+                        f"'{artist.name}' → '{provider_result_name}'"
+                    ),
                     change_detected=True,
                     old_value=artist.name,
-                    new_value=spotify_name,
+                    new_value=provider_result_name,
                 )
 
             return MetadataCheckResult(
@@ -315,13 +384,13 @@ class MetadataUpdateService:
                 message="No changes detected",
                 change_detected=False,
                 old_value=artist.name,
-                new_value=spotify_name,
+                new_value=provider_result_name,
             )
 
         return await sync_to_async(_check)()
 
     async def check_album_metadata(self, album_id: int) -> MetadataCheckResult:
-        """Check if an album's metadata has changed on Spotify."""
+        """Check if an album's metadata has changed (Deezer primary, Spotify fallback)."""
 
         def _check() -> MetadataCheckResult:
             try:
@@ -333,32 +402,28 @@ class MetadataUpdateService:
                     change_detected=False,
                 )
 
-            # Fetch current metadata from Spotify
+            provider_name: str = ""
             try:
-                from downloader.spotipy_tasks import SpotifyClient
-
-                sp = SpotifyClient().sp
-                if sp is None:
-                    raise RuntimeError("Spotify client not initialized")
-                spotify_data = sp.album(album.spotify_gid)
-                spotify_name = spotify_data.get("name", "")
+                provider_name, provider_result_name = self._fetch_album_name(album)
             except Exception as e:
                 logger.error(f"Failed to fetch album metadata: {e}")
                 return MetadataCheckResult(
                     success=False,
-                    message=f"Failed to fetch from Spotify: {str(e)}",
+                    message=f"Failed to fetch metadata: {str(e)}",
                     change_detected=False,
                 )
 
-            # Detect change
-            if album.name != spotify_name:
-                detect_album_name_change(album, spotify_name)
+            if album.name != provider_result_name:
+                detect_album_name_change(album, provider_result_name)
                 return MetadataCheckResult(
                     success=True,
-                    message=f"Name change detected: '{album.name}' → '{spotify_name}'",
+                    message=(
+                        f"Name change detected ({provider_name}): "
+                        f"'{album.name}' → '{provider_result_name}'"
+                    ),
                     change_detected=True,
                     old_value=album.name,
-                    new_value=spotify_name,
+                    new_value=provider_result_name,
                 )
 
             return MetadataCheckResult(
@@ -366,13 +431,13 @@ class MetadataUpdateService:
                 message="No changes detected",
                 change_detected=False,
                 old_value=album.name,
-                new_value=spotify_name,
+                new_value=provider_result_name,
             )
 
         return await sync_to_async(_check)()
 
     async def check_song_metadata(self, song_id: int) -> MetadataCheckResult:
-        """Check if a song's metadata has changed on Spotify."""
+        """Check if a song's metadata has changed (Deezer primary, Spotify fallback)."""
 
         def _check() -> MetadataCheckResult:
             try:
@@ -384,32 +449,28 @@ class MetadataUpdateService:
                     change_detected=False,
                 )
 
-            # Fetch current metadata from Spotify
+            provider_name: str = ""
             try:
-                from downloader.spotipy_tasks import SpotifyClient
-
-                sp = SpotifyClient().sp
-                if sp is None:
-                    raise RuntimeError("Spotify client not initialized")
-                spotify_data = sp.track(song.gid)
-                spotify_name = spotify_data.get("name", "")
+                provider_name, provider_result_name = self._fetch_song_name(song)
             except Exception as e:
                 logger.error(f"Failed to fetch song metadata: {e}")
                 return MetadataCheckResult(
                     success=False,
-                    message=f"Failed to fetch from Spotify: {str(e)}",
+                    message=f"Failed to fetch metadata: {str(e)}",
                     change_detected=False,
                 )
 
-            # Detect change
-            if song.name != spotify_name:
-                detect_song_name_change(song, spotify_name)
+            if song.name != provider_result_name:
+                detect_song_name_change(song, provider_result_name)
                 return MetadataCheckResult(
                     success=True,
-                    message=f"Name change detected: '{song.name}' → '{spotify_name}'",
+                    message=(
+                        f"Name change detected ({provider_name}): "
+                        f"'{song.name}' → '{provider_result_name}'"
+                    ),
                     change_detected=True,
                     old_value=song.name,
-                    new_value=spotify_name,
+                    new_value=provider_result_name,
                 )
 
             return MetadataCheckResult(
@@ -417,7 +478,7 @@ class MetadataUpdateService:
                 message="No changes detected",
                 change_detected=False,
                 old_value=song.name,
-                new_value=spotify_name,
+                new_value=provider_result_name,
             )
 
         return await sync_to_async(_check)()

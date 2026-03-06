@@ -222,11 +222,6 @@ class AlbumService(BaseService[Album]):
                 django_album.wanted = is_wanted
                 await django_album.asave()
 
-                if is_wanted:
-                    # Queue download if marked as wanted
-                    pass
-                    # await sync_to_async(download_missing_albums_for_artist)(django_album.artist.id)
-
             return await sync_to_async(self._to_graphql_type)(django_album)
         except ValueError as exc:
             raise ValueError(f"Invalid album ID format: {album_id}") from exc

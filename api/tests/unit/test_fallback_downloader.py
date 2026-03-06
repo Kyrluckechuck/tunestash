@@ -125,7 +125,7 @@ class TestFallbackDownloaderInit:
         downloader = FallbackDownloader(
             provider_order=["spotdl", "tidal", "invalid", "qobuz"],
         )
-        # spotdl and invalid should be filtered out
+        # "spotdl" and "invalid" should be filtered out (not valid providers)
         assert downloader._provider_order == ["tidal", "qobuz"]
 
     def test_empty_provider_order(self):
