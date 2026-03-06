@@ -178,15 +178,27 @@ class DeezerMetadataProvider(MetadataProvider):
         return "Deezer"
 
     def search_artists(self, query: str, limit: int = 10) -> list[ArtistResult]:
-        results = self._client.search_artists(query)
+        try:
+            results = self._client.search_artists(query)
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
+            logger.warning("Deezer search_artists failed for query=%s", query)
+            return []
         return [_to_artist_result(a) for a in results[:limit]]
 
     def search_albums(self, query: str, limit: int = 10) -> list[AlbumResult]:
-        results = self._client.search_albums(query)
+        try:
+            results = self._client.search_albums(query)
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
+            logger.warning("Deezer search_albums failed for query=%s", query)
+            return []
         return [_to_album_result(a) for a in results[:limit]]
 
     def search_tracks(self, query: str, limit: int = 10) -> list[TrackResult]:
-        results = self._client.search(query)
+        try:
+            results = self._client.search(query)
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
+            logger.warning("Deezer search_tracks failed for query=%s", query)
+            return []
         return [_to_track_result(t) for t in results[:limit]]
 
     def get_artist(self, provider_id: Union[int, str]) -> Optional[ArtistResult]:
@@ -201,9 +213,9 @@ class DeezerMetadataProvider(MetadataProvider):
     ) -> list[AlbumResult]:
         try:
             artist = self._client.get_artist(int(provider_id))
+            albums = artist.get_albums()
         except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
             return []
-        albums = artist.get_albums()
         return [_to_album_result(a) for a in albums[:limit]]
 
     def get_album(self, provider_id: Union[int, str]) -> Optional[AlbumResult]:
@@ -214,8 +226,12 @@ class DeezerMetadataProvider(MetadataProvider):
         return _to_album_result(album)
 
     def get_album_tracks(self, provider_id: Union[int, str]) -> list[TrackResult]:
-        album = self._client.get_album(int(provider_id))
-        return [_to_track_result(t) for t in album.get_tracks()]
+        try:
+            album = self._client.get_album(int(provider_id))
+            return [_to_track_result(t) for t in album.get_tracks()]
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
+            logger.warning("Deezer get_album_tracks failed for id=%s", provider_id)
+            return []
 
     def get_track(self, provider_id: Union[int, str]) -> Optional[TrackResult]:
         try:
@@ -243,5 +259,9 @@ class DeezerMetadataProvider(MetadataProvider):
         return _to_playlist_result(playlist)
 
     def get_playlist_tracks(self, playlist_id: Union[int, str]) -> list[TrackResult]:
-        playlist = self._client.get_playlist(int(playlist_id))
-        return [_to_track_result(t) for t in playlist.get_tracks()]
+        try:
+            playlist = self._client.get_playlist(int(playlist_id))
+            return [_to_track_result(t) for t in playlist.get_tracks()]
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
+            logger.warning("Deezer get_playlist_tracks failed for id=%s", playlist_id)
+            return []

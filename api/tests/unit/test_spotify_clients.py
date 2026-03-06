@@ -1,13 +1,9 @@
-"""Tests for dual Spotify client architecture and fail-fast error handling."""
+"""Tests for Spotify client architecture and SpotifyPlaylistClient."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
-from downloader.downloader import Downloader
-from downloader.spotdl_wrapper import (
-    PlaylistSyncError,
-    _is_fail_fast_error,
-)
+from downloader.downloader import SpotifyPlaylistClient
 from downloader.spotipy_tasks import (
     MAX_RATE_LIMIT_WAIT_SECONDS,
     LimitedRetry,
@@ -41,9 +37,7 @@ class TestPublicSpotifyClient:
         """PublicSpotifyClient should use Client Credentials flow."""
         client = PublicSpotifyClient()
 
-        # Should have created client credentials manager
         mock_creds.assert_called_once()
-        # Should have created Spotify client with credentials manager and custom session
         mock_spotify.assert_called_once()
         assert client.sp is not None
 
@@ -61,7 +55,6 @@ class TestPublicSpotifyClient:
         client2 = PublicSpotifyClient()
 
         assert client1 is client2
-        # Should only initialize once
         assert mock_creds.call_count == 1
 
     @patch("downloader.spotipy_tasks.create_limited_session")
@@ -79,7 +72,6 @@ class TestPublicSpotifyClient:
         client2 = PublicSpotifyClient()
 
         assert client1 is not client2
-        # Should initialize twice
         assert mock_creds.call_count == 2
 
 
@@ -110,7 +102,6 @@ class TestOAuthSpotifyClient:
 
         client = OAuthSpotifyClient()
 
-        # Should have used the OAuth token with custom session
         mock_spotify.assert_called_once_with(
             auth="test_token", requests_session=mock_session
         )
@@ -132,7 +123,6 @@ class TestOAuthSpotifyClient:
 
         client = OAuthSpotifyClient()
 
-        # Should have created client credentials
         mock_creds.assert_called_once()
         assert client.is_oauth is False
 
@@ -155,7 +145,6 @@ class TestOAuthSpotifyClient:
         result = client.refresh_token()
 
         assert result is True
-        # Should have been called twice (init + refresh)
         assert mock_get_oauth.call_count == 2
 
 
@@ -173,52 +162,37 @@ class TestSpotifyClientAlias:
         assert issubclass(SpotifyClient, OAuthSpotifyClient)
 
 
-class TestDownloaderDualClients:
-    """Tests for Downloader class with dual client architecture."""
+class TestSpotifyPlaylistClient:
+    """Tests for SpotifyPlaylistClient (playlist-only Spotify operations)."""
 
     def test_accepts_both_clients(self) -> None:
-        """Downloader should accept both OAuth and public clients."""
+        """SpotifyPlaylistClient should accept both OAuth and public clients."""
         mock_oauth = MagicMock()
         mock_public = MagicMock()
 
-        downloader = Downloader(mock_oauth, public_client=mock_public)
+        client = SpotifyPlaylistClient(mock_oauth, public_client=mock_public)
 
-        assert downloader.spotipy_client is mock_oauth
-        assert downloader.public_client is mock_public
+        assert client.spotipy_client is mock_oauth
+        assert client.public_client is mock_public
 
     def test_uses_oauth_as_fallback(self) -> None:
-        """Downloader should use OAuth client as fallback when no public client."""
+        """SpotifyPlaylistClient should use OAuth client as fallback when no public client."""
         mock_oauth = MagicMock()
 
-        downloader = Downloader(mock_oauth)
+        client = SpotifyPlaylistClient(mock_oauth)
 
-        assert downloader.spotipy_client is mock_oauth
-        assert downloader.public_client is mock_oauth
+        assert client.spotipy_client is mock_oauth
+        assert client.public_client is mock_oauth
 
-    def test_get_track_uses_public_client(self) -> None:
-        """get_track() should use the public client."""
-        mock_oauth = MagicMock()
-        mock_public = MagicMock()
-        mock_public.track.return_value = {"id": "test", "name": "Test Track"}
+    def test_is_available_with_client(self) -> None:
+        """is_available() should return True when a client is configured."""
+        client = SpotifyPlaylistClient(MagicMock())
+        assert client.is_available() is True
 
-        downloader = Downloader(mock_oauth, public_client=mock_public)
-        downloader.get_track("test_id")
-
-        mock_public.track.assert_called_once_with("test_id")
-        mock_oauth.track.assert_not_called()
-
-    def test_get_album_uses_public_client(self) -> None:
-        """get_album() should use the public client."""
-        mock_oauth = MagicMock()
-        mock_public = MagicMock()
-        mock_public.album.return_value = {"id": "test", "tracks": {"items": []}}
-        mock_public.next.return_value = None
-
-        downloader = Downloader(mock_oauth, public_client=mock_public)
-        downloader.get_album("test_id")
-
-        mock_public.album.assert_called_once_with("test_id")
-        mock_oauth.album.assert_not_called()
+    def test_is_not_available_without_client(self) -> None:
+        """is_available() should return False when no client is configured."""
+        client = SpotifyPlaylistClient()
+        assert client.is_available() is False
 
     def test_get_playlist_tries_oauth_first(self) -> None:
         """get_playlist() should try OAuth client first (can access private playlists)."""
@@ -227,8 +201,8 @@ class TestDownloaderDualClients:
         mock_oauth.playlist.return_value = {"id": "test", "tracks": {"items": []}}
         mock_oauth.next.return_value = None
 
-        downloader = Downloader(mock_oauth, public_client=mock_public)
-        downloader.get_playlist("test_id")
+        client = SpotifyPlaylistClient(mock_oauth, public_client=mock_public)
+        client.get_playlist("test_id")
 
         mock_oauth.playlist.assert_called_once_with("test_id")
         mock_public.playlist.assert_not_called()
@@ -241,8 +215,8 @@ class TestDownloaderDualClients:
         mock_public.playlist.return_value = {"id": "test", "tracks": {"items": []}}
         mock_public.next.return_value = None
 
-        downloader = Downloader(mock_oauth, public_client=mock_public)
-        downloader.get_playlist("test_id")
+        client = SpotifyPlaylistClient(mock_oauth, public_client=mock_public)
+        client.get_playlist("test_id")
 
         mock_oauth.playlist.assert_called_once_with("test_id")
         mock_public.playlist.assert_called_once_with("test_id")
@@ -253,24 +227,28 @@ class TestDownloaderDualClients:
         mock_client.playlist.return_value = {"id": "test", "tracks": {"items": []}}
         mock_client.next.return_value = None
 
-        # When no public_client is provided, spotipy_client is used for both
-        downloader = Downloader(mock_client)
+        client = SpotifyPlaylistClient(mock_client)
 
-        # Should work - this is the case for users without OAuth
-        result = downloader.get_playlist("test_id")
+        result = client.get_playlist("test_id")
 
         assert result["id"] == "test"
         mock_client.playlist.assert_called_once_with("test_id")
+
+    def test_get_playlist_raises_when_unavailable(self) -> None:
+        """get_playlist() should raise when no client is available."""
+        client = SpotifyPlaylistClient()
+
+        with pytest.raises(RuntimeError, match="No Spotify client available"):
+            client.get_playlist("test_id")
 
     def test_get_playlist_snapshot_id_works_without_oauth(self) -> None:
         """get_playlist_snapshot_id() should work with only public client."""
         mock_client = MagicMock()
         mock_client.playlist.return_value = {"snapshot_id": "abc123"}
 
-        # When no public_client is provided, spotipy_client is used for both
-        downloader = Downloader(mock_client)
+        client = SpotifyPlaylistClient(mock_client)
 
-        result = downloader.get_playlist_snapshot_id("test_id")
+        result = client.get_playlist_snapshot_id("test_id")
 
         assert result == "abc123"
         mock_client.playlist.assert_called_once()
@@ -281,8 +259,8 @@ class TestDownloaderDualClients:
         mock_public = MagicMock()
         mock_oauth.playlist.return_value = {"snapshot_id": "abc123"}
 
-        downloader = Downloader(mock_oauth, public_client=mock_public)
-        result = downloader.get_playlist_snapshot_id("test_id")
+        client = SpotifyPlaylistClient(mock_oauth, public_client=mock_public)
+        result = client.get_playlist_snapshot_id("test_id")
 
         assert result == "abc123"
         mock_oauth.playlist.assert_called_once()
@@ -295,8 +273,8 @@ class TestDownloaderDualClients:
         mock_oauth.playlist.side_effect = Exception("OAuth error")
         mock_public.playlist.return_value = {"snapshot_id": "public123"}
 
-        downloader = Downloader(mock_oauth, public_client=mock_public)
-        result = downloader.get_playlist_snapshot_id("test_id")
+        client = SpotifyPlaylistClient(mock_oauth, public_client=mock_public)
+        result = client.get_playlist_snapshot_id("test_id")
 
         assert result == "public123"
         mock_oauth.playlist.assert_called_once()
@@ -310,16 +288,15 @@ class TestDownloaderDualClients:
         mock_public = MagicMock()
         mock_refresh = MagicMock(return_value=True)
 
-        # First call fails with 401, second succeeds after refresh
         mock_oauth.playlist.side_effect = [
             SpotifyException(http_status=401, code=-1, msg="Token expired"),
             {"snapshot_id": "refreshed123"},
         ]
 
-        downloader = Downloader(
+        client = SpotifyPlaylistClient(
             mock_oauth, public_client=mock_public, on_auth_error=mock_refresh
         )
-        result = downloader.get_playlist_snapshot_id("test_id")
+        result = client.get_playlist_snapshot_id("test_id")
 
         assert result == "refreshed123"
         mock_refresh.assert_called_once()
@@ -339,10 +316,10 @@ class TestDownloaderDualClients:
         )
         mock_public.playlist.return_value = {"snapshot_id": "public123"}
 
-        downloader = Downloader(
+        client = SpotifyPlaylistClient(
             mock_oauth, public_client=mock_public, on_auth_error=mock_refresh
         )
-        result = downloader.get_playlist_snapshot_id("test_id")
+        result = client.get_playlist_snapshot_id("test_id")
 
         assert result == "public123"
         mock_refresh.assert_called_once()
@@ -357,90 +334,26 @@ class TestDownloaderDualClients:
         mock_public = MagicMock()
         mock_refresh = MagicMock(return_value=True)
 
-        # Both calls fail with 401 - refresh didn't help
         mock_oauth.playlist.side_effect = SpotifyException(
             http_status=401, code=-1, msg="Token expired"
         )
         mock_public.playlist.return_value = {"snapshot_id": "public123"}
 
-        downloader = Downloader(
+        client = SpotifyPlaylistClient(
             mock_oauth, public_client=mock_public, on_auth_error=mock_refresh
         )
-        result = downloader.get_playlist_snapshot_id("test_id")
+        result = client.get_playlist_snapshot_id("test_id")
 
-        # Should fall back to public after exactly one refresh attempt
         assert result == "public123"
         mock_refresh.assert_called_once()
-        assert mock_oauth.playlist.call_count == 2  # Initial + one retry
+        assert mock_oauth.playlist.call_count == 2
         mock_public.playlist.assert_called_once()
 
-
-class TestFailFastErrorDetection:
-    """Tests for the _is_fail_fast_error helper function."""
-
-    def test_detects_429_rate_limit(self) -> None:
-        """Should detect 429 rate limit errors."""
-        exc = Exception("http status: 429")
-        is_fail_fast, status_code = _is_fail_fast_error(exc)
-        assert is_fail_fast is True
-        assert status_code == 429
-
-    def test_detects_rate_limit_text(self) -> None:
-        """Should detect rate limit by text."""
-        exc = Exception("Rate limit exceeded")
-        is_fail_fast, status_code = _is_fail_fast_error(exc)
-        assert is_fail_fast is True
-        assert status_code == 429
-
-    def test_detects_401_unauthorized(self) -> None:
-        """Should detect 401 unauthorized errors."""
-        exc = Exception("401 Unauthorized")
-        is_fail_fast, status_code = _is_fail_fast_error(exc)
-        assert is_fail_fast is True
-        assert status_code == 401
-
-    def test_detects_access_token_expired(self) -> None:
-        """Should detect expired access token."""
-        exc = Exception("Access token expired")
-        is_fail_fast, status_code = _is_fail_fast_error(exc)
-        assert is_fail_fast is True
-        assert status_code == 401
-
-    def test_detects_404_not_found(self) -> None:
-        """Should detect 404 not found errors."""
-        exc = Exception("404 Not Found")
-        is_fail_fast, status_code = _is_fail_fast_error(exc)
-        assert is_fail_fast is True
-        assert status_code == 404
-
-    def test_detects_max_retries(self) -> None:
-        """Should detect max retries (usually from 404s)."""
-        exc = Exception("Max Retries reached")
-        is_fail_fast, status_code = _is_fail_fast_error(exc)
-        assert is_fail_fast is True
-        assert status_code == 404
-
-    def test_non_fail_fast_errors(self) -> None:
-        """Should return False for other errors."""
-        exc = Exception("Some random network error")
-        is_fail_fast, status_code = _is_fail_fast_error(exc)
-        assert is_fail_fast is False
-        assert status_code is None
-
-
-class TestPlaylistSyncError:
-    """Tests for the PlaylistSyncError exception."""
-
-    def test_stores_status_code(self) -> None:
-        """PlaylistSyncError should store the status code."""
-        err = PlaylistSyncError("Rate limited", status_code=429)
-        assert err.status_code == 429
-        assert "Rate limited" in str(err)
-
-    def test_default_status_code(self) -> None:
-        """PlaylistSyncError status_code should default to None."""
-        err = PlaylistSyncError("Some error")
-        assert err.status_code is None
+    def test_get_playlist_snapshot_id_returns_none_when_unavailable(self) -> None:
+        """get_playlist_snapshot_id() should return None when no client available."""
+        client = SpotifyPlaylistClient()
+        result = client.get_playlist_snapshot_id("test_id")
+        assert result is None
 
 
 class TestSpotifyRateLimitError:
@@ -460,11 +373,9 @@ class TestLimitedRetry:
         """LimitedRetry should allow retry-after values within threshold."""
         retry = LimitedRetry(total=3)
 
-        # Mock response with short retry-after
         mock_response = MagicMock()
-        mock_response.headers = {"Retry-After": "60"}  # 60 seconds
+        mock_response.headers = {"Retry-After": "60"}
 
-        # Should return the retry-after value without raising
         result = retry.get_retry_after(mock_response)
         assert result == 60
 
@@ -472,11 +383,9 @@ class TestLimitedRetry:
         """LimitedRetry should raise SpotifyRateLimitError for long waits."""
         retry = LimitedRetry(total=3)
 
-        # Mock response with excessive retry-after (6 hours)
         mock_response = MagicMock()
-        mock_response.headers = {"Retry-After": "21600"}  # 6 hours
+        mock_response.headers = {"Retry-After": "21600"}
 
-        # Should raise SpotifyRateLimitError
         with pytest.raises(SpotifyRateLimitError) as exc_info:
             retry.get_retry_after(mock_response)
 
@@ -487,14 +396,12 @@ class TestLimitedRetry:
         """LimitedRetry should respect the exact threshold boundary."""
         retry = LimitedRetry(total=3)
 
-        # At threshold should be allowed
         mock_response = MagicMock()
         mock_response.headers = {"Retry-After": str(MAX_RATE_LIMIT_WAIT_SECONDS)}
 
         result = retry.get_retry_after(mock_response)
         assert result == MAX_RATE_LIMIT_WAIT_SECONDS
 
-        # Just over threshold should raise
         mock_response.headers = {"Retry-After": str(MAX_RATE_LIMIT_WAIT_SECONDS + 1)}
 
         with pytest.raises(SpotifyRateLimitError):
@@ -507,6 +414,5 @@ class TestLimitedRetry:
         mock_response = MagicMock()
         mock_response.headers = {}
 
-        # Should return None (no retry-after)
         result = retry.get_retry_after(mock_response)
         assert result is None

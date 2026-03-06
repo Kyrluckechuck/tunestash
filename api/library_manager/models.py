@@ -1756,6 +1756,7 @@ class TrackMappingCache(models.Model):
     spotify_track_id: models.CharField = models.CharField(
         max_length=120, null=True, blank=True
     )
+    deezer_track_id: models.IntegerField = models.IntegerField(null=True, blank=True)
     isrc: models.CharField = models.CharField(max_length=20, null=True, blank=True)
     confidence: models.FloatField = models.FloatField(default=1.0)
     mapping_method: models.CharField = models.CharField(max_length=30)
@@ -1770,7 +1771,8 @@ class TrackMappingCache(models.Model):
         key = self.musicbrainz_id or self.name_lookup_key or "unknown"
         if self.no_match:
             return f"TrackMappingCache({key}) -> NO MATCH"
-        return f"TrackMappingCache({key}) -> {self.spotify_track_id}"
+        target = self.spotify_track_id or self.deezer_track_id or "?"
+        return f"TrackMappingCache({key}) -> {target}"
 
 
 class APIRateLimitState(models.Model):

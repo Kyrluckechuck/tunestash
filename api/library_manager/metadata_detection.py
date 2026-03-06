@@ -2,8 +2,8 @@
 Metadata change detection utilities.
 
 Provides functions to detect when artist, album, or song names have changed
-on Spotify compared to what's stored locally, and to create/update
-PendingMetadataUpdate records for user review.
+on an external provider (Deezer, Spotify) compared to what's stored locally,
+and to create/update PendingMetadataUpdate records for user review.
 
 The detection follows a superset hierarchy:
 - If an artist name changes, we don't create separate entries for their albums/songs
@@ -88,7 +88,7 @@ def _create_or_update_pending_change(
         entity: The Artist, Album, or Song instance
         field_name: The field that changed (e.g., 'name')
         old_value: The value stored in our database
-        new_value: The current value from Spotify
+        new_value: The current value from the external provider
 
     Returns:
         The PendingMetadataUpdate instance, or None if change was reverted
@@ -102,7 +102,7 @@ def _create_or_update_pending_change(
             field_name=field_name,
         )
 
-        # If the Spotify value now matches our DB, the change was reverted
+        # If the provider value now matches our DB, the change was reverted
         if new_value == old_value:
             existing.mark_dismissed()
             logger.info(
@@ -111,7 +111,7 @@ def _create_or_update_pending_change(
             )
             return None
 
-        # Update the pending record with new Spotify value
+        # Update the pending record with new provider value
         if existing.status == MetadataUpdateStatus.PENDING:
             existing.new_value = new_value
             existing.save()
@@ -153,42 +153,42 @@ def _create_or_update_pending_change(
 
 def detect_artist_name_change(
     artist: Artist,
-    spotify_name: str,
+    new_name: str,
 ) -> bool:
     """
-    Detect if an artist's name has changed on Spotify.
+    Detect if an artist's name has changed on an external provider.
 
-    Compares the artist's stored name with the name from Spotify metadata.
+    Compares the artist's stored name with the name from provider metadata.
     If different, creates or updates a PendingMetadataUpdate record.
 
     Args:
         artist: The Artist model instance
-        spotify_name: The artist's current name from Spotify API
+        new_name: The artist's current name from the external provider
 
     Returns:
         True if a change was detected, False otherwise
     """
-    if artist.name == spotify_name:
+    if artist.name == new_name:
         return False
 
     _create_or_update_pending_change(
         entity=artist,
         field_name="name",
         old_value=artist.name,
-        new_value=spotify_name,
+        new_value=new_name,
     )
     return True
 
 
 def detect_album_name_change(
     album: Album,
-    spotify_name: str,
+    new_name: str,
     skip_if_artist_pending: bool = True,
 ) -> bool:
     """
-    Detect if an album's name has changed on Spotify.
+    Detect if an album's name has changed on an external provider.
 
-    Compares the album's stored name with the name from Spotify metadata.
+    Compares the album's stored name with the name from provider metadata.
     If different, creates or updates a PendingMetadataUpdate record.
 
     By default, skips detection if the album's artist already has a pending
@@ -196,13 +196,13 @@ def detect_album_name_change(
 
     Args:
         album: The Album model instance
-        spotify_name: The album's current name from Spotify API
+        new_name: The album's current name from the external provider
         skip_if_artist_pending: If True, skip if artist has pending change
 
     Returns:
         True if a change was detected, False otherwise
     """
-    if album.name == spotify_name:
+    if album.name == new_name:
         return False
 
     # Superset logic: don't create album entry if artist has pending change
@@ -218,20 +218,20 @@ def detect_album_name_change(
         entity=album,
         field_name="name",
         old_value=album.name,
-        new_value=spotify_name,
+        new_value=new_name,
     )
     return True
 
 
 def detect_song_name_change(
     song: Song,
-    spotify_name: str,
+    new_name: str,
     skip_if_parent_pending: bool = True,
 ) -> bool:
     """
-    Detect if a song's name has changed on Spotify.
+    Detect if a song's name has changed on an external provider.
 
-    Compares the song's stored name with the name from Spotify metadata.
+    Compares the song's stored name with the name from provider metadata.
     If different, creates or updates a PendingMetadataUpdate record.
 
     By default, skips detection if the song's artist or album already has
@@ -239,13 +239,13 @@ def detect_song_name_change(
 
     Args:
         song: The Song model instance
-        spotify_name: The song's current name from Spotify API
+        new_name: The song's current name from the external provider
         skip_if_parent_pending: If True, skip if artist/album has pending change
 
     Returns:
         True if a change was detected, False otherwise
     """
-    if song.name == spotify_name:
+    if song.name == new_name:
         return False
 
     # Superset logic: don't create song entry if artist or album has pending change
@@ -268,7 +268,7 @@ def detect_song_name_change(
         entity=song,
         field_name="name",
         old_value=song.name,
-        new_value=spotify_name,
+        new_value=new_name,
     )
     return True
 

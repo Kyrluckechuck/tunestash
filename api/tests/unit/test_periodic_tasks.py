@@ -388,43 +388,45 @@ class TestRetryFailedSongsTask(TestCase):
         )
 
     @patch("library_manager.tasks.maintenance.require_download_capability")
-    @patch("library_manager.tasks.maintenance.spotdl_wrapper")
-    def test_retry_failed_songs_basic(self, mock_spotdl, mock_require_download):
+    @patch("library_manager.tasks.maintenance._download_deezer_songs_via_fallback")
+    def test_retry_failed_songs_basic(self, mock_fallback, mock_require_download):
         """Test that retry_failed_songs attempts to download failed songs."""
         from library_manager.tasks import retry_failed_songs
+
+        mock_fallback.return_value = (0, 0)
 
         # Run the periodic task
         retry_failed_songs()
 
-        # Verify spotdl_wrapper.execute was called
-        assert mock_spotdl.execute.call_count == 1
+        # Verify fallback downloader was called
+        assert mock_fallback.call_count == 1
 
-        # Extract the URIs that were passed to download
-        call_args = mock_spotdl.execute.call_args
-        config = call_args[0][0]
-        downloaded_uris = config.urls
+        # Extract the Song objects that were passed to download
+        downloaded_songs = mock_fallback.call_args[0][0]
+        downloaded_ids = {s.gid for s in downloaded_songs}
 
         # Should include songs with 1, 5, and 10 failures
-        assert self.song_failed_once.spotify_uri in downloaded_uris
-        assert self.song_failed_five.spotify_uri in downloaded_uris
-        assert self.song_failed_ten.spotify_uri in downloaded_uris
+        assert self.song_failed_once.gid in downloaded_ids
+        assert self.song_failed_five.gid in downloaded_ids
+        assert self.song_failed_ten.gid in downloaded_ids
 
         # Should NOT include songs with 11+ failures, 0 failures, or already downloaded
-        assert self.song_failed_eleven.spotify_uri not in downloaded_uris
-        assert self.song_not_failed.spotify_uri not in downloaded_uris
-        assert self.song_downloaded.spotify_uri not in downloaded_uris
+        assert self.song_failed_eleven.gid not in downloaded_ids
+        assert self.song_not_failed.gid not in downloaded_ids
+        assert self.song_downloaded.gid not in downloaded_ids
 
     @patch("library_manager.tasks.maintenance.require_download_capability")
-    @patch("library_manager.tasks.maintenance.spotdl_wrapper")
+    @patch("library_manager.tasks.maintenance._download_deezer_songs_via_fallback")
     def test_retry_failed_songs_priority_order(
-        self, mock_spotdl, mock_require_download
+        self, mock_fallback, mock_require_download
     ):
         """Test that songs with fewer failures are prioritized."""
-        # Create songs with different failure counts (oldest created_at first)
         import time
 
         from library_manager.models import Song
         from library_manager.tasks import retry_failed_songs
+
+        mock_fallback.return_value = (0, 0)
 
         for i in range(3):
             Song.objects.create(
@@ -439,31 +441,27 @@ class TestRetryFailedSongsTask(TestCase):
         # Run the task
         retry_failed_songs()
 
-        # Extract URIs in the order they were passed
-        call_args = mock_spotdl.execute.call_args
-        config = call_args[0][0]
-        downloaded_uris = config.urls
+        # Extract songs in the order they were passed
+        downloaded_songs = mock_fallback.call_args[0][0]
 
-        # The first URI should be from the song with failed_count=1
-        # (our song_failed_once or priority_0)
-        # We can't guarantee exact order between songs with same failed_count,
-        # but we can verify failed_count=1 songs come before failed_count=5
-
+        # Songs should be ordered by failed_count ASC
         # Find the position of song_failed_five (failed_count=5)
-        if self.song_failed_five.spotify_uri in downloaded_uris:
-            pos_five = downloaded_uris.index(self.song_failed_five.spotify_uri)
-            # All URIs before this position should be from songs with fewer failures
-            # Just verify we got songs ordered by priority (manual inspection in logs)
+        gids = [s.gid for s in downloaded_songs]
+        if self.song_failed_five.gid in gids:
+            pos_five = gids.index(self.song_failed_five.gid)
+            # All songs before this position should have fewer failures
             assert pos_five >= 0
 
     @patch("library_manager.tasks.maintenance.require_download_capability")
-    @patch("library_manager.tasks.maintenance.spotdl_wrapper")
+    @patch("library_manager.tasks.maintenance._download_deezer_songs_via_fallback")
     def test_retry_failed_songs_respects_100_limit(
-        self, mock_spotdl, mock_require_download
+        self, mock_fallback, mock_require_download
     ):
         """Test that retry only processes 100 songs per run."""
         from library_manager.models import Song
         from library_manager.tasks import retry_failed_songs
+
+        mock_fallback.return_value = (0, 0)
 
         # Create 150 failed songs
         for i in range(150):
@@ -479,18 +477,16 @@ class TestRetryFailedSongsTask(TestCase):
         retry_failed_songs()
 
         # Should only process 100 songs
-        call_args = mock_spotdl.execute.call_args
-        config = call_args[0][0]
-        downloaded_uris = config.urls
+        downloaded_songs = mock_fallback.call_args[0][0]
 
-        # Should be exactly 100 songs (plus the 3 from setUp = 103 total failed songs)
+        # Should be exactly 100 songs (plus the 3 from setUp = 103+ total eligible)
         # But limit is 100
-        assert len(downloaded_uris) == 100
+        assert len(downloaded_songs) == 100
 
     @patch("library_manager.tasks.maintenance.require_download_capability")
-    @patch("library_manager.tasks.maintenance.spotdl_wrapper")
+    @patch("library_manager.tasks.maintenance._download_deezer_songs_via_fallback")
     def test_retry_failed_songs_handles_no_songs(
-        self, mock_spotdl, mock_require_download
+        self, mock_fallback, mock_require_download
     ):
         """Test that task handles case when no songs need retry."""
         from library_manager.models import Song
@@ -502,17 +498,19 @@ class TestRetryFailedSongsTask(TestCase):
         # Run the task
         retry_failed_songs()
 
-        # Should not call execute
-        assert mock_spotdl.execute.call_count == 0
+        # Should not call fallback downloader
+        assert mock_fallback.call_count == 0
 
     @patch("library_manager.tasks.maintenance.require_download_capability")
-    @patch("library_manager.tasks.maintenance.spotdl_wrapper")
+    @patch("library_manager.tasks.maintenance._download_deezer_songs_via_fallback")
     def test_retry_failed_songs_skips_high_failure_count(
-        self, mock_spotdl, mock_require_download
+        self, mock_fallback, mock_require_download
     ):
         """Test that songs with >10 failures are not retried."""
         from library_manager.models import Song
         from library_manager.tasks import retry_failed_songs
+
+        mock_fallback.return_value = (0, 0)
 
         # Create songs with 11-20 failures
         for i in range(11, 21):
@@ -527,15 +525,14 @@ class TestRetryFailedSongsTask(TestCase):
         # Run the task
         retry_failed_songs()
 
-        # Extract downloaded URIs
-        call_args = mock_spotdl.execute.call_args
-        config = call_args[0][0]
-        downloaded_uris = config.urls
+        # Extract downloaded song GIDs
+        downloaded_songs = mock_fallback.call_args[0][0]
+        downloaded_gids = {s.gid for s in downloaded_songs}
 
         # Verify none of the high-failure songs were included
         for i in range(11, 21):
             gid = f"highfail{i:015d}"
-            assert f"spotify:track:{gid}" not in downloaded_uris
+            assert gid not in downloaded_gids
 
 
 class TestBackfillAlbumMetadata(TestCase):
@@ -925,8 +922,8 @@ class TestSongFailureBackoff(TestCase):
         assert song.is_ready_for_retry() is True
 
     @patch("library_manager.tasks.maintenance.require_download_capability")
-    @patch("library_manager.tasks.maintenance.spotdl_wrapper")
-    def test_retry_task_respects_backoff(self, mock_spotdl, mock_require_download):
+    @patch("library_manager.tasks.maintenance._download_deezer_songs_via_fallback")
+    def test_retry_task_respects_backoff(self, mock_fallback, mock_require_download):
         """Test that retry task skips songs in backoff period."""
         from datetime import timedelta
 
@@ -934,6 +931,8 @@ class TestSongFailureBackoff(TestCase):
 
         from library_manager.models import FailureReason, Song
         from library_manager.tasks import retry_failed_songs
+
+        mock_fallback.return_value = (0, 0)
 
         # Create a song that just failed (in backoff)
         recent_fail = Song.objects.create(
@@ -961,12 +960,11 @@ class TestSongFailureBackoff(TestCase):
         retry_failed_songs()
 
         # Should only include the old failure (past backoff)
-        call_args = mock_spotdl.execute.call_args
-        config = call_args[0][0]
-        downloaded_uris = config.urls
+        downloaded_songs = mock_fallback.call_args[0][0]
+        downloaded_gids = {s.gid for s in downloaded_songs}
 
-        assert old_fail.spotify_uri in downloaded_uris
-        assert recent_fail.spotify_uri not in downloaded_uris
+        assert old_fail.gid in downloaded_gids
+        assert recent_fail.gid not in downloaded_gids
 
     def test_increment_failed_count_sets_timestamp(self):
         """Test that increment_failed_count sets last_failed_at."""

@@ -149,7 +149,6 @@ class TrackMetadata:
     genres: tuple[str, ...] = ()
 
 
-# Backward-compat alias — spotdl_wrapper.py still uses this name
 SpotifyTrackMetadata = TrackMetadata
 
 
@@ -158,8 +157,7 @@ class DownloadProvider(ABC):
     Abstract base class for download providers.
 
     Each provider implementation handles downloading audio from a specific
-    service (Tidal, Qobuz, etc.). Providers are used as fallbacks when the
-    primary download method (spotdl) fails.
+    service (YouTube Music, Tidal, Qobuz).
 
     Implementations must be:
     - Async-compatible (all methods are async)

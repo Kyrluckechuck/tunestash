@@ -32,33 +32,28 @@ class TestConfigProviderOrder:
         """Default provider order should include all providers for max success rate."""
         from lib.config_class import Config
 
-        # When no provider order is explicitly set, default should be used
-        # Constructor arg takes precedence, so passing None triggers settings lookup
-        # which falls back to default ["spotdl", "tidal", "qobuz"]
         config = Config(download_provider_order=None)
-        # The actual behavior: since settings doesn't have download_provider_order,
-        # getattr returns the default value
-        assert config.download_provider_order == ["spotdl", "tidal", "qobuz"]
+        assert config.download_provider_order == ["youtube", "tidal", "qobuz"]
 
     @patch("lib.config_class.settings")
     def test_explicit_provider_order_from_settings(
         self, mock_settings, mock_django_settings
     ):
         """Provider order from settings.yaml should be respected."""
-        mock_django_settings.download_provider_order = ["tidal", "spotdl"]
+        mock_django_settings.download_provider_order = ["tidal", "youtube"]
         mock_settings.configure_mock(**vars(mock_django_settings))
 
         from lib.config_class import Config
 
         config = Config()
-        assert config.download_provider_order == ["tidal", "spotdl"]
+        assert config.download_provider_order == ["tidal", "youtube"]
 
     @patch("lib.config_class.settings")
     def test_explicit_provider_order_constructor(
         self, mock_settings, mock_django_settings
     ):
         """Provider order passed to constructor takes precedence."""
-        mock_django_settings.download_provider_order = ["spotdl", "tidal"]
+        mock_django_settings.download_provider_order = ["youtube", "tidal"]
         mock_settings.configure_mock(**vars(mock_django_settings))
 
         from lib.config_class import Config
@@ -75,17 +70,17 @@ class TestConfigProviderOrder:
 
         config = Config(download_provider_order=["tidal"])
         assert config.download_provider_order == ["tidal"]
-        assert "spotdl" not in config.download_provider_order
+        assert "youtube" not in config.download_provider_order
 
     @patch("lib.config_class.settings")
-    def test_spotdl_only_order(self, mock_settings, mock_django_settings):
-        """Spotdl-only configuration (no fallback) should work."""
+    def test_youtube_only_order(self, mock_settings, mock_django_settings):
+        """YouTube-only configuration should work."""
         mock_settings.configure_mock(**vars(mock_django_settings))
 
         from lib.config_class import Config
 
-        config = Config(download_provider_order=["spotdl"])
-        assert config.download_provider_order == ["spotdl"]
+        config = Config(download_provider_order=["youtube"])
+        assert config.download_provider_order == ["youtube"]
         assert "tidal" not in config.download_provider_order
 
     @patch("lib.config_class.settings")

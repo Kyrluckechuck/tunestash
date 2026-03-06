@@ -264,13 +264,12 @@ class DownloaderService:
         try:
             from asgiref.sync import sync_to_async
 
-            from library_manager.tasks import download_single_track
+            from library_manager.tasks import download_track_by_spotify_gid
 
             # Extract track ID from URL
             track_id = self._extract_id_from_url(track_url)
 
-            # Queue the download task - runs in worker where SpotifyClient is initialized
-            await sync_to_async(download_single_track.delay)(track_id)
+            await sync_to_async(download_track_by_spotify_gid.delay)(track_id)
 
             if track_name:
                 message = f"Started downloading track: {track_name}"

@@ -181,26 +181,45 @@ def _map_external_list_tracks_internal(
     mapped_count = 0
     failed_count = 0
 
-    for track_obj, (spotify_id, method, confidence, error) in zip(
+    for track_obj, (result_id, method, confidence, error) in zip(
         pending_tracks, results
     ):
-        if spotify_id:
+        if result_id:
             track_obj.mapping_status = TrackMappingStatus.MAPPED
-            track_obj.spotify_track_id = spotify_id
+            track_obj.spotify_track_id = result_id
             track_obj.mapping_confidence = confidence
             track_obj.mapping_method = method
             track_obj.mapped_at = timezone.now()
             track_obj.mapping_error = None
 
-            # Check if Song already exists
-            song = Song.objects.filter(gid=spotify_id).first()
+            # Try to find Song — prefer deezer_id for Deezer-resolved tracks
+            song = None
+            if method == "deezer_search":
+                try:
+                    deezer_id = int(result_id)
+                    song = Song.objects.filter(deezer_id=deezer_id).first()
+                except (ValueError, TypeError):
+                    pass
+
+            if not song:
+                song = Song.objects.filter(gid=result_id).first()
+
             if song:
                 track_obj.song = song
             else:
-                # Queue download
-                from library_manager.tasks import download_single_track
+                # Queue download via appropriate path
+                if method == "deezer_search":
+                    try:
+                        deezer_id = int(result_id)
+                        from library_manager.tasks import download_deezer_track
 
-                download_single_track.delay(spotify_id)
+                        download_deezer_track.delay(deezer_id)
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    from library_manager.tasks import download_track_by_spotify_gid
+
+                    download_track_by_spotify_gid.delay(result_id)
 
             track_obj.save()
             mapped_count += 1

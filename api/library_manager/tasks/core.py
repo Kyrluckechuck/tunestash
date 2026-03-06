@@ -18,8 +18,6 @@ from django.conf import settings
 import psutil
 from celery.utils.log import get_task_logger
 from celery_app import app as celery_app  # noqa: F401 - re-exported
-from downloader.spotdl_wrapper import SpotdlWrapper
-from lib.config_class import Config
 
 from ..models import TaskHistory
 from ..task_priorities import TaskPriority  # noqa: F401 - re-exported
@@ -28,9 +26,6 @@ from ..task_priorities import TaskPriority  # noqa: F401 - re-exported
 class TaskCancelledException(Exception):
     """Raised when a task has been cancelled and should stop execution."""
 
-
-# Initialize SpotdlWrapper
-spotdl_wrapper = SpotdlWrapper(Config())
 
 # Initialize Celery logger
 logger = get_task_logger(__name__)

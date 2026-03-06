@@ -56,7 +56,7 @@ def validate_spotify_resource(url: str) -> SpotifyValidationResult:
     Validate that a Spotify resource exists.
 
     This function checks the Spotify API to verify the resource exists.
-    Falls back gracefully if SpotifyClient is not initialized.
+    Falls back gracefully if no Spotify client is available.
 
     Args:
         url: Spotify URL or URI
@@ -83,15 +83,11 @@ def validate_spotify_resource(url: str) -> SpotifyValidationResult:
         )
 
     try:
-        from spotdl.utils.spotify import SpotifyClient
+        from downloader.spotipy_tasks import OAuthSpotifyClient
 
-        # Check if SpotifyClient is initialized (singleton pattern requires _instance access)
-        if SpotifyClient._instance is None:  # pylint: disable=protected-access
-            logger.debug(
-                "SpotifyClient not initialized - skipping existence validation"
-            )
-            # Return valid=True to allow task to proceed
-            # Worker will handle the actual validation
+        client = OAuthSpotifyClient()
+        if client.sp is None:
+            logger.debug("Spotify client not available - skipping existence validation")
             return SpotifyValidationResult(
                 valid=True,
                 resource_type=resource_type,
@@ -99,11 +95,11 @@ def validate_spotify_resource(url: str) -> SpotifyValidationResult:
                 resource_name=None,
             )
 
-        client = SpotifyClient()
+        sp = client.sp
 
         # Fetch resource based on type
         if resource_type == "track":
-            data = client.track(resource_id)
+            data = sp.track(resource_id)
             if data:
                 return SpotifyValidationResult(
                     valid=True,
@@ -119,7 +115,7 @@ def validate_spotify_resource(url: str) -> SpotifyValidationResult:
             )
 
         elif resource_type == "album":
-            data = client.album(resource_id)
+            data = sp.album(resource_id)
             if data:
                 return SpotifyValidationResult(
                     valid=True,
@@ -135,7 +131,7 @@ def validate_spotify_resource(url: str) -> SpotifyValidationResult:
             )
 
         elif resource_type == "playlist":
-            data = client.playlist(resource_id)
+            data = sp.playlist(resource_id)
             if data:
                 return SpotifyValidationResult(
                     valid=True,
@@ -151,7 +147,7 @@ def validate_spotify_resource(url: str) -> SpotifyValidationResult:
             )
 
         elif resource_type == "artist":
-            data = client.artist(resource_id)
+            data = sp.artist(resource_id)
             if data:
                 return SpotifyValidationResult(
                     valid=True,

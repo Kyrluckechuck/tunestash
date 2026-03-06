@@ -80,7 +80,7 @@ class TestDownloaderService:
 
         The actual metadata fetching and album download happens in the worker,
         not in the web container. This test verifies the service correctly
-        queues the download_single_track task.
+        queues the download task for a Spotify track GID.
         """
         track_url = "https://open.spotify.com/track/13TJT0oh9TdIZxQJfVWSKb"
         expected_track_id = "13TJT0oh9TdIZxQJfVWSKb"
@@ -88,7 +88,7 @@ class TestDownloaderService:
         # Mock the task's delay method
         mock_delay = MagicMock()
 
-        with patch("library_manager.tasks.download_single_track") as mock_task:
+        with patch("library_manager.tasks.download_track_by_spotify_gid") as mock_task:
             mock_task.delay = mock_delay
 
             # Patch sync_to_async where it's imported
@@ -121,7 +121,7 @@ class TestDownloaderService:
 
         mock_delay = MagicMock()
 
-        with patch("library_manager.tasks.download_single_track") as mock_task:
+        with patch("library_manager.tasks.download_track_by_spotify_gid") as mock_task:
             mock_task.delay = mock_delay
 
             def sync_to_async_passthrough(func):
@@ -147,7 +147,7 @@ class TestDownloaderService:
         """Test that errors during task queueing are handled gracefully."""
         track_url = "spotify:track:13TJT0oh9TdIZxQJfVWSKb"
 
-        with patch("library_manager.tasks.download_single_track") as mock_task:
+        with patch("library_manager.tasks.download_track_by_spotify_gid") as mock_task:
             mock_task.delay.side_effect = Exception("Celery broker connection failed")
 
             def sync_to_async_passthrough(func):

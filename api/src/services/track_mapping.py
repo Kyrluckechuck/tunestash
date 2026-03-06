@@ -179,85 +179,56 @@ def resolve_via_musicbrainz(mbid: str) -> Optional[str]:
             return None
 
         isrc = isrcs[0]
-        return _spotify_search_by_isrc(isrc)
+        deezer_id = _deezer_search_by_isrc(isrc)
+        if deezer_id:
+            # Return the deezer_id as a string for pipeline compatibility
+            return str(deezer_id)
+        return None
     except Exception as e:
         logger.warning("[TRACK_MAPPING] MusicBrainz lookup error for %s: %s", mbid, e)
         return None
 
 
-def _spotify_search_by_isrc(isrc: str) -> Optional[str]:
-    """Search Spotify for a track by ISRC."""
+def _deezer_search_by_isrc(isrc: str) -> Optional[int]:
+    """Search Deezer for a track by ISRC. Returns deezer_id or None."""
     try:
-        from downloader.spotipy_tasks import SpotifyClient
+        from src.providers.deezer import DeezerMetadataProvider
 
-        from library_manager.models import SpotifyRateLimitState
-
-        delay = SpotifyRateLimitState.get_delay_seconds()
-        if delay > 0:
-            time.sleep(delay)
-
-        sp = SpotifyClient().sp
-        if sp is None:
-            return None
-
-        results = sp.search(q=f"isrc:{isrc}", type="track", limit=1)
-        SpotifyRateLimitState.record_call()
-
-        tracks = results.get("tracks", {}).get("items", [])
-        if tracks:
-            return str(tracks[0]["id"])
-        return None
+        result = DeezerMetadataProvider().get_track_by_isrc(isrc)
+        return result.deezer_id if result else None
     except Exception as e:
-        logger.warning("[TRACK_MAPPING] Spotify ISRC search error for %s: %s", isrc, e)
+        logger.warning("[TRACK_MAPPING] Deezer ISRC search error for %s: %s", isrc, e)
         return None
 
 
-def resolve_via_spotify_search(
+def resolve_via_deezer_search(
     artist_name: str, track_name: str
-) -> tuple[Optional[str], float]:
-    """Step 4: Search Spotify by artist+track name with confidence scoring.
+) -> tuple[Optional[int], float]:
+    """Step 4: Search Deezer by artist+track name with confidence scoring.
 
     Returns:
-        (spotify_track_id, confidence) — None and 0.0 if no match.
+        (deezer_track_id, confidence) — None and 0.0 if no match.
     """
     try:
-        from downloader.spotipy_tasks import SpotifyClient
+        from src.providers.deezer import DeezerMetadataProvider
 
-        from library_manager.models import SpotifyRateLimitState
+        provider = DeezerMetadataProvider()
+        results = provider.search_tracks(f"{artist_name} {track_name}", limit=5)
 
-        delay = SpotifyRateLimitState.get_delay_seconds()
-        if delay > 0:
-            time.sleep(delay)
-
-        sp = SpotifyClient().sp
-        if sp is None:
-            return None, 0.0
-
-        query = f"artist:{artist_name} track:{track_name}"
-        results = sp.search(q=query, type="track", limit=5)
-        SpotifyRateLimitState.record_call()
-
-        tracks = results.get("tracks", {}).get("items", [])
-        if not tracks:
+        if not results:
             return None, 0.0
 
         norm_artist = _normalize_name(artist_name)
         norm_track = _normalize_name(track_name)
 
-        best_id = None
+        best_id: Optional[int] = None
         best_confidence = 0.0
 
-        for item in tracks:
-            item_track = _normalize_name(item.get("name", ""))
-            item_artists = [
-                _normalize_name(a.get("name", "")) for a in item.get("artists", [])
-            ]
+        for item in results:
+            item_track = _normalize_name(item.name)
+            item_artist = _normalize_name(item.artist_name or "")
 
-            # Artist similarity — best match among all artists on the track
-            artist_sim = max(
-                (SequenceMatcher(None, norm_artist, a).ratio() for a in item_artists),
-                default=0.0,
-            )
+            artist_sim = SequenceMatcher(None, norm_artist, item_artist).ratio()
             track_sim = SequenceMatcher(None, norm_track, item_track).ratio()
 
             if artist_sim >= 0.95 and track_sim >= 0.95:
@@ -271,12 +242,12 @@ def resolve_via_spotify_search(
 
             if confidence > best_confidence:
                 best_confidence = confidence
-                best_id = str(item["id"])
+                best_id = item.deezer_id
 
         return best_id, best_confidence
     except Exception as e:
         logger.warning(
-            "[TRACK_MAPPING] Spotify search error for '%s - %s': %s",
+            "[TRACK_MAPPING] Deezer search error for '%s - %s': %s",
             artist_name,
             track_name,
             e,
@@ -349,24 +320,28 @@ class TrackMappingService:
                 )
                 return spotify_id, "musicbrainz_isrc", 1.0, None
 
-        # Step 4: Name-based Spotify search
-        spotify_id, confidence = resolve_via_spotify_search(artist_name, track_name)
-        if spotify_id and confidence >= MIN_CONFIDENCE_THRESHOLD:
+        # Step 4: Name-based Deezer search
+        deezer_id, confidence = resolve_via_deezer_search(artist_name, track_name)
+        if deezer_id and confidence >= MIN_CONFIDENCE_THRESHOLD:
+            # Match Song by deezer_id to get gid for backwards compatibility
+            song = Song.objects.filter(deezer_id=deezer_id).first()
+            result_id = song.gid if song and song.gid else str(deezer_id)
             self._cache_result(
                 artist_name,
                 track_name,
                 musicbrainz_id,
-                spotify_id,
-                "spotify_search",
+                result_id,
+                "deezer_search",
                 confidence,
+                deezer_track_id=deezer_id,
             )
-            return spotify_id, "spotify_search", confidence, None
+            return result_id, "deezer_search", confidence, None
 
         # No match found — cache negative result
         self._cache_negative(artist_name, track_name, musicbrainz_id)
         error = (
-            f"No Spotify match (best confidence: {confidence:.2f})"
-            if spotify_id
+            f"No match (best confidence: {confidence:.2f})"
+            if deezer_id
             else "No results from any resolution method"
         )
         return None, "none", 0.0, error
@@ -468,23 +443,26 @@ class TrackMappingService:
                     results[idx] = (spotify_id, "musicbrainz_isrc", 1.0, None)
                     continue
 
-            # Step 4: Spotify name search
-            spotify_id, confidence = resolve_via_spotify_search(artist, track)
-            if spotify_id and confidence >= MIN_CONFIDENCE_THRESHOLD:
+            # Step 4: Deezer name search
+            deezer_id, confidence = resolve_via_deezer_search(artist, track)
+            if deezer_id and confidence >= MIN_CONFIDENCE_THRESHOLD:
+                song = Song.objects.filter(deezer_id=deezer_id).first()
+                result_id = song.gid if song and song.gid else str(deezer_id)
                 self._cache_result(
                     artist,
                     track,
                     mbid,
-                    spotify_id,
-                    "spotify_search",
+                    result_id,
+                    "deezer_search",
                     confidence,
+                    deezer_track_id=deezer_id,
                 )
-                results[idx] = (spotify_id, "spotify_search", confidence, None)
+                results[idx] = (result_id, "deezer_search", confidence, None)
             else:
                 self._cache_negative(artist, track, mbid)
                 error = (
-                    f"No Spotify match (best confidence: {confidence:.2f})"
-                    if spotify_id
+                    f"No match (best confidence: {confidence:.2f})"
+                    if deezer_id
                     else "No results from any resolution method"
                 )
                 results[idx] = (None, "none", 0.0, error)
@@ -499,30 +477,29 @@ class TrackMappingService:
         spotify_track_id: str,
         method: str,
         confidence: float,
+        deezer_track_id: Optional[int] = None,
     ) -> None:
         """Cache a positive mapping result."""
         cache_key = _make_cache_key(artist_name, track_name)
+        defaults = {
+            "name_lookup_key": cache_key,
+            "spotify_track_id": spotify_track_id,
+            "confidence": confidence,
+            "mapping_method": method,
+            "no_match": False,
+        }
+        if deezer_track_id is not None:
+            defaults["deezer_track_id"] = deezer_track_id
         try:
             if musicbrainz_id:
                 TrackMappingCache.objects.update_or_create(
                     musicbrainz_id=musicbrainz_id,
-                    defaults={
-                        "name_lookup_key": cache_key,
-                        "spotify_track_id": spotify_track_id,
-                        "confidence": confidence,
-                        "mapping_method": method,
-                        "no_match": False,
-                    },
+                    defaults=defaults,
                 )
             else:
                 TrackMappingCache.objects.update_or_create(
                     name_lookup_key=cache_key,
-                    defaults={
-                        "spotify_track_id": spotify_track_id,
-                        "confidence": confidence,
-                        "mapping_method": method,
-                        "no_match": False,
-                    },
+                    defaults=defaults,
                 )
         except Exception as e:
             logger.warning("[TRACK_MAPPING] Cache write error: %s", e)

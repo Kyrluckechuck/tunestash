@@ -7,11 +7,11 @@ Usage:
     # Include large object scan (slower)
     docker compose exec web python manage.py memory_profile --include-large-objects
 
-    # Profile after fetching metadata for a specific album
-    docker compose exec web python manage.py memory_profile --spotify-uri spotify:album:xyz
+    # Profile baseline memory after initialization
+    docker compose exec web python manage.py memory_profile --init-only
 
-    # Compare memory before/after metadata fetch
-    docker compose exec web python manage.py memory_profile --compare --spotify-uri spotify:album:xyz
+    # Measure current memory state
+    docker compose exec web python manage.py memory_profile --compare
 """
 
 import json
@@ -47,17 +47,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--compare",
             action="store_true",
-            help="Compare memory before/after a metadata fetch",
-        )
-        parser.add_argument(
-            "--spotify-uri",
-            type=str,
-            help="Spotify URI to fetch metadata for (used with --compare)",
+            help="Measure current memory state",
         )
         parser.add_argument(
             "--init-only",
             action="store_true",
-            help="Only profile after SpotdlWrapper initialization",
+            help="Only profile after worker initialization",
         )
         parser.add_argument(
             "--timeout",
@@ -84,7 +79,6 @@ class Command(BaseCommand):
         if options["compare"]:
             self._run_compare(
                 memory_compare_before_after,
-                options["spotify_uri"],
                 timeout,
                 output_json,
             )
@@ -169,12 +163,10 @@ class Command(BaseCommand):
         for mod in data.get("relevant_modules", []):
             self.stdout.write(f"  - {mod}")
 
-    def _run_compare(
-        self, task, spotify_uri: str, timeout: int, output_json: bool
-    ) -> None:
+    def _run_compare(self, task, timeout: int, output_json: bool) -> None:
         self.stdout.write("Dispatching memory comparison task to worker...")
 
-        result = task.delay(spotify_uri=spotify_uri)
+        result = task.delay()
         self.stdout.write(f"Task ID: {result.id}")
 
         try:
@@ -201,11 +193,6 @@ class Command(BaseCommand):
         delta = data["delta_mb"]
         style = self.style.ERROR if delta > 10 else self.style.SUCCESS
         self.stdout.write(style(f"Delta: {delta:+.2f} MB"))
-
-        if data.get("metadata_fetched"):
-            self.stdout.write(f"Tracks found: {data.get('tracks_found', 'N/A')}")
-        elif data.get("metadata_error"):
-            self.stdout.write(self.style.ERROR(f"Error: {data['metadata_error']}"))
 
     def _format_full_profile(self, data: dict) -> None:
         self.stdout.write("")

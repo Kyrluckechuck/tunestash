@@ -2,7 +2,7 @@
 Download providers package.
 
 This package contains pluggable download providers that can source audio
-from different services (Tidal, Qobuz, etc.) as fallbacks to spotdl.
+from different services (YouTube Music, Tidal, Qobuz).
 """
 
 from .base import (

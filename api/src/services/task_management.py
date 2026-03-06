@@ -136,7 +136,7 @@ class TaskManagementService:
             from library_manager.models import TaskHistory
 
             # 1. Purge all broker queues (this actually stops tasks from running)
-            queues_to_purge = ["downloads", "spotify", "celery"]
+            queues_to_purge = ["downloads", "metadata", "celery"]
             purged_count = 0
 
             def purge_queues() -> int:

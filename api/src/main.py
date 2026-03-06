@@ -142,56 +142,24 @@ def create_app() -> FastAPI:
 
         @sync_to_async
         def initialize_spotify_client() -> None:
-            """Initialize SpotifyClient for URL validation in web container."""
+            """Initialize Spotify client for URL validation in web container."""
             try:
-                from spotdl.utils.spotify import SpotifyClient
+                from downloader.spotipy_tasks import OAuthSpotifyClient
 
-                # Skip if already initialized (singleton pattern requires _instance access)
-                # pylint: disable=protected-access
-                if SpotifyClient._instance is not None:
-                    startup_logger.debug("SpotifyClient already initialized")
-                    return
-
-                from downloader.spotify_auth_helper import get_spotify_oauth_credentials
-
-                # Get OAuth token from database (same as spotdl_override.py)
-                oauth_creds = get_spotify_oauth_credentials()
-
-                if oauth_creds:
-                    # OAuth auth - use placeholder values (required but unused with token)
-                    SpotifyClient.init(
-                        client_id="oauth-placeholder",
-                        client_secret="oauth-placeholder",
-                        user_auth=False,
-                        no_cache=True,
-                        auth_token=oauth_creds["access_token"],
-                    )
-                    startup_logger.info("✓ SpotifyClient initialized with OAuth token")
-                else:
-                    # No OAuth token - try client credentials from env/settings
-                    client_id = getattr(dj_settings, "SPOTIPY_CLIENT_ID", "")
-                    client_secret = getattr(dj_settings, "SPOTIPY_CLIENT_SECRET", "")
-
-                    if not client_id or not client_secret:
-                        startup_logger.warning(
-                            "No Spotify OAuth token or client credentials - "
-                            "URL existence validation will be skipped"
-                        )
-                        return
-
-                    SpotifyClient.init(
-                        client_id=client_id,
-                        client_secret=client_secret,
-                        user_auth=False,
-                        no_cache=True,
-                    )
+                client = OAuthSpotifyClient()
+                if client.sp is not None:
                     startup_logger.info(
-                        "✓ SpotifyClient initialized with client credentials"
+                        "✓ Spotify client initialized for URL validation"
+                    )
+                else:
+                    startup_logger.warning(
+                        "No Spotify credentials available - "
+                        "URL existence validation will be skipped"
                     )
 
             except Exception as e:
                 startup_logger.warning(
-                    f"Failed to initialize SpotifyClient: {e} - "
+                    f"Failed to initialize Spotify client: {e} - "
                     "URL existence validation will be skipped"
                 )
 

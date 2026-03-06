@@ -50,11 +50,9 @@ class Config:
             if log_level is not None
             else getattr(settings, "log_level", "INFO")
         )
-        # Separate log level for spotdl library (defaults to INFO to avoid excessive verbosity)
-        self.spotdl_log_level = (
-            spotdl_log_level
-            if spotdl_log_level is not None
-            else getattr(settings, "spotdl_log_level", "INFO")
+        # Legacy: kept for config compat but no longer used
+        self.spotdl_log_level = spotdl_log_level or getattr(
+            settings, "spotdl_log_level", "INFO"
         )
         self.no_lrc = (
             no_lrc if no_lrc is not None else getattr(settings, "no_lrc", False)
@@ -77,7 +75,7 @@ class Config:
             download_provider_order
             if download_provider_order is not None
             else getattr(
-                settings, "download_provider_order", ["spotdl", "tidal", "qobuz"]
+                settings, "download_provider_order", ["youtube", "tidal", "qobuz"]
             )
         )
 

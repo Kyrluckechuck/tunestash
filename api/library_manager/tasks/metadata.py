@@ -163,11 +163,18 @@ def apply_metadata_update(self: Any, update_id: int) -> None:
             download_single_album.delay(entity.id)
             logger.info(f"Queued download_single_album for album #{entity.id}")
         elif model_name == "song":
-            # Queue single track download
-            from library_manager.tasks import download_single_track
+            if entity.deezer_id:
+                from library_manager.tasks import download_deezer_track
 
-            download_single_track.delay(entity.gid)
-            logger.info(f"Queued download_single_track for song #{entity.id}")
+                download_deezer_track.delay(entity.id)
+                logger.info(f"Queued download_deezer_track for song #{entity.id}")
+            elif entity.gid:
+                from library_manager.tasks import download_track_by_spotify_gid
+
+                download_track_by_spotify_gid.delay(entity.gid)
+                logger.info(
+                    f"Queued download_track_by_spotify_gid for song #{entity.id}"
+                )
 
     update_task_progress(task_history, 0.7, "Scheduling file cleanup...")
 

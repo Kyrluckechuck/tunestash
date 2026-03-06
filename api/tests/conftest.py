@@ -29,17 +29,12 @@ def pytest_configure(config):
         worker_xdg_cache = os.path.join(
             base_tmpdir, f"pytest-worker-{worker_id}-xdg-cache"
         )
-        worker_spotdl_cache = os.path.join(
-            base_tmpdir, f"pytest-worker-{worker_id}-spotdl"
-        )
-
         # Create all worker directories
         for directory in [
             worker_home,
             worker_tmpdir,
             worker_xdg_data,
             worker_xdg_cache,
-            worker_spotdl_cache,
         ]:
             Path(directory).mkdir(parents=True, exist_ok=True)
 
@@ -48,21 +43,11 @@ def pytest_configure(config):
         os.environ["TMPDIR"] = worker_tmpdir
         os.environ["XDG_DATA_HOME"] = worker_xdg_data
         os.environ["XDG_CACHE_HOME"] = worker_xdg_cache
-        os.environ["SPOTDL_CACHE_PATH"] = worker_spotdl_cache
 
     # Configure Django settings for testing AFTER setting environment
     # Use direct assignment (not setdefault) to override pytest.ini if needed
     os.environ["DJANGO_SETTINGS_MODULE"] = "test_settings"
     django.setup()
-
-
-def pytest_runtest_setup(item):
-    """Ensure spotdl directory exists before each test to prevent race conditions."""
-    home_dir = os.environ.get("HOME", str(Path.home()))
-    spotdl_dir = os.path.join(home_dir, ".spotdl")
-
-    # Create the .spotdl directory if it doesn't exist, with exist_ok=True to prevent races
-    Path(spotdl_dir).mkdir(parents=True, exist_ok=True)
 
 
 @pytest.fixture(autouse=True)
