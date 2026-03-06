@@ -92,6 +92,7 @@ from .metadata import (
 from .migration import (
     migrate_all_tracked_artists_to_deezer,
     migrate_artist_to_deezer,
+    resolve_all_artists_to_deezer,
 )
 
 # Re-export notification tasks
@@ -187,6 +188,7 @@ __all__ = [
     # Migration tasks
     "migrate_all_tracked_artists_to_deezer",
     "migrate_artist_to_deezer",
+    "resolve_all_artists_to_deezer",
     # Deezer tasks
     "fetch_artist_albums_from_deezer",
     # Upgrade tasks

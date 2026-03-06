@@ -340,3 +340,165 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
         logger.exception(f"Error in migrate_all_tracked_artists_to_deezer: {e}")
         complete_task(task_history, success=False, error_message=str(e))
         raise
+
+
+@celery_app.task(
+    bind=True,
+    name="library_manager.tasks.resolve_all_artists_to_deezer",
+)
+def resolve_all_artists_to_deezer(
+    self: Any,
+    batch_size: int = 200,
+    last_artist_id: int = 0,
+    tracked_only: bool = True,
+) -> None:
+    """Resolve artists without a deezer_id by searching Deezer by name.
+
+    Processes artists in batches, self-chaining until complete.
+    Tracked artists are processed first (tracked_only=True), then
+    automatically continues with untracked artists.
+
+    Args:
+        batch_size: Number of artists to process per task invocation.
+        last_artist_id: ID cursor for pagination (set automatically).
+        tracked_only: If True, only process tracked artists (first pass).
+    """
+    import time
+
+    from src.providers.deezer import DeezerMetadataProvider
+
+    task_history = create_task_history(
+        task_id=self.request.id,
+        task_type="MIGRATION",
+        entity_type="SYSTEM",
+        task_name="resolve_all_artists_to_deezer",
+    )
+    task_history.status = "RUNNING"
+    task_history.save()
+
+    try:
+        queryset = Artist.objects.filter(
+            deezer_id__isnull=True,
+            id__gt=last_artist_id,
+        ).order_by("id")
+
+        if tracked_only:
+            queryset = queryset.filter(tracked=True)
+
+        artists = list(queryset[:batch_size])
+
+        if not artists:
+            if tracked_only:
+                # Tracked pass done — continue with untracked artists
+                untracked_remaining = Artist.objects.filter(
+                    deezer_id__isnull=True, tracked=False
+                ).count()
+                if untracked_remaining > 0:
+                    msg = (
+                        f"Tracked artists resolved. "
+                        f"Continuing with {untracked_remaining} untracked artists."
+                    )
+                    logger.info(msg)
+                    update_task_progress(task_history, 100.0, msg)
+                    complete_task(task_history)
+                    resolve_all_artists_to_deezer.apply_async(
+                        kwargs={
+                            "batch_size": batch_size,
+                            "last_artist_id": 0,
+                            "tracked_only": False,
+                        },
+                        priority=0,
+                    )
+                    return
+
+            msg = "Artist Deezer resolution complete — no more artists to process."
+            logger.info(msg)
+            update_task_progress(task_history, 100.0, msg)
+            complete_task(task_history)
+            return
+
+        provider = DeezerMetadataProvider()
+        linked = 0
+        not_found = 0
+        errors = 0
+        max_artist_id = artists[-1].id
+        scope = "tracked" if tracked_only else "all"
+
+        total_remaining = Artist.objects.filter(
+            deezer_id__isnull=True,
+            id__gt=last_artist_id,
+            **({"tracked": True} if tracked_only else {}),
+        ).count()
+
+        update_task_progress(
+            task_history,
+            0.0,
+            f"Resolving batch of {len(artists)} {scope} artists "
+            f"({total_remaining} remaining)",
+        )
+
+        for idx, artist in enumerate(artists):
+            try:
+                results = provider.search_artists(artist.name, limit=3)
+                match = next(
+                    (
+                        r
+                        for r in results
+                        if _normalize_name(r.name) == _normalize_name(artist.name)
+                        and r.deezer_id
+                    ),
+                    None,
+                )
+                if match and match.deezer_id:
+                    artist.deezer_id = match.deezer_id
+                    artist.save(update_fields=["deezer_id"])
+                    linked += 1
+                else:
+                    not_found += 1
+            except Exception as e:
+                logger.debug(f"Deezer search failed for artist '{artist.name}': {e}")
+                errors += 1
+
+            time.sleep(0.1)
+
+            if (idx + 1) % 50 == 0:
+                progress = 100.0 * (idx + 1) / len(artists)
+                update_task_progress(
+                    task_history,
+                    progress,
+                    f"Processed {idx + 1}/{len(artists)}: "
+                    f"{linked} linked, {not_found} not found",
+                )
+
+        summary = (
+            f"Resolved {len(artists)} {scope} artists: "
+            f"{linked} linked, {not_found} not found, {errors} errors"
+        )
+        logger.info(summary)
+        update_task_progress(task_history, 100.0, summary)
+        complete_task(task_history)
+
+        # Self-chain for next batch
+        next_remaining = Artist.objects.filter(
+            deezer_id__isnull=True,
+            id__gt=max_artist_id,
+            **({"tracked": True} if tracked_only else {}),
+        ).count()
+
+        if next_remaining > 0:
+            logger.info(
+                f"{next_remaining} {scope} artists remaining, " f"scheduling next batch"
+            )
+            resolve_all_artists_to_deezer.apply_async(
+                kwargs={
+                    "batch_size": batch_size,
+                    "last_artist_id": max_artist_id,
+                    "tracked_only": tracked_only,
+                },
+                priority=0,
+            )
+
+    except Exception as e:
+        logger.exception(f"Error in resolve_all_artists_to_deezer: {e}")
+        complete_task(task_history, success=False, error_message=str(e))
+        raise

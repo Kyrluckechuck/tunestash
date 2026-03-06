@@ -33,6 +33,7 @@ class OneOffTaskService:
             backfill_song_album,
             backfill_song_isrc,
             migrate_all_tracked_artists_to_deezer,
+            resolve_all_artists_to_deezer,
             retry_failed_external_mappings,
             send_test_notification,
             upgrade_low_quality_songs,
@@ -92,12 +93,26 @@ class OneOffTaskService:
             name="Migrate Catalog to Deezer",
             description=(
                 "Link existing albums and songs to Deezer IDs using ISRC and "
-                "name matching. For each tracked artist with a Deezer ID, fetches "
+                "name matching. For each artist with a Deezer ID, fetches "
                 "their full Deezer catalog, matches existing records, and creates "
-                "new ones for missing content. Safe to re-run."
+                "new ones for missing content. Run 'Resolve Artists to Deezer' "
+                "first to maximize coverage. Safe to re-run."
             ),
             category="data-migration",
             task_func=migrate_all_tracked_artists_to_deezer,
+        )
+
+        self._tasks["resolve_artists_to_deezer"] = OneOffTaskDefinition(
+            id="resolve_artists_to_deezer",
+            name="Resolve Artists to Deezer",
+            description=(
+                "Search Deezer for all artists that don't have a Deezer ID yet. "
+                "Processes tracked artists first, then untracked. "
+                "Self-chains in batches of 200. After resolution, run "
+                "'Migrate Catalog to Deezer' to fetch their albums and songs."
+            ),
+            category="data-migration",
+            task_func=resolve_all_artists_to_deezer,
         )
 
         self._tasks["send_test_notification"] = OneOffTaskDefinition(
