@@ -50,9 +50,11 @@ def _fetch_albums_via_deezer(
 
         if existing:
             if not existing.deezer_id:
-                existing.deezer_id = album_data.deezer_id
-                existing.save(update_fields=["deezer_id"])
-                linked_count += 1
+                # Guard against another album already having this deezer_id
+                if not Album.objects.filter(deezer_id=album_data.deezer_id).exists():
+                    existing.deezer_id = album_data.deezer_id
+                    existing.save(update_fields=["deezer_id"])
+                    linked_count += 1
             continue
 
         Album.objects.create(
