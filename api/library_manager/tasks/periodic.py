@@ -184,7 +184,7 @@ def _filter_changed_playlists(
     if not playlists:
         return []
 
-    client = SpotifyPlaylistClient()
+    client = SpotifyPlaylistClient.create()
     if not client.is_available():
         logger.info("Spotify OAuth not available, skipping playlist change detection")
         return list(playlists)

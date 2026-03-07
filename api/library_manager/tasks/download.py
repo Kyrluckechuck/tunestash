@@ -588,7 +588,7 @@ def download_playlist(
         # Fetch tracks from Spotify via spotipy
         from downloader.downloader import SpotifyPlaylistClient
 
-        client = SpotifyPlaylistClient()
+        client = SpotifyPlaylistClient.create()
         if not client.is_available():
             raise RuntimeError("Spotify OAuth not available for playlist sync")
 
