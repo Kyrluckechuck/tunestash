@@ -391,7 +391,7 @@ def _find_best_artist_for_deezer_id(
 
     candidates = (
         Artist.objects.filter(deezer_id__isnull=True, name__iexact=artist_name)
-        .annotate(song_count=Count("songs"))
+        .annotate(song_count=Count("song"))
         .order_by("-tracked", "-song_count", "id")
     )
     # Verify with accent-normalized comparison
@@ -401,16 +401,122 @@ def _find_best_artist_for_deezer_id(
     return None
 
 
+def _resolve_artist_via_isrc(
+    artist: Artist, provider: DeezerMetadataProvider
+) -> int | None:
+    """Resolve an artist's Deezer ID by looking up their songs' ISRCs.
+
+    Uses a quorum approach: look up 2 songs first. If both agree on
+    the same Deezer artist ID, return it. If they disagree, look up 2
+    more and pick the most common result.
+
+    Returns a deezer artist ID, or None if not enough data.
+    """
+    from ..models import Song
+
+    songs_with_isrc = (
+        Song.objects.filter(primary_artist=artist, isrc__isnull=False)
+        .exclude(isrc="")
+        .values_list("isrc", flat=True)[:4]
+    )
+
+    isrcs = list(songs_with_isrc)
+    if not isrcs:
+        return None
+
+    votes: list[int] = []
+
+    # First pass: check 2 ISRCs
+    for isrc in isrcs[:2]:
+        result = provider.get_track_by_isrc(isrc)
+        if result and result.artist_deezer_id:
+            votes.append(result.artist_deezer_id)
+
+    if not votes:
+        return None
+
+    # If both agree, we're done
+    if len(votes) >= 2 and votes[0] == votes[1]:
+        return votes[0]
+
+    # Disagreement or only 1 result — check remaining ISRCs
+    for isrc in isrcs[2:]:
+        result = provider.get_track_by_isrc(isrc)
+        if result and result.artist_deezer_id:
+            votes.append(result.artist_deezer_id)
+
+    if not votes:
+        return None
+
+    # Pick the most common deezer artist ID
+    from collections import Counter
+
+    counts = Counter(votes)
+    winner, winner_count = counts.most_common(1)[0]
+
+    # Require at least 2 votes for the winner (quorum)
+    if winner_count < 2:
+        logger.debug(
+            f"ISRC lookup for '{artist.name}': no quorum " f"(votes: {dict(counts)})"
+        )
+        return None
+
+    return winner
+
+
+def _assign_deezer_id_to_best_artist(
+    artist: Artist, deezer_id: int, method: str
+) -> Artist | None:
+    """Assign a deezer_id to the best artist record with this name.
+
+    Checks for existing ownership, picks the best candidate among
+    same-name artists, and saves. Returns the linked Artist or None.
+    """
+    existing = Artist.objects.filter(deezer_id=deezer_id).first()
+    if existing:
+        logger.debug(
+            f"Skipping '{artist.name}' (id={artist.id}): "
+            f"deezer_id {deezer_id} already belongs to "
+            f"'{existing.name}' (id={existing.id})"
+        )
+        return None
+
+    normalized = _normalize_name(artist.name)
+    best = _find_best_artist_for_deezer_id(normalized, artist.name)
+    target = best if best else artist
+
+    target.deezer_id = deezer_id
+    target.save(update_fields=["deezer_id"])
+    if target.id != artist.id:
+        logger.info(
+            f"Linked '{target.name}' (id={target.id}) to Deezer ID "
+            f"{deezer_id} via {method} (preferred over id={artist.id})"
+        )
+    else:
+        logger.info(f"Linked '{target.name}' to Deezer ID {deezer_id} via {method}")
+    return target
+
+
 def _try_link_artist_to_deezer(
     artist: Artist, provider: DeezerMetadataProvider
 ) -> Artist | None:
-    """Try to link an artist to their Deezer ID by name search.
+    """Try to link an artist to their Deezer ID.
+
+    Resolution order:
+    1. ISRC reverse-lookup (quorum of 2+ songs agreeing on same artist)
+    2. Name search fallback
 
     If multiple Artist records share the same name, assigns the deezer_id
     to the one with the most content (songs, tracked status).
 
     Returns the Artist that was linked, or None if no match found.
     """
+    # Try ISRC reverse-lookup first (most reliable)
+    isrc_result = _resolve_artist_via_isrc(artist, provider)
+    if isrc_result:
+        return _assign_deezer_id_to_best_artist(artist, isrc_result, "ISRC")
+
+    # Fall back to name search
     results = provider.search_artists(artist.name, limit=3)
     normalized = _normalize_name(artist.name)
     match = next(
@@ -420,29 +526,7 @@ def _try_link_artist_to_deezer(
     if not match or not match.deezer_id:
         return None
 
-    existing = Artist.objects.filter(deezer_id=match.deezer_id).first()
-    if existing:
-        logger.debug(
-            f"Skipping '{artist.name}' (id={artist.id}): "
-            f"deezer_id {match.deezer_id} already belongs to "
-            f"'{existing.name}' (id={existing.id})"
-        )
-        return None
-
-    # Pick the best candidate among all artists with this name
-    best = _find_best_artist_for_deezer_id(normalized, artist.name)
-    target = best if best else artist
-
-    target.deezer_id = match.deezer_id
-    target.save(update_fields=["deezer_id"])
-    if target.id != artist.id:
-        logger.info(
-            f"Linked artist '{target.name}' (id={target.id}) to Deezer ID "
-            f"{match.deezer_id} (preferred over id={artist.id} with fewer songs)"
-        )
-    else:
-        logger.info(f"Linked artist '{target.name}' to Deezer ID {match.deezer_id}")
-    return target
+    return _assign_deezer_id_to_best_artist(artist, match.deezer_id, "name search")
 
 
 @celery_app.task(
