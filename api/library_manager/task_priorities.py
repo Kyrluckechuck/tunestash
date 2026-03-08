@@ -20,6 +20,7 @@ class TaskPriority:
     # Background operations
     ARTIST_SYNC = 5  # Fetching album metadata from Spotify
     ARTIST_DOWNLOAD = 6  # Downloading missing albums for tracked artists
+    MIGRATION = 7  # Deezer catalog migration (below resolve, above maintenance)
 
     # Maintenance and cleanup
     MAINTENANCE = 10  # Cleanup, validation, retry tasks
