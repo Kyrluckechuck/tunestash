@@ -486,6 +486,24 @@ def resolve_all_artists_to_deezer(
                 },
                 priority=0,
             )
+        elif tracked_only:
+            # Tracked pass complete — transition to untracked artists
+            untracked_remaining = Artist.objects.filter(
+                deezer_id__isnull=True, tracked=False
+            ).count()
+            if untracked_remaining > 0:
+                logger.info(
+                    f"Tracked artists resolved. "
+                    f"Continuing with {untracked_remaining} untracked artists."
+                )
+                resolve_all_artists_to_deezer.apply_async(
+                    kwargs={
+                        "batch_size": batch_size,
+                        "last_artist_id": 0,
+                        "tracked_only": False,
+                    },
+                    priority=0,
+                )
 
     except Exception as e:
         logger.exception(f"Error in resolve_all_artists_to_deezer: {e}")
