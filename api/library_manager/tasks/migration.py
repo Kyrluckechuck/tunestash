@@ -13,6 +13,7 @@ from src.providers.metadata_base import TrackResult
 
 from ..helpers import generate_task_id, is_task_pending_or_running
 from ..models import Album, Artist, Song
+from ..task_priorities import TaskPriority
 from .core import (
     complete_task,
     create_task_history,
@@ -324,7 +325,7 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
                 artist.save(update_fields=["deezer_migration_status"])
 
             migrate_artist_to_deezer.apply_async(
-                args=[artist.id], task_id=task_id, priority=0
+                args=[artist.id], task_id=task_id, priority=TaskPriority.MIGRATION
             )
             queued += 1
 
