@@ -65,15 +65,14 @@ class SystemHealthService:
 
         try:
             token = SpotifyOAuthToken.objects.get(id=1)
-            logger.info(
+            logger.debug(
                 f"OAuth token check: FOUND token with access_token length {len(token.access_token)}"
             )
             return True
         except SpotifyOAuthToken.DoesNotExist:
-            logger.info("OAuth token check: Token does NOT exist")
+            logger.debug("OAuth token check: Token does NOT exist")
             return False
         except Exception as e:
-            # Handle any unexpected errors (e.g., database connection issues)
             logger.error(
                 f"OAuth token check: Exception occurred: {type(e).__name__}: {e}"
             )
@@ -256,7 +255,7 @@ class SystemHealthService:
         has_oauth_token = SystemHealthService._check_spotify_oauth_token_exists()
         spotify_mode = "user-authenticated" if has_oauth_token else "public"
 
-        logger.info(
+        logger.debug(
             f"Spotify auth check: has_oauth_token={has_oauth_token}, spotify_mode={spotify_mode}"
         )
 
@@ -286,25 +285,49 @@ class SystemHealthService:
         """
         Check if system can perform premium downloads.
 
-        Requires BOTH valid cookies AND valid PO token for YouTube Music Premium.
+        Requires valid YouTube cookies, PO token, and sufficient storage.
+        Does NOT check Spotify — downloads use Deezer + FallbackDownloader.
 
         Returns:
             Tuple of (can_download, reason_if_not)
         """
-        status = SystemHealthService.check_authentication_status(config)
+        if config is None:
+            config = Config()
 
-        # Check cookies first
-        if not status.cookies_valid:
+        # Check YouTube cookies
+        if config.youtube_cookies_location:
+            cookie_path = Path(config.youtube_cookies_location)
+            cookie_result = CookieValidator.validate_file(cookie_path)
+        else:
+            cookie_result = CookieValidationResult(
+                valid=False,
+                error_type="missing",
+                error_message="Cookie file path not configured",
+            )
+
+        if not cookie_result.valid:
             return (
                 False,
-                f"Cookies {status.cookies_error_type}: {status.cookies_error_message}",
+                f"Cookies {cookie_result.error_type}: {cookie_result.error_message}",
             )
 
         # Check PO token - REQUIRED for premium
-        if not status.po_token_valid:
+        format_result = CookieValidator.validate_po_token(config.po_token)
+        if not format_result.valid:
             return (
                 False,
-                f"PO Token invalid: {status.po_token_error_message}. This system requires YouTube Music Premium authentication.",
+                f"PO Token invalid: {format_result.error_message}. "
+                "This system requires YouTube Music Premium authentication.",
+            )
+
+        # Live-validate PO token against YouTube
+        detector = SystemHealthService._get_detector(config)
+        po_token_result = detector.validate_po_token_live()
+        if not po_token_result.valid:
+            return (
+                False,
+                f"PO Token invalid: {po_token_result.error_message}. "
+                "This system requires YouTube Music Premium authentication.",
             )
 
         # Check storage health
@@ -315,7 +338,6 @@ class SystemHealthService:
                 f"Storage unavailable: {storage_status.error_message}",
             )
 
-        # Check if storage is critically low
         if storage_status.is_critically_low:
             return (
                 False,
