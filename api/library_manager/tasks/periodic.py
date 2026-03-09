@@ -697,3 +697,15 @@ def sync_tracked_artists_metadata(
 
     except Exception as e:
         logger.error(f"Error in sync_tracked_artists_metadata: {e}", exc_info=True)
+
+
+@celery_app.task(
+    bind=True, name="library_manager.tasks.scan_new_releases_for_tracked_artists"
+)
+def scan_new_releases_for_tracked_artists(self: Any) -> None:
+    """No-op stub — this task was removed but persists in the Beat DB schedule.
+
+    TODO: Re-implement as a dedicated new-release scanner (separate from
+    sync_tracked_artists_metadata which already detects new albums).
+    """
+    logger.info("scan_new_releases_for_tracked_artists is a no-op stub, skipping")
