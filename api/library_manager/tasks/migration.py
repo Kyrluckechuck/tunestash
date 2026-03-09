@@ -292,11 +292,18 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
     task_history.save()
 
     try:
-        artists = Artist.objects.filter(
-            deezer_id__isnull=False,
-        ).filter(
-            Q(deezer_migration_status__isnull=True)
-            | ~Q(deezer_migration_status="complete")
+        # Order by tracked DESC so tracked artists are queued first.
+        # The PostgreSQL broker uses FIFO ordering, so queue insertion
+        # order determines processing order.
+        artists = (
+            Artist.objects.filter(
+                deezer_id__isnull=False,
+            )
+            .filter(
+                Q(deezer_migration_status__isnull=True)
+                | ~Q(deezer_migration_status="complete")
+            )
+            .order_by("-tracked", "id")
         )
 
         total = artists.count()
@@ -320,19 +327,11 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
                 skipped += 1
                 continue
 
-            # Mark as pending before queuing
             if artist.deezer_migration_status != "in_progress":
                 artist.deezer_migration_status = "pending"
                 artist.save(update_fields=["deezer_migration_status"])
 
-            priority = (
-                TaskPriority.MIGRATION_TRACKED
-                if artist.tracked
-                else TaskPriority.MIGRATION
-            )
-            migrate_artist_to_deezer.apply_async(
-                args=[artist.id], task_id=task_id, priority=priority
-            )
+            migrate_artist_to_deezer.apply_async(args=[artist.id], task_id=task_id)
             if artist.tracked:
                 queued_tracked += 1
             else:
