@@ -307,7 +307,8 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
             complete_task(task_history)
             return
 
-        queued = 0
+        queued_tracked = 0
+        queued_untracked = 0
         skipped = 0
         for artist in artists:
             task_id = generate_task_id(
@@ -324,13 +325,22 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
                 artist.deezer_migration_status = "pending"
                 artist.save(update_fields=["deezer_migration_status"])
 
-            migrate_artist_to_deezer.apply_async(
-                args=[artist.id], task_id=task_id, priority=TaskPriority.MIGRATION
+            priority = (
+                TaskPriority.MIGRATION_TRACKED
+                if artist.tracked
+                else TaskPriority.MIGRATION
             )
-            queued += 1
+            migrate_artist_to_deezer.apply_async(
+                args=[artist.id], task_id=task_id, priority=priority
+            )
+            if artist.tracked:
+                queued_tracked += 1
+            else:
+                queued_untracked += 1
 
         summary = (
-            f"Deezer migration orchestrator: queued {queued} artists, "
+            f"Deezer migration orchestrator: queued {queued_tracked} tracked + "
+            f"{queued_untracked} untracked artists, "
             f"skipped {skipped} (already pending), {total} total eligible"
         )
         logger.info(summary)
@@ -408,7 +418,7 @@ def resolve_all_artists_to_deezer(
                             "last_artist_id": 0,
                             "tracked_only": False,
                         },
-                        priority=0,
+                        priority=TaskPriority.RESOLVE,
                     )
                     return
 
@@ -485,7 +495,7 @@ def resolve_all_artists_to_deezer(
                     "last_artist_id": max_artist_id,
                     "tracked_only": tracked_only,
                 },
-                priority=0,
+                priority=TaskPriority.RESOLVE,
             )
         elif tracked_only:
             # Tracked pass complete — transition to untracked artists
@@ -503,7 +513,7 @@ def resolve_all_artists_to_deezer(
                         "last_artist_id": 0,
                         "tracked_only": False,
                     },
-                    priority=0,
+                    priority=TaskPriority.RESOLVE,
                 )
 
     except Exception as e:

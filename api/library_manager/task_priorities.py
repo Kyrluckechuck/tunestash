@@ -17,10 +17,14 @@ class TaskPriority:
     ALBUM_DOWNLOAD = 3  # Individual album downloads
     TRACK_DOWNLOAD = 3  # Individual track downloads
 
+    # Migration operations
+    MIGRATION_TRACKED = 2  # Tracked artist migration (above downloads)
+    RESOLVE = 4  # Artist deezer_id linking (below downloads, above sync)
+
     # Background operations
     ARTIST_SYNC = 5  # Fetching album metadata from Spotify
     ARTIST_DOWNLOAD = 6  # Downloading missing albums for tracked artists
-    MIGRATION = 7  # Deezer catalog migration (below resolve, above maintenance)
+    MIGRATION = 7  # Non-tracked migration backfill (background)
 
     # Maintenance and cleanup
     MAINTENANCE = 10  # Cleanup, validation, retry tasks
