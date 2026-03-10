@@ -226,6 +226,18 @@ class FailureReason(TextChoices):
     BOTH_UNAVAILABLE = "both_unavailable", "Unavailable on both Spotify and YTM"
 
 
+class AlbumFailureReason(TextChoices):
+    """Categorizes why an album download failed for smart retry logic."""
+
+    TEMPORARY_ERROR = "temporary", "Temporary error (network, rate limit, auth)"
+    PARTIAL_FAILURE = "partial", "Some tracks downloaded but not all"
+    ALL_TRACKS_UNAVAILABLE = "all_unavailable", "All tracks failed on all providers"
+    DEEZER_NO_TRACKS = (
+        "deezer_no_tracks",
+        "Deezer returned no tracks (deleted/region-locked)",
+    )
+
+
 class DownloadProvider(IntegerChoices):
     """Provider used to download a song.
 
@@ -832,6 +844,11 @@ class Album(models.Model):
     wanted: models.BooleanField = models.BooleanField(default=True)
     name: models.CharField = models.CharField(max_length=2048)
     failed_count: models.IntegerField = models.IntegerField(default=0)
+    failure_reason: models.CharField = models.CharField(
+        max_length=20, choices=AlbumFailureReason.choices, null=True, blank=True
+    )
+    last_failed_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    unavailable: models.BooleanField = models.BooleanField(default=False)
     album_type: models.CharField = models.CharField(max_length=100, null=True)
     album_group: models.CharField = models.CharField(max_length=100, null=True)
 
@@ -841,6 +858,59 @@ class Album(models.Model):
             self.album_type in ALBUM_TYPES_TO_DOWNLOAD
             and self.album_group not in ALBUM_GROUPS_TO_IGNORE
         )
+
+    def increment_failed_count(
+        self, reason: "AlbumFailureReason" = AlbumFailureReason.TEMPORARY_ERROR
+    ) -> None:
+        """Increment the failed count and update failure tracking fields."""
+        self.failed_count += 1
+        self.failure_reason = reason
+        self.last_failed_at = timezone.now()
+
+        if reason == AlbumFailureReason.DEEZER_NO_TRACKS:
+            self.unavailable = True
+        elif self.failed_count >= 3:
+            self.unavailable = True
+
+        self.save()
+
+    def get_retry_backoff_days(self) -> int:
+        """Calculate how many days to wait before retrying this album.
+
+        Returns backoff days based on failure_reason and failed_count:
+        - TEMPORARY_ERROR / PARTIAL_FAILURE: 1, 2, 4, 7 (cap)
+        - ALL_TRACKS_UNAVAILABLE: 2, 4, 8, 16, 30 (cap)
+        - DEEZER_NO_TRACKS: 30 flat
+        """
+        if self.failure_reason is None:
+            return 0
+
+        if self.failure_reason == AlbumFailureReason.DEEZER_NO_TRACKS:
+            return 30
+
+        if self.failure_reason == AlbumFailureReason.ALL_TRACKS_UNAVAILABLE:
+            return int(min(2**self.failed_count, 30))
+
+        # TEMPORARY_ERROR or PARTIAL_FAILURE
+        return int(min(2 ** (self.failed_count - 1), 7))
+
+    def is_ready_for_retry(self) -> bool:
+        """Check if enough time has passed since last failure to retry."""
+        if self.failed_count == 0 or self.last_failed_at is None:
+            return True
+
+        from datetime import timedelta
+
+        backoff_days = self.get_retry_backoff_days()
+        next_retry_at = self.last_failed_at + timedelta(days=backoff_days)
+        return bool(timezone.now() >= next_retry_at)
+
+    def clear_failure_state(self) -> None:
+        """Reset all failure tracking fields. Caller must save."""
+        self.failed_count = 0
+        self.failure_reason = None
+        self.last_failed_at = None
+        self.unavailable = False
 
     def __str__(self) -> str:
         return (

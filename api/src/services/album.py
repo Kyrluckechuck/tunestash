@@ -220,6 +220,8 @@ class AlbumService(BaseService[Album]):
 
             if is_wanted is not None:
                 django_album.wanted = is_wanted
+                if is_wanted:
+                    django_album.clear_failure_state()
                 await django_album.asave()
 
             return await sync_to_async(self._to_graphql_type)(django_album)
