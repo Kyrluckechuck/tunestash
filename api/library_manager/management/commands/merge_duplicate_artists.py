@@ -241,10 +241,16 @@ class Command(BaseCommand):
             default=0,
             help="Process at most N groups (for testing)",
         )
+        parser.add_argument(
+            "--quiet",
+            action="store_true",
+            help="Only show summary and problem records, not every merge",
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         dry_run = options["dry_run"]
         limit = options["limit"]
+        quiet = options["quiet"]
 
         if dry_run:
             self.stdout.write(self.style.WARNING("DRY RUN — no changes will be made"))
@@ -291,12 +297,13 @@ class Command(BaseCommand):
                 if dry_run:
                     song_count = Song.objects.filter(primary_artist=source).count()
                     album_count = Album.objects.filter(artist=source).count()
-                    self.stdout.write(
-                        f"  [SIMPLE] '{name}': merge id={source.id} "
-                        f"(deezer_id={source.deezer_id}, {song_count} songs, "
-                        f"{album_count} albums) → id={target.id} "
-                        f"(gid={target.gid})"
-                    )
+                    if not quiet:
+                        self.stdout.write(
+                            f"  [SIMPLE] '{name}': merge id={source.id} "
+                            f"(deezer_id={source.deezer_id}, {song_count} songs, "
+                            f"{album_count} albums) → id={target.id} "
+                            f"(gid={target.gid})"
+                        )
                     total_songs += song_count
                     total_albums += album_count
                     merged_count += 1
@@ -318,44 +325,43 @@ class Command(BaseCommand):
                     from src.providers.deezer import DeezerMetadataProvider
 
                     provider = DeezerMetadataProvider()
-                    self.stdout.write("Initialized Deezer API for complex groups")
+                    if not quiet:
+                        self.stdout.write("Initialized Deezer API for complex groups")
 
                 for nd_artist in no_deezer:
                     match = _resolve_match_via_deezer(nd_artist, has_deezer, provider)
-                    if match:
-                        if dry_run:
-                            song_count = Song.objects.filter(
-                                primary_artist=match
-                            ).count()
-                            album_count = Album.objects.filter(artist=match).count()
+                    if not match:
+                        unmatched.append((name, nd_artist.id))
+                        skipped_count += 1
+                        continue
+
+                    if dry_run:
+                        song_count = Song.objects.filter(primary_artist=match).count()
+                        album_count = Album.objects.filter(artist=match).count()
+                        if not quiet:
                             self.stdout.write(
                                 f"  [COMPLEX] '{name}': merge id={match.id} "
-                                f"(deezer_id={match.deezer_id}, {song_count} songs, "
+                                f"(deezer_id={match.deezer_id}, "
+                                f"{song_count} songs, "
                                 f"{album_count} albums) → id={nd_artist.id} "
                                 f"(gid={nd_artist.gid})"
                             )
-                            total_songs += song_count
-                            total_albums += album_count
-                            merged_count += 1
-                            continue
+                        has_deezer.remove(match)
+                        total_songs += song_count
+                        total_albums += album_count
+                        merged_count += 1
+                        continue
 
-                        try:
-                            stats = _merge_artist(match, nd_artist, self.stdout)
-                            has_deezer.remove(match)
-                            merged_count += 1
-                            total_songs += stats["songs_moved"]
-                            total_albums += (
-                                stats["albums_moved"] + stats["albums_merged"]
-                            )
-                        except Exception as e:
-                            logger.exception(
-                                "Failed to merge artist '%s' (complex)", name
-                            )
-                            failed.append((name, str(e)))
-                            error_count += 1
-                    else:
-                        unmatched.append((name, nd_artist.id))
-                        skipped_count += 1
+                    try:
+                        stats = _merge_artist(match, nd_artist, self.stdout)
+                        has_deezer.remove(match)
+                        merged_count += 1
+                        total_songs += stats["songs_moved"]
+                        total_albums += stats["albums_moved"] + stats["albums_merged"]
+                    except Exception as e:
+                        logger.exception("Failed to merge artist '%s' (complex)", name)
+                        failed.append((name, str(e)))
+                        error_count += 1
 
         # Summary
         self.stdout.write("")
