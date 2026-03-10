@@ -170,6 +170,13 @@ def sync_deezer_playlist(
                     artist = Artist.objects.filter(
                         deezer_id=track.artist_deezer_id
                     ).first()
+                if not artist and track.artist_name:
+                    artist = Artist.objects.filter(
+                        name__iexact=track.artist_name, deezer_id__isnull=True
+                    ).first()
+                    if artist and track.artist_deezer_id:
+                        artist.deezer_id = track.artist_deezer_id
+                        artist.save(update_fields=["deezer_id"])
                 if not artist:
                     artist, _ = Artist.objects.get_or_create(
                         deezer_id=track.artist_deezer_id,

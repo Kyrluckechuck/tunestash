@@ -479,7 +479,7 @@ def _assign_deezer_id_to_best_artist(
     """
     existing = Artist.objects.filter(deezer_id=deezer_id).first()
     if existing:
-        logger.debug(
+        logger.info(
             f"Skipping '{artist.name}' (id={artist.id}): "
             f"deezer_id {deezer_id} already belongs to "
             f"'{existing.name}' (id={existing.id})"
