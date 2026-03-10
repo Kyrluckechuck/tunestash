@@ -173,9 +173,19 @@ class NotificationService:
         name = self.get_instance_name()
 
         window_start = timezone.now() - timedelta(hours=window_hours)
-        failed_count = TaskHistory.objects.filter(
+        failed_tasks = TaskHistory.objects.filter(
             status="FAILED", started_at__gte=window_start
-        ).count()
+        )
+        catalog_gap_patterns = [
+            "No tracks found on Deezer",
+            "No matching track found",
+            "not found on Deezer",
+        ]
+        for pattern in catalog_gap_patterns:
+            failed_tasks = failed_tasks.exclude(
+                type="DOWNLOAD", error_message__icontains=pattern
+            )
+        failed_count = failed_tasks.count()
 
         if failed_count >= threshold:
             sent = self._send(

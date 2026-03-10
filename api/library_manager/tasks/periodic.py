@@ -332,6 +332,7 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
                 album_type__in=ALBUM_TYPES_TO_DOWNLOAD,
             )
             .exclude(album_group__in=ALBUM_GROUPS_TO_IGNORE)
+            .exclude(unavailable=True)
             .order_by("id")[:max_albums_per_run]
         )
 
@@ -340,6 +341,10 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
         for album in missing_albums.iterator():
             # Compare using album DB ID (entity_id is now str(album.id))
             if str(album.id) in albums_with_pending_tasks:
+                skipped_count += 1
+                continue
+
+            if not album.is_ready_for_retry():
                 skipped_count += 1
                 continue
 

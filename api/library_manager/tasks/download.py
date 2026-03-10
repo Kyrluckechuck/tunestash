@@ -5,6 +5,7 @@ import time
 import unicodedata
 from typing import Any, Optional
 
+from django.db import transaction
 from django.db.models.functions import Now
 
 from celery.exceptions import Retry as CeleryRetry
@@ -16,6 +17,7 @@ from ..models import (
     ALBUM_GROUPS_TO_IGNORE,
     ALBUM_TYPES_TO_DOWNLOAD,
     Album,
+    AlbumFailureReason,
     Artist,
     Song,
     TaskHistory,
@@ -67,6 +69,54 @@ def _resolve_album_to_deezer(album: Album) -> Optional[int]:
     return None
 
 
+class _AlbumMerged(Exception):
+    """Raised when a dead album is merged into an existing one during re-resolution."""
+
+    def __init__(self, target: Album) -> None:
+        self.target = target
+        super().__init__(f"Merged into album id={target.id}")
+
+
+def _merge_duplicate_album(source: Album, target: Album) -> None:
+    """Merge a duplicate album record into the canonical one, then delete the source.
+
+    Reassigns songs from source to target and carries over any external IDs
+    the target is missing. Wrapped in a transaction so a crash between the
+    delete and update can't lose unique-constrained fields.
+    """
+    source_id = source.id
+    source_deezer_id = source.deezer_id
+    source_name = source.name
+
+    with transaction.atomic():
+        reassigned = Song.objects.filter(album=source).update(album=target)
+
+        carry_spotify_gid = source.spotify_gid if not target.spotify_gid else None
+        carry_youtube_id = source.youtube_id if not target.youtube_id else None
+        carry_wanted = source.wanted and not target.wanted
+
+        source.delete()
+
+        updated_fields: list[str] = []
+        if carry_spotify_gid:
+            target.spotify_gid = carry_spotify_gid
+            updated_fields.append("spotify_gid")
+        if carry_youtube_id:
+            target.youtube_id = carry_youtube_id
+            updated_fields.append("youtube_id")
+        if carry_wanted:
+            target.wanted = True
+            updated_fields.append("wanted")
+        if updated_fields:
+            target.save(update_fields=updated_fields)
+
+    logger.info(
+        f"Merged album '{source_name}' (id={source_id}, deezer_id={source_deezer_id}) "
+        f"into id={target.id} (deezer_id={target.deezer_id}), "
+        f"reassigned {reassigned} song(s)"
+    )
+
+
 @celery_app.task(
     bind=True, name="library_manager.tasks.download_missing_albums_for_artist"
 )
@@ -101,12 +151,16 @@ def download_missing_albums_for_artist(
             logger.info(f"Task cancelled for artist {artist.name}")
             return
 
-        missing_albums = Album.objects.filter(
-            artist=artist,
-            downloaded=False,
-            wanted=True,
-            album_type__in=ALBUM_TYPES_TO_DOWNLOAD,
-        ).exclude(album_group__in=ALBUM_GROUPS_TO_IGNORE)
+        missing_albums = (
+            Album.objects.filter(
+                artist=artist,
+                downloaded=False,
+                wanted=True,
+                album_type__in=ALBUM_TYPES_TO_DOWNLOAD,
+            )
+            .exclude(album_group__in=ALBUM_GROUPS_TO_IGNORE)
+            .exclude(unavailable=True)
+        )
         logger.info(
             f"missing albums search for artist {artist.id} found {missing_albums.count()}"
         )
@@ -125,6 +179,7 @@ def download_missing_albums_for_artist(
                         album.deezer_id = deezer_id
                         album.save(update_fields=["deezer_id"])
                     else:
+                        album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
                         logger.warning(
                             f"Album '{album.name}' has no deezer_id and "
                             f"couldn't be found on Deezer, skipping"
@@ -150,6 +205,8 @@ def download_missing_albums_for_artist(
                         return
                     try:
                         _download_deezer_album(dl_album, task_history)
+                    except _AlbumMerged:
+                        pass
                     except Exception as e:
                         logger.error(f"Failed to download album '{dl_album.name}': {e}")
         else:
@@ -221,6 +278,7 @@ def download_single_album(self: Any, album_id: int) -> None:
                 album.deezer_id = deezer_id
                 album.save(update_fields=["deezer_id"])
             else:
+                album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
                 msg = (
                     f"Album '{album.name}' has no deezer_id and "
                     f"couldn't be found on Deezer"
@@ -243,6 +301,13 @@ def download_single_album(self: Any, album_id: int) -> None:
         complete_task(task_history, success=True)
         logger.info(f"Successfully downloaded album: {album.name}")
 
+    except _AlbumMerged as e:
+        if task_history:
+            complete_task(
+                task_history,
+                success=True,
+                error_message=f"Merged duplicate into album id={e.target.id}",
+            )
     except CeleryRetry:
         raise
     except Exception as e:
@@ -280,6 +345,24 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
     deezer_tracks = provider.get_album_tracks(album.deezer_id)
 
     if not deezer_tracks:
+        old_deezer_id = album.deezer_id
+        new_deezer_id = _resolve_album_to_deezer(album)
+        if new_deezer_id and new_deezer_id != old_deezer_id:
+            existing = Album.objects.filter(deezer_id=new_deezer_id).first()
+            if existing:
+                _merge_duplicate_album(album, existing)
+                raise _AlbumMerged(existing)
+
+            logger.info(
+                f"Album '{album.name}' deezer_id {old_deezer_id} returned no "
+                f"tracks, re-resolved to {new_deezer_id}"
+            )
+            album.deezer_id = new_deezer_id
+            album.save(update_fields=["deezer_id"])
+            deezer_tracks = provider.get_album_tracks(new_deezer_id)
+
+    if not deezer_tracks:
+        album.increment_failed_count(AlbumFailureReason.DEEZER_NO_TRACKS)
         raise ValueError(f"No tracks found on Deezer for album {album.deezer_id}")
 
     update_task_progress(
@@ -409,8 +492,13 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
             loop.close()
 
     if failed_count == 0:
+        album.clear_failure_state()
         album.downloaded = True
         album.save()
+    elif downloaded_count == 0:
+        album.increment_failed_count(AlbumFailureReason.ALL_TRACKS_UNAVAILABLE)
+    else:
+        album.increment_failed_count(AlbumFailureReason.PARTIAL_FAILURE)
 
     update_task_progress(
         task_history,
@@ -682,7 +770,7 @@ def download_extra_album_types_for_artist(
         downloaded=False,
         wanted=True,
         album_group__in=ALBUM_GROUPS_TO_IGNORE,
-    )
+    ).exclude(unavailable=True)
     logger.info(
         f"extra album missing albums search for artist {artist.id} "
         f"found {missing_albums.count()}"
@@ -709,6 +797,7 @@ def download_extra_album_types_for_artist(
                 album.deezer_id = deezer_id
                 album.save(update_fields=["deezer_id"])
             else:
+                album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
                 logger.warning(
                     f"Extra album '{album.name}' not found on Deezer, skipping"
                 )
@@ -723,6 +812,8 @@ def download_extra_album_types_for_artist(
         for dl_album in albums_to_download:
             try:
                 _download_deezer_album(dl_album, task_history or TaskHistory())
+            except _AlbumMerged:
+                pass
             except Exception as e:
                 logger.error(f"Failed to download extra album '{dl_album.name}': {e}")
 
@@ -771,6 +862,7 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
                 album.deezer_id = deezer_id
                 album.save(update_fields=["deezer_id"])
             else:
+                album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
                 raise ValueError(f"Album '{album.name}' not found on Deezer")
 
         update_task_progress(task_history, 50.0, f"Downloading album: {album.name}")
@@ -780,6 +872,13 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
         complete_task(task_history, success=True)
         logger.info(f"Successfully downloaded album: {album.name}")
 
+    except _AlbumMerged as e:
+        if task_history:
+            complete_task(
+                task_history,
+                success=True,
+                error_message=f"Merged duplicate into album id={e.target.id}",
+            )
     except CeleryRetry:
         raise
     except Exception as e:
@@ -868,6 +967,13 @@ def download_album_by_deezer_id(self: Any, deezer_album_id: int) -> None:
         complete_task(task_history, success=True)
         logger.info(f"Successfully downloaded Deezer album: {album.name}")
 
+    except _AlbumMerged as e:
+        if task_history:
+            complete_task(
+                task_history,
+                success=True,
+                error_message=f"Merged duplicate into album id={e.target.id}",
+            )
     except Exception as e:
         error_msg = f"Error downloading Deezer album {deezer_album_id}: {str(e)}"
         logger.error(error_msg)
