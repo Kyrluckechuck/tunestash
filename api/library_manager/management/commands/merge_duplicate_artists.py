@@ -114,7 +114,9 @@ def _dedup_songs_for_artist(artist: Artist) -> int:
     """Find and merge duplicate songs under an artist (same ISRC + same album).
 
     Songs with the same ISRC on different albums are intentional (e.g. singles
-    on compilations) and are left alone.
+    on compilations) and are left alone. Songs where both already have a
+    deezer_id are also skipped — different deezer_ids mean different catalog
+    entries (regional releases, remastered versions, etc.).
     """
     isrc_groups = (
         Song.objects.filter(primary_artist=artist, isrc__isnull=False)
@@ -136,8 +138,17 @@ def _dedup_songs_for_artist(artist: Artist) -> int:
         if len(songs) < 2:
             continue
 
-        keeper = songs[0]
-        for dupe in songs[1:]:
+        # Only merge songs where one lacks a deezer_id (true split from
+        # Spotify vs Deezer creation paths). If both have deezer_id, they
+        # are distinct catalog entries sharing an ISRC.
+        has_deezer = [s for s in songs if s.deezer_id]
+        no_deezer = [s for s in songs if not s.deezer_id]
+        if not no_deezer:
+            continue
+
+        # Keep the best song with deezer_id as the target, merge no_deezer into it
+        keeper = has_deezer[0] if has_deezer else songs[0]
+        for dupe in no_deezer:
             _merge_song(dupe, keeper)
             deduped += 1
 
@@ -417,22 +428,32 @@ class Command(BaseCommand):
             if len(songs) < 2:
                 continue
 
+            # Only merge songs where one lacks a deezer_id (true split from
+            # Spotify vs Deezer creation paths). If both have deezer_id, they
+            # are distinct catalog entries sharing an ISRC.
+            has_deezer = [s for s in songs if s.deezer_id]
+            no_deezer = [s for s in songs if not s.deezer_id]
+            if not no_deezer:
+                continue
+
+            keeper = has_deezer[0] if has_deezer else songs[0]
+            mergeable = no_deezer
+
             if dry_run:
                 if not quiet:
                     artist_name = songs[0].primary_artist.name
                     album_name = songs[0].album.name if songs[0].album else "N/A"
-                    ids = [s.id for s in songs]
                     self.stdout.write(
                         f"  ISRC={group['isrc']} artist='{artist_name}' "
-                        f"album='{album_name}': {len(songs)} songs {ids} "
-                        f"→ would merge {len(songs) - 1}"
+                        f"album='{album_name}': keep id={keeper.id} "
+                        f"(deezer={keeper.deezer_id}), "
+                        f"merge {[s.id for s in mergeable]}"
                     )
-                deduped += len(songs) - 1
+                deduped += len(mergeable)
                 groups_processed += 1
                 continue
 
-            keeper = songs[0]
-            for dupe in songs[1:]:
+            for dupe in mergeable:
                 try:
                     with transaction.atomic():
                         _merge_song(dupe, keeper)
