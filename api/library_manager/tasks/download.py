@@ -389,13 +389,17 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
                 isrc=track.isrc, primary_artist=album.artist
             ).first()
             if song and not song.deezer_id:
-                song.deezer_id = track.deezer_id
-                if not song.album:
-                    song.album = album
-                song.save(update_fields=["deezer_id", "album"])
-                logger.debug(
-                    f"Linked deezer_id to existing song '{song.name}' via ISRC"
-                )
+                existing_deezer = Song.objects.filter(deezer_id=track.deezer_id).first()
+                if existing_deezer:
+                    song = existing_deezer
+                else:
+                    song.deezer_id = track.deezer_id
+                    if not song.album:
+                        song.album = album
+                    song.save(update_fields=["deezer_id", "album"])
+                    logger.debug(
+                        f"Linked deezer_id to existing song '{song.name}' via ISRC"
+                    )
         if not song:
             song = Song.objects.filter(deezer_id=track.deezer_id).first()
         if not song:
