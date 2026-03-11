@@ -363,6 +363,52 @@ class Command(BaseCommand):
                         failed.append((name, str(e)))
                         error_count += 1
 
+        # Cleanup pass: merge orphan records that have exactly 1 same-name
+        # target with deezer_id AND no GID conflict. Different Spotify GIDs
+        # indicate genuinely different artists sharing a common name (verified
+        # by inspecting album catalogs across languages/genres).
+        if unmatched and not dry_run:
+            cleanup_count = 0
+            still_unmatched: list[tuple[str, int]] = []
+
+            for name, artist_id in unmatched:
+                try:
+                    orphan = Artist.objects.get(id=artist_id)
+                except Artist.DoesNotExist:
+                    continue
+
+                targets = list(
+                    Artist.objects.filter(name=name, deezer_id__isnull=False).exclude(
+                        id=artist_id
+                    )
+                )
+                if len(targets) != 1:
+                    still_unmatched.append((name, artist_id))
+                    continue
+
+                target = targets[0]
+                if orphan.gid and target.gid and orphan.gid != target.gid:
+                    still_unmatched.append((name, artist_id))
+                    continue
+
+                try:
+                    stats = _merge_artist(orphan, target, self.stdout)
+                    cleanup_count += 1
+                    total_songs += stats["songs_moved"]
+                    total_albums += stats["albums_moved"] + stats["albums_merged"]
+                except Exception as e:
+                    logger.exception("Failed to merge orphan '%s'", name)
+                    failed.append((name, str(e)))
+                    error_count += 1
+
+            merged_count += cleanup_count
+            unmatched = still_unmatched
+            if cleanup_count:
+                self.stdout.write(
+                    f"\nCleanup pass: merged {cleanup_count} orphan "
+                    f"record(s) into their sole name-matched artist"
+                )
+
         # Summary
         self.stdout.write("")
         self.stdout.write("=" * 60)
@@ -391,6 +437,35 @@ class Command(BaseCommand):
                     f"  '{name}' (id={artist_id}, "
                     f"{song_count} songs, {album_count} albums)"
                 )
+            if dry_run:
+                gid_conflicts = 0
+                no_gid_conflict = 0
+                for uname, uid in unmatched:
+                    try:
+                        u_orphan = Artist.objects.get(id=uid)
+                    except Artist.DoesNotExist:
+                        continue
+                    u_targets = list(
+                        Artist.objects.filter(
+                            name=uname, deezer_id__isnull=False
+                        ).exclude(id=uid)
+                    )
+                    if len(u_targets) == 1:
+                        t = u_targets[0]
+                        if u_orphan.gid and t.gid and u_orphan.gid != t.gid:
+                            gid_conflicts += 1
+                        else:
+                            no_gid_conflict += 1
+                if no_gid_conflict:
+                    self.stdout.write(
+                        f"\n  Note: {no_gid_conflict} of these will be "
+                        f"auto-merged during actual run"
+                    )
+                if gid_conflicts:
+                    self.stdout.write(
+                        f"  Note: {gid_conflicts} of these are different "
+                        f"artists sharing a name (different Spotify GIDs)"
+                    )
 
         if failed:
             self.stdout.write("")
