@@ -17,7 +17,13 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Count
 
-from library_manager.models import Album, Artist, ContributingArtist, Song
+from library_manager.models import (
+    Album,
+    Artist,
+    ContributingArtist,
+    ExternalListTrack,
+    Song,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +37,113 @@ def _normalize_name(name: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 
+def _merge_song(source: Song, target: Song) -> None:
+    """Merge source song into target, carrying over missing IDs and relationships.
+
+    Follows the same pattern as _merge_artist: capture source values, transfer
+    relationships, delete source (frees unique constraints), then carry over IDs.
+
+    Must be called within a transaction.atomic() block.
+    """
+    carry_deezer_id = source.deezer_id if not target.deezer_id else None
+    carry_gid = source.gid if not target.gid else None
+    carry_youtube_id = source.youtube_id if not target.youtube_id else None
+    carry_isrc = source.isrc if not target.isrc else None
+    carry_album_id = source.album_id if not target.album_id else None
+
+    # If source has better download quality, keep its download data
+    carry_download = source.bitrate > target.bitrate
+    dl_fields: dict = {}
+    if carry_download:
+        dl_fields = {
+            "bitrate": source.bitrate,
+            "file_path_ref_id": source.file_path_ref_id,
+            "downloaded": source.downloaded,
+            "download_provider": source.download_provider,
+        }
+
+    if source.deezer_id and target.deezer_id and source.deezer_id != target.deezer_id:
+        logger.warning(
+            "Merging songs with different deezer_ids: source=%d (deezer=%d) "
+            "target=%d (deezer=%d)",
+            source.id,
+            source.deezer_id,
+            target.id,
+            target.deezer_id,
+        )
+
+    # Transfer ContributingArtist references (respect unique_together)
+    for ca in ContributingArtist.objects.filter(song=source):
+        if ContributingArtist.objects.filter(song=target, artist=ca.artist).exists():
+            ca.delete()
+        else:
+            ca.song = target
+            ca.save(update_fields=["song"])
+
+    # Transfer ExternalListTrack references before deletion
+    ExternalListTrack.objects.filter(song=source).update(song=target)
+
+    # Delete source (frees unique constraints on gid/deezer_id/youtube_id)
+    source.delete()
+
+    # Carry over missing IDs and download data to target
+    updated_fields: list[str] = []
+    if carry_deezer_id:
+        target.deezer_id = carry_deezer_id
+        updated_fields.append("deezer_id")
+    if carry_gid:
+        target.gid = carry_gid
+        updated_fields.append("gid")
+    if carry_youtube_id:
+        target.youtube_id = carry_youtube_id
+        updated_fields.append("youtube_id")
+    if carry_isrc:
+        target.isrc = carry_isrc
+        updated_fields.append("isrc")
+    if carry_album_id:
+        target.album_id = carry_album_id
+        updated_fields.append("album")
+    for field, value in dl_fields.items():
+        setattr(target, field, value)
+        updated_fields.append(field)
+    if updated_fields:
+        target.save(update_fields=updated_fields)
+
+
+def _dedup_songs_for_artist(artist: Artist) -> int:
+    """Find and merge duplicate songs under an artist (same ISRC + same album).
+
+    Songs with the same ISRC on different albums are intentional (e.g. singles
+    on compilations) and are left alone.
+    """
+    isrc_groups = (
+        Song.objects.filter(primary_artist=artist, isrc__isnull=False)
+        .exclude(isrc="")
+        .values("isrc", "album_id")
+        .annotate(cnt=Count("id"))
+        .filter(cnt__gt=1)
+    )
+
+    deduped = 0
+    for group in isrc_groups:
+        songs = list(
+            Song.objects.filter(
+                primary_artist=artist,
+                isrc=group["isrc"],
+                album_id=group["album_id"],
+            ).order_by("-bitrate", "-id")
+        )
+        if len(songs) < 2:
+            continue
+
+        keeper = songs[0]
+        for dupe in songs[1:]:
+            _merge_song(dupe, keeper)
+            deduped += 1
+
+    return deduped
+
+
 def _merge_artist(source: Artist, target: Artist, stdout: object) -> dict:
     """Merge source artist into target, reassigning all content.
 
@@ -41,6 +154,7 @@ def _merge_artist(source: Artist, target: Artist, stdout: object) -> dict:
     source_deezer_id = source.deezer_id
     stats = {
         "songs_moved": 0,
+        "songs_deduped": 0,
         "albums_moved": 0,
         "albums_merged": 0,
         "contributing_moved": 0,
@@ -96,6 +210,9 @@ def _merge_artist(source: Artist, target: Artist, stdout: object) -> dict:
                 album.artist = target
                 album.save(update_fields=["artist"])
                 stats["albums_moved"] += 1
+
+        # 2b. Deduplicate songs with same ISRC on the same album
+        stats["songs_deduped"] = _dedup_songs_for_artist(target)
 
         # 3. Reassign ContributingArtist (respect unique_together)
         for ca in ContributingArtist.objects.filter(artist=source):
@@ -154,13 +271,14 @@ def _merge_artist(source: Artist, target: Artist, stdout: object) -> dict:
 
     logger.info(
         "Merged artist '%s' (id=%d, deezer_id=%s) into id=%d: "
-        "%d songs, %d albums moved, %d albums merged, "
+        "%d songs moved, %d songs deduped, %d albums moved, %d albums merged, "
         "%d contributing moved, %d contributing deduped",
         source_name,
         source_id,
         source_deezer_id,
         target.id,
         stats["songs_moved"],
+        stats["songs_deduped"],
         stats["albums_moved"],
         stats["albums_merged"],
         stats["contributing_moved"],
@@ -246,8 +364,108 @@ class Command(BaseCommand):
             action="store_true",
             help="Only show summary and problem records, not every merge",
         )
+        parser.add_argument(
+            "--dedup-songs",
+            action="store_true",
+            help="Deduplicate songs sharing ISRC + artist + album (standalone mode)",
+        )
+
+    def _handle_dedup_songs(self, options: dict) -> None:
+        dry_run = options["dry_run"]
+        quiet = options["quiet"]
+        limit = options["limit"]
+
+        if dry_run:
+            self.stdout.write(self.style.WARNING("DRY RUN — no changes will be made"))
+
+        self.stdout.write(
+            "Scanning for duplicate songs (same ISRC + artist + album)..."
+        )
+
+        isrc_groups = (
+            Song.objects.filter(isrc__isnull=False)
+            .exclude(isrc="")
+            .values("isrc", "primary_artist_id", "album_id")
+            .annotate(cnt=Count("id"))
+            .filter(cnt__gt=1)
+            .order_by("-cnt")
+        )
+
+        total_groups = isrc_groups.count()
+        self.stdout.write(f"Found {total_groups} group(s) with duplicate songs")
+
+        if not total_groups:
+            return
+
+        deduped = 0
+        errors = 0
+        groups_processed = 0
+
+        for group in isrc_groups:
+            if limit and groups_processed >= limit:
+                break
+
+            songs = list(
+                Song.objects.filter(
+                    isrc=group["isrc"],
+                    primary_artist_id=group["primary_artist_id"],
+                    album_id=group["album_id"],
+                )
+                .select_related("primary_artist", "album")
+                .order_by("-bitrate", "-id")
+            )
+            if len(songs) < 2:
+                continue
+
+            if dry_run:
+                if not quiet:
+                    artist_name = songs[0].primary_artist.name
+                    album_name = songs[0].album.name if songs[0].album else "N/A"
+                    ids = [s.id for s in songs]
+                    self.stdout.write(
+                        f"  ISRC={group['isrc']} artist='{artist_name}' "
+                        f"album='{album_name}': {len(songs)} songs {ids} "
+                        f"→ would merge {len(songs) - 1}"
+                    )
+                deduped += len(songs) - 1
+                groups_processed += 1
+                continue
+
+            keeper = songs[0]
+            for dupe in songs[1:]:
+                try:
+                    with transaction.atomic():
+                        _merge_song(dupe, keeper)
+                    deduped += 1
+                except Exception as e:
+                    logger.exception(
+                        "Failed to merge song %d into %d", dupe.id, keeper.id
+                    )
+                    if not quiet:
+                        self.stdout.write(
+                            self.style.ERROR(
+                                f"  Failed: song {dupe.id} → {keeper.id}: {e}"
+                            )
+                        )
+                    errors += 1
+
+            groups_processed += 1
+
+        self.stdout.write("")
+        action = "Would deduplicate" if dry_run else "Deduplicated"
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"{action} {deduped} song(s) across {groups_processed} group(s)"
+            )
+        )
+        if errors:
+            self.stdout.write(self.style.ERROR(f"Failed: {errors}"))
 
     def handle(self, *args: object, **options: object) -> None:
+        if options["dedup_songs"]:
+            self._handle_dedup_songs(options)
+            return
+
         dry_run = options["dry_run"]
         limit = options["limit"]
         quiet = options["quiet"]
