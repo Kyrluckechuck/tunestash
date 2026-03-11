@@ -382,26 +382,21 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         if not track.deezer_id:
             continue
 
-        # ISRC-first matching to avoid duplicates with existing Spotify-imported songs
-        song = None
-        if track.isrc:
+        # deezer_id is the strongest match (exact catalog entry)
+        song = Song.objects.filter(deezer_id=track.deezer_id).first()
+
+        # Fall back to ISRC match to link Spotify-imported songs
+        if not song and track.isrc:
             song = Song.objects.filter(
-                isrc=track.isrc, primary_artist=album.artist
+                isrc=track.isrc, primary_artist=album.artist, album=album
             ).first()
             if song and not song.deezer_id:
-                existing_deezer = Song.objects.filter(deezer_id=track.deezer_id).first()
-                if existing_deezer:
-                    song = existing_deezer
-                else:
-                    song.deezer_id = track.deezer_id
-                    if not song.album:
-                        song.album = album
-                    song.save(update_fields=["deezer_id", "album"])
-                    logger.debug(
-                        f"Linked deezer_id to existing song '{song.name}' via ISRC"
-                    )
-        if not song:
-            song = Song.objects.filter(deezer_id=track.deezer_id).first()
+                song.deezer_id = track.deezer_id
+                song.save(update_fields=["deezer_id"])
+                logger.debug(
+                    f"Linked deezer_id to existing song '{song.name}' via ISRC"
+                )
+
         if not song:
             song = Song.objects.create(
                 name=track.name,
