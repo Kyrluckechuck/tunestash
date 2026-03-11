@@ -415,6 +415,10 @@ def _resolve_artist_via_isrc(
     the same Deezer artist ID, return it. If they disagree, look up 2
     more and pick the most common result.
 
+    Only counts votes where the Deezer track's primary artist name matches
+    the artist we're resolving — this prevents featured/contributing artists
+    from being misidentified as the primary artist of a collaboration.
+
     Returns a deezer artist ID, or None if not enough data.
     """
     from ..models import Song
@@ -429,13 +433,15 @@ def _resolve_artist_via_isrc(
     if not isrcs:
         return None
 
+    normalized_artist = _normalize_name(artist.name)
     votes: list[int] = []
 
     # First pass: check 2 ISRCs
     for isrc in isrcs[:2]:
         result = provider.get_track_by_isrc(isrc)
         if result and result.artist_deezer_id:
-            votes.append(result.artist_deezer_id)
+            if _normalize_name(result.artist_name or "") == normalized_artist:
+                votes.append(result.artist_deezer_id)
 
     if not votes:
         return None
@@ -448,7 +454,8 @@ def _resolve_artist_via_isrc(
     for isrc in isrcs[2:]:
         result = provider.get_track_by_isrc(isrc)
         if result and result.artist_deezer_id:
-            votes.append(result.artist_deezer_id)
+            if _normalize_name(result.artist_name or "") == normalized_artist:
+                votes.append(result.artist_deezer_id)
 
     if not votes:
         return None
