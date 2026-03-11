@@ -36,6 +36,13 @@ def _try_resolve_to_deezer(song: Song) -> None:
         try:
             result = provider.get_track_by_isrc(song.isrc)
             if result and result.deezer_id:
+                if Song.objects.filter(deezer_id=result.deezer_id).exists():
+                    logger.info(
+                        "Song %d: deezer_id=%d (via ISRC) already claimed, skipping",
+                        song.id,
+                        result.deezer_id,
+                    )
+                    return
                 song.deezer_id = result.deezer_id
                 song.save(update_fields=["deezer_id"])
                 logger.debug(
@@ -62,6 +69,14 @@ def _try_resolve_to_deezer(song: Song) -> None:
                     and _normalize_name(track.artist_name or "") == norm_artist
                     and track.deezer_id
                 ):
+                    if Song.objects.filter(deezer_id=track.deezer_id).exists():
+                        logger.info(
+                            "Song %d: deezer_id=%d (via search) already claimed, "
+                            "skipping",
+                            song.id,
+                            track.deezer_id,
+                        )
+                        return
                     song.deezer_id = track.deezer_id
                     song.save(update_fields=["deezer_id"])
                     logger.debug(
