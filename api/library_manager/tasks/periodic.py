@@ -392,9 +392,11 @@ def _find_best_artist_for_deezer_id(
         .annotate(song_count=Count("song"))
         .order_by("-tracked", "-song_count", "id")
     )
-    # Verify with accent-normalized comparison
+    # Verify with normalized comparison (whitespace-tolerant)
+    compact_name = normalized_name.replace(" ", "")
     for candidate in candidates:
-        if normalize_name(candidate.name) == normalized_name:
+        norm_c = normalize_name(candidate.name)
+        if norm_c == normalized_name or norm_c.replace(" ", "") == compact_name:
             return candidate
     return None
 
@@ -427,13 +429,26 @@ def _resolve_artist_via_isrc(
         return None
 
     normalized_artist = normalize_name(artist.name)
+    compact_artist = normalized_artist.replace(" ", "")
     votes: list[int] = []
+
+    def _name_matches(deezer_name: str) -> bool:
+        """Check if the Deezer artist name matches our local artist.
+
+        Exact normalized match is preferred. If that fails, a whitespace-
+        insensitive match is accepted because the ISRC evidence provides
+        the track-level validation (e.g. "Sound Breakers" vs "Soundbreakers").
+        """
+        norm = normalize_name(deezer_name)
+        if norm == normalized_artist:
+            return True
+        return norm.replace(" ", "") == compact_artist
 
     # First pass: check 2 ISRCs
     for isrc in isrcs[:2]:
         result = provider.get_track_by_isrc(isrc)
         if result and result.artist_deezer_id:
-            if normalize_name(result.artist_name or "") == normalized_artist:
+            if _name_matches(result.artist_name or ""):
                 votes.append(result.artist_deezer_id)
 
     if not votes:
@@ -447,7 +462,7 @@ def _resolve_artist_via_isrc(
     for isrc in isrcs[2:]:
         result = provider.get_track_by_isrc(isrc)
         if result and result.artist_deezer_id:
-            if normalize_name(result.artist_name or "") == normalized_artist:
+            if _name_matches(result.artist_name or ""):
                 votes.append(result.artist_deezer_id)
 
     if not votes:
@@ -481,7 +496,12 @@ def _assign_deezer_id_to_best_artist(
     """
     existing = Artist.objects.filter(deezer_id=deezer_id).first()
     if existing:
-        if normalize_name(artist.name) == normalize_name(existing.name):
+        norm_a = normalize_name(artist.name)
+        norm_b = normalize_name(existing.name)
+        names_match = norm_a == norm_b or norm_a.replace(" ", "") == norm_b.replace(
+            " ", ""
+        )
+        if names_match:
             # Same artist, different capitalization — merge
             from library_manager.management.commands.merge_duplicate_artists import (
                 _merge_artist,
@@ -556,8 +576,17 @@ def _try_link_artist_to_deezer(
     # Fall back to name search
     results = provider.search_artists(artist.name, limit=3)
     normalized = normalize_name(artist.name)
+    compact = normalized.replace(" ", "")
     match = next(
-        (r for r in results if normalize_name(r.name) == normalized and r.deezer_id),
+        (
+            r
+            for r in results
+            if r.deezer_id
+            and (
+                normalize_name(r.name) == normalized
+                or normalize_name(r.name).replace(" ", "") == compact
+            )
+        ),
         None,
     )
     if not match or not match.deezer_id:

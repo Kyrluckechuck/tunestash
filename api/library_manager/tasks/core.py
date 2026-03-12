@@ -10,6 +10,7 @@ This module contains shared utilities used across all task modules:
 """
 
 import os
+import re
 import unicodedata
 import uuid
 from functools import wraps
@@ -33,14 +34,27 @@ class TaskCancelledException(Exception):
 logger = get_task_logger(__name__)
 
 
-def normalize_name(name: str) -> str:
-    """Strip accents and lowercase for fuzzy name comparison.
+_TRADEMARK_RE = re.compile(r"[®™©]|\((?:R|TM|C)\)", re.IGNORECASE)
+_NON_ALNUM_RE = re.compile(r"[^\w\s]|_")
+_MULTI_SPACE_RE = re.compile(r"\s+")
 
-    Used across task modules for accent/case-insensitive matching of
-    artist and album names between Spotify and Deezer.
+
+def normalize_name(name: str) -> str:
+    """Normalize a name for fuzzy cross-provider comparison.
+
+    Handles accent stripping, punctuation, trademark symbols, and
+    ampersand/and equivalence. Whitespace is preserved (collapsed to
+    single spaces) so that compound-word differences like
+    "New Man" vs "Newman" remain distinct and fall through to
+    track-level matching.
     """
-    nfkd = unicodedata.normalize("NFKD", name)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+    s = name.replace("&", " and ")
+    s = _TRADEMARK_RE.sub("", s)
+    nfkd = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in nfkd if not unicodedata.combining(c))
+    s = _NON_ALNUM_RE.sub(" ", s)
+    s = _MULTI_SPACE_RE.sub(" ", s).strip()
+    return s.lower()
 
 
 def log_memory_usage(context: str, task_id: Optional[str] = None) -> None:
