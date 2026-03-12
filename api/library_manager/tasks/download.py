@@ -77,6 +77,29 @@ class _AlbumMerged(Exception):
         super().__init__(f"Merged into album id={target.id}")
 
 
+def _resolve_and_assign_deezer_id(album: Album) -> bool:
+    """Resolve an album to Deezer and assign the deezer_id.
+
+    If the resolved deezer_id is already claimed by another album,
+    merges this album into the existing one and raises _AlbumMerged.
+
+    Returns True if a deezer_id was assigned, False if no match found.
+    Raises _AlbumMerged if merged into an existing album.
+    """
+    deezer_id = _resolve_album_to_deezer(album)
+    if not deezer_id:
+        return False
+
+    existing = Album.objects.filter(deezer_id=deezer_id).first()
+    if existing:
+        _merge_duplicate_album(album, existing)
+        raise _AlbumMerged(existing)
+
+    album.deezer_id = deezer_id
+    album.save(update_fields=["deezer_id"])
+    return True
+
+
 def _merge_duplicate_album(source: Album, target: Album) -> None:
     """Merge a duplicate album record into the canonical one, then delete the source.
 
@@ -123,7 +146,7 @@ def _merge_duplicate_album(source: Album, target: Album) -> None:
 def download_missing_albums_for_artist(
     self: Any, artist_id: int, delay: int = 0
 ) -> None:
-    # pylint: disable=too-many-return-statements,too-many-branches,too-many-statements
+    # pylint: disable=too-many-return-statements,too-many-branches,too-many-statements,too-many-nested-blocks
 
     task_history = None
     try:
@@ -174,16 +197,17 @@ def download_missing_albums_for_artist(
             albums_to_download = []
             for album in missing_albums.iterator():
                 if not album.deezer_id:
-                    deezer_id = _resolve_album_to_deezer(album)
-                    if deezer_id:
-                        album.deezer_id = deezer_id
-                        album.save(update_fields=["deezer_id"])
-                    else:
-                        album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
-                        logger.warning(
-                            f"Album '{album.name}' has no deezer_id and "
-                            f"couldn't be found on Deezer, skipping"
-                        )
+                    try:
+                        if not _resolve_and_assign_deezer_id(album):
+                            album.increment_failed_count(
+                                AlbumFailureReason.TEMPORARY_ERROR
+                            )
+                            logger.warning(
+                                f"Album '{album.name}' has no deezer_id and "
+                                f"couldn't be found on Deezer, skipping"
+                            )
+                            continue
+                    except _AlbumMerged:
                         continue
                 albums_to_download.append(album)
 
@@ -273,11 +297,7 @@ def download_single_album(self: Any, album_id: int) -> None:
             album.save()
 
         if not album.deezer_id:
-            deezer_id = _resolve_album_to_deezer(album)
-            if deezer_id:
-                album.deezer_id = deezer_id
-                album.save(update_fields=["deezer_id"])
-            else:
+            if not _resolve_and_assign_deezer_id(album):
                 album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
                 msg = (
                     f"Album '{album.name}' has no deezer_id and "
@@ -791,15 +811,14 @@ def download_extra_album_types_for_artist(
     albums_to_download = []
     for album in missing_albums.iterator():
         if not album.deezer_id:
-            deezer_id = _resolve_album_to_deezer(album)
-            if deezer_id:
-                album.deezer_id = deezer_id
-                album.save(update_fields=["deezer_id"])
-            else:
-                album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
-                logger.warning(
-                    f"Extra album '{album.name}' not found on Deezer, skipping"
-                )
+            try:
+                if not _resolve_and_assign_deezer_id(album):
+                    album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
+                    logger.warning(
+                        f"Extra album '{album.name}' not found on Deezer, skipping"
+                    )
+                    continue
+            except _AlbumMerged:
                 continue
         albums_to_download.append(album)
 
@@ -856,11 +875,7 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
             album.save()
 
         if not album.deezer_id:
-            deezer_id = _resolve_album_to_deezer(album)
-            if deezer_id:
-                album.deezer_id = deezer_id
-                album.save(update_fields=["deezer_id"])
-            else:
+            if not _resolve_and_assign_deezer_id(album):
                 album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
                 raise ValueError(f"Album '{album.name}' not found on Deezer")
 
