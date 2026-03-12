@@ -18,9 +18,10 @@ from .core import (
     complete_task,
     create_task_history,
     logger,
+    normalize_name,
     update_task_progress,
 )
-from .periodic import _normalize_name, _try_link_artist_to_deezer
+from .periodic import _try_link_artist_to_deezer
 
 
 def _find_matching_song(track: TrackResult, artist: Artist) -> Optional[Song]:
@@ -40,10 +41,10 @@ def _find_matching_song(track: TrackResult, artist: Artist) -> Optional[Song]:
         return match
 
     # Match 3: Fuzzy name match (for songs without ISRC)
-    normalized_track_name = _normalize_name(track.name)
+    normalized_track_name = normalize_name(track.name)
     candidates = Song.objects.filter(primary_artist=artist, deezer_id__isnull=True)
     for candidate in candidates:
-        if _normalize_name(candidate.name) == normalized_track_name:
+        if normalize_name(candidate.name) == normalized_track_name:
             return candidate
 
     return None
@@ -160,10 +161,10 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
                 continue
 
             # Try matching by normalized name for this artist
-            normalized_deezer_name = _normalize_name(album_data.name)
+            normalized_deezer_name = normalize_name(album_data.name)
             name_match = None
             for db_album in Album.objects.filter(artist=artist):
-                if _normalize_name(db_album.name) == normalized_deezer_name:
+                if normalize_name(db_album.name) == normalized_deezer_name:
                     name_match = db_album
                     break
 

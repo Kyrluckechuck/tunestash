@@ -2,7 +2,6 @@
 
 import asyncio
 import time
-import unicodedata
 from typing import Any, Optional
 
 from django.db import transaction
@@ -29,15 +28,10 @@ from .core import (
     complete_task,
     create_task_history,
     logger,
+    normalize_name,
     require_download_capability,
     update_task_progress,
 )
-
-
-def _normalize_name(name: str) -> str:
-    """Strip accents and lowercase for fuzzy name comparison."""
-    nfkd = unicodedata.normalize("NFKD", name)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 
 def _resolve_album_to_deezer(album: Album) -> Optional[int]:
@@ -54,12 +48,12 @@ def _resolve_album_to_deezer(album: Album) -> Optional[int]:
     try:
         provider = DeezerMetadataProvider()
         results = provider.search_albums(f"{artist_name} {album.name}", limit=5)
-        norm_album = _normalize_name(album.name)
-        norm_artist = _normalize_name(artist_name)
+        norm_album = normalize_name(album.name)
+        norm_artist = normalize_name(artist_name)
         for result in results:
             if (
-                _normalize_name(result.name) == norm_album
-                and _normalize_name(result.artist_name or "") == norm_artist
+                normalize_name(result.name) == norm_album
+                and normalize_name(result.artist_name or "") == norm_artist
                 and result.deezer_id
             ):
                 return result.deezer_id

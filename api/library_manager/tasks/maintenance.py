@@ -1,7 +1,6 @@
 """Maintenance tasks for the Tunestash."""
 
 import asyncio
-import unicodedata
 from typing import Any, Optional
 
 from celery_app import app as celery_app
@@ -11,15 +10,10 @@ from .core import (
     complete_task,
     create_task_history,
     logger,
+    normalize_name,
     require_download_capability,
     update_task_progress,
 )
-
-
-def _normalize_name(name: str) -> str:
-    """Strip accents and lowercase for fuzzy name comparison."""
-    nfkd = unicodedata.normalize("NFKD", name)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 
 def _try_resolve_to_deezer(song: Song) -> None:
@@ -61,12 +55,12 @@ def _try_resolve_to_deezer(song: Song) -> None:
     if artist_name and song.name:
         try:
             results = provider.search_tracks(f"{artist_name} {song.name}", limit=5)
-            norm_song = _normalize_name(song.name)
-            norm_artist = _normalize_name(artist_name)
+            norm_song = normalize_name(song.name)
+            norm_artist = normalize_name(artist_name)
             for track in results:
                 if (
-                    _normalize_name(track.name) == norm_song
-                    and _normalize_name(track.artist_name or "") == norm_artist
+                    normalize_name(track.name) == norm_song
+                    and normalize_name(track.artist_name or "") == norm_artist
                     and track.deezer_id
                 ):
                     if Song.objects.filter(deezer_id=track.deezer_id).exists():

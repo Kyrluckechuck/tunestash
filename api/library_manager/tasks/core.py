@@ -6,9 +6,11 @@ This module contains shared utilities used across all task modules:
 - Memory usage logging
 - Download capability validation
 - Task priority constants
+- Name normalization for cross-provider matching
 """
 
 import os
+import unicodedata
 import uuid
 from functools import wraps
 from typing import Any, Callable, Optional, cast
@@ -29,6 +31,16 @@ class TaskCancelledException(Exception):
 
 # Initialize Celery logger
 logger = get_task_logger(__name__)
+
+
+def normalize_name(name: str) -> str:
+    """Strip accents and lowercase for fuzzy name comparison.
+
+    Used across task modules for accent/case-insensitive matching of
+    artist and album names between Spotify and Deezer.
+    """
+    nfkd = unicodedata.normalize("NFKD", name)
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 
 def log_memory_usage(context: str, task_id: Optional[str] = None) -> None:
