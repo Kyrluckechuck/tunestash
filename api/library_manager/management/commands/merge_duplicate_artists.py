@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import Counter
+from collections import Counter, defaultdict
+from typing import Any
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -43,7 +44,7 @@ def _merge_song(source: Song, target: Song) -> None:
     carry_gid = source.gid if not target.gid else None
     carry_youtube_id = source.youtube_id if not target.youtube_id else None
     carry_isrc = source.isrc if not target.isrc else None
-    carry_album_id = source.album_id if not target.album_id else None
+    carry_album_id = source.album_id if not target.album_id else None  # type: ignore[attr-defined]
 
     # If source has better download quality, keep its download data
     carry_download = source.bitrate > target.bitrate
@@ -51,7 +52,7 @@ def _merge_song(source: Song, target: Song) -> None:
     if carry_download:
         dl_fields = {
             "bitrate": source.bitrate,
-            "file_path_ref_id": source.file_path_ref_id,
+            "file_path_ref_id": source.file_path_ref_id,  # type: ignore[attr-defined]
             "downloaded": source.downloaded,
             "download_provider": source.download_provider,
         }
@@ -95,7 +96,7 @@ def _merge_song(source: Song, target: Song) -> None:
         target.isrc = carry_isrc
         updated_fields.append("isrc")
     if carry_album_id:
-        target.album_id = carry_album_id
+        target.album_id = carry_album_id  # type: ignore[attr-defined]
         updated_fields.append("album")
     for field, value in dl_fields.items():
         setattr(target, field, value)
@@ -174,7 +175,7 @@ def _merge_artist(source: Artist, target: Artist, stdout: object) -> dict:
 
         # 2. Reassign albums (handle duplicate albums — same name on both artists)
         # Build a normalized name → album lookup for the target's existing albums
-        target_albums_by_norm = {}
+        target_albums_by_norm: dict[str, Album] = {}
         for ta in Album.objects.filter(artist=target):
             target_albums_by_norm.setdefault(normalize_name(ta.name), ta)
 
@@ -298,7 +299,7 @@ def _merge_artist(source: Artist, target: Artist, stdout: object) -> dict:
 
 
 def _resolve_match_via_deezer(
-    artist: Artist, has_deezer: list[Artist], provider: object
+    artist: Artist, has_deezer: list[Artist], provider: Any
 ) -> Artist | None:
     """Use Deezer API to find which has_deezer record matches the given artist.
 
@@ -315,7 +316,7 @@ def _resolve_match_via_deezer(
     if isrcs:
         votes: list[int] = []
         for isrc in isrcs[:2]:
-            result = provider.get_track_by_isrc(isrc)  # type: ignore[union-attr]
+            result = provider.get_track_by_isrc(isrc)
             time.sleep(API_DELAY)
             if result and result.artist_deezer_id:
                 votes.append(result.artist_deezer_id)
@@ -328,7 +329,7 @@ def _resolve_match_via_deezer(
         # Check remaining ISRCs if no agreement
         if len(votes) < 2 or votes[0] != votes[1]:
             for isrc in isrcs[2:]:
-                result = provider.get_track_by_isrc(isrc)  # type: ignore[union-attr]
+                result = provider.get_track_by_isrc(isrc)
                 time.sleep(API_DELAY)
                 if result and result.artist_deezer_id:
                     votes.append(result.artist_deezer_id)
@@ -342,7 +343,7 @@ def _resolve_match_via_deezer(
                     return match
 
     # Strategy 2: Name search
-    results = provider.search_artists(artist.name, limit=5)  # type: ignore[union-attr]
+    results = provider.search_artists(artist.name, limit=5)
     time.sleep(API_DELAY)
     normalized = normalize_name(artist.name)
     for r in results:
@@ -357,7 +358,7 @@ def _resolve_match_via_deezer(
 class Command(BaseCommand):
     help = "Merge duplicate artist records from the Spotify→Deezer migration"
 
-    def add_arguments(self, parser) -> None:  # type: ignore[override]
+    def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -440,8 +441,11 @@ class Command(BaseCommand):
 
             if dry_run:
                 if not quiet:
-                    artist_name = songs[0].primary_artist.name
-                    album_name = songs[0].album.name if songs[0].album else "N/A"
+                    first_song = songs[0]
+                    pa = first_song.primary_artist
+                    artist_name = pa.name if pa else "Unknown"  # type: ignore[attr-defined]
+                    alb = first_song.album
+                    album_name = alb.name if alb else "N/A"  # type: ignore[attr-defined]
                     self.stdout.write(
                         f"  ISRC={group['isrc']} artist='{artist_name}' "
                         f"album='{album_name}': keep id={keeper.id} "
@@ -486,23 +490,28 @@ class Command(BaseCommand):
             self._handle_dedup_songs(options)
             return
 
-        dry_run = options["dry_run"]
-        limit = options["limit"]
-        quiet = options["quiet"]
+        dry_run: bool = bool(options["dry_run"])
+        limit: int | None = options.get("limit")  # type: ignore[assignment]
+        quiet: bool = bool(options["quiet"])
 
         if dry_run:
             self.stdout.write(self.style.WARNING("DRY RUN — no changes will be made"))
 
-        # Find all artist names with duplicates
-        dup_names = (
-            Artist.objects.values("name")
-            .annotate(cnt=Count("id"))
-            .filter(cnt__gt=1)
-            .order_by("name")
+        # Build normalized-name groups to catch case/accent variants
+        # (e.g. "GloRilla" vs "Glorilla", "Nour" vs "nour")
+        norm_groups: dict[str, list[int]] = defaultdict(list)
+        for artist in Artist.objects.all().only("id", "name"):
+            norm_groups[normalize_name(artist.name)].append(artist.id)
+
+        dup_groups = sorted(
+            ((k, v) for k, v in norm_groups.items() if len(v) > 1),
+            key=lambda x: x[0],
         )
 
-        total_groups = dup_names.count()
-        self.stdout.write(f"Found {total_groups} artist name(s) with duplicates")
+        total_groups = len(dup_groups)
+        self.stdout.write(
+            f"Found {total_groups} normalized artist name(s) with duplicates"
+        )
 
         merged_count = 0
         skipped_count = 0
@@ -510,17 +519,17 @@ class Command(BaseCommand):
         total_songs = 0
         total_albums = 0
         provider = None
-        unmatched: list[tuple[str, int]] = []  # (name, artist_id)
+        unmatched: list[tuple[str, int]] = []  # (norm_name, artist_id)
         failed: list[tuple[str, str]] = []  # (name, error)
 
-        for i, entry in enumerate(dup_names):
+        for i, (norm_name, artist_ids) in enumerate(dup_groups):
             if limit and i >= limit:
                 break
 
-            name = entry["name"]
-            artists = list(Artist.objects.filter(name=name).order_by("id"))
+            artists = list(Artist.objects.filter(id__in=artist_ids).order_by("id"))
             has_deezer = [a for a in artists if a.deezer_id is not None]
             no_deezer = [a for a in artists if a.deezer_id is None]
+            name = artists[0].name  # representative name for logging
 
             # Skip if no split (all have or all lack deezer_id)
             if not has_deezer or not no_deezer:
@@ -609,24 +618,31 @@ class Command(BaseCommand):
             cleanup_count = 0
             still_unmatched: list[tuple[str, int]] = []
 
-            for name, artist_id in unmatched:
+            # Build fresh normalized lookup (reflects merges from main pass)
+            norm_to_deezer: dict[str, list[Artist]] = defaultdict(list)
+            for a in Artist.objects.filter(deezer_id__isnull=False).only(
+                "id", "name", "gid"
+            ):
+                norm_to_deezer[normalize_name(a.name)].append(a)
+
+            for norm_name_key, artist_id in unmatched:
                 try:
                     orphan = Artist.objects.get(id=artist_id)
                 except Artist.DoesNotExist:
                     continue
 
-                targets = list(
-                    Artist.objects.filter(name=name, deezer_id__isnull=False).exclude(
-                        id=artist_id
-                    )
-                )
+                targets = [
+                    a
+                    for a in norm_to_deezer.get(norm_name_key, [])
+                    if a.id != artist_id
+                ]
                 if len(targets) != 1:
-                    still_unmatched.append((name, artist_id))
+                    still_unmatched.append((norm_name_key, artist_id))
                     continue
 
                 target = targets[0]
                 if orphan.gid and target.gid and orphan.gid != target.gid:
-                    still_unmatched.append((name, artist_id))
+                    still_unmatched.append((norm_name_key, artist_id))
                     continue
 
                 try:
