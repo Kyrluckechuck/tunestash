@@ -380,6 +380,12 @@ class Command(BaseCommand):
             action="store_true",
             help="Deduplicate songs sharing ISRC + artist + album (standalone mode)",
         )
+        parser.add_argument(
+            "--validate",
+            action="store_true",
+            help="Validate existing deezer_id assignments against the Deezer API "
+            "and clear mismatches so they can be re-resolved correctly",
+        )
 
     def _handle_dedup_songs(self, options: dict) -> None:
         dry_run = options["dry_run"]
@@ -485,7 +491,112 @@ class Command(BaseCommand):
         if errors:
             self.stdout.write(self.style.ERROR(f"Failed: {errors}"))
 
+    def _handle_validate(self, options: dict) -> None:
+        """Validate deezer_id assignments by checking against the Deezer API.
+
+        Artists whose local name doesn't match the Deezer artist name (after
+        normalization) are flagged as mismatches — their deezer_id was likely
+        assigned by the old ISRC quorum logic before the name-filter fix.
+        """
+        dry_run = options["dry_run"]
+        quiet = options["quiet"]
+        limit = options["limit"]
+
+        if dry_run:
+            self.stdout.write(self.style.WARNING("DRY RUN — no changes will be made"))
+
+        from src.providers.deezer import DeezerMetadataProvider
+
+        provider = DeezerMetadataProvider()
+
+        artists = Artist.objects.filter(deezer_id__isnull=False).only(
+            "id", "name", "deezer_id", "deezer_migration_status"
+        )
+        total = artists.count()
+        self.stdout.write(f"Validating {total} artist(s) with deezer_id...")
+
+        mismatches = 0
+        errors = 0
+        checked = 0
+
+        for artist in artists.iterator():
+            if limit and checked >= limit:
+                break
+
+            try:
+                result = provider.get_artist(artist.deezer_id)
+                time.sleep(API_DELAY)
+            except Exception:
+                logger.exception(
+                    "API error validating artist '%s' (id=%d, deezer_id=%d)",
+                    artist.name,
+                    artist.id,
+                    artist.deezer_id,
+                )
+                errors += 1
+                checked += 1
+                continue
+
+            if result is None:
+                # Deezer ID no longer exists — treat as mismatch
+                if not quiet:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"  GONE: '{artist.name}' (id={artist.id}) — "
+                            f"deezer_id={artist.deezer_id} no longer exists"
+                        )
+                    )
+                if not dry_run:
+                    artist.deezer_id = None
+                    artist.deezer_migration_status = None
+                    artist.save(update_fields=["deezer_id", "deezer_migration_status"])
+                mismatches += 1
+                checked += 1
+                continue
+
+            local_norm = normalize_name(artist.name)
+            deezer_norm = normalize_name(result.name)
+
+            if local_norm != deezer_norm:
+                if not quiet:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"  MISMATCH: '{artist.name}' (id={artist.id}) "
+                            f"→ Deezer says '{result.name}' "
+                            f"(deezer_id={artist.deezer_id})"
+                        )
+                    )
+                if not dry_run:
+                    artist.deezer_id = None
+                    artist.deezer_migration_status = None
+                    artist.save(update_fields=["deezer_id", "deezer_migration_status"])
+                mismatches += 1
+
+            checked += 1
+            if not quiet and checked % 200 == 0:
+                self.stdout.write(f"  ... checked {checked}/{total}")
+
+        self.stdout.write("")
+        self.stdout.write("=" * 60)
+        action = "Would clear" if dry_run else "Cleared"
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"{action} {mismatches} mismatched deezer_id(s) "
+                f"out of {checked} checked"
+            )
+        )
+        if errors:
+            self.stdout.write(self.style.ERROR(f"API errors: {errors}"))
+        if mismatches and not dry_run:
+            self.stdout.write(
+                "\nCleared artists will be re-resolved on the next "
+                "resolve_all_artists_to_deezer run."
+            )
+
     def handle(self, *args: object, **options: object) -> None:
+        if options["validate"]:
+            self._handle_validate(options)
+            return
         if options["dedup_songs"]:
             self._handle_dedup_songs(options)
             return
