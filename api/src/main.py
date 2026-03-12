@@ -235,13 +235,19 @@ def _validate_runtime_configuration() -> None:
     """
     logger = logging.getLogger("api.config")
 
+    # Re-import settings here to get the Dynaconf-wrapped version.
+    # The module-level dj_settings was imported before django.setup() and
+    # points to Django's original LazySettings, which doesn't resolve
+    # lowercase settings (po_token, cookies_location, etc.) from yaml.
+    from django.conf import settings as cfg
+
     # Cookies file validation - uses comprehensive validator
     # Note: Django system checks (library_manager/checks.py) provide startup validation
     # This provides runtime logging for visibility
     from downloader.cookie_validator import CookieValidator
 
     cookies_path_str = getattr(
-        dj_settings, "cookies_location", "/config/youtube_music_cookies.txt"
+        cfg, "cookies_location", "/config/youtube_music_cookies.txt"
     )
     cookies_path = Path(str(cookies_path_str))
 
@@ -269,7 +275,7 @@ def _validate_runtime_configuration() -> None:
         )
 
     # PO token validation - REQUIRED for premium
-    po_token = getattr(dj_settings, "po_token", None)
+    po_token = getattr(cfg, "po_token", None)
     po_token_result = CookieValidator.validate_po_token(po_token)
     if not po_token_result.valid:
         logger.warning(
@@ -281,21 +287,21 @@ def _validate_runtime_configuration() -> None:
 
     # Album selection lists
     album_types = getattr(
-        dj_settings, "ALBUM_TYPES_TO_DOWNLOAD", ["single", "album", "compilation"]
+        cfg, "ALBUM_TYPES_TO_DOWNLOAD", ["single", "album", "compilation"]
     )
     if not isinstance(album_types, (list, tuple)) or not album_types:
         logger.warning(
             "ALBUM_TYPES_TO_DOWNLOAD is not configured as a non-empty list. Check /config/settings.yaml"
         )
 
-    album_groups_ignore = getattr(dj_settings, "ALBUM_GROUPS_TO_IGNORE", ["appears_on"])
+    album_groups_ignore = getattr(cfg, "ALBUM_GROUPS_TO_IGNORE", ["appears_on"])
     if not isinstance(album_groups_ignore, (list, tuple)):
         logger.warning(
             "ALBUM_GROUPS_TO_IGNORE should be a list. Check /config/settings.yaml"
         )
 
     # Final path exists check (optional)
-    final_path = getattr(dj_settings, "final_path", None)
+    final_path = getattr(cfg, "final_path", None)
     if final_path:
         try:
             final_path_obj = Path(str(final_path))
