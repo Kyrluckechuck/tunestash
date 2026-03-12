@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import time
-import unicodedata
 from collections import Counter
 
 from django.core.management.base import BaseCommand
@@ -24,17 +23,12 @@ from library_manager.models import (
     ExternalListTrack,
     Song,
 )
+from library_manager.tasks.core import normalize_name
 
 logger = logging.getLogger(__name__)
 
 # Delay between Deezer API calls to avoid rate limiting
 API_DELAY = 0.1
-
-
-def _normalize_name(name: str) -> str:
-    """Strip accents and lowercase for fuzzy name comparison."""
-    nfkd = unicodedata.normalize("NFKD", name)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 
 def _merge_song(source: Song, target: Song) -> None:
@@ -179,8 +173,13 @@ def _merge_artist(source: Artist, target: Artist, stdout: object) -> dict:
         )
 
         # 2. Reassign albums (handle duplicate albums — same name on both artists)
+        # Build a normalized name → album lookup for the target's existing albums
+        target_albums_by_norm = {}
+        for ta in Album.objects.filter(artist=target):
+            target_albums_by_norm.setdefault(normalize_name(ta.name), ta)
+
         for album in Album.objects.filter(artist=source):
-            existing = Album.objects.filter(artist=target, name=album.name).first()
+            existing = target_albums_by_norm.get(normalize_name(album.name))
             if existing:
                 # Duplicate album — merge songs into existing, carry over IDs
                 reassigned = Song.objects.filter(album=album).update(album=existing)
@@ -345,9 +344,9 @@ def _resolve_match_via_deezer(
     # Strategy 2: Name search
     results = provider.search_artists(artist.name, limit=5)  # type: ignore[union-attr]
     time.sleep(API_DELAY)
-    normalized = _normalize_name(artist.name)
+    normalized = normalize_name(artist.name)
     for r in results:
-        if _normalize_name(r.name) == normalized and r.deezer_id:
+        if normalize_name(r.name) == normalized and r.deezer_id:
             match = next((a for a in has_deezer if a.deezer_id == r.deezer_id), None)
             if match:
                 return match

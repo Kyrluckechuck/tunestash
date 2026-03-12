@@ -2,7 +2,6 @@
 
 from typing import Any, Optional
 
-from django.db.models import Q
 from django.utils import timezone
 
 from celery_app import app as celery_app
@@ -12,6 +11,7 @@ from .core import (
     complete_task,
     create_task_history,
     logger,
+    normalize_name,
     update_task_progress,
 )
 
@@ -39,14 +39,19 @@ def _fetch_albums_via_deezer(
     created_count = 0
     linked_count = 0
 
+    # Build normalized name → album lookup for accent/case-insensitive matching
+    existing_albums_by_norm: dict[str, Album] = {}
+    for db_album in Album.objects.filter(artist=artist):
+        existing_albums_by_norm.setdefault(normalize_name(db_album.name), db_album)
+
     for album_data in deezer_albums:
         if not album_data.deezer_id:
             continue
 
-        existing = Album.objects.filter(
-            Q(deezer_id=album_data.deezer_id)
-            | Q(name__iexact=album_data.name, artist=artist)
-        ).first()
+        # Check by deezer_id first, then by normalized name
+        existing = Album.objects.filter(deezer_id=album_data.deezer_id).first()
+        if not existing:
+            existing = existing_albums_by_norm.get(normalize_name(album_data.name))
 
         if existing:
             if not existing.deezer_id:
@@ -57,7 +62,7 @@ def _fetch_albums_via_deezer(
                     linked_count += 1
             continue
 
-        Album.objects.create(
+        album = Album.objects.create(
             name=album_data.name,
             deezer_id=album_data.deezer_id,
             artist=artist,
@@ -67,6 +72,7 @@ def _fetch_albums_via_deezer(
             album_group=album_data.album_group or album_data.album_type,
             wanted=True,
         )
+        existing_albums_by_norm.setdefault(normalize_name(album.name), album)
         created_count += 1
 
     return created_count, linked_count

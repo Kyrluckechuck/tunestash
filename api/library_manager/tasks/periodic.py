@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-import unicodedata
 from typing import TYPE_CHECKING, Any, Optional, Set  # noqa: E402
 
 from django.utils import timezone
@@ -21,7 +20,7 @@ from ..models import (
     TaskHistory,
     TrackedPlaylist,
 )
-from .core import logger
+from .core import logger, normalize_name
 from .download import download_single_album
 
 if TYPE_CHECKING:
@@ -37,12 +36,6 @@ _MAX_METADATA_BACKFILL_PER_RUN = 20
 _DEEZER_ARTIST_CHECK_BATCH_SIZE = 50
 _DEEZER_ALBUMS_TO_CHECK = 20
 _MAX_PENDING_ARTIST_SYNCS = 100
-
-
-def _normalize_name(name: str) -> str:
-    """Strip accents and lowercase for fuzzy name comparison."""
-    nfkd = unicodedata.normalize("NFKD", name)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 
 def backfill_album_metadata(limit: int = _MAX_METADATA_BACKFILL_PER_RUN) -> int:
@@ -401,7 +394,7 @@ def _find_best_artist_for_deezer_id(
     )
     # Verify with accent-normalized comparison
     for candidate in candidates:
-        if _normalize_name(candidate.name) == normalized_name:
+        if normalize_name(candidate.name) == normalized_name:
             return candidate
     return None
 
@@ -433,14 +426,14 @@ def _resolve_artist_via_isrc(
     if not isrcs:
         return None
 
-    normalized_artist = _normalize_name(artist.name)
+    normalized_artist = normalize_name(artist.name)
     votes: list[int] = []
 
     # First pass: check 2 ISRCs
     for isrc in isrcs[:2]:
         result = provider.get_track_by_isrc(isrc)
         if result and result.artist_deezer_id:
-            if _normalize_name(result.artist_name or "") == normalized_artist:
+            if normalize_name(result.artist_name or "") == normalized_artist:
                 votes.append(result.artist_deezer_id)
 
     if not votes:
@@ -454,7 +447,7 @@ def _resolve_artist_via_isrc(
     for isrc in isrcs[2:]:
         result = provider.get_track_by_isrc(isrc)
         if result and result.artist_deezer_id:
-            if _normalize_name(result.artist_name or "") == normalized_artist:
+            if normalize_name(result.artist_name or "") == normalized_artist:
                 votes.append(result.artist_deezer_id)
 
     if not votes:
@@ -493,7 +486,7 @@ def _assign_deezer_id_to_best_artist(
         )
         return None
 
-    normalized = _normalize_name(artist.name)
+    normalized = normalize_name(artist.name)
     best = _find_best_artist_for_deezer_id(normalized, artist.name)
     target = best if best else artist
 
@@ -530,9 +523,9 @@ def _try_link_artist_to_deezer(
 
     # Fall back to name search
     results = provider.search_artists(artist.name, limit=3)
-    normalized = _normalize_name(artist.name)
+    normalized = normalize_name(artist.name)
     match = next(
-        (r for r in results if _normalize_name(r.name) == normalized and r.deezer_id),
+        (r for r in results if normalize_name(r.name) == normalized and r.deezer_id),
         None,
     )
     if not match or not match.deezer_id:
