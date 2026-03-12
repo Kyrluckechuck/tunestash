@@ -476,9 +476,41 @@ def _assign_deezer_id_to_best_artist(
 
     Checks for existing ownership, picks the best candidate among
     same-name artists, and saves. Returns the linked Artist or None.
+    If the deezer_id is already claimed by a case-variant of the same
+    artist, merges them automatically.
     """
     existing = Artist.objects.filter(deezer_id=deezer_id).first()
     if existing:
+        if normalize_name(artist.name) == normalize_name(existing.name):
+            # Same artist, different capitalization — merge
+            from library_manager.management.commands.merge_duplicate_artists import (
+                _merge_artist,
+            )
+
+            try:
+                stats = _merge_artist(source=artist, target=existing, stdout=None)
+                logger.info(
+                    "Merged '%s' (id=%d) into '%s' (id=%d) via %s: "
+                    "%d songs, %d albums moved",
+                    artist.name,
+                    artist.id,
+                    existing.name,
+                    existing.id,
+                    method,
+                    stats["songs_moved"],
+                    stats["albums_moved"] + stats["albums_merged"],
+                )
+                return existing
+            except Exception:
+                logger.exception(
+                    "Failed to merge '%s' (id=%d) into '%s' (id=%d)",
+                    artist.name,
+                    artist.id,
+                    existing.name,
+                    existing.id,
+                )
+                return None
+
         logger.info(
             f"Skipping '{artist.name}' (id={artist.id}): "
             f"deezer_id {deezer_id} already belongs to "
