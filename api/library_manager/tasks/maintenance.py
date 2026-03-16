@@ -812,3 +812,292 @@ def cleanup_appears_on_albums(self: Any) -> None:
         logger.exception(f"Error cleaning up appears_on albums: {e}")
         complete_task(task_history, success=False, error_message=str(e))
         raise
+
+
+@celery_app.task(
+    bind=True,
+    name="library_manager.tasks.backfill_album_tracks",
+)
+def backfill_album_tracks(
+    self: Any, batch_size: int = 200, last_album_id: int = 0
+) -> None:
+    """Re-fetch tracks for Deezer albums that have 0 songs.
+
+    These albums were created during migration but their track fetch
+    silently failed. Processes in batches, self-chaining until complete.
+    """
+    from django.db.models import Count
+
+    from src.providers.deezer import DeezerMetadataProvider
+
+    from .migration import _link_or_create_song
+
+    task_history = create_task_history(
+        task_id=self.request.id,
+        task_type="MAINTENANCE",
+        entity_type="SYSTEM",
+        task_name="backfill_album_tracks",
+    )
+    task_history.status = "RUNNING"
+    task_history.save()
+
+    try:
+        albums = list(
+            Album.objects.filter(
+                deezer_id__isnull=False,
+                id__gt=last_album_id,
+            )
+            .annotate(song_count=Count("songs"))
+            .filter(song_count=0)
+            .select_related("artist")
+            .order_by("id")[:batch_size]
+        )
+
+        if not albums:
+            msg = "No more albums need track backfill"
+            logger.info(msg)
+            update_task_progress(task_history, 100.0, msg)
+            complete_task(task_history)
+            return
+
+        total_remaining = (
+            Album.objects.filter(
+                deezer_id__isnull=False,
+                id__gt=last_album_id,
+            )
+            .annotate(song_count=Count("songs"))
+            .filter(song_count=0)
+            .count()
+        )
+
+        update_task_progress(
+            task_history,
+            0.0,
+            f"Backfilling {len(albums)} albums ({total_remaining} remaining)",
+        )
+
+        provider = DeezerMetadataProvider()
+        albums_filled = 0
+        albums_empty = 0
+        albums_errored = 0
+        songs_created = 0
+        max_album_id = albums[-1].id
+
+        for idx, album in enumerate(albums):
+            try:
+                deezer_tracks = provider.get_album_tracks(album.deezer_id)
+            except Exception as e:
+                logger.debug(
+                    f"backfill_album_tracks: failed for '{album.name}' "
+                    f"(deezer_id={album.deezer_id}): {e}"
+                )
+                albums_errored += 1
+                continue
+
+            if not deezer_tracks:
+                albums_empty += 1
+                continue
+
+            # Update total_tracks from actual count
+            if album.total_tracks == 0:
+                album.total_tracks = len(deezer_tracks)
+                album.save(update_fields=["total_tracks"])
+
+            for track in deezer_tracks:
+                result = _link_or_create_song(
+                    track, album.artist, album  # type: ignore[arg-type]
+                )
+                if result in ("linked", "created"):
+                    songs_created += 1
+
+            albums_filled += 1
+
+            if (idx + 1) % 50 == 0:
+                progress = 100.0 * (idx + 1) / len(albums)
+                update_task_progress(
+                    task_history,
+                    progress,
+                    f"Processed {idx + 1}/{len(albums)}: "
+                    f"{albums_filled} filled, {songs_created} songs",
+                )
+
+        summary = (
+            f"Backfilled {len(albums)} albums: "
+            f"{albums_filled} filled ({songs_created} songs), "
+            f"{albums_empty} genuinely empty, {albums_errored} API errors"
+        )
+        logger.info(summary)
+        update_task_progress(task_history, 100.0, summary)
+        complete_task(task_history)
+
+        # Self-chain for next batch
+        next_remaining = (
+            Album.objects.filter(
+                deezer_id__isnull=False,
+                id__gt=max_album_id,
+            )
+            .annotate(song_count=Count("songs"))
+            .filter(song_count=0)
+            .count()
+        )
+        if next_remaining > 0:
+            logger.info(
+                f"{next_remaining} albums still need backfill, scheduling next batch"
+            )
+            backfill_album_tracks.apply_async(
+                kwargs={
+                    "batch_size": batch_size,
+                    "last_album_id": max_album_id,
+                },
+            )
+
+    except Exception as e:
+        logger.exception(f"Error in backfill_album_tracks: {e}")
+        complete_task(task_history, success=False, error_message=str(e))
+        raise
+
+
+@celery_app.task(
+    bind=True,
+    name="library_manager.tasks.cleanup_orphaned_albums",
+)
+def cleanup_orphaned_albums(self: Any) -> None:
+    """Clean up albums with bad names, stale states, and Spotify-only empties.
+
+    Handles:
+    1. Albums with bad names ("missing", "Unknown", "None", "null", "N/A")
+       that have 0 songs — deleted
+    2. Empty albums marked downloaded=True — reset to downloaded=False
+    3. Spotify-only empty albums (no deezer_id, 0 songs) — deleted in batches
+    4. "missing" albums with songs that are misattributed compilations — unwanted
+    """
+    from django.db.models import Count
+
+    task_history = create_task_history(
+        task_id=self.request.id,
+        task_type="MAINTENANCE",
+        entity_type="SYSTEM",
+        task_name="cleanup_orphaned_albums",
+    )
+    task_history.status = "RUNNING"
+    task_history.save()
+
+    try:
+        stats: dict[str, int] = {}
+
+        # 1. Delete empty albums with bad names
+        bad_names = ["missing", "Unknown", "None", "null", "N/A"]
+        bad_name_deleted = 0
+        for name in bad_names:
+            qs = (
+                Album.objects.filter(name=name)
+                .annotate(song_count=Count("songs"))
+                .filter(song_count=0)
+            )
+            count = qs.count()
+            if count > 0:
+                qs.delete()
+                bad_name_deleted += count
+                logger.info(f"Deleted {count} empty albums named '{name}'")
+        stats["bad_name_empty_deleted"] = bad_name_deleted
+
+        update_task_progress(
+            task_history,
+            10.0,
+            f"Deleted {bad_name_deleted} empty bad-name albums",
+        )
+
+        # 2. Unwant "missing" albums that have songs (misattributed compilations)
+        missing_with_songs = (
+            Album.objects.filter(name="missing")
+            .annotate(song_count=Count("songs"))
+            .filter(song_count__gt=0, wanted=True)
+        )
+        unwanted_count = missing_with_songs.update(wanted=False)
+        stats["missing_unwanted"] = unwanted_count
+        if unwanted_count:
+            logger.info(
+                f"Set wanted=False on {unwanted_count} 'missing' albums with songs"
+            )
+
+        update_task_progress(
+            task_history, 20.0, f"Unwanted {unwanted_count} compilations"
+        )
+
+        # 3. Fix empty albums marked as downloaded
+        empty_downloaded = (
+            Album.objects.filter(downloaded=True)
+            .annotate(song_count=Count("songs"))
+            .filter(song_count=0)
+        )
+        reset_count = empty_downloaded.update(downloaded=False)
+        stats["empty_downloaded_reset"] = reset_count
+        if reset_count:
+            logger.info(f"Reset {reset_count} empty albums from downloaded=True")
+
+        update_task_progress(
+            task_history, 30.0, f"Reset {reset_count} empty downloaded albums"
+        )
+
+        # 4. Delete Spotify-only empty albums (no deezer_id, 0 songs)
+        # These are stubs from old Spotify sync that will never get tracks.
+        # Delete in batches to avoid long-running queries.
+        spotify_empty = (
+            Album.objects.filter(
+                spotify_gid__isnull=False,
+                deezer_id__isnull=True,
+            )
+            .annotate(song_count=Count("songs"))
+            .filter(song_count=0)
+        )
+        spotify_empty_total = spotify_empty.count()
+        spotify_deleted = 0
+
+        update_task_progress(
+            task_history,
+            35.0,
+            f"Found {spotify_empty_total} Spotify-only empty albums to delete",
+        )
+
+        batch_size = 5000
+        while True:
+            batch_ids = list(
+                Album.objects.filter(
+                    spotify_gid__isnull=False,
+                    deezer_id__isnull=True,
+                )
+                .annotate(song_count=Count("songs"))
+                .filter(song_count=0)
+                .values_list("id", flat=True)[:batch_size]
+            )
+            if not batch_ids:
+                break
+            deleted_count, _ = Album.objects.filter(id__in=batch_ids).delete()
+            spotify_deleted += deleted_count
+
+            if spotify_empty_total > 0:
+                progress = 35.0 + (60.0 * spotify_deleted / spotify_empty_total)
+                update_task_progress(
+                    task_history,
+                    min(progress, 95.0),
+                    f"Deleted {spotify_deleted}/{spotify_empty_total} Spotify-only empties",
+                )
+
+        stats["spotify_empty_deleted"] = spotify_deleted
+        logger.info(f"Deleted {spotify_deleted} Spotify-only empty albums")
+
+        summary = (
+            f"Album cleanup complete: "
+            f"{bad_name_deleted} bad-name deleted, "
+            f"{unwanted_count} compilations unwanted, "
+            f"{reset_count} empty-downloaded reset, "
+            f"{spotify_deleted} Spotify-only empties deleted"
+        )
+        logger.info(summary)
+        update_task_progress(task_history, 100.0, summary)
+        complete_task(task_history)
+
+    except Exception as e:
+        logger.exception(f"Error in cleanup_orphaned_albums: {e}")
+        complete_task(task_history, success=False, error_message=str(e))
+        raise

@@ -72,7 +72,7 @@ def _to_album_result(album: deezer.Album) -> AlbumResult:
         artist_name=artist_name,
         deezer_id=album.id,
         image_url=album.cover_xl or album.cover_big,
-        total_tracks=album.nb_tracks if "nb_tracks" in fields else 0,
+        total_tracks=album.nb_tracks if "nb_tracks" in fields else None,
         release_date=(
             str(album.release_date)
             if "release_date" in fields and album.release_date
@@ -136,10 +136,20 @@ def _to_playlist_result(playlist: deezer.Playlist) -> PlaylistResult:
 
 
 class DeezerMetadataProvider(MetadataProvider):
-    """Deezer metadata provider using deezer-python library."""
+    """Deezer metadata provider using deezer-python library.
+
+    For bulk operations (e.g., migration), use `client` to access the
+    underlying deezer-python Client directly — this avoids redundant API
+    calls when you already have a deezer.Album or deezer.Artist object.
+    """
 
     def __init__(self) -> None:
         self._client = RateLimitedDeezerClient()
+
+    @property
+    def client(self) -> RateLimitedDeezerClient:
+        """Expose the underlying deezer-python client for direct API access."""
+        return self._client
 
     @property
     def name(self) -> str:
@@ -194,12 +204,9 @@ class DeezerMetadataProvider(MetadataProvider):
         return _to_album_result(album)
 
     def get_album_tracks(self, provider_id: int | str) -> list[TrackResult]:
-        try:
-            album = self._client.get_album(int(provider_id))
-            return [_to_track_result(t) for t in album.get_tracks()]
-        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
-            logger.warning("Deezer get_album_tracks failed for id=%s", provider_id)
-            return []
+        """Get tracks for an album. Raises on API errors."""
+        album = self._client.get_album(int(provider_id))
+        return [_to_track_result(t) for t in album.get_tracks()]
 
     def get_track(self, provider_id: int | str) -> TrackResult | None:
         try:
@@ -227,9 +234,6 @@ class DeezerMetadataProvider(MetadataProvider):
         return _to_playlist_result(playlist)
 
     def get_playlist_tracks(self, playlist_id: int | str) -> list[TrackResult]:
-        try:
-            playlist = self._client.get_playlist(int(playlist_id))
-            return [_to_track_result(t) for t in playlist.get_tracks()]
-        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
-            logger.warning("Deezer get_playlist_tracks failed for id=%s", playlist_id)
-            return []
+        """Get tracks for a playlist. Raises on API errors."""
+        playlist = self._client.get_playlist(int(playlist_id))
+        return [_to_track_result(t) for t in playlist.get_tracks()]

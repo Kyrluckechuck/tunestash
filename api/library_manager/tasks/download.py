@@ -366,7 +366,14 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
     )
 
     provider = DeezerMetadataProvider()
-    deezer_tracks = provider.get_album_tracks(album.deezer_id)
+    try:
+        deezer_tracks = provider.get_album_tracks(album.deezer_id)
+    except Exception as e:
+        logger.warning(
+            f"Deezer get_album_tracks failed for album '{album.name}' "
+            f"(deezer_id={album.deezer_id}): {e}"
+        )
+        deezer_tracks = []
 
     if not deezer_tracks:
         old_deezer_id = album.deezer_id
@@ -383,7 +390,13 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
             )
             album.deezer_id = new_deezer_id
             album.save(update_fields=["deezer_id"])
-            deezer_tracks = provider.get_album_tracks(new_deezer_id)
+            try:
+                deezer_tracks = provider.get_album_tracks(new_deezer_id)
+            except Exception as e:
+                logger.warning(
+                    f"Retry get_album_tracks failed for {new_deezer_id}: {e}"
+                )
+                deezer_tracks = []
 
     if not deezer_tracks:
         album.increment_failed_count(AlbumFailureReason.DEEZER_NO_TRACKS)
@@ -959,7 +972,7 @@ def download_album_by_deezer_id(self: Any, deezer_album_id: int) -> None:
                 deezer_id=deezer_album_id,
                 artist=artist,
                 spotify_uri="",
-                total_tracks=album_data.total_tracks,
+                total_tracks=album_data.total_tracks or 0,
                 album_type=album_data.album_type,
                 album_group=album_data.album_type or "",
                 wanted=True,

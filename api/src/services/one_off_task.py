@@ -30,9 +30,11 @@ class OneOffTaskService:
         """Register all available one-off tasks."""
         # Import tasks here to avoid circular imports
         from library_manager.tasks import (
+            backfill_album_tracks,
             backfill_song_album,
             backfill_song_isrc,
             cleanup_appears_on_albums,
+            cleanup_orphaned_albums,
             migrate_all_tracked_artists_to_deezer,
             resolve_all_artists_to_deezer,
             retry_failed_external_mappings,
@@ -126,6 +128,33 @@ class OneOffTaskService:
             ),
             category="maintenance",
             task_func=cleanup_appears_on_albums,
+        )
+
+        self._tasks["backfill_album_tracks"] = OneOffTaskDefinition(
+            id="backfill_album_tracks",
+            name="Backfill Album Tracks",
+            description=(
+                "Re-fetch tracks from Deezer for albums that have a deezer_id but "
+                "0 songs (usually caused by silent API failures during migration). "
+                "Processes 200 albums per batch and self-chains until complete. "
+                "Updates total_tracks from actual track count."
+            ),
+            category="data-migration",
+            task_func=backfill_album_tracks,
+        )
+
+        self._tasks["cleanup_orphaned_albums"] = OneOffTaskDefinition(
+            id="cleanup_orphaned_albums",
+            name="Cleanup Orphaned Albums",
+            description=(
+                "Remove garbage album data: empty albums with bad names "
+                "('missing', 'Unknown', etc.), Spotify-only empty albums "
+                "(no deezer_id, 0 songs), empty albums marked downloaded, "
+                "and unwant misattributed compilation albums. "
+                "May delete 1M+ empty Spotify stubs — runs in batches."
+            ),
+            category="maintenance",
+            task_func=cleanup_orphaned_albums,
         )
 
         self._tasks["send_test_notification"] = OneOffTaskDefinition(

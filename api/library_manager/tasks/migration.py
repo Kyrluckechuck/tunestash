@@ -198,7 +198,7 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
                     deezer_id=album_data.deezer_id,
                     artist=artist,
                     spotify_uri="",
-                    total_tracks=album_data.total_tracks,
+                    total_tracks=album_data.total_tracks or 0,
                     album_type=album_data.album_type,
                     album_group=album_data.album_group or album_data.album_type,
                     wanted=True,
@@ -217,6 +217,7 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
         )
         songs_linked = 0
         songs_created = 0
+        albums_failed = 0
         total_albums = albums_with_deezer.count()
 
         for idx, album in enumerate(albums_with_deezer.iterator()):
@@ -227,7 +228,14 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
                     f"Failed to fetch tracks for album '{album.name}' "
                     f"(deezer_id={album.deezer_id}): {e}"
                 )
+                albums_failed += 1
                 continue
+
+            # Update total_tracks from actual track count if it was unknown
+            actual_count = len(deezer_tracks)
+            if album.total_tracks == 0 and actual_count > 0:
+                album.total_tracks = actual_count
+                album.save(update_fields=["total_tracks"])
 
             for track in deezer_tracks:
                 result = _link_or_create_song(track, artist, album)
@@ -249,10 +257,12 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
         artist.deezer_migration_status = "complete"
         artist.save(update_fields=["deezer_migration_status"])
 
+        failed_suffix = f", {albums_failed} albums failed" if albums_failed else ""
         summary = (
             f"Deezer migration complete for {artist.name}: "
             f"albums ({albums_linked} linked, {albums_created} created), "
             f"songs ({songs_linked} linked, {songs_created} created)"
+            f"{failed_suffix}"
         )
         logger.info(summary)
         update_task_progress(task_history, 100.0, summary)

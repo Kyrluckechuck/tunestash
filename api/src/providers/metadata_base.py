@@ -26,7 +26,7 @@ class AlbumResult:
     deezer_id: int | None = None
     youtube_id: str | None = None
     image_url: str | None = None
-    total_tracks: int = 0
+    total_tracks: int | None = None
     release_date: str | None = None
     album_type: str | None = None
     album_group: str | None = None
