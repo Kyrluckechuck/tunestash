@@ -305,7 +305,7 @@ class SongUpgradeService:
         quality = quality_map.get(config.fallback_quality, QualityPreference.HIGH)
 
         # Get output directory
-        output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/music"))
+        output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
 
         # Create metadata for the song - use sync_to_async to access related objects
         def get_song_metadata(db_song: Song) -> tuple[str, Optional[str]]:
