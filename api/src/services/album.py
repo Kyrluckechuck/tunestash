@@ -84,7 +84,7 @@ class AlbumService(BaseService[Album]):
                 deezer_id=deezer_id,
                 artist=artist,
                 spotify_uri="",
-                total_tracks=album_data.total_tracks,
+                total_tracks=album_data.total_tracks or 0,
                 album_type=album_data.album_type,
                 wanted=True,
             )

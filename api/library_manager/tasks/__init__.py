@@ -72,11 +72,13 @@ from .external_list import (
 
 # Re-export maintenance tasks
 from .maintenance import (
+    backfill_album_tracks,
     backfill_song_album,
     backfill_song_isrc,
     cleanup_app_metrics,
     cleanup_appears_on_albums,
     cleanup_celery_history,
+    cleanup_orphaned_albums,
     cleanup_stuck_tasks_periodic,
     retry_all_missing_known_songs,
     retry_failed_songs,
@@ -158,11 +160,13 @@ __all__ = [
     "download_single_track",
     "download_track_by_spotify_gid",
     # Maintenance tasks
+    "backfill_album_tracks",
     "backfill_song_album",
     "backfill_song_isrc",
     "cleanup_app_metrics",
     "cleanup_appears_on_albums",
     "cleanup_celery_history",
+    "cleanup_orphaned_albums",
     "cleanup_stuck_tasks_periodic",
     "retry_all_missing_known_songs",
     "retry_failed_songs",

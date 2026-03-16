@@ -67,7 +67,7 @@ def _fetch_albums_via_deezer(
             deezer_id=album_data.deezer_id,
             artist=artist,
             spotify_uri="",
-            total_tracks=album_data.total_tracks,
+            total_tracks=album_data.total_tracks or 0,
             album_type=album_data.album_type,
             album_group=album_data.album_group or album_data.album_type,
             wanted=True,

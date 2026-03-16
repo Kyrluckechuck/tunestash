@@ -174,7 +174,7 @@ class CatalogSearchService:
                     artist_provider_id=str(a.artist_deezer_id or ""),
                     release_date=a.release_date,
                     album_type=a.album_type or "album",
-                    total_tracks=a.total_tracks,
+                    total_tracks=a.total_tracks or 0,
                     in_library=in_library,
                     local_id=local_id,
                 )
