@@ -77,7 +77,14 @@ class FallbackDownloader:
                           instead of FLAC (which gets converted to M4A).
         """
         self._quality_preference = quality_preference
-        self._output_dir = output_dir or Path("/music")
+        if output_dir:
+            self._output_dir = output_dir
+        else:
+            from django.conf import settings as django_settings
+
+            self._output_dir = Path(
+                getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify")
+            )
         self._qobuz_use_mp3 = qobuz_use_mp3
 
         # Parse provider order - filter to only supported providers
