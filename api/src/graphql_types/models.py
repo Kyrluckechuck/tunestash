@@ -41,7 +41,12 @@ class EntityType(Enum):
 
 @strawberry.enum
 class DownloadProvider(Enum):
-    """Provider used to download a song."""
+    """Provider used to download a song.
+
+    SPOTDL is a legacy value from when SpotDL was used for downloads.
+    It maps to "YouTube Music (legacy)" in the Django model. Retained
+    for backward compatibility with existing database records.
+    """
 
     UNKNOWN = "UNKNOWN"
     SPOTDL = "SPOTDL"

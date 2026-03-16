@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from library_manager.tasks import fetch_all_albums_for_artist_sync
+from library_manager.tasks import fetch_all_albums_for_artist
 
 
 @pytest.mark.integration
@@ -22,11 +22,11 @@ class TestSyncRegression:
 
             # This should not raise a Connection Refused error
             try:
-                fetch_all_albums_for_artist_sync(sample_artist.id)
+                fetch_all_albums_for_artist.delay(sample_artist.id)
                 assert mock_task.delay.called, "Celery task should have been called"
             except ConnectionRefusedError:
                 pytest.fail(
-                    "fetch_all_albums_for_artist_sync raised Connection Refused - Celery broker misconfigured"
+                    "fetch_all_albums_for_artist.delay raised Connection Refused - Celery broker misconfigured"
                 )
             except Exception as e:
                 # Other exceptions are acceptable (API timeouts, etc.)
@@ -42,9 +42,9 @@ class TestSyncRegression:
 
         # Mock the underlying task to avoid external calls
         with patch(
-            "library_manager.tasks.fetch_all_albums_for_artist_sync"
-        ) as mock_sync:
-            mock_sync.return_value = None
+            "library_manager.tasks.artist.fetch_all_albums_for_artist"
+        ) as mock_task:
+            mock_task.delay.return_value = MagicMock(id="test-task-id")
 
             try:
                 result = await service.sync_artist(str(sample_artist.id))

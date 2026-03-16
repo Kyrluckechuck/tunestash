@@ -57,6 +57,15 @@ def normalize_name(name: str) -> str:
     return s.lower()
 
 
+_DEEZER_PLAYLIST_RE = re.compile(r"deezer\.com/(?:\w+/)?playlist/(\d+)")
+
+
+def extract_deezer_playlist_id(url: str) -> Optional[str]:
+    """Extract the numeric playlist ID from a Deezer playlist URL."""
+    match = _DEEZER_PLAYLIST_RE.search(url)
+    return match.group(1) if match else None
+
+
 def log_memory_usage(context: str, task_id: Optional[str] = None) -> None:
     """Log current memory usage for diagnostics (only if enabled in settings)."""
     diagnostics_enabled = getattr(settings, "worker_diagnostics_enabled", False)

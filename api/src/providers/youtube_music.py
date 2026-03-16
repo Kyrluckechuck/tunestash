@@ -3,7 +3,6 @@
 import json
 import logging
 import re
-import time
 from http.cookiejar import MozillaCookieJar
 from typing import Optional
 
@@ -12,6 +11,7 @@ from django.conf import settings
 from ytmusicapi import YTMusic
 
 from .base import ExternalListProvider, ExternalListResult, ExternalTrack
+from .rate_limit import check_api_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -41,40 +41,6 @@ def _clean_youtube_title(title: str) -> str:
 def _get_cookies_path() -> Optional[str]:
     path = getattr(settings, "youtube_cookies_location", "") or ""
     return str(path) if path else None
-
-
-def _check_rate_limit() -> None:
-    """Check and respect API rate limit for YouTube Music."""
-    from library_manager.models import APIRateLimitState
-
-    try:
-        state, _ = APIRateLimitState.objects.get_or_create(
-            api_name="youtube_music",
-            defaults={"max_requests_per_second": 2.0},
-        )
-        now_ts = time.time()
-        window_start_ts = state.window_start.timestamp() if state.window_start else 0
-
-        if now_ts - window_start_ts >= 1.0:
-            from django.utils import timezone
-
-            state.request_count = 1
-            state.window_start = timezone.now()
-            state.save(update_fields=["request_count", "window_start"])
-        elif state.request_count >= state.max_requests_per_second:
-            sleep_time = 1.0 - (now_ts - window_start_ts)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            from django.utils import timezone
-
-            state.request_count = 1
-            state.window_start = timezone.now()
-            state.save(update_fields=["request_count", "window_start"])
-        else:
-            state.request_count += 1
-            state.save(update_fields=["request_count"])
-    except Exception:
-        pass
 
 
 def _is_json_auth_file(file_path: str) -> bool:
@@ -280,7 +246,7 @@ class YouTubeMusicProvider(ExternalListProvider):
     def _fetch_playlist(
         self, playlist_id: str, page: int, limit: int
     ) -> ExternalListResult:
-        _check_rate_limit()
+        check_api_rate_limit("youtube_music", default_rate=2.0)
         client = _get_ytmusic_client()
         playlist_data = client.get_playlist(playlist_id, limit=limit)
 
@@ -297,7 +263,7 @@ class YouTubeMusicProvider(ExternalListProvider):
         )
 
     def _fetch_liked_tracks(self, page: int, limit: int) -> ExternalListResult:
-        _check_rate_limit()
+        check_api_rate_limit("youtube_music", default_rate=2.0)
         client = _get_ytmusic_client(require_auth=True)
         liked_data = client.get_liked_songs(limit=limit)
 

@@ -18,6 +18,9 @@ from ..models import (
     Album,
     AlbumFailureReason,
     Artist,
+)
+from ..models import DownloadProvider as DownloadProviderEnum
+from ..models import (
     Song,
     TaskHistory,
 )
@@ -32,6 +35,15 @@ from .core import (
     require_download_capability,
     update_task_progress,
 )
+
+# Mapping from FallbackDownloader provider name strings to model enum values
+FALLBACK_PROVIDER_MAP = {
+    "youtube": DownloadProviderEnum.YOUTUBE,
+    "tidal": DownloadProviderEnum.TIDAL,
+    "qobuz": DownloadProviderEnum.QOBUZ,
+}
+
+DEFAULT_FALLBACK_ORDER = ["youtube", "tidal", "qobuz"]
 
 
 def _resolve_album_to_deezer(album: Album) -> Optional[int]:
@@ -346,8 +358,6 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
 
     from src.providers.deezer import DeezerMetadataProvider
 
-    from ..models import DownloadProvider as DownloadProviderEnum
-
     if not album.deezer_id:
         raise ValueError(f"Album {album.name} has no deezer_id and no spotify_uri")
 
@@ -452,14 +462,8 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         f"Downloading {len(songs_to_download)} tracks via fallback providers",
     )
 
-    provider_enum_map = {
-        "youtube": DownloadProviderEnum.YOUTUBE,
-        "tidal": DownloadProviderEnum.TIDAL,
-        "qobuz": DownloadProviderEnum.QOBUZ,
-    }
-
     downloader = FallbackDownloader(
-        provider_order=["youtube", "tidal", "qobuz"],
+        provider_order=DEFAULT_FALLBACK_ORDER,
     )
 
     downloaded_count = 0
@@ -480,7 +484,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
             result = loop.run_until_complete(downloader.download_track(metadata))
 
             if result.success and result.file_path:
-                dl_provider = provider_enum_map.get(
+                dl_provider = FALLBACK_PROVIDER_MAP.get(
                     result.provider_used or "", DownloadProviderEnum.UNKNOWN
                 )
                 song.mark_downloaded(
@@ -526,16 +530,13 @@ def _handle_deezer_playlist_download(
     playlist_url: str, tracked: bool, task_id: str
 ) -> None:
     """Handle a Deezer playlist URL by routing to the Deezer sync pipeline."""
-    import re
-
     from ..models import PlaylistStatus, TrackedPlaylist
+    from .core import extract_deezer_playlist_id
 
-    match = re.search(r"deezer\.com/(?:\w+/)?playlist/(\d+)", playlist_url)
-    if not match:
+    deezer_playlist_id = extract_deezer_playlist_id(playlist_url)
+    if not deezer_playlist_id:
         logger.error(f"Could not extract Deezer playlist ID from URL: {playlist_url}")
         return
-
-    deezer_playlist_id = match.group(1)
     canonical_url = f"https://www.deezer.com/playlist/{deezer_playlist_id}"
 
     playlist, created = TrackedPlaylist.objects.get_or_create(
@@ -801,6 +802,13 @@ def download_extra_album_types_for_artist(
     task_history = None
     if task_id:
         task_history = TaskHistory.objects.filter(task_id=task_id).first()
+    if not task_history:
+        task_history = create_task_history(
+            task_id=self.request.id,
+            task_type="DOWNLOAD",
+            entity_id=str(artist.id),
+            entity_type="ARTIST",
+        )
 
     albums_to_download = []
     for album in missing_albums.iterator():
@@ -823,7 +831,7 @@ def download_extra_album_types_for_artist(
         )
         for dl_album in albums_to_download:
             try:
-                _download_deezer_album(dl_album, task_history or TaskHistory())
+                _download_deezer_album(dl_album, task_history)
             except _AlbumMerged:
                 pass
             except Exception as e:
@@ -1070,8 +1078,6 @@ def download_deezer_track(self: Any, song_id: int) -> None:
 
     from src.providers.deezer import DeezerMetadataProvider
 
-    from ..models import DownloadProvider as DownloadProviderEnum
-
     task_history = None
     try:
         song = Song.objects.select_related("primary_artist", "album").get(id=song_id)
@@ -1121,14 +1127,8 @@ def download_deezer_track(self: Any, song_id: int) -> None:
             task_history, 25.0, f"Downloading: {song.name} via fallback providers"
         )
 
-        provider_enum_map = {
-            "youtube": DownloadProviderEnum.YOUTUBE,
-            "tidal": DownloadProviderEnum.TIDAL,
-            "qobuz": DownloadProviderEnum.QOBUZ,
-        }
-
         downloader = FallbackDownloader(
-            provider_order=["youtube", "tidal", "qobuz"],
+            provider_order=DEFAULT_FALLBACK_ORDER,
         )
 
         loop = asyncio.new_event_loop()
@@ -1142,7 +1142,7 @@ def download_deezer_track(self: Any, song_id: int) -> None:
                 loop.close()
 
         if result.success and result.file_path:
-            dl_provider = provider_enum_map.get(
+            dl_provider = FALLBACK_PROVIDER_MAP.get(
                 result.provider_used or "", DownloadProviderEnum.UNKNOWN
             )
             song.mark_downloaded(

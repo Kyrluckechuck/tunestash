@@ -5,7 +5,9 @@ from typing import Any, Optional
 
 from celery_app import app as celery_app
 
-from ..models import Album, Artist, Song
+from ..models import Album, Artist
+from ..models import DownloadProvider as DownloadProviderEnum
+from ..models import Song
 from .core import (
     complete_task,
     create_task_history,
@@ -14,6 +16,7 @@ from .core import (
     require_download_capability,
     update_task_progress,
 )
+from .download import DEFAULT_FALLBACK_ORDER, FALLBACK_PROVIDER_MAP
 
 
 def _try_resolve_to_deezer(song: Song) -> None:
@@ -94,16 +97,8 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
     from downloader.providers.base import TrackMetadata
     from downloader.providers.fallback import FallbackDownloader
 
-    from ..models import DownloadProvider as DownloadProviderEnum
-
-    provider_enum_map = {
-        "youtube": DownloadProviderEnum.YOUTUBE,
-        "tidal": DownloadProviderEnum.TIDAL,
-        "qobuz": DownloadProviderEnum.QOBUZ,
-    }
-
     downloader = FallbackDownloader(
-        provider_order=["youtube", "tidal", "qobuz"],
+        provider_order=DEFAULT_FALLBACK_ORDER,
     )
 
     downloaded = 0
@@ -132,7 +127,7 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
             result = loop.run_until_complete(downloader.download_track(metadata))
 
             if result.success and result.file_path:
-                dl_provider = provider_enum_map.get(
+                dl_provider = FALLBACK_PROVIDER_MAP.get(
                     result.provider_used or "", DownloadProviderEnum.UNKNOWN
                 )
                 song.mark_downloaded(
@@ -448,7 +443,7 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
         task_history = create_task_history(
             task_id=self.request.id,
             task_type="DOWNLOAD",
-            entity_id=artist.gid,
+            entity_id=str(artist.id),
             entity_type="ARTIST",
         )
         update_task_progress(

@@ -304,7 +304,18 @@ def _resolve_match_via_deezer(
     """Use Deezer API to find which has_deezer record matches the given artist.
 
     Tries ISRC reverse-lookup first, then falls back to name search.
+    Votes are filtered by artist name match to prevent featured/contributing
+    artists from being misidentified as the primary artist.
     """
+    normalized_artist = normalize_name(artist.name)
+    compact_artist = normalized_artist.replace(" ", "")
+
+    def _name_matches(deezer_name: str) -> bool:
+        norm = normalize_name(deezer_name)
+        if norm == normalized_artist:
+            return True
+        return norm.replace(" ", "") == compact_artist
+
     # Strategy 1: ISRC reverse-lookup
     songs_with_isrc = (
         Song.objects.filter(primary_artist=artist, isrc__isnull=False)
@@ -319,7 +330,8 @@ def _resolve_match_via_deezer(
             result = provider.get_track_by_isrc(isrc)
             time.sleep(API_DELAY)
             if result and result.artist_deezer_id:
-                votes.append(result.artist_deezer_id)
+                if _name_matches(result.artist_name or ""):
+                    votes.append(result.artist_deezer_id)
 
         if len(votes) >= 2 and votes[0] == votes[1]:
             match = next((a for a in has_deezer if a.deezer_id == votes[0]), None)
@@ -327,12 +339,13 @@ def _resolve_match_via_deezer(
                 return match
 
         # Check remaining ISRCs if no agreement
-        if len(votes) < 2 or votes[0] != votes[1]:
+        if len(votes) < 2 or (len(votes) >= 2 and votes[0] != votes[1]):
             for isrc in isrcs[2:]:
                 result = provider.get_track_by_isrc(isrc)
                 time.sleep(API_DELAY)
                 if result and result.artist_deezer_id:
-                    votes.append(result.artist_deezer_id)
+                    if _name_matches(result.artist_name or ""):
+                        votes.append(result.artist_deezer_id)
 
         if votes:
             counts = Counter(votes)
@@ -345,9 +358,8 @@ def _resolve_match_via_deezer(
     # Strategy 2: Name search
     results = provider.search_artists(artist.name, limit=5)
     time.sleep(API_DELAY)
-    normalized = normalize_name(artist.name)
     for r in results:
-        if normalize_name(r.name) == normalized and r.deezer_id:
+        if normalize_name(r.name) == normalized_artist and r.deezer_id:
             match = next((a for a in has_deezer if a.deezer_id == r.deezer_id), None)
             if match:
                 return match

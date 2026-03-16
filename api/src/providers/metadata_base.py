@@ -1,8 +1,9 @@
 """Base classes for metadata providers (search + lookup)."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Union
 
 
 @dataclass
@@ -10,9 +11,9 @@ class ArtistResult:
     """Artist metadata from an external provider."""
 
     name: str
-    deezer_id: Optional[int] = None
-    youtube_id: Optional[str] = None
-    image_url: Optional[str] = None
+    deezer_id: int | None = None
+    youtube_id: str | None = None
+    image_url: str | None = None
     genres: list[str] = field(default_factory=list)
 
 
@@ -22,15 +23,15 @@ class AlbumResult:
 
     name: str
     artist_name: str
-    deezer_id: Optional[int] = None
-    youtube_id: Optional[str] = None
-    image_url: Optional[str] = None
+    deezer_id: int | None = None
+    youtube_id: str | None = None
+    image_url: str | None = None
     total_tracks: int = 0
-    release_date: Optional[str] = None
-    album_type: Optional[str] = None
-    album_group: Optional[str] = None
-    artist_deezer_id: Optional[int] = None
-    label: Optional[str] = None
+    release_date: str | None = None
+    album_type: str | None = None
+    album_group: str | None = None
+    artist_deezer_id: int | None = None
+    label: str | None = None
     genres: list[str] = field(default_factory=list)
 
 
@@ -40,15 +41,15 @@ class TrackResult:
 
     name: str
     artist_name: str
-    album_name: Optional[str] = None
-    deezer_id: Optional[int] = None
-    youtube_id: Optional[str] = None
-    isrc: Optional[str] = None
+    album_name: str | None = None
+    deezer_id: int | None = None
+    youtube_id: str | None = None
+    isrc: str | None = None
     duration_ms: int = 0
-    track_number: Optional[int] = None
-    disc_number: Optional[int] = None
-    artist_deezer_id: Optional[int] = None
-    album_deezer_id: Optional[int] = None
+    track_number: int | None = None
+    disc_number: int | None = None
+    artist_deezer_id: int | None = None
+    album_deezer_id: int | None = None
 
 
 @dataclass
@@ -56,12 +57,12 @@ class PlaylistResult:
     """Playlist metadata from an external provider."""
 
     name: str
-    deezer_id: Optional[int] = None
-    description: Optional[str] = None
-    creator_name: Optional[str] = None
+    deezer_id: int | None = None
+    description: str | None = None
+    creator_name: str | None = None
     track_count: int = 0
-    checksum: Optional[str] = None
-    image_url: Optional[str] = None
+    checksum: str | None = None
+    image_url: str | None = None
 
 
 class MetadataProvider(ABC):
@@ -89,27 +90,35 @@ class MetadataProvider(ABC):
         """Search for tracks by name."""
 
     @abstractmethod
-    def get_artist(self, provider_id: Union[int, str]) -> Optional[ArtistResult]:
+    def get_artist(self, provider_id: int | str) -> ArtistResult | None:
         """Get artist details by provider-specific ID."""
 
     @abstractmethod
     def get_artist_albums(
-        self, provider_id: Union[int, str], limit: int = 100
+        self, provider_id: int | str, limit: int = 100
     ) -> list[AlbumResult]:
         """Get all albums for an artist."""
 
     @abstractmethod
-    def get_album(self, provider_id: Union[int, str]) -> Optional[AlbumResult]:
+    def get_album(self, provider_id: int | str) -> AlbumResult | None:
         """Get album details by provider-specific ID."""
 
     @abstractmethod
-    def get_album_tracks(self, provider_id: Union[int, str]) -> list[TrackResult]:
+    def get_album_tracks(self, provider_id: int | str) -> list[TrackResult]:
         """Get all tracks for an album."""
 
     @abstractmethod
-    def get_track(self, provider_id: Union[int, str]) -> Optional[TrackResult]:
+    def get_track(self, provider_id: int | str) -> TrackResult | None:
         """Get track details by provider-specific ID."""
 
     @abstractmethod
-    def get_track_by_isrc(self, isrc: str) -> Optional[TrackResult]:
+    def get_track_by_isrc(self, isrc: str) -> TrackResult | None:
         """Look up a track by ISRC code."""
+
+    @abstractmethod
+    def get_playlist(self, playlist_id: int | str) -> PlaylistResult | None:
+        """Get playlist details by provider-specific ID."""
+
+    @abstractmethod
+    def get_playlist_tracks(self, playlist_id: int | str) -> list[TrackResult]:
+        """Get all tracks for a playlist."""
