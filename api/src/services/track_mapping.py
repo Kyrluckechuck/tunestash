@@ -2,19 +2,17 @@
 
 import logging
 import re
-import time
 from difflib import SequenceMatcher
 from typing import Optional
-
-from django.utils import timezone
 
 import requests
 
 from library_manager.models import (
-    APIRateLimitState,
     Song,
     TrackMappingCache,
 )
+from library_manager.tasks.core import normalize_name
+from src.providers.rate_limit import check_api_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -24,55 +22,33 @@ MUSICBRAINZ_USER_AGENT = "TuneStash/1.0 (https://github.com/tunestash)"
 
 MIN_CONFIDENCE_THRESHOLD = 0.6
 
+# Compiled regexes for stripping feat/remix tags during track matching
+_FEAT_BRACKET_RE = re.compile(
+    r"\s*[\(\[](feat\.?|ft\.?|featuring)\s+[^\)\]]*[\)\]]", re.IGNORECASE
+)
+_FEAT_SUFFIX_RE = re.compile(r"\s*(feat\.?|ft\.?|featuring)\s+.*$", re.IGNORECASE)
+_REMASTER_RE = re.compile(
+    r"\s*[\(\[](remaster(ed)?|deluxe|bonus)[^\)\]]*[\)\]]", re.IGNORECASE
+)
 
-def _normalize_name(name: str) -> str:
-    """Normalize a track/artist name for comparison."""
-    name = name.lower().strip()
-    # Remove common feat. variations
-    name = re.sub(r"\s*[\(\[](feat\.?|ft\.?|featuring)\s+[^\)\]]*[\)\]]", "", name)
-    name = re.sub(r"\s*(feat\.?|ft\.?|featuring)\s+.*$", "", name)
-    # Remove remaster/remix tags
-    name = re.sub(
-        r"\s*[\(\[](remaster(ed)?|deluxe|bonus)[^\)\]]*[\)\]]",
-        "",
-        name,
-        flags=re.IGNORECASE,
-    )
+
+def _normalize_name_for_track_matching(name: str) -> str:
+    """Normalize a name for track matching, extending the base normalize_name.
+
+    In addition to accent/punctuation/case normalization, this strips
+    feat/ft/featuring tags and remaster/deluxe/bonus suffixes that are
+    irrelevant for matching tracks across providers.
+    """
+    name = normalize_name(name)
+    name = _FEAT_BRACKET_RE.sub("", name)
+    name = _FEAT_SUFFIX_RE.sub("", name)
+    name = _REMASTER_RE.sub("", name)
     return name.strip()
 
 
 def _make_cache_key(artist: str, track: str) -> str:
     """Create a normalized lookup key for the cache."""
     return f"{artist.lower().strip()}::{track.lower().strip()}"
-
-
-def _check_api_rate_limit(api_name: str) -> None:
-    """Check and respect rate limit for an API."""
-    try:
-        defaults = APIRateLimitState.DEFAULT_RATES
-        state, _ = APIRateLimitState.objects.get_or_create(
-            api_name=api_name,
-            defaults={"max_requests_per_second": defaults.get(api_name, 1.0)},
-        )
-        now_ts = time.time()
-        window_start_ts = state.window_start.timestamp() if state.window_start else 0
-
-        if now_ts - window_start_ts >= 1.0:
-            state.request_count = 1
-            state.window_start = timezone.now()
-            state.save(update_fields=["request_count", "window_start"])
-        elif state.request_count >= state.max_requests_per_second:
-            sleep_time = 1.0 - (now_ts - window_start_ts)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            state.request_count = 1
-            state.window_start = timezone.now()
-            state.save(update_fields=["request_count", "window_start"])
-        else:
-            state.request_count += 1
-            state.save(update_fields=["request_count"])
-    except Exception:
-        pass
 
 
 # =============================================================================
@@ -128,7 +104,7 @@ def resolve_via_listenbrainz_labs(
     if not mbids:
         return {}
 
-    _check_api_rate_limit("listenbrainz_labs")
+    check_api_rate_limit("listenbrainz_labs")
 
     results: dict[str, Optional[str]] = {}
     # Process in batches of 25
@@ -152,7 +128,7 @@ def resolve_via_listenbrainz_labs(
                 results.setdefault(mbid, None)
 
         if i + 25 < len(mbids):
-            _check_api_rate_limit("listenbrainz_labs")
+            check_api_rate_limit("listenbrainz_labs")
 
     return results
 
@@ -162,7 +138,7 @@ def resolve_via_musicbrainz(mbid: str) -> Optional[str]:
 
     Returns Spotify track ID if found, None otherwise.
     """
-    _check_api_rate_limit("musicbrainz")
+    check_api_rate_limit("musicbrainz")
 
     try:
         resp = requests.get(
@@ -218,15 +194,15 @@ def resolve_via_deezer_search(
         if not results:
             return None, 0.0
 
-        norm_artist = _normalize_name(artist_name)
-        norm_track = _normalize_name(track_name)
+        norm_artist = _normalize_name_for_track_matching(artist_name)
+        norm_track = _normalize_name_for_track_matching(track_name)
 
         best_id: Optional[int] = None
         best_confidence = 0.0
 
         for item in results:
-            item_track = _normalize_name(item.name)
-            item_artist = _normalize_name(item.artist_name or "")
+            item_track = _normalize_name_for_track_matching(item.name)
+            item_artist = _normalize_name_for_track_matching(item.artist_name or "")
 
             artist_sim = SequenceMatcher(None, norm_artist, item_artist).ratio()
             track_sim = SequenceMatcher(None, norm_track, item_track).ratio()

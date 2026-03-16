@@ -1,6 +1,5 @@
 """Playlist tasks for the Tunestash."""
 
-import re
 from typing import Any, Optional
 
 from django.utils import timezone
@@ -9,7 +8,13 @@ from celery_app import app as celery_app
 
 from .. import helpers
 from ..models import Artist, Song, TrackedPlaylist
-from .core import complete_task, create_task_history, logger, update_task_progress
+from .core import (
+    complete_task,
+    create_task_history,
+    extract_deezer_playlist_id,
+    logger,
+    update_task_progress,
+)
 from .migration import _find_matching_song
 
 
@@ -68,10 +73,8 @@ def sync_tracked_playlist(
     _sync_tracked_playlist_internal(tracked_playlist, task_id)
 
 
-def _extract_deezer_playlist_id(url: str) -> Optional[str]:
-    """Extract the numeric playlist ID from a Deezer playlist URL."""
-    match = re.search(r"deezer\.com/(?:\w+/)?playlist/(\d+)", url)
-    return match.group(1) if match else None
+# Re-export for backward compatibility with existing importers
+_extract_deezer_playlist_id = extract_deezer_playlist_id
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.sync_deezer_playlist")

@@ -3,9 +3,10 @@
 Public API (no auth needed). Rate limit: ~50 req/s, we use 10/s conservatively.
 """
 
+from __future__ import annotations
+
 import logging
-import time
-from typing import Any, Optional, Union
+from typing import Any
 
 import deezer  # pylint: disable=import-error
 import deezer.exceptions  # pylint: disable=import-error
@@ -18,53 +19,20 @@ from .metadata_base import (
     PlaylistResult,
     TrackResult,
 )
+from .rate_limit import check_api_rate_limit
 
 logger = logging.getLogger(__name__)
-
-
-def _check_rate_limit() -> None:
-    """Respect Deezer API rate limit using the shared APIRateLimitState model."""
-    from library_manager.models import APIRateLimitState
-
-    try:
-        state, _ = APIRateLimitState.objects.get_or_create(
-            api_name="deezer",
-            defaults={"max_requests_per_second": 10.0},
-        )
-        now_ts = time.time()
-        window_start_ts = state.window_start.timestamp() if state.window_start else 0
-
-        if now_ts - window_start_ts >= 1.0:
-            from django.utils import timezone
-
-            state.request_count = 1
-            state.window_start = timezone.now()
-            state.save(update_fields=["request_count", "window_start"])
-        elif state.request_count >= state.max_requests_per_second:
-            sleep_time = 1.0 - (now_ts - window_start_ts)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            from django.utils import timezone
-
-            state.request_count = 1
-            state.window_start = timezone.now()
-            state.save(update_fields=["request_count", "window_start"])
-        else:
-            state.request_count += 1
-            state.save(update_fields=["request_count"])
-    except Exception:
-        pass
 
 
 class RateLimitedDeezerClient(deezer.Client):
     """Deezer API client with database-backed rate limiting."""
 
     def request(self, *args: Any, **kwargs: Any) -> Any:
-        _check_rate_limit()
+        check_api_rate_limit("deezer", default_rate=10.0)
         return super().request(*args, **kwargs)
 
 
-def _normalize_album_type(record_type: Optional[str]) -> Optional[str]:
+def _normalize_album_type(record_type: str | None) -> str | None:
     """Map Deezer record_type to our album_type values."""
     if not record_type:
         return None
@@ -201,7 +169,7 @@ class DeezerMetadataProvider(MetadataProvider):
             return []
         return [_to_track_result(t) for t in results[:limit]]
 
-    def get_artist(self, provider_id: Union[int, str]) -> Optional[ArtistResult]:
+    def get_artist(self, provider_id: int | str) -> ArtistResult | None:
         try:
             artist = self._client.get_artist(int(provider_id))
         except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
@@ -209,7 +177,7 @@ class DeezerMetadataProvider(MetadataProvider):
         return _to_artist_result(artist)
 
     def get_artist_albums(
-        self, provider_id: Union[int, str], limit: int = 100
+        self, provider_id: int | str, limit: int = 100
     ) -> list[AlbumResult]:
         try:
             artist = self._client.get_artist(int(provider_id))
@@ -218,14 +186,14 @@ class DeezerMetadataProvider(MetadataProvider):
             return []
         return [_to_album_result(a) for a in albums[:limit]]
 
-    def get_album(self, provider_id: Union[int, str]) -> Optional[AlbumResult]:
+    def get_album(self, provider_id: int | str) -> AlbumResult | None:
         try:
             album = self._client.get_album(int(provider_id))
         except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
             return None
         return _to_album_result(album)
 
-    def get_album_tracks(self, provider_id: Union[int, str]) -> list[TrackResult]:
+    def get_album_tracks(self, provider_id: int | str) -> list[TrackResult]:
         try:
             album = self._client.get_album(int(provider_id))
             return [_to_track_result(t) for t in album.get_tracks()]
@@ -233,14 +201,14 @@ class DeezerMetadataProvider(MetadataProvider):
             logger.warning("Deezer get_album_tracks failed for id=%s", provider_id)
             return []
 
-    def get_track(self, provider_id: Union[int, str]) -> Optional[TrackResult]:
+    def get_track(self, provider_id: int | str) -> TrackResult | None:
         try:
             track = self._client.get_track(int(provider_id))
         except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
             return None
         return _to_track_result(track)
 
-    def get_track_by_isrc(self, isrc: str) -> Optional[TrackResult]:
+    def get_track_by_isrc(self, isrc: str) -> TrackResult | None:
         try:
             track = self._client.request(
                 "GET", f"track/isrc:{isrc}", resource_type=deezer.Track
@@ -251,14 +219,14 @@ class DeezerMetadataProvider(MetadataProvider):
             return None
         return _to_track_result(track)
 
-    def get_playlist(self, playlist_id: Union[int, str]) -> Optional[PlaylistResult]:
+    def get_playlist(self, playlist_id: int | str) -> PlaylistResult | None:
         try:
             playlist = self._client.get_playlist(int(playlist_id))
         except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
             return None
         return _to_playlist_result(playlist)
 
-    def get_playlist_tracks(self, playlist_id: Union[int, str]) -> list[TrackResult]:
+    def get_playlist_tracks(self, playlist_id: int | str) -> list[TrackResult]:
         try:
             playlist = self._client.get_playlist(int(playlist_id))
             return [_to_track_result(t) for t in playlist.get_tracks()]

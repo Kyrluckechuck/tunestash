@@ -20,6 +20,7 @@ from ..models import (
     TaskHistory,
     TrackedPlaylist,
 )
+from .core import extract_deezer_playlist_id as _extract_deezer_playlist_id
 from .core import logger, normalize_name
 from .download import download_single_album
 
@@ -264,15 +265,13 @@ def _filter_changed_deezer_playlists(
             continue
 
         # Extract Deezer playlist ID from URL
-        import re
-
-        match = re.search(r"deezer\.com/(?:\w+/)?playlist/(\d+)", playlist.url)
-        if not match:
+        deezer_pid = _extract_deezer_playlist_id(playlist.url)
+        if not deezer_pid:
             playlists_to_sync.append(playlist)
             continue
 
         try:
-            playlist_info = provider.get_playlist(match.group(1))
+            playlist_info = provider.get_playlist(deezer_pid)
             if playlist_info is None:
                 playlists_to_sync.append(playlist)
             elif playlist_info.checksum != playlist.snapshot_id:

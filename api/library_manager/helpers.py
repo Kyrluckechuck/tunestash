@@ -90,24 +90,6 @@ def is_task_pending_or_running(task_id: str) -> tuple[bool, str]:
     return False, ""
 
 
-# Original Huey implementations (commented out)
-# def get_all_tasks_with_name(task_name: str) -> List[Task]:
-#     potential_tasks: List[Task] = rawHuey.pending()
-#     found_tasks: List[Task] = []
-#     for potential_task in potential_tasks:
-#         if potential_task.name == task_name:
-#             found_tasks.append(potential_task)
-#     return found_tasks
-
-# def convert_first_task_args_to_list(
-#     pending_tasks: List[Task],
-# ) -> Union[List[int], List[str]]:
-#     pending_args: Union[List[int], List[str]] = []
-#     for pending_task in pending_tasks:
-#         pending_args.append(pending_task.args[0])
-#     return pending_args
-
-
 def update_tracked_artists_albums(
     already_enqueued_artists: List[int],
     artists_to_enqueue: List[Artist],

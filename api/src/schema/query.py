@@ -212,8 +212,8 @@ class Query:  # pylint: disable=too-many-public-methods
         page_info = PageInfo(
             has_next_page=has_next_page,
             has_previous_page=after is not None,
-            start_cursor=None,
-            end_cursor=None,
+            start_cursor=(services.playlist.create_cursor(edges[0]) if edges else None),
+            end_cursor=(services.playlist.create_cursor(edges[-1]) if edges else None),
         )
 
         return PlaylistConnection(
@@ -625,8 +625,12 @@ class Query:  # pylint: disable=too-many-public-methods
         page_info = PageInfo(
             has_next_page=has_next_page,
             has_previous_page=after is not None,
-            start_cursor=None,
-            end_cursor=None,
+            start_cursor=(
+                services.external_list.create_cursor(items[0]) if items else None
+            ),
+            end_cursor=(
+                services.external_list.create_cursor(items[-1]) if items else None
+            ),
         )
 
         return ExternalListConnection(

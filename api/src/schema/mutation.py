@@ -65,10 +65,6 @@ def validate_name(name: str, field_name: str = "Name") -> MutationResult:
         return MutationResult(
             success=False, message=f"{field_name} cannot exceed 255 characters"
         )
-    if len(name) < 1:
-        return MutationResult(
-            success=False, message=f"{field_name} must be at least 1 character"
-        )
 
     return MutationResult(success=True, message=f"{field_name} valid")
 
@@ -489,7 +485,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
         This queues re-downloads for all affected songs across all pending
         updates. Use with caution as this may trigger many re-downloads.
         """
-        success, message, count = await services.metadata_update.apply_all_pending()
+        success, message, _ = await services.metadata_update.apply_all_pending()
         return MutationResult(success=success, message=message)
 
     @strawberry.mutation

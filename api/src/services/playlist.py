@@ -594,7 +594,7 @@ class PlaylistService(BaseService[Playlist]):
             ):
                 django_playlist.status = PlaylistStatus.ACTIVE
                 django_playlist.status_message = None
-                await sync_to_async(django_playlist.save)()
+                await django_playlist.asave()
 
             if django_playlist.provider == "deezer":
                 from library_manager.tasks import sync_deezer_playlist

@@ -1,7 +1,6 @@
 """Last.fm provider for external music lists."""
 
 import logging
-import time
 from typing import Any, Optional
 
 from django.conf import settings
@@ -9,6 +8,7 @@ from django.conf import settings
 import requests
 
 from .base import ExternalListProvider, ExternalListResult, ExternalTrack
+from .rate_limit import check_api_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -26,43 +26,9 @@ def _get_api_key() -> str:
     return str(key)
 
 
-def _check_rate_limit() -> None:
-    """Check and respect API rate limit for Last.fm."""
-    from library_manager.models import APIRateLimitState
-
-    try:
-        state, _ = APIRateLimitState.objects.get_or_create(
-            api_name="lastfm",
-            defaults={"max_requests_per_second": 5.0},
-        )
-        now_ts = time.time()
-        window_start_ts = state.window_start.timestamp() if state.window_start else 0
-
-        if now_ts - window_start_ts >= 1.0:
-            from django.utils import timezone
-
-            state.request_count = 1
-            state.window_start = timezone.now()
-            state.save(update_fields=["request_count", "window_start"])
-        elif state.request_count >= state.max_requests_per_second:
-            sleep_time = 1.0 - (now_ts - window_start_ts)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            from django.utils import timezone
-
-            state.request_count = 1
-            state.window_start = timezone.now()
-            state.save(update_fields=["request_count", "window_start"])
-        else:
-            state.request_count += 1
-            state.save(update_fields=["request_count"])
-    except Exception:
-        pass
-
-
 def _lastfm_request(params: dict[str, Any]) -> dict[str, Any]:
     """Make a rate-limited request to the Last.fm API."""
-    _check_rate_limit()
+    check_api_rate_limit("lastfm", default_rate=5.0)
 
     params.setdefault("api_key", _get_api_key())
     params["format"] = "json"

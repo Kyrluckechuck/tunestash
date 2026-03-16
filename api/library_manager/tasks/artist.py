@@ -78,11 +78,6 @@ def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
         raise
 
 
-def fetch_all_albums_for_artist_sync(artist_id: int) -> None:
-    """Synchronous wrapper for fetch_all_albums_for_artist - for direct calls."""
-    fetch_all_albums_for_artist.delay(artist_id)
-
-
 @celery_app.task(bind=True, name="library_manager.tasks.update_tracked_artists")
 def update_tracked_artists(self: Any, task_id: Optional[str] = None) -> None:
     all_tracked_artists = Artist.objects.filter(tracked=True).order_by(

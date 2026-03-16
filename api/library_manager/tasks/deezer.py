@@ -127,7 +127,5 @@ def fetch_artist_albums_from_deezer(self: Any, artist_id: int) -> None:
     except Exception as e:
         logger.exception(f"Error fetching Deezer albums for artist_id={artist_id}")
         if task_history:
-            task_history.status = "FAILED"
-            task_history.log_messages.append(str(e))
-            task_history.save()
+            complete_task(task_history, success=False, error_message=str(e))
         raise

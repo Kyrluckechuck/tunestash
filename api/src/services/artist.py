@@ -263,9 +263,6 @@ class ArtistService(BaseService[Artist]):
             django_artist.tracked = True
             await django_artist.asave()
 
-            # Queue tasks
-            # await sync_to_async(fetch_all_albums_for_artist)(django_artist.id)
-
             return MutationResult(
                 success=True,
                 message="Artist tracked successfully",
@@ -331,10 +328,9 @@ class ArtistService(BaseService[Artist]):
             # Convert string to int since frontend sends database ID
             artist_db_id = int(artist_id)
             django_artist = await self.model.objects.aget(id=artist_db_id)
-            # Local import to avoid circular import during module initialization
-            from library_manager.tasks import fetch_all_albums_for_artist_sync
+            from library_manager.tasks import fetch_all_albums_for_artist
 
-            await sync_to_async(fetch_all_albums_for_artist_sync)(django_artist.id)
+            await sync_to_async(fetch_all_albums_for_artist.delay)(django_artist.id)
             return await self._to_graphql_type_async(django_artist)
         except ValueError as exc:
             raise ValueError(f"Invalid artist ID format: {artist_id}") from exc

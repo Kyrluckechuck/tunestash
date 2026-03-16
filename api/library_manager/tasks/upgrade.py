@@ -39,13 +39,19 @@ def upgrade_low_quality_songs(
 
     service = SongUpgradeService(max_bitrate=max_bitrate)
 
-    # Get songs to upgrade
-    songs = asyncio.get_event_loop().run_until_complete(
-        service.get_low_quality_songs(limit=max_songs)
-    )
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        # Get songs to upgrade
+        songs = loop.run_until_complete(service.get_low_quality_songs(limit=max_songs))
+    except Exception:
+        loop.close()
+        raise
 
     if not songs:
         logger.info("[UPGRADE] No songs eligible for upgrade")
+        loop.close()
         return {
             "processed": 0,
             "upgraded": 0,
@@ -65,9 +71,7 @@ def upgrade_low_quality_songs(
 
     for song in songs:
         try:
-            result = asyncio.get_event_loop().run_until_complete(
-                service.attempt_upgrade(song.id)
-            )
+            result = loop.run_until_complete(service.attempt_upgrade(song.id))
 
             stats["processed"] += 1
 
@@ -96,6 +100,8 @@ def upgrade_low_quality_songs(
             stats["api_errors"] += 1
             # Stop on exceptions to avoid hammering a broken API
             break
+
+    loop.close()
 
     logger.info(
         f"[UPGRADE] Task complete: {stats['upgraded']}/{stats['processed']} upgraded, "

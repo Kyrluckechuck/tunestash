@@ -15,7 +15,6 @@ All tasks are re-exported here for backwards compatibility.
 from .artist import (
     download_missing_tracked_artists,
     fetch_all_albums_for_artist,
-    fetch_all_albums_for_artist_sync,
     update_tracked_artists,
 )
 
@@ -46,6 +45,7 @@ from .diagnostics import (
     memory_profile_after_init,
     memory_profile_worker,
     periodic_memory_health_check,
+    profile_parent_process,
 )
 
 # Re-export download tasks
@@ -141,7 +141,6 @@ __all__ = [
     # Artist tasks
     "download_missing_tracked_artists",
     "fetch_all_albums_for_artist",
-    "fetch_all_albums_for_artist_sync",
     "update_tracked_artists",
     # Playlist tasks
     "_sync_tracked_playlist_internal",
@@ -182,6 +181,7 @@ __all__ = [
     "memory_profile_after_init",
     "memory_profile_worker",
     "periodic_memory_health_check",
+    "profile_parent_process",
     # Notification tasks
     "check_notifications",
     "send_test_notification",
