@@ -50,11 +50,11 @@ def track_match():
 
 
 @pytest.fixture
-def downloader():
+def downloader(tmp_path):
     """Create a FallbackDownloader instance."""
     return FallbackDownloader(
         quality_preference=QualityPreference.HIGH,
-        output_dir=Path("/test/output"),
+        output_dir=tmp_path,
     )
 
 
