@@ -278,18 +278,23 @@ class FallbackDownloader:
 
         # Step 2: Download the track
         try:
-            # Generate output path
+            # Generate output path: {output_dir}/{artist}/{album}/{artist} - {title}.{ext}
+            # Matches the SpotDL convention for consistent library structure
+            safe_artist = self._sanitize_filename(track_metadata.artist)
+            safe_album = self._sanitize_filename(
+                track_metadata.album or "Unknown Album"
+            )
             if output_filename:
                 base_filename = output_filename
             else:
-                # Create filename from metadata
-                safe_artist = self._sanitize_filename(track_metadata.artist)
                 safe_title = self._sanitize_filename(track_metadata.title)
                 base_filename = f"{safe_artist} - {safe_title}"
 
             # Determine file extension based on quality and provider
             ext = self._get_expected_extension(provider_name)
-            output_path = self._output_dir / f"{base_filename}.{ext}"
+            album_dir = self._output_dir / safe_artist / safe_album
+            album_dir.mkdir(parents=True, exist_ok=True)
+            output_path = album_dir / f"{base_filename}.{ext}"
 
             # Download
             download_result = await provider.download_track(

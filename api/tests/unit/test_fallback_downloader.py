@@ -136,6 +136,122 @@ class TestFallbackDownloaderInit:
         assert downloader._provider_order == []
 
 
+class TestFallbackDownloaderOutputPath:
+    """Tests for download output path structure.
+
+    Downloads MUST use artist/album subdirectories to match the library structure.
+    Flat files in the output root are a critical bug — they get orphaned and are
+    inconsistent with the existing library layout.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_output_path_uses_artist_album_subdirectories(
+        self, tmp_path, spotify_metadata
+    ):
+        """Downloaded files must be placed in {output_dir}/{artist}/{album}/."""
+        downloader = FallbackDownloader(output_dir=tmp_path)
+
+        mock_provider = AsyncMock()
+        mock_provider.name = "youtube"
+        mock_provider.search_track = AsyncMock(
+            return_value=TrackMatch(
+                provider="youtube",
+                provider_track_id="yt123",
+                title="Test Song",
+                artist="Test Artist",
+                album="Test Album",
+                duration_ms=180000,
+                confidence=0.9,
+            )
+        )
+        output_file = (
+            tmp_path / "Test Artist" / "Test Album" / "Test Artist - Test Song.m4a"
+        )
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_bytes(b"fake audio data")
+        mock_provider.download_track = AsyncMock(
+            return_value=DownloadResult(
+                success=True,
+                provider="youtube",
+                file_path=output_file,
+                bitrate_kbps=256,
+                format="m4a",
+            )
+        )
+
+        downloader._providers["youtube"] = mock_provider
+        downloader._initialized.add("youtube")
+
+        await downloader.download_track(spotify_metadata)
+
+        # Verify the output_path passed to provider.download_track uses subdirectories
+        call_args = mock_provider.download_track.call_args
+        actual_output_path = call_args.kwargs.get(
+            "output_path", call_args.args[1] if len(call_args.args) > 1 else None
+        )
+        assert actual_output_path is not None
+
+        # Path must be inside artist/album subdirectory, NOT flat in output_dir
+        relative = actual_output_path.relative_to(tmp_path)
+        parts = relative.parts
+        assert len(parts) >= 3, (
+            f"Output path {actual_output_path} must have artist/album subdirectories, "
+            f"got {parts}. Flat files in the output root are not allowed."
+        )
+        assert parts[0] == "Test Artist"
+        assert parts[1] == "Test Album"
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_output_path_creates_album_directory(
+        self, tmp_path, spotify_metadata
+    ):
+        """Album directory should be created automatically."""
+        downloader = FallbackDownloader(output_dir=tmp_path)
+
+        mock_provider = AsyncMock()
+        mock_provider.name = "youtube"
+        mock_provider.search_track = AsyncMock(
+            return_value=TrackMatch(
+                provider="youtube",
+                provider_track_id="yt123",
+                title="Test Song",
+                artist="Test Artist",
+                album="Test Album",
+                duration_ms=180000,
+                confidence=0.9,
+            )
+        )
+        mock_provider.download_track = AsyncMock(
+            return_value=DownloadResult(
+                success=False,
+                provider="youtube",
+                error="simulated failure",
+            )
+        )
+
+        downloader._providers["youtube"] = mock_provider
+        downloader._initialized.add("youtube")
+
+        await downloader.download_track(spotify_metadata)
+
+        # Even if download fails, the directory should have been created
+        expected_dir = tmp_path / "Test Artist" / "Test Album"
+        assert (
+            expected_dir.exists()
+        ), f"Album directory {expected_dir} should be created before download attempt"
+
+    @pytest.mark.unit
+    def test_output_dir_default_matches_volume_mount(self):
+        """Default output dir must match the Docker volume mount path."""
+        downloader = FallbackDownloader()
+        assert downloader._output_dir == Path("/mnt/music_spotify"), (
+            f"Default output dir is {downloader._output_dir}, "
+            f"but must be /mnt/music_spotify to match the Docker volume mount"
+        )
+
+
 class TestFallbackDownloaderSanitizeFilename:
     """Tests for filename sanitization."""
 
