@@ -826,7 +826,7 @@ def backfill_album_tracks(
     These albums were created during migration but their track fetch
     silently failed. Processes in batches, self-chaining until complete.
     """
-    from django.db.models import Count
+    from django.db.models import Count, F
 
     from src.providers.deezer import DeezerMetadataProvider
 
@@ -846,9 +846,10 @@ def backfill_album_tracks(
             Album.objects.filter(
                 deezer_id__isnull=False,
                 id__gt=last_album_id,
+                spotify_gid__isnull=True,
             )
             .annotate(song_count=Count("songs"))
-            .filter(song_count=0)
+            .filter(song_count__lt=F("total_tracks"))
             .select_related("artist")
             .order_by("id")[:batch_size]
         )
@@ -864,9 +865,10 @@ def backfill_album_tracks(
             Album.objects.filter(
                 deezer_id__isnull=False,
                 id__gt=last_album_id,
+                spotify_gid__isnull=True,
             )
             .annotate(song_count=Count("songs"))
-            .filter(song_count=0)
+            .filter(song_count__lt=F("total_tracks"))
             .count()
         )
 
@@ -935,9 +937,10 @@ def backfill_album_tracks(
             Album.objects.filter(
                 deezer_id__isnull=False,
                 id__gt=max_album_id,
+                spotify_gid__isnull=True,
             )
             .annotate(song_count=Count("songs"))
-            .filter(song_count=0)
+            .filter(song_count__lt=F("total_tracks"))
             .count()
         )
         if next_remaining > 0:

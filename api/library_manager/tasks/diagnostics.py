@@ -443,7 +443,7 @@ def periodic_memory_health_check(self: Any) -> Dict[str, Any]:
     Periodic task to check memory health of workers and container.
 
     This task monitors both:
-    1. Worker process memory (via psutil) - stable due to --max-tasks-per-child
+    1. Worker process memory (via psutil)
     2. Container memory (via cgroup) - catches main Celery process leaks
 
     The main Celery process leaks memory over time (known Celery issue #4843).
@@ -524,7 +524,7 @@ def periodic_memory_health_check(self: Any) -> Dict[str, Any]:
         results["status"] = "WORKER_WARNING"
         results["message"] = (
             f"Worker memory elevated ({rss_mb:.1f} MB). "
-            f"Worker recycling should occur soon via --max-tasks-per-child."
+            f"Container restart may be needed if memory continues growing."
         )
         logger.warning(
             f"[MEMORY HEALTH] WORKER WARNING - {rss_mb:.1f} MB on PID {os.getpid()}. "

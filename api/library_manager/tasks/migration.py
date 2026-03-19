@@ -66,20 +66,30 @@ def _link_or_create_song(
     matched_song = _find_matching_song(track, artist)
 
     if matched_song:
-        update_fields: list[str] = []
         if not matched_song.deezer_id:
+            # Song has no deezer_id yet — link it to this track/album
+            update_fields: list[str] = ["deezer_id"]
             matched_song.deezer_id = track.deezer_id
-            update_fields.append("deezer_id")
-        if not matched_song.isrc and track.isrc:
-            matched_song.isrc = track.isrc
-            update_fields.append("isrc")
-        if matched_song.album is None:
-            matched_song.album = album
-            update_fields.append("album_id")
-        if update_fields:
+            if not matched_song.isrc and track.isrc:
+                matched_song.isrc = track.isrc
+                update_fields.append("isrc")
+            if matched_song.album is None:
+                matched_song.album = album
+                update_fields.append("album_id")
             matched_song.save(update_fields=update_fields)
             return "linked"
-        return None
+
+        # Match has a different deezer_id — this is a variant release
+        # (e.g., deluxe edition, compilation). Create a separate Song
+        # so each album has its own track with correct metadata.
+        Song.objects.create(
+            name=track.name,
+            deezer_id=track.deezer_id,
+            isrc=track.isrc,
+            primary_artist=artist,
+            album=album,
+        )
+        return "created"
 
     Song.objects.create(
         name=track.name,
