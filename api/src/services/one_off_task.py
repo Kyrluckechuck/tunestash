@@ -35,6 +35,7 @@ class OneOffTaskService:
             backfill_song_isrc,
             cleanup_appears_on_albums,
             cleanup_orphaned_albums,
+            merge_duplicate_songs,
             migrate_all_tracked_artists_to_deezer,
             repair_misassigned_songs,
             resolve_all_artists_to_deezer,
@@ -117,6 +118,20 @@ class OneOffTaskService:
             ),
             category="data-migration",
             task_func=resolve_all_artists_to_deezer,
+        )
+
+        self._tasks["merge_duplicate_songs"] = OneOffTaskDefinition(
+            id="merge_duplicate_songs",
+            name="Merge Duplicate Songs",
+            description=(
+                "Merge albumless duplicate songs into their with-album counterparts. "
+                "Finds songs with matching ISRC where one copy has an album and the "
+                "other doesn't. Carries over download data, Spotify GID, and other "
+                "fields from the albumless copy, then deletes it. "
+                "Self-chains in batches of 500."
+            ),
+            category="maintenance",
+            task_func=merge_duplicate_songs,
         )
 
         self._tasks["repair_misassigned_songs"] = OneOffTaskDefinition(
