@@ -61,7 +61,7 @@ def _link_or_create_song(
         return None
 
     if Song.objects.filter(deezer_id=track.deezer_id).exists():
-        return None
+        return "exists"
 
     matched_song = _find_matching_song(track, artist)
 

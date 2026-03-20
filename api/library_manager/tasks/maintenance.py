@@ -681,21 +681,32 @@ def backfill_song_album(
             time.sleep(0.1)
 
         total_linked = 0
+        skipped_wrong_artist = 0
         if song_album_pairs:
             song_objs = list(
                 Song.objects.filter(id__in=[s[0] for s in song_album_pairs])
             )
             pair_map = dict(song_album_pairs)
+            songs_to_update = []
             for song in song_objs:
                 album_deezer_id = pair_map[song.id]
-                song.album = album_cache[album_deezer_id]
-            Song.objects.bulk_update(song_objs, ["album"])
-            total_linked = len(song_objs)
+                album = album_cache[album_deezer_id]
+                a_aid = album.artist_id  # type: ignore[union-attr]
+                s_aid = song.primary_artist_id  # type: ignore[attr-defined]
+                if a_aid != s_aid:
+                    skipped_wrong_artist += 1
+                    continue
+                song.album = album
+                songs_to_update.append(song)
+            if songs_to_update:
+                Song.objects.bulk_update(songs_to_update, ["album"])
+            total_linked = len(songs_to_update)
 
         logger.info(
             f"Linked {total_linked}/{len(songs_without_album)} songs to albums "
             f"({total_album_not_found} albums not in DB, "
-            f"{total_no_album_data} tracks had no album data on Deezer)"
+            f"{total_no_album_data} tracks had no album data on Deezer, "
+            f"{skipped_wrong_artist} skipped artist mismatch)"
         )
 
         remaining_after = Song.objects.filter(
@@ -905,14 +916,24 @@ def backfill_album_tracks(
                 album.total_tracks = len(deezer_tracks)
                 album.save(update_fields=["total_tracks"])
 
+            album_songs_added = 0
             for track in deezer_tracks:
                 result = _link_or_create_song(
                     track, album.artist, album  # type: ignore[arg-type]
                 )
                 if result in ("linked", "created"):
-                    songs_created += 1
+                    album_songs_added += 1
 
-            albums_filled += 1
+            songs_created += album_songs_added
+            if album_songs_added > 0:
+                albums_filled += 1
+            elif deezer_tracks:
+                # All tracks already exist elsewhere — sync total_tracks
+                # to actual song count so this album won't be reprocessed
+                actual = Song.objects.filter(album=album).count()
+                if album.total_tracks != actual:
+                    album.total_tracks = actual
+                    album.save(update_fields=["total_tracks"])
 
             if (idx + 1) % 50 == 0:
                 progress = 100.0 * (idx + 1) / len(albums)
@@ -1102,5 +1123,189 @@ def cleanup_orphaned_albums(self: Any) -> None:
 
     except Exception as e:
         logger.exception(f"Error in cleanup_orphaned_albums: {e}")
+        complete_task(task_history, success=False, error_message=str(e))
+        raise
+
+
+def _find_correct_album_via_deezer(
+    provider: Any,
+    song: Song,
+    correct_artist_id: int,
+    cache: dict[tuple[int, int], Optional[Album]],
+) -> Optional[Album]:
+    """Ask Deezer which album a track belongs to, filtered by artist."""
+    import time
+
+    if not song.deezer_id:
+        return None
+
+    try:
+        track = provider.get_track(song.deezer_id)
+        if not track or not track.album_deezer_id:
+            return None
+
+        deezer_key = (track.album_deezer_id, correct_artist_id)
+        if deezer_key not in cache:
+            cache[deezer_key] = Album.objects.filter(
+                deezer_id=track.album_deezer_id,
+                artist_id=correct_artist_id,
+            ).first()
+        return cache[deezer_key]
+    except Exception as e:
+        logger.debug(f"Deezer lookup failed for song {song.id}: {e}")
+        return None
+    finally:
+        time.sleep(0.1)
+
+
+@celery_app.task(
+    bind=True,
+    name="library_manager.tasks.repair_misassigned_songs",
+)
+def repair_misassigned_songs(
+    self: Any, batch_size: int = 500, last_song_id: int = 0
+) -> None:
+    """Fix songs assigned to albums belonging to a different artist.
+
+    Finds songs where primary_artist_id != album.artist_id (cross-artist
+    contamination from backfill_song_album not validating artist match).
+
+    For each misassigned song:
+    1. Try to find an album by the correct artist with the same name
+    2. If not found and song has deezer_id, ask Deezer for the correct album
+    3. If still not found, set album=None
+
+    Self-chains until all misassigned songs are processed.
+    """
+    from django.db.models import F
+
+    task_history = create_task_history(
+        task_id=self.request.id,
+        task_type="MAINTENANCE",
+        entity_type="SYSTEM",
+        task_name="repair_misassigned_songs",
+    )
+    task_history.status = "RUNNING"
+    task_history.save()
+
+    try:
+        misassigned = list(
+            Song.objects.filter(
+                album__isnull=False,
+                id__gt=last_song_id,
+            )
+            .exclude(primary_artist_id=F("album__artist_id"))
+            .select_related("album")
+            .order_by("id")[:batch_size]
+        )
+
+        if not misassigned:
+            msg = "No more misassigned songs to repair"
+            logger.info(msg)
+            update_task_progress(task_history, 100.0, msg)
+            complete_task(task_history)
+            return
+
+        total_remaining = (
+            Song.objects.filter(album__isnull=False, id__gt=last_song_id)
+            .exclude(primary_artist_id=F("album__artist_id"))
+            .count()
+        )
+
+        update_task_progress(
+            task_history,
+            0.0,
+            f"Repairing {len(misassigned)} songs ({total_remaining} remaining)",
+        )
+
+        from src.providers.deezer import DeezerMetadataProvider
+
+        provider = DeezerMetadataProvider()
+        reassigned_by_name = 0
+        reassigned_by_api = 0
+        nulled = 0
+        max_song_id = misassigned[-1].id
+
+        # Cache: (artist_id, album_name) -> Album or None
+        album_name_cache: dict[tuple[int, str], Optional[Album]] = {}
+        # Cache: (deezer_album_id, artist_id) -> Album or None
+        album_deezer_cache: dict[tuple[int, int], Optional[Album]] = {}
+
+        for idx, song in enumerate(misassigned):
+            wrong_album: Album = song.album  # type: ignore[assignment]
+            correct_artist_id: int = song.primary_artist_id  # type: ignore[attr-defined]
+
+            # Strategy 1: Same-name album by the correct artist
+            name_key: tuple[int, str] = (correct_artist_id, wrong_album.name)
+            if name_key not in album_name_cache:
+                album_name_cache[name_key] = Album.objects.filter(
+                    artist_id=correct_artist_id,
+                    name=wrong_album.name,
+                ).first()
+
+            correct_album = album_name_cache[name_key]
+
+            if correct_album:
+                song.album = correct_album
+                song.save(update_fields=["album_id"])
+                reassigned_by_name += 1
+                continue
+
+            # Strategy 2: Deezer API lookup
+            correct_album = _find_correct_album_via_deezer(
+                provider, song, correct_artist_id, album_deezer_cache
+            )
+            if correct_album:
+                song.album = correct_album
+                song.save(update_fields=["album_id"])
+                reassigned_by_api += 1
+                continue
+
+            # Strategy 3: Null out the album
+            song.album = None
+            song.save(update_fields=["album_id"])
+            nulled += 1
+
+            if (idx + 1) % 100 == 0:
+                progress = 100.0 * (idx + 1) / len(misassigned)
+                update_task_progress(
+                    task_history,
+                    progress,
+                    f"Processed {idx + 1}/{len(misassigned)}: "
+                    f"{reassigned_by_name} by name, "
+                    f"{reassigned_by_api} by API, {nulled} nulled",
+                )
+
+        summary = (
+            f"Repaired {len(misassigned)} misassigned songs: "
+            f"{reassigned_by_name} reassigned by name, "
+            f"{reassigned_by_api} reassigned by API, "
+            f"{nulled} album nulled"
+        )
+        logger.info(summary)
+        update_task_progress(task_history, 100.0, summary)
+        complete_task(task_history)
+
+        # Self-chain for next batch
+        next_remaining = (
+            Song.objects.filter(album__isnull=False, id__gt=max_song_id)
+            .exclude(primary_artist_id=F("album__artist_id"))
+            .count()
+        )
+        if next_remaining > 0:
+            logger.info(
+                f"{next_remaining} misassigned songs remaining, "
+                f"scheduling next batch"
+            )
+            repair_misassigned_songs.apply_async(
+                kwargs={
+                    "batch_size": batch_size,
+                    "last_song_id": max_song_id,
+                },
+                countdown=5,
+            )
+
+    except Exception as e:
+        logger.exception(f"Error in repair_misassigned_songs: {e}")
         complete_task(task_history, success=False, error_message=str(e))
         raise
