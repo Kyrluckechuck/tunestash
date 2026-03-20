@@ -1309,3 +1309,135 @@ def repair_misassigned_songs(
         logger.exception(f"Error in repair_misassigned_songs: {e}")
         complete_task(task_history, success=False, error_message=str(e))
         raise
+
+
+@celery_app.task(
+    bind=True,
+    name="library_manager.tasks.merge_duplicate_songs",
+)
+def merge_duplicate_songs(
+    self: Any, batch_size: int = 500, last_song_id: int = 0
+) -> None:
+    """Merge albumless duplicate songs into their with-album counterparts.
+
+    Finds songs where: album is NULL, has ISRC, and another song with the
+    same ISRC exists with an album. The with-album copy is kept as the
+    target; the albumless copy's download data, Spotify GID, and other
+    fields are merged into it using the existing _merge_song logic.
+
+    Self-chains until all duplicates are processed.
+    """
+    from django.db import transaction
+
+    from library_manager.management.commands.merge_duplicate_artists import (
+        _merge_song,
+    )
+
+    task_history = create_task_history(
+        task_id=self.request.id,
+        task_type="MAINTENANCE",
+        entity_type="SYSTEM",
+        task_name="merge_duplicate_songs",
+    )
+    task_history.status = "RUNNING"
+    task_history.save()
+
+    try:
+        # ISRCs that have both an albumless and a with-album song
+        with_album_isrcs = (
+            Song.objects.filter(isrc__isnull=False, album__isnull=False)
+            .values_list("isrc", flat=True)
+            .distinct()
+        )
+
+        albumless_dupes = list(
+            Song.objects.filter(
+                isrc__isnull=False,
+                album__isnull=True,
+                id__gt=last_song_id,
+                isrc__in=with_album_isrcs,
+            )
+            .select_related("primary_artist")
+            .order_by("id")[:batch_size]
+        )
+
+        if not albumless_dupes:
+            msg = "No more duplicate songs to merge"
+            logger.info(msg)
+            update_task_progress(task_history, 100.0, msg)
+            complete_task(task_history)
+            return
+
+        total_remaining = Song.objects.filter(
+            isrc__isnull=False,
+            album__isnull=True,
+            id__gt=last_song_id,
+            isrc__in=with_album_isrcs,
+        ).count()
+
+        update_task_progress(
+            task_history,
+            0.0,
+            f"Merging {len(albumless_dupes)} duplicates ({total_remaining} remaining)",
+        )
+
+        merged = 0
+        skipped = 0
+        max_song_id = albumless_dupes[-1].id
+
+        for idx, albumless_song in enumerate(albumless_dupes):
+            target = Song.objects.filter(
+                isrc=albumless_song.isrc,
+                album__isnull=False,
+                primary_artist=albumless_song.primary_artist,
+            ).first()
+
+            if not target:
+                # Different artist or target disappeared — skip
+                skipped += 1
+                continue
+
+            with transaction.atomic():
+                _merge_song(albumless_song, target)
+            merged += 1
+
+            if (idx + 1) % 100 == 0:
+                progress = 100.0 * (idx + 1) / len(albumless_dupes)
+                update_task_progress(
+                    task_history,
+                    progress,
+                    f"Processed {idx + 1}/{len(albumless_dupes)}: "
+                    f"{merged} merged, {skipped} skipped",
+                )
+
+        summary = (
+            f"Merged {merged} duplicate songs, skipped {skipped} "
+            f"(of {len(albumless_dupes)} in batch)"
+        )
+        logger.info(summary)
+        update_task_progress(task_history, 100.0, summary)
+        complete_task(task_history)
+
+        # Self-chain for next batch
+        next_remaining = Song.objects.filter(
+            isrc__isnull=False,
+            album__isnull=True,
+            id__gt=max_song_id,
+            isrc__in=with_album_isrcs,
+        ).count()
+        if next_remaining > 0:
+            logger.info(
+                f"{next_remaining} duplicate songs remaining, " f"scheduling next batch"
+            )
+            merge_duplicate_songs.apply_async(
+                kwargs={
+                    "batch_size": batch_size,
+                    "last_song_id": max_song_id,
+                },
+                countdown=5,
+            )
+
+    except Exception as e:
+        logger.exception(f"Error in merge_duplicate_songs: {e}")
+        complete_task(task_history, success=False, error_message=str(e))
+        raise
