@@ -905,10 +905,29 @@ def backfill_album_tracks(
                     f"(deezer_id={album.deezer_id}): {e}"
                 )
                 albums_errored += 1
+                # API error + no songs = album likely removed from Deezer.
+                # Delete it rather than leaving a dead shell.
+                if Song.objects.filter(album=album).count() == 0:
+                    logger.info(
+                        "Deleting dead album '%s' (deezer_id=%d): "
+                        "API error and 0 songs",
+                        album.name,
+                        album.deezer_id,
+                    )
+                    album.delete()
                 continue
 
             if not deezer_tracks:
                 albums_empty += 1
+                # Deezer returned empty track list + no songs in DB = dead album
+                if Song.objects.filter(album=album).count() == 0:
+                    logger.info(
+                        "Deleting empty album '%s' (deezer_id=%d): "
+                        "0 tracks on Deezer and 0 songs in DB",
+                        album.name,
+                        album.deezer_id,
+                    )
+                    album.delete()
                 continue
 
             # Update total_tracks from actual count
