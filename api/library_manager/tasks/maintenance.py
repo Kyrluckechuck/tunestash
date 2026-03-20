@@ -947,7 +947,7 @@ def backfill_album_tracks(
         summary = (
             f"Backfilled {len(albums)} albums: "
             f"{albums_filled} filled ({songs_created} songs), "
-            f"{albums_empty} genuinely empty, {albums_errored} API errors"
+            f"{albums_empty} empty on Deezer, {albums_errored} API errors"
         )
         logger.info(summary)
         update_task_progress(task_history, 100.0, summary)
