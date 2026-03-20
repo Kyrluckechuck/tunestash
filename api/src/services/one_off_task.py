@@ -36,6 +36,7 @@ class OneOffTaskService:
             cleanup_appears_on_albums,
             cleanup_orphaned_albums,
             migrate_all_tracked_artists_to_deezer,
+            repair_misassigned_songs,
             resolve_all_artists_to_deezer,
             retry_failed_external_mappings,
             send_test_notification,
@@ -116,6 +117,20 @@ class OneOffTaskService:
             ),
             category="data-migration",
             task_func=resolve_all_artists_to_deezer,
+        )
+
+        self._tasks["repair_misassigned_songs"] = OneOffTaskDefinition(
+            id="repair_misassigned_songs",
+            name="Repair Misassigned Songs",
+            description=(
+                "Find and fix songs assigned to albums belonging to a different "
+                "artist (cross-artist contamination). Reassigns to the correct "
+                "album by name match or Deezer API lookup, or nulls the album "
+                "if no correct album is found. Run BEFORE 'Backfill Album Tracks' "
+                "for best results. Self-chains in batches of 500."
+            ),
+            category="maintenance",
+            task_func=repair_misassigned_songs,
         )
 
         self._tasks["cleanup_appears_on_albums"] = OneOffTaskDefinition(

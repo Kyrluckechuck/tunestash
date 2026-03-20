@@ -98,6 +98,20 @@ def _resolve_and_assign_deezer_id(album: Album) -> bool:
 
     existing = Album.objects.filter(deezer_id=deezer_id).first()
     if existing:
+        src_aid = album.artist_id  # type: ignore[attr-defined]
+        tgt_aid = existing.artist_id  # type: ignore[attr-defined]
+        if src_aid != tgt_aid:
+            logger.warning(
+                "Resolved deezer_id %d for album '%s' (artist_id=%s) but "
+                "it belongs to '%s' (artist_id=%s). "
+                "Skipping to prevent cross-artist merge.",
+                deezer_id,
+                album.name,
+                src_aid,
+                existing.name,
+                tgt_aid,
+            )
+            return False
         _merge_duplicate_album(album, existing)
         raise _AlbumMerged(existing)
 
@@ -381,8 +395,21 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         if new_deezer_id and new_deezer_id != old_deezer_id:
             existing = Album.objects.filter(deezer_id=new_deezer_id).first()
             if existing:
-                _merge_duplicate_album(album, existing)
-                raise _AlbumMerged(existing)
+                src_aid = album.artist_id  # type: ignore[attr-defined]
+                tgt_aid = existing.artist_id  # type: ignore[attr-defined]
+                if src_aid != tgt_aid:
+                    logger.warning(
+                        "Re-resolved deezer_id %d for '%s' "
+                        "(artist_id=%s) belongs to different artist "
+                        "(artist_id=%s). Skipping merge.",
+                        new_deezer_id,
+                        album.name,
+                        src_aid,
+                        tgt_aid,
+                    )
+                else:
+                    _merge_duplicate_album(album, existing)
+                    raise _AlbumMerged(existing)
 
             logger.info(
                 f"Album '{album.name}' deezer_id {old_deezer_id} returned no "
