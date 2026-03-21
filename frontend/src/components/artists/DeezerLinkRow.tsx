@@ -19,6 +19,7 @@ interface DeezerLinkRowProps {
 export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
   const [linking, setLinking] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [manualId, setManualId] = useState('');
   const [inputError, setInputError] = useState<string | null>(null);
 
@@ -32,7 +33,9 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
       fetchPolicy: 'network-only',
     });
 
-  const preview = previewData?.previewDeezerArtist ?? null;
+  const preview = showPreview
+    ? (previewData?.previewDeezerArtist ?? null)
+    : null;
   const searchResults = searchData?.catalogSearch?.artists ?? [];
 
   const handleSearch = useCallback(() => {
@@ -44,13 +47,11 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
   }, [artist.name, searchDeezer]);
 
   const handleSelectResult = useCallback(
-    (providerId: string, name: string) => {
+    (providerId: string) => {
       setShowSearch(false);
-      // Populate preview directly from search result
+      setShowPreview(true);
       fetchPreview({ variables: { deezerId: parseInt(providerId, 10) } });
       setManualId(providerId);
-      // Suppress unused variable warning — name is used for future reference
-      void name;
     },
     [fetchPreview]
   );
@@ -63,6 +64,7 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
       return;
     }
     setShowSearch(false);
+    setShowPreview(true);
     fetchPreview({ variables: { deezerId: parsed } });
   }, [manualId, fetchPreview]);
 
@@ -90,6 +92,7 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
   const handleReset = useCallback(() => {
     setManualId('');
     setShowSearch(false);
+    setShowPreview(false);
     setInputError(null);
   }, []);
 
@@ -202,9 +205,7 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
               {searchResults.map(result => (
                 <button
                   key={result.providerId}
-                  onClick={() =>
-                    handleSelectResult(result.providerId, result.name)
-                  }
+                  onClick={() => handleSelectResult(result.providerId)}
                   className='w-full flex items-center gap-3 px-3 py-2 hover:bg-white transition-colors text-left border-t border-gray-100'
                 >
                   {result.imageUrl ? (
