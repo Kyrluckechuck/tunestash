@@ -31,6 +31,7 @@ type Artist {
   albumCount: Int!
   deezerId: String
   downloadedAlbumCount: Int!
+  downloadedSongCount: Int!
   failedSongCount: Int!
   gid: String
   id: Int!
@@ -112,6 +113,12 @@ type CatalogSearchTrack {
 The `DateTime` scalar type represents a date and time following the ISO 8601 standard.
 """
 scalar DateTime
+
+type DeezerArtistPreview {
+  deezerId: Int!
+  imageUrl: String
+  name: String!
+}
 
 type DownloadHistory {
   completedAt: DateTime
@@ -306,6 +313,7 @@ type Mutation {
   downloadUrl(autoTrackArtists: Boolean! = false, url: String!): MutationResult!
   importAlbum(deezerId: Int!): MutationResult!
   importArtist(deezerId: Int!, name: String!): MutationResult!
+  linkArtistToDeezer(artistId: Int!, deezerId: Int!): MutationResult!
   retryFailedSongs(artistId: String!): MutationResult!
   runOneOffTask(taskId: String!): MutationResult!
   runPeriodicTaskNow(taskId: Int!): MutationResult!
@@ -418,11 +426,13 @@ type Query {
   playlist(id: String!): Playlist
   playlistInfo(url: String!): PlaylistInfo
   playlists(after: String = null, enabled: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, status: String = null): PlaylistConnection!
+  previewDeezerArtist(deezerId: Int!): DeezerArtistPreview
   queueStatus: QueueStatus!
   song(id: String!): Song
   songs(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, maxBitrate: Int = null, search: String = null, sortBy: String = null, sortDirection: String = null, unavailable: Boolean = null): SongConnection!
   systemHealth: SystemHealth!
   taskHistory(after: String = null, entityType: String = null, first: Int = 20, search: String = null, status: String = null, type: String = null): TaskHistoryConnection!
+  unlinkedArtists(after: String = null, first: Int = 20, hasDownloads: Boolean = null, search: String = null, sortBy: String = null, sortDirection: String = null): ArtistConnection!
   upgradeStats: UpgradeStats!
 }
 

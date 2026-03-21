@@ -1,9 +1,10 @@
 # mypy: disable-error-code=attr-defined
+import logging
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple, Union
 
 from django.conf import settings
-from django.db.models import Exists, F, OuterRef, Q
+from django.db.models import Count, Exists, F, OuterRef, Q
 
 from asgiref.sync import sync_to_async
 
@@ -13,6 +14,8 @@ from library_manager.models import Song
 
 from ..graphql_types.models import Artist, MutationResult
 from .base import BaseService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -204,6 +207,137 @@ class ArtistService(BaseService[Artist]):
             graphql_items,
             has_next_page,
             total_count,
+        )
+
+    async def get_unlinked_connection(
+        self,
+        first: int = 20,
+        after: Optional[str] = None,
+        search: Optional[str] = None,
+        has_downloads: Optional[bool] = None,
+        sort_by: Optional[str] = None,
+        sort_direction: Optional[str] = None,
+    ) -> ArtistConnectionResult:
+        """Get paginated artists without a deezer_id."""
+        queryset = self.model.objects.filter(deezer_id__isnull=True)
+
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+
+        # Annotate with song counts (Song.primary_artist → queryset lookup is "song")
+        queryset = queryset.annotate(
+            _downloaded_song_count=Count("song", filter=Q(song__downloaded=True)),
+            _total_song_count=Count("song"),
+        )
+
+        if has_downloads is not None:
+            if has_downloads:
+                queryset = queryset.filter(_downloaded_song_count__gt=0)
+            else:
+                queryset = queryset.filter(_downloaded_song_count=0)
+
+        # Default sort: tracked first, then most downloads, then ID
+        order_expressions: List[Any] = [
+            "-tracked",
+            "-_downloaded_song_count",
+            "id",
+        ]
+
+        sort_field_map: dict[str, str] = {
+            "name": "name",
+            "downloadedSongCount": "_downloaded_song_count",
+            "songCount": "_total_song_count",
+        }
+        if sort_by and sort_by in sort_field_map:
+            mapped = sort_field_map[sort_by]
+            if sort_direction == "desc":
+                order_expressions = [f"-{mapped}", "id"]
+            else:
+                order_expressions = [mapped, "id"]
+
+        total_count = await queryset.acount()
+
+        # Always use offset-based pagination (custom sort fields)
+        offset = 0
+        if after:
+            decoded = self.decode_cursor(after)
+            offset = int(decoded) if isinstance(decoded, (int, str)) else 0
+
+        def fetch_items() -> List[DjangoArtist]:
+            return list(
+                queryset.order_by(*order_expressions)[offset : offset + first + 1]
+            )
+
+        items: List[DjangoArtist] = await sync_to_async(fetch_items)()
+
+        has_next_page = len(items) > first
+        items = items[:first]
+
+        graphql_items: List[Artist] = []
+        for item in items:
+            gql_artist = await self._to_graphql_type_async(item)
+            # Override with annotated values
+            gql_artist.downloaded_song_count = getattr(
+                item, "_downloaded_song_count", 0
+            )
+            gql_artist.song_count = getattr(item, "_total_song_count", 0)
+            graphql_items.append(gql_artist)
+
+        next_offset = offset + len(items) if has_next_page else None
+        return ArtistConnectionResult(
+            items=graphql_items,
+            has_next_page=has_next_page,
+            total_count=total_count,
+            end_cursor_offset=next_offset,
+        )
+
+    async def link_to_deezer(self, artist_id: int, deezer_id: int) -> MutationResult:
+        """Link an existing artist to a Deezer ID and trigger migration."""
+        try:
+            django_artist = await self.model.objects.aget(id=artist_id)
+        except self.model.DoesNotExist:
+            return MutationResult(success=False, message="Artist not found")
+
+        # Check if deezer_id is already claimed
+        conflict = await sync_to_async(
+            lambda: self.model.objects.filter(deezer_id=deezer_id)
+            .exclude(id=artist_id)
+            .first()
+        )()
+        if conflict:
+            return MutationResult(
+                success=False,
+                message=f'Deezer ID {deezer_id} is already linked to "{conflict.name}"',
+            )
+
+        # Validate against Deezer API
+        from src.providers.deezer import DeezerMetadataProvider
+
+        provider = DeezerMetadataProvider()
+        result = await sync_to_async(provider.get_artist)(deezer_id)
+        if result is None:
+            return MutationResult(
+                success=False,
+                message=f"Deezer ID {deezer_id} not found on Deezer",
+            )
+
+        django_artist.deezer_id = deezer_id
+        await django_artist.asave(update_fields=["deezer_id"])
+
+        from library_manager.tasks import migrate_artist_to_deezer
+
+        await sync_to_async(migrate_artist_to_deezer.delay)(django_artist.id)
+
+        logger.info(
+            "Linked artist %s (id=%d) to Deezer ID %d, migration queued",
+            django_artist.name,
+            django_artist.id,
+            deezer_id,
+        )
+
+        return MutationResult(
+            success=True,
+            message=f'Linked "{django_artist.name}" to Deezer artist "{result.name}" — migration queued',
         )
 
     async def import_from_deezer(self, deezer_id: int, name: str) -> MutationResult:
@@ -437,6 +571,12 @@ class ArtistService(BaseService[Artist]):
         """Get total song count for an artist."""
         return await Song.objects.filter(primary_artist=django_artist).acount()
 
+    async def _get_downloaded_song_count(self, django_artist: DjangoArtist) -> int:
+        """Get count of downloaded songs for an artist."""
+        return await Song.objects.filter(
+            primary_artist=django_artist, downloaded=True
+        ).acount()
+
     async def _get_failed_song_count(self, django_artist: DjangoArtist) -> int:
         """Get count of songs that have failed downloads but aren't permanently unavailable."""
         return await Song.objects.filter(
@@ -467,6 +607,7 @@ class ArtistService(BaseService[Artist]):
         album_count = 0
         downloaded_album_count = 0
         song_count = 0
+        downloaded_song_count = 0
 
         if include_full_counts:
             album_count = await self._get_album_count(django_artist)
@@ -474,6 +615,7 @@ class ArtistService(BaseService[Artist]):
                 django_artist
             )
             song_count = await self._get_song_count(django_artist)
+            downloaded_song_count = await self._get_downloaded_song_count(django_artist)
 
         return Artist(
             id=safe_id,
@@ -490,6 +632,7 @@ class ArtistService(BaseService[Artist]):
             album_count=album_count,
             downloaded_album_count=downloaded_album_count,
             song_count=song_count,
+            downloaded_song_count=downloaded_song_count,
             failed_song_count=failed_song_count,
             deezer_id=str(django_artist.deezer_id) if django_artist.deezer_id else None,
         )

@@ -13,6 +13,7 @@ from ..graphql_types.models import (
     CatalogSearchArtist,
     CatalogSearchResults,
     CatalogSearchTrack,
+    DeezerArtistPreview,
     ExternalListConnection,
     ExternalListType,
     FailureReasonCount,
@@ -98,6 +99,57 @@ class Query:  # pylint: disable=too-many-public-methods
         return ArtistConnection(
             edges=edges, page_info=page_info, total_count=total_count
         )
+
+    @strawberry.field
+    async def unlinked_artists(
+        self,
+        first: Optional[int] = 20,
+        after: Optional[str] = None,
+        search: Optional[str] = None,
+        has_downloads: Optional[bool] = None,
+        sort_by: Optional[str] = None,
+        sort_direction: Optional[str] = None,
+    ) -> ArtistConnection:
+        from ..services.artist import ArtistConnectionResult
+
+        first_int: int = int(first or 20)
+        result: ArtistConnectionResult = await services.artist.get_unlinked_connection(
+            first=first_int,
+            after=after,
+            search=search,
+            has_downloads=has_downloads,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+        )
+
+        end_cursor: Optional[str] = None
+        if result.end_cursor_offset is not None:
+            end_cursor = services.artist.create_cursor_from_offset(
+                result.end_cursor_offset
+            )
+        elif result.items:
+            end_cursor = services.artist.create_cursor(result.items[-1])
+
+        page_info = PageInfo(
+            has_next_page=result.has_next_page,
+            has_previous_page=after is not None,
+            start_cursor=(
+                services.artist.create_cursor(result.items[0]) if result.items else None
+            ),
+            end_cursor=end_cursor,
+        )
+
+        return ArtistConnection(
+            edges=result.items,
+            page_info=page_info,
+            total_count=result.total_count,
+        )
+
+    @strawberry.field
+    async def preview_deezer_artist(
+        self, deezer_id: int
+    ) -> Optional[DeezerArtistPreview]:
+        return await services.deezer_preview.get_artist_preview(deezer_id)
 
     @strawberry.field
     async def artist(self, id: str) -> Optional[Artist]:

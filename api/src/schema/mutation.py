@@ -88,6 +88,14 @@ def validate_task_name(task_name: str) -> MutationResult:
 @strawberry.type
 class Mutation:  # pylint: disable=too-many-public-methods
     @strawberry.mutation
+    async def link_artist_to_deezer(
+        self, artist_id: int, deezer_id: int
+    ) -> "MutationResult":
+        return await services.artist.link_to_deezer(
+            artist_id=artist_id, deezer_id=deezer_id
+        )
+
+    @strawberry.mutation
     async def import_artist(self, deezer_id: int, name: str) -> "MutationResult":
         """Import an artist from Deezer search and start tracking."""
         return await services.artist.import_from_deezer(deezer_id=deezer_id, name=name)

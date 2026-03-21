@@ -49,6 +49,9 @@ async def test_get_by_id(
         patch.object(
             artist_service, "_get_song_count", new_callable=AsyncMock
         ) as mock_song_count,
+        patch.object(
+            artist_service, "_get_downloaded_song_count", new_callable=AsyncMock
+        ) as mock_downloaded_song_count,
     ):
         mock_aget.return_value = mock_django_artist
         mock_undownloaded_count.return_value = 5
@@ -56,6 +59,7 @@ async def test_get_by_id(
         mock_album_count.return_value = 10
         mock_downloaded_album_count.return_value = 8
         mock_song_count.return_value = 50
+        mock_downloaded_song_count.return_value = 42
         result = await artist_service.get_by_id("test_id")
 
         assert isinstance(result, Artist)

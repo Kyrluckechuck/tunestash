@@ -13,7 +13,6 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** The `DateTime` scalar type represents a date and time following the ISO 8601 standard. */
   DateTime: { input: string; output: string; }
 };
 
@@ -54,6 +53,7 @@ export type Artist = {
   albumCount: Scalars['Int']['output'];
   deezerId: Maybe<Scalars['String']['output']>;
   downloadedAlbumCount: Scalars['Int']['output'];
+  downloadedSongCount: Scalars['Int']['output'];
   failedSongCount: Scalars['Int']['output'];
   gid: Maybe<Scalars['String']['output']>;
   id: Scalars['Int']['output'];
@@ -135,6 +135,13 @@ export type CatalogSearchTrack = {
   localId: Maybe<Scalars['Int']['output']>;
   name: Scalars['String']['output'];
   providerId: Scalars['String']['output'];
+};
+
+export type DeezerArtistPreview = {
+  __typename?: 'DeezerArtistPreview';
+  deezerId: Scalars['Int']['output'];
+  imageUrl: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
 };
 
 export type DownloadHistory = {
@@ -340,6 +347,7 @@ export type Mutation = {
   downloadUrl: MutationResult;
   importAlbum: MutationResult;
   importArtist: MutationResult;
+  linkArtistToDeezer: MutationResult;
   retryFailedSongs: MutationResult;
   runOneOffTask: MutationResult;
   runPeriodicTaskNow: MutationResult;
@@ -462,6 +470,12 @@ export type MutationImportAlbumArgs = {
 export type MutationImportArtistArgs = {
   deezerId: Scalars['Int']['input'];
   name: Scalars['String']['input'];
+};
+
+
+export type MutationLinkArtistToDeezerArgs = {
+  artistId: Scalars['Int']['input'];
+  deezerId: Scalars['Int']['input'];
 };
 
 
@@ -674,11 +688,13 @@ export type Query = {
   playlist: Maybe<Playlist>;
   playlistInfo: Maybe<PlaylistInfo>;
   playlists: PlaylistConnection;
+  previewDeezerArtist: Maybe<DeezerArtistPreview>;
   queueStatus: QueueStatus;
   song: Maybe<Song>;
   songs: SongConnection;
   systemHealth: SystemHealth;
   taskHistory: TaskHistoryConnection;
+  unlinkedArtists: ArtistConnection;
   upgradeStats: UpgradeStats;
 };
 
@@ -786,6 +802,11 @@ export type QueryPlaylistsArgs = {
 };
 
 
+export type QueryPreviewDeezerArtistArgs = {
+  deezerId: Scalars['Int']['input'];
+};
+
+
 export type QuerySongArgs = {
   id: Scalars['String']['input'];
 };
@@ -811,6 +832,16 @@ export type QueryTaskHistoryArgs = {
   search?: InputMaybe<Scalars['String']['input']>;
   status?: InputMaybe<Scalars['String']['input']>;
   type?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryUnlinkedArtistsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  hasDownloads?: InputMaybe<Scalars['Boolean']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  sortBy?: InputMaybe<Scalars['String']['input']>;
+  sortDirection?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type QueueStatus = {
@@ -1126,6 +1157,33 @@ export type CreatePlaylistMutationVariables = Exact<{
 
 
 export type CreatePlaylistMutation = { __typename?: 'Mutation', createPlaylist: { __typename?: 'Playlist', id: number, name: string, url: string, status: string, statusMessage: string | null, enabled: boolean, autoTrackArtists: boolean } };
+
+export type GetUnlinkedArtistsQueryVariables = Exact<{
+  first?: InputMaybe<Scalars['Int']['input']>;
+  after?: InputMaybe<Scalars['String']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  hasDownloads?: InputMaybe<Scalars['Boolean']['input']>;
+  sortBy?: InputMaybe<Scalars['String']['input']>;
+  sortDirection?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type GetUnlinkedArtistsQuery = { __typename?: 'Query', unlinkedArtists: { __typename?: 'ArtistConnection', totalCount: number, edges: Array<{ __typename?: 'Artist', id: number, name: string, isTracked: boolean, songCount: number, downloadedSongCount: number }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor: string | null } } };
+
+export type PreviewDeezerArtistQueryVariables = Exact<{
+  deezerId: Scalars['Int']['input'];
+}>;
+
+
+export type PreviewDeezerArtistQuery = { __typename?: 'Query', previewDeezerArtist: { __typename?: 'DeezerArtistPreview', deezerId: number, name: string, imageUrl: string | null } | null };
+
+export type LinkArtistToDeezerMutationVariables = Exact<{
+  artistId: Scalars['Int']['input'];
+  deezerId: Scalars['Int']['input'];
+}>;
+
+
+export type LinkArtistToDeezerMutation = { __typename?: 'Mutation', linkArtistToDeezer: { __typename?: 'MutationResult', success: boolean, message: string } };
 
 export type SyncAllTrackedArtistsMutationVariables = Exact<{ [key: string]: never; }>;
 
@@ -1532,6 +1590,9 @@ export const RecheckPlaylistDocument = {"kind":"Document","definitions":[{"kind"
 export const TogglePlaylistAutoTrackDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"TogglePlaylistAutoTrack"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"togglePlaylistAutoTrack"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"playlist"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"autoTrackArtists"}}]}}]}}]}}]} as unknown as DocumentNode<TogglePlaylistAutoTrackMutation, TogglePlaylistAutoTrackMutationVariables>;
 export const UpdatePlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdatePlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updatePlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}},{"kind":"Argument","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}},{"kind":"Argument","name":{"kind":"Name","value":"autoTrackArtists"},"value":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<UpdatePlaylistMutation, UpdatePlaylistMutationVariables>;
 export const CreatePlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreatePlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}},{"kind":"Argument","name":{"kind":"Name","value":"autoTrackArtists"},"value":{"kind":"Variable","name":{"kind":"Name","value":"autoTrackArtists"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"url"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"statusMessage"}},{"kind":"Field","name":{"kind":"Name","value":"enabled"}},{"kind":"Field","name":{"kind":"Name","value":"autoTrackArtists"}}]}}]}}]} as unknown as DocumentNode<CreatePlaylistMutation, CreatePlaylistMutationVariables>;
+export const GetUnlinkedArtistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUnlinkedArtists"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"first"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"after"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"search"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"hasDownloads"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"sortBy"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"sortDirection"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"unlinkedArtists"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"Variable","name":{"kind":"Name","value":"first"}}},{"kind":"Argument","name":{"kind":"Name","value":"after"},"value":{"kind":"Variable","name":{"kind":"Name","value":"after"}}},{"kind":"Argument","name":{"kind":"Name","value":"search"},"value":{"kind":"Variable","name":{"kind":"Name","value":"search"}}},{"kind":"Argument","name":{"kind":"Name","value":"hasDownloads"},"value":{"kind":"Variable","name":{"kind":"Name","value":"hasDownloads"}}},{"kind":"Argument","name":{"kind":"Name","value":"sortBy"},"value":{"kind":"Variable","name":{"kind":"Name","value":"sortBy"}}},{"kind":"Argument","name":{"kind":"Name","value":"sortDirection"},"value":{"kind":"Variable","name":{"kind":"Name","value":"sortDirection"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isTracked"}},{"kind":"Field","name":{"kind":"Name","value":"songCount"}},{"kind":"Field","name":{"kind":"Name","value":"downloadedSongCount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"pageInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasNextPage"}},{"kind":"Field","name":{"kind":"Name","value":"endCursor"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}}]}}]}}]} as unknown as DocumentNode<GetUnlinkedArtistsQuery, GetUnlinkedArtistsQueryVariables>;
+export const PreviewDeezerArtistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"PreviewDeezerArtist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"deezerId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"previewDeezerArtist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"deezerId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"deezerId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deezerId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}}]}}]}}]} as unknown as DocumentNode<PreviewDeezerArtistQuery, PreviewDeezerArtistQueryVariables>;
+export const LinkArtistToDeezerDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"LinkArtistToDeezer"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"artistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"deezerId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"linkArtistToDeezer"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"artistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"artistId"}}},{"kind":"Argument","name":{"kind":"Name","value":"deezerId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"deezerId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<LinkArtistToDeezerMutation, LinkArtistToDeezerMutationVariables>;
 export const SyncAllTrackedArtistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SyncAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"syncAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<SyncAllTrackedArtistsMutation, SyncAllTrackedArtistsMutationVariables>;
 export const DownloadAllTrackedArtistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DownloadAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"downloadAllTrackedArtists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DownloadAllTrackedArtistsMutation, DownloadAllTrackedArtistsMutationVariables>;
 export const DownloadAllPlaylistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DownloadAllPlaylists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"downloadAllPlaylists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DownloadAllPlaylistsMutation, DownloadAllPlaylistsMutationVariables>;
