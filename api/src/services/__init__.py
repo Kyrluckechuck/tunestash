@@ -4,6 +4,7 @@ from typing import Optional
 from .album import AlbumService
 from .artist import ArtistService
 from .catalog_search import CatalogSearchService
+from .deezer_preview import DeezerPreviewService
 from .downloader import DownloaderService
 from .external_list import ExternalListService
 from .history import DownloadHistoryService
@@ -62,6 +63,10 @@ class ServiceRegistry:
     @cached_property
     def periodic_task(self) -> PeriodicTaskService:
         return PeriodicTaskService()
+
+    @cached_property
+    def deezer_preview(self) -> DeezerPreviewService:
+        return DeezerPreviewService()
 
     @cached_property
     def catalog_search(self) -> CatalogSearchService:

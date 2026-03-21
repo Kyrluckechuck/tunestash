@@ -315,6 +315,52 @@ mutation CreatePlaylist(
   }
 }
 
+query GetUnlinkedArtists(
+  $first: Int
+  $after: String
+  $search: String
+  $hasDownloads: Boolean
+  $sortBy: String
+  $sortDirection: String
+) {
+  unlinkedArtists(
+    first: $first
+    after: $after
+    search: $search
+    hasDownloads: $hasDownloads
+    sortBy: $sortBy
+    sortDirection: $sortDirection
+  ) {
+    edges {
+      id
+      name
+      isTracked
+      songCount
+      downloadedSongCount
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    totalCount
+  }
+}
+
+query PreviewDeezerArtist($deezerId: Int!) {
+  previewDeezerArtist(deezerId: $deezerId) {
+    deezerId
+    name
+    imageUrl
+  }
+}
+
+mutation LinkArtistToDeezer($artistId: Int!, $deezerId: Int!) {
+  linkArtistToDeezer(artistId: $artistId, deezerId: $deezerId) {
+    success
+    message
+  }
+}
+
 mutation SyncAllTrackedArtists {
   syncAllTrackedArtists {
     success

@@ -69,7 +69,15 @@ class Artist:
     downloaded_album_count: int = 0
     song_count: int = 0
     failed_song_count: int = 0
+    downloaded_song_count: int = 0
     deezer_id: Optional[str] = None
+
+
+@strawberry.type
+class DeezerArtistPreview:
+    deezer_id: int
+    name: str
+    image_url: Optional[str] = None
 
 
 @strawberry.type

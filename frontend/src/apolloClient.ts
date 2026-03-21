@@ -49,8 +49,18 @@ export const apolloClient = new ApolloClient({
             ],
             merge(existing, incoming, { args }) {
               if (!existing) return incoming;
-              // Only merge for pagination requests (when 'after' cursor is present)
-              // Fresh queries (filter/sort changes) should replace the cache
+              if (!args?.after) return incoming;
+
+              return {
+                ...incoming,
+                edges: [...existing.edges, ...incoming.edges],
+              };
+            },
+          },
+          unlinkedArtists: {
+            keyArgs: ['search', 'hasDownloads', 'sortBy', 'sortDirection'],
+            merge(existing, incoming, { args }) {
+              if (!existing) return incoming;
               if (!args?.after) return incoming;
 
               return {
