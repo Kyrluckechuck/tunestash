@@ -62,9 +62,9 @@ def write_playlist_m3u(
     playlist_dir.mkdir(parents=True, exist_ok=True)
 
     safe_name = _sanitize_playlist_name(playlist.name)
-    m3u_path = playlist_dir / f"{safe_name}.m3u"
+    m3u_path = playlist_dir / f"TS - {safe_name}.m3u"
 
-    lines = ["#EXTM3U", f"#PLAYLIST:{playlist.name}"]
+    lines = ["#EXTM3U", f"#PLAYLIST:TS | {playlist.name}"]
 
     for ps in playlist_songs:
         song = ps.song
