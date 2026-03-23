@@ -36,6 +36,7 @@ class OneOffTaskService:
             backfill_song_isrc,
             cleanup_appears_on_albums,
             cleanup_orphaned_albums,
+            fix_unknown_album_paths,
             merge_duplicate_songs,
             migrate_all_tracked_artists_to_deezer,
             repair_misassigned_songs,
@@ -186,6 +187,19 @@ class OneOffTaskService:
             ),
             category="maintenance",
             task_func=cleanup_orphaned_albums,
+        )
+
+        self._tasks["fix_unknown_album_paths"] = OneOffTaskDefinition(
+            id="fix_unknown_album_paths",
+            name="Fix Unknown Album Paths",
+            description=(
+                "Move files from 'Unknown Album' directories into the correct "
+                "album directory by looking up the album name from Deezer. "
+                "Only targets files with 'Unknown Album' in their path (~30 files). "
+                "Updates FilePath records and cleans up empty directories."
+            ),
+            category="maintenance",
+            task_func=fix_unknown_album_paths,
         )
 
         self._tasks["backfill_lyrics_status"] = OneOffTaskDefinition(
