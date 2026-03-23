@@ -378,7 +378,7 @@ class DownloadProviderChain:
         try:
             validation_result = self._audio_validator.validate(
                 file_path=file_path,
-                expected_duration_ms=track_metadata.duration_ms,
+                expected_duration_ms=track_metadata.duration_ms or None,  # 0 = unknown
             )
 
             if not validation_result.is_valid:
