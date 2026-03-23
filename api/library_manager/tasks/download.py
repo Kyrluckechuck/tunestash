@@ -41,9 +41,10 @@ FALLBACK_PROVIDER_MAP = {
     "youtube": DownloadProviderEnum.YOUTUBE,
     "tidal": DownloadProviderEnum.TIDAL,
     "qobuz": DownloadProviderEnum.QOBUZ,
+    "monochrome": DownloadProviderEnum.MONOCHROME,
 }
 
-DEFAULT_FALLBACK_ORDER = ["youtube", "tidal", "qobuz"]
+DEFAULT_FALLBACK_ORDER = ["youtube", "tidal", "qobuz", "monochrome"]
 
 
 def _resolve_album_to_deezer(album: Album) -> Optional[int]:
@@ -541,6 +542,13 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
                 )
                 downloaded_count += 1
                 logger.info(f"Downloaded '{song.name}' via {result.provider_used}")
+                # Regenerate M3U for any playlists containing this song
+                try:
+                    from downloader.m3u_writer import regenerate_m3u_for_song
+
+                    regenerate_m3u_for_song(song.id)
+                except Exception as m3u_err:
+                    logger.debug(f"M3U regen failed (non-fatal): {m3u_err}")
             else:
                 failed_count += 1
                 song.increment_failed_count()
@@ -767,6 +775,7 @@ def download_playlist(
         from .maintenance import _download_deezer_songs_via_fallback
 
         songs_to_download = []
+        ordered_songs = []
         for item in raw_tracks:
             if check_task_cancellation(task_history):
                 logger.info(f"Playlist download cancelled: {playlist_url}")
@@ -777,8 +786,10 @@ def download_playlist(
                 continue
 
             song = _match_or_create_song_from_spotify_track(track, tracked)
-            if song and not song.downloaded:
-                songs_to_download.append(song)
+            if song:
+                ordered_songs.append(song)
+                if not song.downloaded:
+                    songs_to_download.append(song)
 
         if songs_to_download:
             update_task_progress(
@@ -791,13 +802,19 @@ def download_playlist(
 
         # Store snapshot_id for change detection
         snapshot_id = playlist_data.get("snapshot_id")
-        if snapshot_id:
-            from ..models import TrackedPlaylist
+        from ..models import TrackedPlaylist
 
-            tp = TrackedPlaylist.objects.filter(url__contains=sp_playlist_id).first()
-            if tp:
+        tp = TrackedPlaylist.objects.filter(url__contains=sp_playlist_id).first()
+        if tp:
+            if snapshot_id:
                 tp.snapshot_id = snapshot_id
                 tp.save(update_fields=["snapshot_id"])
+
+            # Update PlaylistSong records and generate M3U
+            from .playlist import _generate_m3u_if_enabled, _update_playlist_songs
+
+            _update_playlist_songs(tp, ordered_songs)
+            _generate_m3u_if_enabled(tp)
 
         complete_task(task_history, success=True)
 
@@ -1199,6 +1216,13 @@ def download_deezer_track(self: Any, song_id: int) -> None:
             )
             complete_task(task_history, success=True)
             logger.info(f"Downloaded '{song.name}' via {result.provider_used}")
+            # Regenerate M3U for any playlists containing this song
+            try:
+                from downloader.m3u_writer import regenerate_m3u_for_song
+
+                regenerate_m3u_for_song(song.id)
+            except Exception as m3u_err:
+                logger.debug(f"M3U regen failed (non-fatal): {m3u_err}")
         else:
             song.increment_failed_count()
             song.save()

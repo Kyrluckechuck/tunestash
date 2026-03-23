@@ -73,6 +73,7 @@ from .external_list import (
 # Re-export maintenance tasks
 from .maintenance import (
     backfill_album_tracks,
+    backfill_lyrics_status,
     backfill_song_album,
     backfill_song_isrc,
     cleanup_app_metrics,
@@ -110,9 +111,11 @@ from .notification import (
 # Re-export periodic tasks
 from .periodic import (
     queue_missing_albums_for_tracked_artists,
+    retry_missing_lyrics,
     scan_new_releases_for_tracked_artists,
     sync_tracked_artists_metadata,
     sync_tracked_playlists,
+    trigger_navidrome_rescan,
 )
 
 # Re-export playlist tasks
@@ -163,6 +166,7 @@ __all__ = [
     "download_track_by_spotify_gid",
     # Maintenance tasks
     "backfill_album_tracks",
+    "backfill_lyrics_status",
     "backfill_song_album",
     "backfill_song_isrc",
     "cleanup_app_metrics",
@@ -178,9 +182,11 @@ __all__ = [
     "validate_undownloaded_songs",
     # Periodic tasks
     "queue_missing_albums_for_tracked_artists",
+    "retry_missing_lyrics",
     "scan_new_releases_for_tracked_artists",
     "sync_tracked_artists_metadata",
     "sync_tracked_playlists",
+    "trigger_navidrome_rescan",
     # Metadata tasks
     "apply_metadata_update",
     "cleanup_old_files",

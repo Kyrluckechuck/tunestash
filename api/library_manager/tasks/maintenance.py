@@ -1460,3 +1460,131 @@ def merge_duplicate_songs(
         logger.exception(f"Error in merge_duplicate_songs: {e}")
         complete_task(task_history, success=False, error_message=str(e))
         raise
+
+
+@celery_app.task(
+    bind=True,
+    name="library_manager.tasks.backfill_lyrics_status",
+)
+def backfill_lyrics_status(self: Any, batch_size: int = 500) -> None:
+    """Scan downloaded songs and create SongLyricsStatus records.
+
+    For each downloaded song with a file_path_ref:
+    - If an .lrc file exists on disk (exact or fuzzy match), mark has_lyrics=True
+    - If no .lrc file, mark has_lyrics=False (queued for retry)
+
+    Idempotent — skips songs that already have a SongLyricsStatus record.
+    """
+    from pathlib import Path
+
+    from downloader.lyrics import find_existing_lrc
+
+    from ..models import SongLyricsStatus
+
+    task_history = create_task_history(
+        task_id=self.request.id,
+        task_type="MAINTENANCE",
+        entity_type="SYSTEM",
+        task_name="backfill_lyrics_status",
+    )
+    task_history.status = "RUNNING"
+    task_history.save()
+
+    try:
+        songs = (
+            Song.objects.filter(
+                downloaded=True,
+                file_path_ref__isnull=False,
+            )
+            .exclude(lyrics_status__isnull=False)
+            .select_related("file_path_ref")
+            .order_by("id")[:batch_size]
+        )
+
+        total_remaining = (
+            Song.objects.filter(
+                downloaded=True,
+                file_path_ref__isnull=False,
+            )
+            .exclude(lyrics_status__isnull=False)
+            .count()
+        )
+
+        if not songs.exists():
+            msg = "No more songs need lyrics status backfill"
+            logger.info(msg)
+            update_task_progress(task_history, 100.0, msg)
+            complete_task(task_history)
+            return
+
+        update_task_progress(
+            task_history,
+            0.0,
+            f"Scanning {len(songs)} songs ({total_remaining} remaining)",
+        )
+
+        has_lyrics_count = 0
+        missing_count = 0
+        statuses_to_create: list[SongLyricsStatus] = []
+
+        for idx, song in enumerate(songs):
+            if not song.file_path_ref:
+                continue
+            audio_path = Path(song.file_path_ref.path)  # type: ignore[attr-defined]
+            existing_lrc = find_existing_lrc(audio_path)
+
+            statuses_to_create.append(
+                SongLyricsStatus(
+                    song=song,
+                    has_lyrics=existing_lrc is not None,
+                    attempt_count=0,
+                )
+            )
+            if existing_lrc:
+                has_lyrics_count += 1
+            else:
+                missing_count += 1
+
+            if (idx + 1) % 100 == 0:
+                progress = 100.0 * (idx + 1) / len(songs)
+                update_task_progress(
+                    task_history,
+                    progress,
+                    f"Scanned {idx + 1}/{len(songs)}: "
+                    f"{has_lyrics_count} with lyrics, {missing_count} missing",
+                )
+
+        # Bulk create, ignoring any that already exist
+        SongLyricsStatus.objects.bulk_create(statuses_to_create, ignore_conflicts=True)
+
+        summary = (
+            f"Backfilled {len(songs)} lyrics statuses: "
+            f"{has_lyrics_count} with lyrics, {missing_count} missing"
+        )
+        logger.info(summary)
+        update_task_progress(task_history, 100.0, summary)
+        complete_task(task_history)
+
+        # Self-chain if more remain
+        next_remaining = (
+            Song.objects.filter(
+                downloaded=True,
+                file_path_ref__isnull=False,
+            )
+            .exclude(lyrics_status__isnull=False)
+            .count()
+        )
+        if next_remaining > 0:
+            logger.info(
+                f"{next_remaining} songs still need lyrics backfill, "
+                f"scheduling next batch"
+            )
+            backfill_lyrics_status.apply_async(
+                kwargs={"batch_size": batch_size},
+                countdown=5,
+            )
+
+    except Exception as e:
+        logger.exception(f"Error in backfill_lyrics_status: {e}")
+        complete_task(task_history, success=False, error_message=str(e))
+        raise

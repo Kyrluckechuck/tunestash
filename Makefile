@@ -215,6 +215,9 @@ format-check-frontend:
 lint-api:
 	@mkdir -p .lint-tmp; \
 	rm -f .lint-tmp/*; \
+	PLAIN=$${PLAIN:-}; \
+	if [ -n "$${CI:-}" ] || [ ! -t 1 ]; then PLAIN=1; export NO_COLOR=1 TERM=dumb; fi; \
+	BANDIT_QUIET=""; if [ -n "$$PLAIN" ]; then BANDIT_QUIET="-q"; fi; \
 	echo "=== Running all API linters in parallel ==="; \
 	echo ""; \
 	(cd api && python -m flake8) > .lint-tmp/flake8.log 2>&1 & \
@@ -225,43 +228,57 @@ lint-api:
 	PID_ISORT=$$!; \
 	(cd api && python -m mypy src/ --config-file ../pyproject.toml) > .lint-tmp/mypy.log 2>&1 & \
 	PID_MYPY=$$!; \
-	(mkdir -p reports && cd api && python -m bandit -r src/ library_manager/ -f json -o ../reports/bandit-report.json) > .lint-tmp/bandit.log 2>&1 & \
+	(mkdir -p reports && cd api && python -m bandit $$BANDIT_QUIET -r src/ library_manager/ -f json -o ../reports/bandit-report.json) > .lint-tmp/bandit.log 2>&1 & \
 	PID_BANDIT=$$!; \
 	(cd api && python -m pylint src/ library_manager/ --rcfile ../pyproject.toml) > .lint-tmp/pylint.log 2>&1 & \
 	PID_PYLINT=$$!; \
 	printf "$$PID_FLAKE8:flake8:0\n$$PID_BLACK:black:0\n$$PID_ISORT:isort:0\n$$PID_MYPY:mypy:0\n$$PID_BANDIT:bandit:1\n$$PID_PYLINT:pylint:0\n" > .lint-tmp/pids; \
 	TOTAL=6; COMPLETED=0; FAIL=0; SPIN=0; \
-	if [ -n "$${CI:-}" ]; then SLEEP_INTERVAL=1; else SLEEP_INTERVAL=0.1; fi; \
-	printf "\033[?25l"; \
-	while [ $$COMPLETED -lt $$TOTAL ]; do \
-		SPIN=$$(($$SPIN + 1)); \
-		case $$(($$SPIN % 10)) in \
-			0) CHAR="⠋" ;; 1) CHAR="⠙" ;; 2) CHAR="⠹" ;; 3) CHAR="⠸" ;; 4) CHAR="⠼" ;; \
-			5) CHAR="⠴" ;; 6) CHAR="⠦" ;; 7) CHAR="⠧" ;; 8) CHAR="⠇" ;; 9) CHAR="⠏" ;; \
-		esac; \
-		printf "\r🚀 Running: "; \
-		grep -v "^DONE:" .lint-tmp/pids > .lint-tmp/pids.active 2>/dev/null || touch .lint-tmp/pids.active; \
+	if [ -n "$$PLAIN" ]; then \
+		echo "Waiting for $$TOTAL linters..."; \
 		while IFS=: read -r PID NAME IGNORE_FAIL || [ -n "$$PID" ]; do \
 			[ -z "$$PID" ] && continue; \
-			if ! kill -0 $$PID 2>/dev/null; then \
-				wait $$PID; EXIT_CODE=$$?; \
-				printf "\r\033[K"; \
-				echo "--- $$NAME (done) ---"; \
-				cat .lint-tmp/$$NAME.log; \
-				echo ""; \
-				if [ "$$IGNORE_FAIL" != "1" ] && [ $$EXIT_CODE -ne 0 ]; then \
-					FAIL=$$(($$FAIL + 1)); \
-				fi; \
-				sed -i "s/^$$PID:$$NAME:$$IGNORE_FAIL$$/DONE:$$PID:$$NAME:$$IGNORE_FAIL/" .lint-tmp/pids; \
-				COMPLETED=$$(($$COMPLETED + 1)); \
-			else \
-				printf "%s" "$$CHAR $$NAME  "; \
+			wait $$PID; EXIT_CODE=$$?; \
+			echo "--- $$NAME (done) ---"; \
+			cat .lint-tmp/$$NAME.log; \
+			echo ""; \
+			if [ "$$IGNORE_FAIL" != "1" ] && [ $$EXIT_CODE -ne 0 ]; then \
+				FAIL=$$(($$FAIL + 1)); \
 			fi; \
-		done < .lint-tmp/pids.active; \
-		sleep $$SLEEP_INTERVAL; \
-	done; \
-	printf "\r\033[K"; \
-	printf "\033[?25h"; \
+		done < .lint-tmp/pids; \
+	else \
+		if [ -n "$${CI:-}" ]; then SLEEP_INTERVAL=1; else SLEEP_INTERVAL=0.1; fi; \
+		printf "\033[?25l"; \
+		while [ $$COMPLETED -lt $$TOTAL ]; do \
+			SPIN=$$(($$SPIN + 1)); \
+			case $$(($$SPIN % 10)) in \
+				0) CHAR="⠋" ;; 1) CHAR="⠙" ;; 2) CHAR="⠹" ;; 3) CHAR="⠸" ;; 4) CHAR="⠼" ;; \
+				5) CHAR="⠴" ;; 6) CHAR="⠦" ;; 7) CHAR="⠧" ;; 8) CHAR="⠇" ;; 9) CHAR="⠏" ;; \
+			esac; \
+			printf "\r🚀 Running: "; \
+			grep -v "^DONE:" .lint-tmp/pids > .lint-tmp/pids.active 2>/dev/null || touch .lint-tmp/pids.active; \
+			while IFS=: read -r PID NAME IGNORE_FAIL || [ -n "$$PID" ]; do \
+				[ -z "$$PID" ] && continue; \
+				if ! kill -0 $$PID 2>/dev/null; then \
+					wait $$PID; EXIT_CODE=$$?; \
+					printf "\r\033[K"; \
+					echo "--- $$NAME (done) ---"; \
+					cat .lint-tmp/$$NAME.log; \
+					echo ""; \
+					if [ "$$IGNORE_FAIL" != "1" ] && [ $$EXIT_CODE -ne 0 ]; then \
+						FAIL=$$(($$FAIL + 1)); \
+					fi; \
+					sed -i "s/^$$PID:$$NAME:$$IGNORE_FAIL$$/DONE:$$PID:$$NAME:$$IGNORE_FAIL/" .lint-tmp/pids; \
+					COMPLETED=$$(($$COMPLETED + 1)); \
+				else \
+					printf "%s" "$$CHAR $$NAME  "; \
+				fi; \
+			done < .lint-tmp/pids.active; \
+			sleep $$SLEEP_INTERVAL; \
+		done; \
+		printf "\r\033[K"; \
+		printf "\033[?25h"; \
+	fi; \
 	rm -rf .lint-tmp; \
 	echo "=== Linting complete: $$FAIL check(s) failed ==="; \
 	exit $$FAIL
@@ -294,6 +311,9 @@ lint-frontend:
 lint-all:
 	@mkdir -p .lint-tmp; \
 	rm -f .lint-tmp/*; \
+	PLAIN=$${PLAIN:-}; \
+	if [ -n "$${CI:-}" ] || [ ! -t 1 ]; then PLAIN=1; export NO_COLOR=1 TERM=dumb; fi; \
+	BANDIT_QUIET=""; if [ -n "$$PLAIN" ]; then BANDIT_QUIET="-q"; fi; \
 	echo "=== Running all linters (API + Frontend) in parallel ==="; \
 	echo ""; \
 	(cd api && python -m flake8) > .lint-tmp/flake8.log 2>&1 & \
@@ -304,7 +324,7 @@ lint-all:
 	PID_ISORT=$$!; \
 	(cd api && python -m mypy src/ --config-file ../pyproject.toml) > .lint-tmp/mypy.log 2>&1 & \
 	PID_MYPY=$$!; \
-	(mkdir -p reports && cd api && python -m bandit -r src/ library_manager/ -f json -o ../reports/bandit-report.json) > .lint-tmp/bandit.log 2>&1 & \
+	(mkdir -p reports && cd api && python -m bandit $$BANDIT_QUIET -r src/ library_manager/ -f json -o ../reports/bandit-report.json) > .lint-tmp/bandit.log 2>&1 & \
 	PID_BANDIT=$$!; \
 	(cd api && python -m pylint src/ library_manager/ --rcfile ../pyproject.toml) > .lint-tmp/pylint.log 2>&1 & \
 	PID_PYLINT=$$!; \
@@ -312,36 +332,50 @@ lint-all:
 	PID_FRONTEND=$$!; \
 	printf "$$PID_FLAKE8:flake8:0\n$$PID_BLACK:black:0\n$$PID_ISORT:isort:0\n$$PID_MYPY:mypy:0\n$$PID_BANDIT:bandit:1\n$$PID_PYLINT:pylint:0\n$$PID_FRONTEND:frontend:0\n" > .lint-tmp/pids; \
 	TOTAL=7; COMPLETED=0; FAIL=0; SPIN=0; \
-	printf "\033[?25l"; \
-	while [ $$COMPLETED -lt $$TOTAL ]; do \
-		SPIN=$$(($$SPIN + 1)); \
-		case $$(($$SPIN % 10)) in \
-			0) CHAR="⠋" ;; 1) CHAR="⠙" ;; 2) CHAR="⠹" ;; 3) CHAR="⠸" ;; 4) CHAR="⠼" ;; \
-			5) CHAR="⠴" ;; 6) CHAR="⠦" ;; 7) CHAR="⠧" ;; 8) CHAR="⠇" ;; 9) CHAR="⠏" ;; \
-		esac; \
-		printf "\r🚀 Running: "; \
-		grep -v "^DONE:" .lint-tmp/pids > .lint-tmp/pids.active 2>/dev/null || touch .lint-tmp/pids.active; \
+	if [ -n "$$PLAIN" ]; then \
+		echo "Waiting for $$TOTAL linters..."; \
 		while IFS=: read -r PID NAME IGNORE_FAIL || [ -n "$$PID" ]; do \
 			[ -z "$$PID" ] && continue; \
-			if ! kill -0 $$PID 2>/dev/null; then \
-				wait $$PID; EXIT_CODE=$$?; \
-				printf "\r\033[K"; \
-				echo "--- $$NAME (done) ---"; \
-				cat .lint-tmp/$$NAME.log; \
-				echo ""; \
-				if [ "$$IGNORE_FAIL" != "1" ] && [ $$EXIT_CODE -ne 0 ]; then \
-					FAIL=$$(($$FAIL + 1)); \
-				fi; \
-				sed -i "s/^$$PID:$$NAME:$$IGNORE_FAIL$$/DONE:$$PID:$$NAME:$$IGNORE_FAIL/" .lint-tmp/pids; \
-				COMPLETED=$$(($$COMPLETED + 1)); \
-			else \
-				printf "%s" "$$CHAR $$NAME  "; \
+			wait $$PID; EXIT_CODE=$$?; \
+			echo "--- $$NAME (done) ---"; \
+			cat .lint-tmp/$$NAME.log; \
+			echo ""; \
+			if [ "$$IGNORE_FAIL" != "1" ] && [ $$EXIT_CODE -ne 0 ]; then \
+				FAIL=$$(($$FAIL + 1)); \
 			fi; \
-		done < .lint-tmp/pids.active; \
-		sleep 0.1; \
-	done; \
-	printf "\r\033[K"; \
-	printf "\033[?25h"; \
+		done < .lint-tmp/pids; \
+	else \
+		printf "\033[?25l"; \
+		while [ $$COMPLETED -lt $$TOTAL ]; do \
+			SPIN=$$(($$SPIN + 1)); \
+			case $$(($$SPIN % 10)) in \
+				0) CHAR="⠋" ;; 1) CHAR="⠙" ;; 2) CHAR="⠹" ;; 3) CHAR="⠸" ;; 4) CHAR="⠼" ;; \
+				5) CHAR="⠴" ;; 6) CHAR="⠦" ;; 7) CHAR="⠧" ;; 8) CHAR="⠇" ;; 9) CHAR="⠏" ;; \
+			esac; \
+			printf "\r🚀 Running: "; \
+			grep -v "^DONE:" .lint-tmp/pids > .lint-tmp/pids.active 2>/dev/null || touch .lint-tmp/pids.active; \
+			while IFS=: read -r PID NAME IGNORE_FAIL || [ -n "$$PID" ]; do \
+				[ -z "$$PID" ] && continue; \
+				if ! kill -0 $$PID 2>/dev/null; then \
+					wait $$PID; EXIT_CODE=$$?; \
+					printf "\r\033[K"; \
+					echo "--- $$NAME (done) ---"; \
+					cat .lint-tmp/$$NAME.log; \
+					echo ""; \
+					if [ "$$IGNORE_FAIL" != "1" ] && [ $$EXIT_CODE -ne 0 ]; then \
+						FAIL=$$(($$FAIL + 1)); \
+					fi; \
+					sed -i "s/^$$PID:$$NAME:$$IGNORE_FAIL$$/DONE:$$PID:$$NAME:$$IGNORE_FAIL/" .lint-tmp/pids; \
+					COMPLETED=$$(($$COMPLETED + 1)); \
+				else \
+					printf "%s" "$$CHAR $$NAME  "; \
+				fi; \
+			done < .lint-tmp/pids.active; \
+			sleep 0.1; \
+		done; \
+		printf "\r\033[K"; \
+		printf "\033[?25h"; \
+	fi; \
 	rm -rf .lint-tmp; \
 	echo "=== All linting complete: $$FAIL check(s) failed ==="; \
 	exit $$FAIL

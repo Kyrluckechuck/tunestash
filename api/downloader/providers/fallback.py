@@ -1,13 +1,14 @@
 """
-Fallback download orchestrator.
+Download provider chain orchestrator.
 
-This module provides a FallbackDownloader that tries multiple download providers
-in sequence until one succeeds (YouTube Music, Tidal, or Qobuz).
+This module provides a DownloadProviderChain (formerly FallbackDownloader) that
+tries multiple download providers in sequence until one succeeds.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -20,6 +21,7 @@ from .base import (
     TrackMetadata,
 )
 from .metadata import MetadataEmbedder
+from .monochrome import MonochromeProvider
 from .qobuz import QobuzProvider
 from .tidal import TidalProvider
 from .tidal_endpoints import TidalEndpointManager
@@ -28,10 +30,13 @@ from .youtube import YouTubeMusicProvider
 
 logger = logging.getLogger(__name__)
 
+# Provider-level cooldown: skip providers that recently failed (seconds)
+PROVIDER_COOLDOWN_SECONDS = 3600  # 1 hour
+
 
 @dataclass
-class FallbackDownloadResult:
-    """Result of a fallback download attempt."""
+class DownloadChainResult:
+    """Result of a download chain attempt."""
 
     success: bool
     file_path: Optional[Path]
@@ -41,9 +46,13 @@ class FallbackDownloadResult:
     validation_result: Optional[ValidationResult]
 
 
-class FallbackDownloader:
+# Backward-compatible alias
+FallbackDownloadResult = DownloadChainResult
+
+
+class DownloadProviderChain:
     """
-    Orchestrates fallback downloads using alternative providers.
+    Orchestrates downloads across multiple providers with fallback.
 
     Tries download providers in order until one succeeds.
 
@@ -51,12 +60,12 @@ class FallbackDownloader:
     1. Search for the track using ISRC (most reliable) or metadata
     2. Download from the matching track
     3. Convert FLAC to M4A if needed (for HIGH quality preference)
-    4. Embed Spotify metadata (providers don't include proper tags)
+    4. Embed metadata (providers don't include proper tags)
     5. Validate the downloaded file
+    6. Fetch lyrics if enabled
     """
 
-    # Supported provider names
-    SUPPORTED_PROVIDERS = {"youtube", "tidal", "qobuz"}
+    SUPPORTED_PROVIDERS = {"youtube", "tidal", "qobuz", "monochrome"}
 
     def __init__(
         self,
@@ -65,17 +74,6 @@ class FallbackDownloader:
         provider_order: Optional[list[str]] = None,
         qobuz_use_mp3: bool = False,
     ):
-        """
-        Initialize the fallback downloader.
-
-        Args:
-            quality_preference: Preferred quality level for downloads
-            output_dir: Directory to save downloaded files
-            provider_order: List of provider names to try in order.
-                          Defaults to ["youtube", "tidal", "qobuz"].
-            qobuz_use_mp3: If True, Qobuz downloads MP3 directly for HIGH quality
-                          instead of FLAC (which gets converted to M4A).
-        """
         self._quality_preference = quality_preference
         if output_dir:
             self._output_dir = output_dir
@@ -87,41 +85,61 @@ class FallbackDownloader:
             )
         self._qobuz_use_mp3 = qobuz_use_mp3
 
-        # Parse provider order - filter to only supported providers
         if provider_order is not None:
             self._provider_order = [
                 p for p in provider_order if p in self.SUPPORTED_PROVIDERS
             ]
         else:
-            self._provider_order = ["youtube", "tidal", "qobuz"]
+            self._provider_order = ["youtube", "tidal", "qobuz", "monochrome"]
 
-        # Initialize components
         self._tidal_endpoint_manager = TidalEndpointManager()
         self._providers: dict[str, DownloadProvider] = {}
         self._metadata_embedder = MetadataEmbedder()
         self._audio_validator = AudioValidator()
 
-        # Track initialization state per provider
         self._initialized: set[str] = set()
 
+        # Provider-level cooldown: {provider_name: timestamp_when_cooldown_expires}
+        self._provider_cooldowns: dict[str, float] = {}
+
+    def _is_provider_in_cooldown(self, provider_name: str) -> bool:
+        """Check if a provider is in cooldown (recently failed availability)."""
+        cooldown_until = self._provider_cooldowns.get(provider_name)
+        if cooldown_until is None:
+            return False
+        if time.time() >= cooldown_until:
+            del self._provider_cooldowns[provider_name]
+            logger.info(f"[{provider_name}] Cooldown expired, provider available again")
+            return False
+        return True
+
+    def _set_provider_cooldown(self, provider_name: str) -> None:
+        """Mark a provider as unavailable with a cooldown period."""
+        self._provider_cooldowns[provider_name] = (
+            time.time() + PROVIDER_COOLDOWN_SECONDS
+        )
+        # Clear initialization state so it's re-checked after cooldown
+        self._initialized.discard(provider_name)
+        self._providers.pop(provider_name, None)
+        logger.warning(
+            f"[{provider_name}] Provider entered cooldown for "
+            f"{PROVIDER_COOLDOWN_SECONDS}s"
+        )
+
     async def _ensure_provider_initialized(self, provider_name: str) -> bool:
-        """
-        Ensure a specific provider is initialized.
-
-        Args:
-            provider_name: Name of the provider to initialize
-
-        Returns:
-            True if initialization succeeded, False otherwise.
-        """
         if provider_name in self._initialized:
             return True
+
+        # Check cooldown before attempting init
+        if self._is_provider_in_cooldown(provider_name):
+            return False
 
         try:
             if provider_name == "youtube":
                 provider = YouTubeMusicProvider()
                 if not await provider.is_available():
                     logger.warning("YouTube Music provider is not available")
+                    self._set_provider_cooldown(provider_name)
                     return False
                 self._providers["youtube"] = provider
 
@@ -131,6 +149,7 @@ class FallbackDownloader:
                 )
                 if not await provider.is_available():
                     logger.warning("Tidal API is not available")
+                    self._set_provider_cooldown(provider_name)
                     return False
                 self._providers["tidal"] = provider
 
@@ -138,8 +157,17 @@ class FallbackDownloader:
                 provider = QobuzProvider(use_mp3=self._qobuz_use_mp3)
                 if not await provider.is_available():
                     logger.warning("Qobuz API is not available")
+                    self._set_provider_cooldown(provider_name)
                     return False
                 self._providers["qobuz"] = provider
+
+            elif provider_name == "monochrome":
+                provider = MonochromeProvider()
+                if not await provider.is_available():
+                    logger.warning("Monochrome provider is not available")
+                    self._set_provider_cooldown(provider_name)
+                    return False
+                self._providers["monochrome"] = provider
 
             else:
                 logger.warning(f"Unknown provider: {provider_name}")
@@ -150,27 +178,21 @@ class FallbackDownloader:
 
         except Exception as e:
             logger.error(f"Failed to initialize {provider_name}: {e}")
+            self._set_provider_cooldown(provider_name)
             return False
 
     async def download_track(
         self,
         track_metadata: TrackMetadata,
         output_filename: Optional[str] = None,
-    ) -> FallbackDownloadResult:
+    ) -> DownloadChainResult:
         """
-        Attempt to download a track using fallback providers.
+        Attempt to download a track using providers in order.
 
         Tries each provider in the configured order until one succeeds.
-
-        Args:
-            track_metadata: Metadata for the track to download
-            output_filename: Optional custom filename (without extension)
-
-        Returns:
-            FallbackDownloadResult with success status and file path
         """
         if not self._provider_order:
-            return FallbackDownloadResult(
+            return DownloadChainResult(
                 success=False,
                 file_path=None,
                 provider_used=None,
@@ -187,7 +209,6 @@ class FallbackDownloader:
                 f"'{track_metadata.artist} - {track_metadata.title}'"
             )
 
-            # Initialize provider if needed
             if not await self._ensure_provider_initialized(provider_name):
                 logger.warning(f"[{provider_name}] Provider not available, skipping")
                 continue
@@ -196,7 +217,6 @@ class FallbackDownloader:
             if not provider:
                 continue
 
-            # Try this provider
             result = await self._try_provider(
                 provider=provider,
                 track_metadata=track_metadata,
@@ -206,11 +226,10 @@ class FallbackDownloader:
             if result.success:
                 return result
 
-            # Record error for logging
             last_error = result.error_message or f"{provider_name} failed"
             logger.info(f"[{provider_name}] Failed: {last_error}")
 
-        return FallbackDownloadResult(
+        return DownloadChainResult(
             success=False,
             file_path=None,
             provider_used=None,
@@ -224,18 +243,7 @@ class FallbackDownloader:
         provider: DownloadProvider,
         track_metadata: TrackMetadata,
         output_filename: Optional[str],
-    ) -> FallbackDownloadResult:
-        """
-        Attempt to download from a specific provider.
-
-        Args:
-            provider: The download provider to use
-            track_metadata: Track metadata for searching and downloading
-            output_filename: Optional custom filename
-
-        Returns:
-            FallbackDownloadResult with download status
-        """
+    ) -> DownloadChainResult:
         provider_name = provider.name
 
         # Step 1: Search for the track
@@ -252,7 +260,7 @@ class FallbackDownloader:
                     f"[{provider_name}] No match found for "
                     f"'{track_metadata.artist} - {track_metadata.title}'"
                 )
-                return FallbackDownloadResult(
+                return DownloadChainResult(
                     success=False,
                     file_path=None,
                     provider_used=provider_name,
@@ -267,7 +275,7 @@ class FallbackDownloader:
             )
         except Exception as e:
             logger.error(f"[{provider_name}] Search failed: {e}")
-            return FallbackDownloadResult(
+            return DownloadChainResult(
                 success=False,
                 file_path=None,
                 provider_used=provider_name,
@@ -278,8 +286,6 @@ class FallbackDownloader:
 
         # Step 2: Download the track
         try:
-            # Generate output path: {output_dir}/{artist}/{album}/{artist} - {title}.{ext}
-            # Matches the SpotDL convention for consistent library structure
             safe_artist = self._sanitize_filename(track_metadata.artist)
             safe_album = self._sanitize_filename(
                 track_metadata.album or "Unknown Album"
@@ -290,13 +296,11 @@ class FallbackDownloader:
                 safe_title = self._sanitize_filename(track_metadata.title)
                 base_filename = f"{safe_artist} - {safe_title}"
 
-            # Determine file extension based on quality and provider
             ext = self._get_expected_extension(provider_name)
             album_dir = self._output_dir / safe_artist / safe_album
             album_dir.mkdir(parents=True, exist_ok=True)
             output_path = album_dir / f"{base_filename}.{ext}"
 
-            # Download
             download_result = await provider.download_track(
                 track_match=match,
                 output_path=output_path,
@@ -307,7 +311,7 @@ class FallbackDownloader:
                 logger.error(
                     f"[{provider_name}] Download failed: {download_result.error}"
                 )
-                return FallbackDownloadResult(
+                return DownloadChainResult(
                     success=False,
                     file_path=None,
                     provider_used=provider_name,
@@ -320,7 +324,7 @@ class FallbackDownloader:
             logger.info(f"[{provider_name}] Downloaded to: {file_path}")
         except Exception as e:
             logger.error(f"[{provider_name}] Download failed with exception: {e}")
-            return FallbackDownloadResult(
+            return DownloadChainResult(
                 success=False,
                 file_path=None,
                 provider_used=provider_name,
@@ -329,8 +333,7 @@ class FallbackDownloader:
                 validation_result=None,
             )
 
-        # Step 3: Convert FLAC/MP3 to M4A if user requested HIGH quality
-        # (Keep FLAC as-is for LOSSLESS/HI_RES quality preferences)
+        # Step 3: Convert FLAC to M4A if user requested HIGH quality
         if (
             self._quality_preference == QualityPreference.HIGH
             and file_path.suffix.lower() == ".flac"
@@ -347,7 +350,7 @@ class FallbackDownloader:
                 logger.info(f"[{provider_name}] Converted to: {file_path}")
             except AudioConversionError as e:
                 logger.error(f"[{provider_name}] FLAC to M4A conversion failed: {e}")
-                return FallbackDownloadResult(
+                return DownloadChainResult(
                     success=False,
                     file_path=None,
                     provider_used=provider_name,
@@ -356,7 +359,7 @@ class FallbackDownloader:
                     validation_result=None,
                 )
 
-        # Step 4: Embed metadata (providers don't have proper tags)
+        # Step 4: Embed metadata
         try:
             metadata_success = self._metadata_embedder.embed_metadata(
                 file_path=file_path,
@@ -369,7 +372,6 @@ class FallbackDownloader:
                 )
         except Exception as e:
             logger.warning(f"[{provider_name}] Metadata embedding failed: {e}")
-            # Continue - file is still valid, just without metadata
 
         # Step 5: Validate the downloaded file
         validation_result: Optional[ValidationResult] = None
@@ -383,16 +385,33 @@ class FallbackDownloader:
                 logger.warning(
                     f"[{provider_name}] Validation failed: {validation_result.errors}"
                 )
-                # Don't fail the download, just log the warning
         except Exception as e:
             logger.warning(f"[{provider_name}] Validation failed with exception: {e}")
+
+        # Step 6: Fetch lyrics (non-blocking, failure never fails download)
+        try:
+            from downloader.lyrics import fetch_and_save_lyrics_if_enabled
+
+            fetch_and_save_lyrics_if_enabled(
+                file_path=file_path,
+                track_name=track_metadata.title,
+                artist_name=track_metadata.artist,
+                album_name=track_metadata.album,
+                duration_seconds=(
+                    track_metadata.duration_ms // 1000
+                    if track_metadata.duration_ms
+                    else None
+                ),
+            )
+        except Exception as e:
+            logger.debug(f"[{provider_name}] Lyrics fetch failed (non-fatal): {e}")
 
         logger.info(
             f"[{provider_name}] Successfully downloaded and processed: "
             f"'{track_metadata.artist} - {track_metadata.title}'"
         )
 
-        return FallbackDownloadResult(
+        return DownloadChainResult(
             success=True,
             file_path=file_path,
             provider_used=provider_name,
@@ -409,27 +428,17 @@ class FallbackDownloader:
         ):
             return "flac"
 
-        # For HIGH quality
         if provider_name == "qobuz":
-            # Qobuz HIGH: returns MP3 if use_mp3=True, else FLAC (to be converted to M4A)
             return "mp3" if self._qobuz_use_mp3 else "flac"
         elif provider_name == "youtube":
             return "m4a"
+        elif provider_name == "monochrome":
+            # Monochrome always returns FLAC (converted to M4A in step 3 for HIGH)
+            return "flac"
         else:
-            # Tidal returns M4A for HIGH quality
             return "m4a"
 
     def _sanitize_filename(self, name: str) -> str:
-        """
-        Sanitize a string for use in filenames.
-
-        Args:
-            name: The string to sanitize
-
-        Returns:
-            Sanitized string safe for use in filenames
-        """
-        # Replace problematic characters
         replacements = {
             "/": "-",
             "\\": "-",
@@ -445,7 +454,6 @@ class FallbackDownloader:
         for old, new in replacements.items():
             result = result.replace(old, new)
 
-        # Limit length
         max_length = 100
         if len(result) > max_length:
             result = result[:max_length]
@@ -456,3 +464,8 @@ class FallbackDownloader:
         """Clean up resources."""
         self._providers.clear()
         self._initialized.clear()
+        self._provider_cooldowns.clear()
+
+
+# Backward-compatible alias
+FallbackDownloader = DownloadProviderChain
