@@ -31,6 +31,7 @@ class OneOffTaskService:
         # Import tasks here to avoid circular imports
         from library_manager.tasks import (
             backfill_album_tracks,
+            backfill_lyrics_status,
             backfill_song_album,
             backfill_song_isrc,
             cleanup_appears_on_albums,
@@ -185,6 +186,19 @@ class OneOffTaskService:
             ),
             category="maintenance",
             task_func=cleanup_orphaned_albums,
+        )
+
+        self._tasks["backfill_lyrics_status"] = OneOffTaskDefinition(
+            id="backfill_lyrics_status",
+            name="Backfill Lyrics Status",
+            description=(
+                "Scan all downloaded songs and create lyrics tracking records. "
+                "For songs with existing .lrc files on disk (exact or fuzzy match), "
+                "marks has_lyrics=True. Songs without .lrc files are queued for "
+                "automatic retry via the daily lyrics task. Safe to re-run."
+            ),
+            category="maintenance",
+            task_func=backfill_lyrics_status,
         )
 
         self._tasks["send_test_notification"] = OneOffTaskDefinition(

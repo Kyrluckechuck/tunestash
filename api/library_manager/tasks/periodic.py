@@ -774,3 +774,96 @@ def scan_new_releases_for_tracked_artists(self: Any) -> None:
     sync_tracked_artists_metadata which already detects new albums).
     """
     logger.info("scan_new_releases_for_tracked_artists is a no-op stub, skipping")
+
+
+@celery_app.task(bind=True, name="library_manager.tasks.retry_missing_lyrics")
+def retry_missing_lyrics(self: Any, batch_size: int = 100) -> None:
+    """Retry fetching lyrics for songs that didn't have them previously.
+
+    Queries SongLyricsStatus records where has_lyrics=False and the backoff
+    period has expired. Fetches from LRClib and updates status accordingly.
+    """
+    from django.conf import settings as django_settings
+
+    if not getattr(django_settings, "LYRICS_ENABLED", False):
+        return
+
+    from pathlib import Path
+
+    from django.utils import timezone as tz
+
+    from downloader.lyrics import fetch_and_save_lyrics
+
+    from ..models import SongLyricsStatus
+
+    candidates = (
+        SongLyricsStatus.objects.filter(has_lyrics=False)
+        .select_related("song", "song__file_path_ref", "song__primary_artist")
+        .order_by("attempt_count", "id")[:batch_size]
+    )
+
+    ready = [c for c in candidates if c.is_ready_for_retry()]
+    if not ready:
+        logger.info("No songs ready for lyrics retry")
+        return
+
+    fetched = 0
+    failed = 0
+
+    for status in ready:
+        song = status.song
+        if not song.file_path_ref:
+            continue
+
+        audio_path = Path(song.file_path_ref.path)
+        album_name = song.album.name if song.album else None
+
+        success = fetch_and_save_lyrics(
+            file_path=audio_path,
+            track_name=song.name,
+            artist_name=song.primary_artist.name,
+            album_name=album_name,
+        )
+
+        if success:
+            status.has_lyrics = True
+            status.last_attempt = tz.now()
+            status.save(update_fields=["has_lyrics", "last_attempt"])
+            fetched += 1
+        else:
+            status.attempt_count += 1
+            status.last_attempt = tz.now()
+            status.save(update_fields=["attempt_count", "last_attempt"])
+            failed += 1
+
+    logger.info(f"Lyrics retry: {fetched} fetched, {failed} still missing")
+
+
+@celery_app.task(bind=True, name="library_manager.tasks.trigger_navidrome_rescan")
+def trigger_navidrome_rescan(self: Any) -> None:
+    """Trigger a Navidrome library rescan if new music was downloaded recently.
+
+    Checks if any FilePath records were created in the last hour (meaning new
+    downloads occurred). If so, triggers a rescan via the Subsonic API.
+    """
+    from datetime import timedelta
+
+    from django.conf import settings as django_settings
+
+    if not getattr(django_settings, "NAVIDROME_ENABLED", False):
+        return
+
+    from ..models import FilePath
+
+    one_hour_ago = timezone.now() - timedelta(hours=1)
+    if not FilePath.objects.filter(created_at__gte=one_hour_ago).exists():
+        logger.debug("No new music in the last hour, skipping Navidrome rescan")
+        return
+
+    from src.services.navidrome import NavidromeService
+
+    service = NavidromeService()
+    if service.trigger_rescan():
+        logger.info("Navidrome library rescan triggered successfully")
+    else:
+        logger.warning("Failed to trigger Navidrome library rescan")

@@ -7,7 +7,7 @@ from django.utils import timezone
 from celery_app import app as celery_app
 
 from .. import helpers
-from ..models import Artist, Song, TrackedPlaylist
+from ..models import Artist, PlaylistSong, Song, TrackedPlaylist
 from .core import (
     complete_task,
     create_task_history,
@@ -16,6 +16,62 @@ from .core import (
     update_task_progress,
 )
 from .migration import _find_matching_song
+
+
+def _update_playlist_songs(
+    playlist: TrackedPlaylist, ordered_songs: list[Song]
+) -> None:
+    """Sync PlaylistSong records for a playlist.
+
+    Creates/updates entries to match the ordered list of songs.
+    Removes entries for songs no longer in the playlist.
+    """
+    existing = {
+        ps.song_id: ps  # type: ignore[attr-defined]
+        for ps in PlaylistSong.objects.filter(playlist=playlist)
+    }
+    new_song_ids = set()
+
+    to_create: list[PlaylistSong] = []
+    to_update: list[PlaylistSong] = []
+
+    for order, song in enumerate(ordered_songs):
+        new_song_ids.add(song.id)
+        if song.id in existing:
+            ps = existing[song.id]
+            if ps.track_order != order:
+                ps.track_order = order
+                to_update.append(ps)
+        else:
+            to_create.append(
+                PlaylistSong(playlist=playlist, song=song, track_order=order)
+            )
+
+    # Remove songs no longer in playlist
+    removed_ids = set(existing.keys()) - new_song_ids
+    if removed_ids:
+        PlaylistSong.objects.filter(playlist=playlist, song_id__in=removed_ids).delete()
+
+    if to_create:
+        PlaylistSong.objects.bulk_create(to_create, ignore_conflicts=True)
+    if to_update:
+        PlaylistSong.objects.bulk_update(to_update, ["track_order"])
+
+
+def _generate_m3u_if_enabled(playlist: TrackedPlaylist) -> None:
+    """Generate M3U file for a playlist if the feature is enabled."""
+    from django.conf import settings as django_settings
+
+    if not getattr(django_settings, "M3U_PLAYLISTS_ENABLED", False):
+        return
+
+    from pathlib import Path
+
+    from downloader.m3u_writer import write_playlist_m3u
+
+    output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
+    playlist_dir = getattr(django_settings, "M3U_PLAYLISTS_DIRECTORY", "Playlists")
+    write_playlist_m3u(playlist.pk, output_dir, playlist_dir)
 
 
 def _sync_tracked_playlist_internal(
@@ -141,6 +197,7 @@ def sync_deezer_playlist(
         linked_songs = 0
         downloads_queued = 0
         total = len(tracks)
+        ordered_songs: list[Song] = []
 
         for idx, track in enumerate(tracks):
             if not track.deezer_id:
@@ -208,6 +265,9 @@ def sync_deezer_playlist(
                     )
                     new_songs += 1
 
+            if matched_song:
+                ordered_songs.append(matched_song)
+
             if (
                 matched_song
                 and matched_song.bitrate == 0
@@ -223,6 +283,10 @@ def sync_deezer_playlist(
                     progress,
                     f"Processed {idx + 1}/{total} tracks",
                 )
+
+        # Update PlaylistSong records and generate M3U
+        _update_playlist_songs(playlist, ordered_songs)
+        _generate_m3u_if_enabled(playlist)
 
         # Mark artists as tracked if auto_track_artists is enabled
         if playlist.auto_track_artists:

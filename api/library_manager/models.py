@@ -249,6 +249,7 @@ class DownloadProvider(IntegerChoices):
     TIDAL = 2, "Tidal"
     QOBUZ = 3, "Qobuz"
     YOUTUBE = 4, "YouTube Music (yt-dlp)"
+    MONOCHROME = 5, "Monochrome (Tidal CDN)"
 
 
 class UpgradeAttemptResult(IntegerChoices):
@@ -1843,6 +1844,67 @@ class TrackMappingCache(models.Model):
             return f"TrackMappingCache({key}) -> NO MATCH"
         target = self.spotify_track_id or self.deezer_track_id or "?"
         return f"TrackMappingCache({key}) -> {target}"
+
+
+class SongLyricsStatus(models.Model):
+    """Tracks lyrics fetch state for retry backoff.
+
+    After a song is downloaded, lyrics are fetched from LRClib. If not found,
+    retries follow an exponential backoff schedule (1d, 3d, 7d, 14d, 30d, 90d).
+    """
+
+    song: models.OneToOneField = models.OneToOneField(
+        Song, on_delete=models.CASCADE, related_name="lyrics_status"
+    )
+    has_lyrics: models.BooleanField = models.BooleanField(default=False)
+    last_attempt: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    attempt_count: models.IntegerField = models.IntegerField(default=0)
+
+    # Backoff schedule in days, indexed by attempt_count
+    BACKOFF_DAYS = [0, 1, 3, 7, 14, 30, 90]
+
+    def get_backoff_days(self) -> int:
+        if self.attempt_count < len(self.BACKOFF_DAYS):
+            return int(self.BACKOFF_DAYS[self.attempt_count])
+        return 90  # Every 3 months indefinitely
+
+    def is_ready_for_retry(self) -> bool:
+        if self.has_lyrics:
+            return False
+        if self.last_attempt is None:
+            return True
+        from datetime import timedelta
+
+        next_retry = self.last_attempt + timedelta(days=self.get_backoff_days())
+        return bool(timezone.now() >= next_retry)
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "song_lyrics_status"
+
+
+class PlaylistSong(models.Model):
+    """Junction model linking songs to playlists with track ordering.
+
+    Populated during playlist sync to enable M3U playlist file generation.
+    """
+
+    playlist: models.ForeignKey = models.ForeignKey(
+        TrackedPlaylist, on_delete=models.CASCADE, related_name="playlist_songs"
+    )
+    song: models.ForeignKey = models.ForeignKey(
+        Song, on_delete=models.CASCADE, related_name="playlist_entries"
+    )
+    track_order: models.IntegerField = models.IntegerField()
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "playlist_songs"
+        unique_together = [("playlist", "song")]
+        ordering = ["track_order"]
+
+    def __str__(self) -> str:
+        return f"Playlist {self.playlist_id} #{self.track_order}: {self.song_id}"
 
 
 class APIRateLimitState(models.Model):

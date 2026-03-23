@@ -67,4 +67,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute=0, hour=6),  # Daily at 6 AM
         "options": {"priority": TaskPriority.MAINTENANCE},
     },
+    "retry-missing-lyrics": {
+        "task": "library_manager.tasks.retry_missing_lyrics",
+        "schedule": crontab(minute=0, hour=5),  # Daily at 5 AM
+        "options": {"priority": TaskPriority.MAINTENANCE},
+    },
+    "trigger-navidrome-rescan": {
+        "task": "library_manager.tasks.trigger_navidrome_rescan",
+        "schedule": crontab(minute=45),  # Every hour at :45
+        "options": {"priority": TaskPriority.MAINTENANCE},
+    },
 }

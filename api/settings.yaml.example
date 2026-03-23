@@ -41,6 +41,7 @@ default:
     - youtube
     - tidal
     - qobuz
+    - monochrome
 
   # Download quality preference
   # - high: 320kbps AAC (M4A) - default
@@ -91,6 +92,30 @@ default:
   # ListenBrainz user token (optional, for private listening data)
   # Get yours at https://listenbrainz.org/settings/
   LISTENBRAINZ_USER_TOKEN: ""
+
+  # Monochrome (Tidal CDN) API endpoints for lossless FLAC downloads
+  # These must be API endpoints (not SPA frontends). Public Monochrome instances
+  # serve a web UI; you need the backend API URL from a self-hosted or known instance.
+  # Tried in order, with 5-minute cooldown on failure per endpoint.
+  monochrome_api_urls: []
+    # - "http://your-monochrome-instance:port"
+
+  # Lyrics (.lrc sidecar files via LRClib)
+  # When enabled, synced lyrics are fetched after each download and saved as .lrc files
+  # Media players (Navidrome, Jellyfin, Plex) auto-discover .lrc files for lyrics display
+  lyrics_enabled: false
+
+  # Navidrome integration
+  # Triggers a library rescan when new music is downloaded (checks hourly)
+  navidrome_enabled: false
+  navidrome_url: "http://navidrome:4533"
+  navidrome_user: "admin"
+  navidrome_password: "password"
+
+  # M3U Playlist Export
+  # Generates .m3u files from tracked playlists for media server import
+  m3u_playlists_enabled: false
+  m3u_playlists_directory: "Playlists"  # relative to OUTPUT_PATH
 
   # Deezer API (no API key needed — public endpoints)
   DEEZER_RATE_LIMIT_PER_SECOND: 10
