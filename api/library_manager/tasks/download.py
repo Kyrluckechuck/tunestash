@@ -1177,6 +1177,10 @@ def download_deezer_track(self: Any, song_id: int) -> None:
             song.album.name if song.album else ""  # type: ignore[attr-defined]
         )
 
+        # Use Deezer album name when song has no album link
+        if not album_name and deezer_track and deezer_track.album_name:
+            album_name = deezer_track.album_name
+
         metadata = TrackMetadata(
             spotify_id="",
             title=song.name,

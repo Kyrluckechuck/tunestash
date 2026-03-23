@@ -114,6 +114,17 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
             album_name = song.album.name if song.album else ""  # type: ignore[attr-defined]
             artist_name = song.primary_artist.name  # type: ignore[attr-defined]
 
+            # Fetch album name from Deezer when song has no album link
+            if not album_name and song.deezer_id:
+                try:
+                    from src.providers.deezer import DeezerMetadataProvider
+
+                    dz_track = DeezerMetadataProvider().get_track(song.deezer_id)
+                    if dz_track and dz_track.album_name:
+                        album_name = dz_track.album_name
+                except Exception:
+                    pass
+
             metadata = TrackMetadata(
                 spotify_id="",
                 title=song.name,
