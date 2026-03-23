@@ -1475,6 +1475,136 @@ def merge_duplicate_songs(
 
 @celery_app.task(
     bind=True,
+    name="library_manager.tasks.fix_unknown_album_paths",
+)
+def fix_unknown_album_paths(self: Any) -> None:
+    """Move files out of 'Unknown Album' directories into the correct album.
+
+    Targets only FilePath records containing 'Unknown Album' (typically ~30 files).
+    For each, looks up the real album name via Deezer API, renames the file on disk,
+    and updates the FilePath record.
+    """
+    import os
+    from pathlib import Path
+
+    from src.providers.deezer import DeezerMetadataProvider
+
+    from ..models import FilePath
+
+    task_history = create_task_history(
+        task_id=self.request.id,
+        task_type="MAINTENANCE",
+        entity_type="SYSTEM",
+        task_name="fix_unknown_album_paths",
+    )
+    task_history.status = "RUNNING"
+    task_history.save()
+
+    try:
+        bad_paths = list(FilePath.objects.filter(path__contains="Unknown Album"))
+
+        if not bad_paths:
+            msg = "No 'Unknown Album' paths to fix"
+            logger.info(msg)
+            update_task_progress(task_history, 100.0, msg)
+            complete_task(task_history)
+            return
+
+        update_task_progress(
+            task_history, 0.0, f"Fixing {len(bad_paths)} Unknown Album paths"
+        )
+
+        provider = DeezerMetadataProvider()
+        fixed = 0
+        skipped = 0
+        errors = 0
+
+        for idx, fp in enumerate(bad_paths):
+            old_path = Path(fp.path)
+
+            # Find the song that owns this FilePath
+            song = (
+                Song.objects.filter(file_path_ref=fp)
+                .select_related("primary_artist")
+                .first()
+            )
+            if not song or not song.deezer_id:
+                logger.debug(f"Skipping {fp.path}: no song or no deezer_id")
+                skipped += 1
+                continue
+
+            # Look up the real album name from Deezer
+            try:
+                dz_track = provider.get_track(song.deezer_id)
+            except Exception as e:
+                logger.debug(f"Deezer lookup failed for song {song.id}: {e}")
+                errors += 1
+                continue
+
+            if not dz_track or not dz_track.album_name:
+                skipped += 1
+                continue
+
+            album_name = dz_track.album_name
+            # Sanitize for filesystem
+            safe_album = album_name
+            for char in ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]:
+                safe_album = safe_album.replace(
+                    char, "-" if char in ("/", "\\", ":", "|") else ""
+                )
+            safe_album = safe_album.strip()[:100]
+
+            if not safe_album:
+                skipped += 1
+                continue
+
+            # Build new path: replace 'Unknown Album' directory with real album name
+            new_path = Path(str(old_path).replace("Unknown Album", safe_album))
+
+            if new_path == old_path:
+                skipped += 1
+                continue
+
+            # Move the file
+            try:
+                if not old_path.exists():
+                    logger.warning(f"File not found: {old_path}")
+                    skipped += 1
+                    continue
+
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                os.rename(str(old_path), str(new_path))
+
+                # Update the FilePath record
+                fp.path = str(new_path)
+                fp.save(update_fields=["path"])
+                fixed += 1
+                logger.info(f"Moved: {old_path.name} -> .../{safe_album}/")
+
+                # Clean up empty 'Unknown Album' directory
+                old_dir = old_path.parent
+                if old_dir.exists() and not any(old_dir.iterdir()):
+                    old_dir.rmdir()
+
+            except OSError as e:
+                logger.error(f"Failed to move {old_path}: {e}")
+                errors += 1
+
+        summary = (
+            f"Fixed {fixed} Unknown Album paths, " f"skipped {skipped}, errors {errors}"
+        )
+        logger.info(summary)
+        update_task_progress(task_history, 100.0, summary)
+        complete_task(task_history)
+
+    except Exception as e:
+        logger.exception(f"Error in fix_unknown_album_paths: {e}")
+        complete_task(task_history, success=False, error_message=str(e))
+        raise
+
+
+@celery_app.task(
+    bind=True,
     name="library_manager.tasks.backfill_lyrics_status",
 )
 def backfill_lyrics_status(self: Any, batch_size: int = 500) -> None:
