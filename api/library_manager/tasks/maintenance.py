@@ -86,6 +86,44 @@ def _try_resolve_to_deezer(song: Song) -> None:
             logger.debug("Name search failed for song %s: %s", song.id, e)
 
 
+def _build_track_metadata(song: Song) -> Any:
+    """Build TrackMetadata for a song, enriching from Deezer when available."""
+    from downloader.providers.base import TrackMetadata
+
+    artist_name = song.primary_artist.name  # type: ignore[attr-defined]
+    album_name = song.album.name if song.album else ""  # type: ignore[attr-defined]
+    duration_ms = 0
+    isrc = song.isrc
+
+    # Enrich from Deezer API for missing fields
+    if song.deezer_id:
+        try:
+            from src.providers.deezer import DeezerMetadataProvider
+
+            dz_track = DeezerMetadataProvider().get_track(song.deezer_id)
+            if dz_track:
+                if not album_name and dz_track.album_name:
+                    album_name = dz_track.album_name
+                if dz_track.duration_ms:
+                    duration_ms = dz_track.duration_ms
+                if not isrc and dz_track.isrc:
+                    isrc = dz_track.isrc
+                if dz_track.artist_name:
+                    artist_name = dz_track.artist_name
+        except Exception:
+            pass
+
+    return TrackMetadata(
+        spotify_id="",
+        title=song.name,
+        artist=artist_name,
+        album=album_name,
+        album_artist=artist_name,
+        duration_ms=duration_ms,
+        isrc=isrc,
+    )
+
+
 def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
     """Download songs via YouTube/Tidal/Qobuz fallback providers.
 
@@ -94,7 +132,6 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
 
     Returns (downloaded_count, failed_count).
     """
-    from downloader.providers.base import TrackMetadata
     from downloader.providers.fallback import FallbackDownloader
 
     downloader = FallbackDownloader(
@@ -110,30 +147,7 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
 
         for song in songs:
             _try_resolve_to_deezer(song)
-
-            album_name = song.album.name if song.album else ""  # type: ignore[attr-defined]
-            artist_name = song.primary_artist.name  # type: ignore[attr-defined]
-
-            # Fetch album name from Deezer when song has no album link
-            if not album_name and song.deezer_id:
-                try:
-                    from src.providers.deezer import DeezerMetadataProvider
-
-                    dz_track = DeezerMetadataProvider().get_track(song.deezer_id)
-                    if dz_track and dz_track.album_name:
-                        album_name = dz_track.album_name
-                except Exception:
-                    pass
-
-            metadata = TrackMetadata(
-                spotify_id="",
-                title=song.name,
-                artist=artist_name,
-                album=album_name,
-                album_artist=artist_name,
-                duration_ms=0,
-                isrc=song.isrc,
-            )
+            metadata = _build_track_metadata(song)
 
             result = loop.run_until_complete(downloader.download_track(metadata))
 

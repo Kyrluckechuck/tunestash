@@ -1137,10 +1137,7 @@ def download_deezer_track(self: Any, song_id: int) -> None:
     Used for songs sourced from Deezer that don't have a Spotify URI.
     Fetches metadata from Deezer API and downloads via YouTube/Tidal/Qobuz.
     """
-    from downloader.providers.base import TrackMetadata
     from downloader.providers.fallback import FallbackDownloader
-
-    from src.providers.deezer import DeezerMetadataProvider
 
     task_history = None
     try:
@@ -1165,31 +1162,9 @@ def download_deezer_track(self: Any, song_id: int) -> None:
             logger.info(f"Task cancelled for song {song_id}")
             return
 
-        provider = DeezerMetadataProvider()
-        deezer_track = provider.get_track(song.deezer_id)
+        from .maintenance import _build_track_metadata
 
-        artist_name: str = (
-            song.primary_artist.name  # type: ignore[attr-defined]
-            if song.primary_artist
-            else "Unknown Artist"
-        )
-        album_name: str = (
-            song.album.name if song.album else ""  # type: ignore[attr-defined]
-        )
-
-        # Use Deezer album name when song has no album link
-        if not album_name and deezer_track and deezer_track.album_name:
-            album_name = deezer_track.album_name
-
-        metadata = TrackMetadata(
-            spotify_id="",
-            title=song.name,
-            artist=deezer_track.artist_name if deezer_track else artist_name,
-            album=album_name,
-            album_artist=artist_name,
-            duration_ms=deezer_track.duration_ms if deezer_track else 0,
-            isrc=song.isrc or (deezer_track.isrc if deezer_track else None),
-        )
+        metadata = _build_track_metadata(song)
 
         update_task_progress(
             task_history, 25.0, f"Downloading: {song.name} via fallback providers"
