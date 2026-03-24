@@ -131,7 +131,7 @@ class MonochromeProvider(DownloadProvider):
             api_urls = getattr(
                 django_settings,
                 "MONOCHROME_API_URLS",
-                [],
+                ["https://api.monochrome.tf"],
             )
         self._endpoint_manager = MonochromeEndpointManager.from_urls(api_urls)
         self._min_confidence = min_confidence
@@ -242,15 +242,14 @@ class MonochromeProvider(DownloadProvider):
                     endpoint.mark_failure()
                     continue
 
-                download_url = stream_info.get("url")
-                if not download_url:
+                if not stream_info.get("url") and not stream_info.get("mpd_content"):
                     logger.warning(
                         f"Monochrome {endpoint.url} returned no download URL, trying next"
                     )
                     endpoint.mark_failure()
                     continue
 
-                await sync_to_async(self._download_file)(download_url, output_path)
+                await sync_to_async(self._download_file)(stream_info, output_path)
 
                 endpoint.mark_success()
 
@@ -324,6 +323,24 @@ class MonochromeProvider(DownloadProvider):
 
         try:
             manifest_str = base64.b64decode(manifest_b64).decode("utf-8")
+            audio_quality = data.get("audioQuality", "LOSSLESS")
+
+            if audio_quality == "HI_RES_LOSSLESS":
+                fmt = "flac"
+                bitrate = 9216
+            else:
+                fmt = "flac"
+                bitrate = 1411
+
+            # DASH MPD manifest (XML) — requires ffmpeg to download
+            if manifest_str.lstrip().startswith("<"):
+                return {
+                    "mpd_content": manifest_str,
+                    "format": fmt,
+                    "bitrate_kbps": bitrate,
+                }
+
+            # JSON manifest with direct CDN URLs
             try:
                 manifest = json.loads(manifest_str)
             except json.JSONDecodeError:
@@ -334,30 +351,65 @@ class MonochromeProvider(DownloadProvider):
                 logger.error("No URLs in Monochrome manifest")
                 return None
 
-            mime_type = data.get("mimeType", "")
-            audio_quality = data.get("audioQuality", "LOSSLESS")
-
-            if audio_quality == "HI_RES_LOSSLESS":
-                fmt = "flac"
-                bitrate = 9216
-            else:
-                fmt = "flac"
-                bitrate = 1411
-
             return {
                 "url": urls[0],
                 "format": fmt,
                 "bitrate_kbps": bitrate,
-                "mime_type": mime_type,
             }
 
         except Exception as e:
             logger.error(f"Failed to decode Monochrome manifest: {e}")
             return None
 
-    def _download_file(self, url: str, output_path: Path) -> None:
+    def _download_file(self, url_or_info: dict, output_path: Path) -> None:
+        """Download audio to output_path.
+
+        Handles both direct URL downloads and DASH MPD manifests (via ffmpeg).
+        """
+        import subprocess
+        import tempfile
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        if "mpd_content" in url_or_info:
+            # DASH MPD — write manifest to temp file, use ffmpeg to download
+            with tempfile.NamedTemporaryFile(
+                suffix=".mpd", mode="w", delete=False
+            ) as mpd_file:
+                mpd_file.write(url_or_info["mpd_content"])
+                mpd_path = mpd_file.name
+
+            try:
+                cmd = [
+                    "ffmpeg",
+                    "-y",
+                    "-protocol_whitelist",
+                    "file,https,tls,tcp,http,crypto",
+                    "-i",
+                    mpd_path,
+                    "-map",
+                    "0:a:0",
+                    "-c:a",
+                    "copy",
+                    str(output_path),
+                ]
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=300
+                )
+                if result.returncode != 0:
+                    # Retry with re-encoding if stream copy fails
+                    cmd[-1:] = ["-c:a", "flac", str(output_path)]
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=300
+                    )
+                    if result.returncode != 0:
+                        raise RuntimeError(f"ffmpeg failed: {result.stderr[:200]}")
+            finally:
+                Path(mpd_path).unlink(missing_ok=True)
+            return
+
+        # Direct URL download
+        url = url_or_info["url"]
         response = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
 

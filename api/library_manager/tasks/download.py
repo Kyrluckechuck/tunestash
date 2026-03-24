@@ -44,7 +44,7 @@ FALLBACK_PROVIDER_MAP = {
     "monochrome": DownloadProviderEnum.MONOCHROME,
 }
 
-DEFAULT_FALLBACK_ORDER = ["youtube", "tidal", "qobuz"]
+DEFAULT_FALLBACK_ORDER = ["youtube", "tidal", "qobuz", "monochrome"]
 
 
 def _resolve_album_to_deezer(album: Album) -> Optional[int]:

@@ -38,11 +38,11 @@ default:
   #   which may be less reliable or have downtime
   # Default: Try all providers in order for maximum success rate
   # Available providers: youtube, tidal, qobuz, monochrome
-  # monochrome requires a self-hosted API endpoint (see monochrome_api_urls below)
   download_provider_order:
     - youtube
     - tidal
     - qobuz
+    - monochrome
 
   # Download quality preference
   # - high: 320kbps AAC (M4A) - default
@@ -95,11 +95,10 @@ default:
   LISTENBRAINZ_USER_TOKEN: ""
 
   # Monochrome (Tidal CDN) API endpoints for lossless FLAC downloads
-  # These must be API endpoints (not SPA frontends). Public Monochrome instances
-  # serve a web UI; you need the backend API URL from a self-hosted or known instance.
-  # Tried in order, with 5-minute cooldown on failure per endpoint.
-  monochrome_api_urls: []
-    # - "http://your-monochrome-instance:port"
+  # Uses the hifi-api backend (not the SPA frontend). Tried in order with
+  # 5-minute cooldown on failure per endpoint. Supports DASH MPD manifests via ffmpeg.
+  monochrome_api_urls:
+    - "https://api.monochrome.tf"
 
   # Lyrics (.lrc sidecar files via LRClib)
   # When enabled, synced lyrics are fetched after each download and saved as .lrc files
