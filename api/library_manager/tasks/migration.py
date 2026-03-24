@@ -296,12 +296,15 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
     name="library_manager.tasks.migrate_all_tracked_artists_to_deezer",
 )
 def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
-    """Orchestrator: queue per-artist Deezer migration for all eligible artists.
+    """Orchestrator: queue per-artist Deezer migration for eligible artists.
 
-    Finds all artists that have a deezer_id but haven't been migrated yet
-    (status is not 'complete') and queues migrate_artist_to_deezer for each.
+    Only migrates artists that are tracked OR are direct contributors to
+    tracked artists' songs. This prevents exponential catalog bloat from
+    cascading through the collaboration graph.
     """
     from django.db.models import Q
+
+    from ..models import ContributingArtist
 
     task_history = create_task_history(
         task_id=self.request.id,
@@ -313,11 +316,20 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
     task_history.save()
 
     try:
-        # Order by tracked DESC so tracked artists are queued first.
-        # The PostgreSQL broker uses FIFO ordering, so queue insertion
-        # order determines processing order.
+        # Build set of artist IDs eligible for migration:
+        # 1. Tracked artists
+        # 2. Direct contributors to tracked artists' songs
+        contributor_ids = set(
+            ContributingArtist.objects.filter(song__primary_artist__tracked=True)
+            .values_list("artist_id", flat=True)
+            .distinct()
+        )
+
+        eligible_filter = Q(tracked=True) | Q(id__in=contributor_ids)
+
         artists = (
             Artist.objects.filter(
+                eligible_filter,
                 deezer_id__isnull=False,
             )
             .filter(
@@ -360,8 +372,9 @@ def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
 
         summary = (
             f"Deezer migration orchestrator: queued {queued_tracked} tracked + "
-            f"{queued_untracked} untracked artists, "
-            f"skipped {skipped} (already pending), {total} total eligible"
+            f"{queued_untracked} contributor artists "
+            f"(skipped {skipped} already pending, "
+            f"{len(contributor_ids)} contributors eligible, {total} total)"
         )
         logger.info(summary)
         update_task_progress(task_history, 100.0, summary)
