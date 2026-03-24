@@ -137,17 +137,12 @@ def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Pat
 
 
 def regenerate_m3u_for_song(song_id: int) -> None:
-    """Regenerate M3U files for all playlists that contain a given song.
+    """Regenerate M3U files for all m3u-enabled playlists that contain a given song.
 
     Called after a song finishes downloading to update M3U files
     with the newly available track.
     """
-    from django.conf import settings as django_settings
-
-    if not getattr(django_settings, "M3U_PLAYLISTS_ENABLED", True):
-        return
-
-    from library_manager.models import PlaylistSong
+    from library_manager.models import PlaylistSong, TrackedPlaylist
 
     playlist_ids = (
         PlaylistSong.objects.filter(song_id=song_id)
@@ -158,8 +153,18 @@ def regenerate_m3u_for_song(song_id: int) -> None:
     if not playlist_ids:
         return
 
+    # Only regenerate for playlists with m3u_enabled=True
+    enabled_ids = TrackedPlaylist.objects.filter(
+        id__in=list(playlist_ids), m3u_enabled=True
+    ).values_list("id", flat=True)
+
+    if not enabled_ids:
+        return
+
+    from django.conf import settings as django_settings
+
     output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
     playlist_dir = getattr(django_settings, "M3U_PLAYLISTS_DIRECTORY", "Playlists")
 
-    for playlist_id in playlist_ids:
+    for playlist_id in enabled_ids:
         write_playlist_m3u(playlist_id, output_dir, playlist_dir)

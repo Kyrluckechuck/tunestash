@@ -329,6 +329,7 @@ type Mutation {
   toggleExternalListAutoTrack(listId: Int!): MutationResult!
   togglePlaylist(playlistId: Int!): MutationResult!
   togglePlaylistAutoTrack(playlistId: Int!): MutationResult!
+  togglePlaylistM3u(playlistId: Int!): MutationResult!
   trackArtist(artistId: Int!): MutationResult!
   trackPlaylist(input: TrackPlaylistInput!): Playlist!
   untrackArtist(artistId: Int!): MutationResult!
@@ -388,6 +389,7 @@ type Playlist {
   enabled: Boolean!
   id: Int!
   lastSyncedAt: DateTime
+  m3uEnabled: Boolean!
   name: String!
   provider: String!
   status: String!

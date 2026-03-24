@@ -436,6 +436,66 @@ class PlaylistService(BaseService[Playlist]):
                 playlist=None,
             )
 
+    async def toggle_playlist_m3u(self, playlist_id: int) -> MutationResult:
+        try:
+            django_playlist = await self.model.objects.aget(id=playlist_id)
+            django_playlist.m3u_enabled = not django_playlist.m3u_enabled
+            await django_playlist.asave()
+
+            if django_playlist.m3u_enabled:
+                # Generate M3U file
+                await sync_to_async(self._generate_m3u)(django_playlist)
+                message = "M3U export enabled"
+            else:
+                # Delete M3U file
+                await sync_to_async(self._delete_m3u)(django_playlist)
+                message = "M3U export disabled"
+
+            return MutationResult(
+                success=True,
+                message=message,
+                playlist=self._to_graphql_type(django_playlist),
+            )
+        except self.model.DoesNotExist:
+            return MutationResult(
+                success=False, message="Playlist not found", playlist=None
+            )
+        except Exception as e:
+            return MutationResult(
+                success=False,
+                message=f"Error toggling M3U export: {str(e)}",
+                playlist=None,
+            )
+
+    @staticmethod
+    def _generate_m3u(django_playlist: DjangoPlaylist) -> None:
+        from pathlib import Path
+
+        from django.conf import settings as django_settings
+
+        from downloader.m3u_writer import write_playlist_m3u
+
+        output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
+        playlist_dir = getattr(django_settings, "M3U_PLAYLISTS_DIRECTORY", "Playlists")
+        write_playlist_m3u(django_playlist.pk, output_dir, playlist_dir)
+
+    @staticmethod
+    def _delete_m3u(django_playlist: DjangoPlaylist) -> None:
+        import re
+        from pathlib import Path
+
+        from django.conf import settings as django_settings
+
+        output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
+        playlist_dir_name = getattr(
+            django_settings, "M3U_PLAYLISTS_DIRECTORY", "Playlists"
+        )
+        safe_name = re.sub(r'[/\\:*?"<>|]', "", django_playlist.name)
+        safe_name = safe_name.strip(". ")[:200]
+        m3u_path = output_dir / playlist_dir_name / f"TS - {safe_name}.m3u"
+        if m3u_path.exists():
+            m3u_path.unlink()
+
     async def delete_playlist(self, playlist_id: int) -> MutationResult:
         """Delete a tracked playlist from the database."""
         try:
@@ -645,6 +705,7 @@ class PlaylistService(BaseService[Playlist]):
             status_message=django_playlist.status_message,
             enabled=django_playlist.enabled,
             auto_track_artists=django_playlist.auto_track_artists,
+            m3u_enabled=django_playlist.m3u_enabled,
             last_synced_at=django_playlist.last_synced_at,
             provider=django_playlist.provider,
         )
