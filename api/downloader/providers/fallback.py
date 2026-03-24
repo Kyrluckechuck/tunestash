@@ -8,7 +8,6 @@ tries multiple download providers in sequence until one succeeds.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -29,9 +28,6 @@ from .validation import AudioValidator, ValidationResult
 from .youtube import YouTubeMusicProvider
 
 logger = logging.getLogger(__name__)
-
-# Provider-level cooldown: skip providers that recently failed (seconds)
-PROVIDER_COOLDOWN_SECONDS = 3600  # 1 hour
 
 
 @dataclass
@@ -99,47 +95,21 @@ class DownloadProviderChain:
 
         self._initialized: set[str] = set()
 
-        # Provider-level cooldown: {provider_name: timestamp_when_cooldown_expires}
-        self._provider_cooldowns: dict[str, float] = {}
-
-    def _is_provider_in_cooldown(self, provider_name: str) -> bool:
-        """Check if a provider is in cooldown (recently failed availability)."""
-        cooldown_until = self._provider_cooldowns.get(provider_name)
-        if cooldown_until is None:
-            return False
-        if time.time() >= cooldown_until:
-            del self._provider_cooldowns[provider_name]
-            logger.info(f"[{provider_name}] Cooldown expired, provider available again")
-            return False
-        return True
-
-    def _set_provider_cooldown(self, provider_name: str) -> None:
-        """Mark a provider as unavailable with a cooldown period."""
-        self._provider_cooldowns[provider_name] = (
-            time.time() + PROVIDER_COOLDOWN_SECONDS
-        )
-        # Clear initialization state so it's re-checked after cooldown
-        self._initialized.discard(provider_name)
-        self._providers.pop(provider_name, None)
-        logger.warning(
-            f"[{provider_name}] Provider entered cooldown for "
-            f"{PROVIDER_COOLDOWN_SECONDS}s"
-        )
-
     async def _ensure_provider_initialized(self, provider_name: str) -> bool:
+        """Ensure a provider is initialized and available.
+
+        Re-checks availability each time for providers that previously failed,
+        since endpoint health can recover quickly. Per-endpoint cooldowns are
+        handled internally by each provider's endpoint manager.
+        """
         if provider_name in self._initialized:
             return True
-
-        # Check cooldown before attempting init
-        if self._is_provider_in_cooldown(provider_name):
-            return False
 
         try:
             if provider_name == "youtube":
                 provider = YouTubeMusicProvider()
                 if not await provider.is_available():
                     logger.warning("YouTube Music provider is not available")
-                    self._set_provider_cooldown(provider_name)
                     return False
                 self._providers["youtube"] = provider
 
@@ -149,7 +119,6 @@ class DownloadProviderChain:
                 )
                 if not await provider.is_available():
                     logger.warning("Tidal API is not available")
-                    self._set_provider_cooldown(provider_name)
                     return False
                 self._providers["tidal"] = provider
 
@@ -157,7 +126,6 @@ class DownloadProviderChain:
                 provider = QobuzProvider(use_mp3=self._qobuz_use_mp3)
                 if not await provider.is_available():
                     logger.warning("Qobuz API is not available")
-                    self._set_provider_cooldown(provider_name)
                     return False
                 self._providers["qobuz"] = provider
 
@@ -165,7 +133,6 @@ class DownloadProviderChain:
                 provider = MonochromeProvider()
                 if not await provider.is_available():
                     logger.warning("Monochrome provider is not available")
-                    self._set_provider_cooldown(provider_name)
                     return False
                 self._providers["monochrome"] = provider
 
@@ -178,7 +145,6 @@ class DownloadProviderChain:
 
         except Exception as e:
             logger.error(f"Failed to initialize {provider_name}: {e}")
-            self._set_provider_cooldown(provider_name)
             return False
 
     async def download_track(
@@ -464,7 +430,6 @@ class DownloadProviderChain:
         """Clean up resources."""
         self._providers.clear()
         self._initialized.clear()
-        self._provider_cooldowns.clear()
 
 
 # Backward-compatible alias
