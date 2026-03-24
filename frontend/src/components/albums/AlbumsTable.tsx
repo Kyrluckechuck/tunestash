@@ -83,9 +83,6 @@ export function AlbumsTable({
               >
                 Artist
               </SortableTableHeader>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
-                ID
-              </th>
               <SortableTableHeader
                 field='albumType'
                 currentSortField={sortField}
@@ -159,10 +156,10 @@ export function AlbumsTable({
                         href={`https://open.spotify.com/album/${album.spotifyGid}`}
                         target='_blank'
                         rel='noopener noreferrer'
-                        className='ml-1.5 text-xs text-gray-400 hover:text-gray-600'
-                        title='Also on Spotify'
+                        className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600 hover:bg-green-100 transition-colors'
+                        title='Also available on Spotify'
                       >
-                        (Spotify)
+                        Spotify
                       </a>
                     )}
                   </div>
@@ -183,9 +180,6 @@ export function AlbumsTable({
                       </span>
                     )}
                   </div>
-                </td>
-                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
-                  {album.id}
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap'>
                   <div className='text-sm text-gray-500'>
@@ -250,7 +244,7 @@ export function AlbumsTable({
                         onClick={() => onCheckMetadata(album.id)}
                         disabled={checkingMetadataIds?.has(album.id)}
                         className='text-orange-600 hover:text-orange-900 disabled:text-gray-400 disabled:cursor-not-allowed'
-                        title='Check for metadata changes on Spotify'
+                        title='Check for metadata changes'
                       >
                         <svg
                           xmlns='http://www.w3.org/2000/svg'

@@ -186,10 +186,10 @@ export const SongsTable: React.FC<SongsTableProps> = ({
                       )}
                       target='_blank'
                       rel='noopener noreferrer'
-                      className='ml-1.5 text-xs text-gray-400 hover:text-gray-600'
-                      title='Also on Spotify'
+                      className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600 hover:bg-green-100 transition-colors'
+                      title='Also available on Spotify'
                     >
-                      (Spotify)
+                      Spotify
                     </a>
                   )}
                 </div>

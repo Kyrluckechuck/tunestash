@@ -4,6 +4,15 @@ import { useQuery } from '@apollo/client/react';
 import { GetSystemStatusDocument } from '../types/generated/graphql';
 import { SpotifyConnectButton } from '../components/ui/SpotifyConnectButton';
 
+function StatusSkeleton() {
+  return (
+    <div className='flex items-center gap-2 animate-pulse'>
+      <div className='h-4 w-4 rounded-full bg-gray-200 flex-shrink-0' />
+      <div className='h-3.5 w-36 rounded bg-gray-200' />
+    </div>
+  );
+}
+
 function Home() {
   const { data, loading } = useQuery(GetSystemStatusDocument, {
     pollInterval: 30 * 1000, // Poll every 30 seconds
@@ -34,7 +43,7 @@ function Home() {
           {/* Spotify Access */}
           <div className='flex items-center gap-2'>
             {loading ? (
-              <span className='text-sm text-gray-500'>Loading...</span>
+              <StatusSkeleton />
             ) : data?.systemHealth.authentication.spotifyAuthMode ===
               'user-authenticated' ? (
               <>
@@ -80,7 +89,7 @@ function Home() {
           {/* YouTube Music Cookies */}
           <div className='flex items-center gap-2'>
             {loading ? (
-              <span className='text-sm text-gray-500'>Loading...</span>
+              <StatusSkeleton />
             ) : data?.systemHealth.authentication.cookiesValid ? (
               <>
                 <svg
@@ -133,7 +142,7 @@ function Home() {
           {/* Spotify Rate Limit */}
           <div className='flex items-center gap-2'>
             {loading ? (
-              <span className='text-sm text-gray-500'>Loading...</span>
+              <StatusSkeleton />
             ) : (
               (() => {
                 const rl = data?.systemHealth.spotifyRateLimit;
@@ -252,7 +261,7 @@ function Home() {
           {/* Task Queue */}
           <div className='flex items-center gap-2'>
             {loading ? (
-              <span className='text-sm text-gray-500'>Loading...</span>
+              <StatusSkeleton />
             ) : data?.queueStatus.totalPendingTasks === 0 ? (
               <>
                 <svg
@@ -304,7 +313,7 @@ function Home() {
           {/* Storage Status */}
           <div className='flex items-center gap-2'>
             {loading ? (
-              <span className='text-sm text-gray-500'>Loading...</span>
+              <StatusSkeleton />
             ) : !data?.systemHealth.storage.isWritable ? (
               <>
                 <svg

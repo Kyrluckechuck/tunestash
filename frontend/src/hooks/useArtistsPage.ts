@@ -39,7 +39,9 @@ export function useArtistsPage() {
     initialSearchQuery: '',
   });
 
-  const [filter, setFilter] = useState<'all' | 'tracked' | 'untracked'>('all');
+  const [filter, setFilter] = useState<'all' | 'tracked' | 'untracked'>(
+    'tracked'
+  );
   const [hasUndownloadedFilter, setHasUndownloadedFilter] = useState<
     boolean | undefined
   >(undefined);

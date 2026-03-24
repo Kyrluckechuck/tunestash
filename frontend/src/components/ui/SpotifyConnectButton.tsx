@@ -229,12 +229,9 @@ export function SpotifyConnectButton() {
 
   if (loading) {
     return (
-      <button
-        disabled
-        className='px-4 py-2 text-sm font-medium text-gray-400 bg-gray-100 rounded-md cursor-not-allowed'
-      >
-        Loading...
-      </button>
+      <div className='animate-pulse'>
+        <div className='h-9 w-28 rounded-md bg-gray-200' />
+      </div>
     );
   }
 

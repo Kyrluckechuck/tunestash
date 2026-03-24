@@ -70,9 +70,6 @@ export function ArtistsTable({
               >
                 Artist
               </SortableTableHeader>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
-                ID
-              </th>
               <SortableTableHeader
                 field='isTracked'
                 currentSortField={sortField}
@@ -121,9 +118,6 @@ export function ArtistsTable({
                       {artist.name}
                     </Link>
                   </div>
-                </td>
-                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
-                  {artist.id}
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap'>
                   <ToggleStatusButton
