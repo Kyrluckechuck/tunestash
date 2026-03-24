@@ -81,7 +81,8 @@ def notification_settings():
         mock_settings.NOTIFICATIONS_ENABLED = True
         mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
         mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-        mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 10
+        mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
+        mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
         mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
         mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
         mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
@@ -320,13 +321,23 @@ class TestErrorRateAlert:
         self, service, notification_settings, sample_artist
     ):
         now = timezone.now()
-        for i in range(12):
+        # 18 failures + 2 successes = 90% failure rate (above 50% threshold)
+        for i in range(18):
             TaskHistory.objects.create(
                 task_id=f"fail-{i}",
                 type="DOWNLOAD",
                 entity_id="123",
                 entity_type="ALBUM",
                 status="FAILED",
+                started_at=now - timedelta(hours=1),
+            )
+        for i in range(2):
+            TaskHistory.objects.create(
+                task_id=f"ok-{i}",
+                type="DOWNLOAD",
+                entity_id="456",
+                entity_type="ALBUM",
+                status="COMPLETED",
                 started_at=now - timedelta(hours=1),
             )
 
@@ -352,7 +363,8 @@ class TestErrorRateAlert:
 
             assert result[NotificationService.ALERT_HIGH_ERROR_RATE] is True
             call_kwargs = mock_apprise.notify.call_args[1]
-            assert "12 tasks" in call_kwargs["body"]
+            assert "90%" in call_kwargs["body"]
+            assert "18/20" in call_kwargs["body"]
 
     def test_no_alert_below_threshold(self, service, notification_settings):
         now = timezone.now()
@@ -573,13 +585,23 @@ class TestCooldown:
     def test_error_rate_respects_cooldown(self, service, notification_settings):
         """Error rate alerts still use time-based cooldown."""
         now = timezone.now()
-        for i in range(12):
+        # 18 failures + 2 successes = 90% failure rate (above threshold)
+        for i in range(18):
             TaskHistory.objects.create(
                 task_id=f"fail-cd-{i}",
                 type="DOWNLOAD",
                 entity_id="123",
                 entity_type="ALBUM",
                 status="FAILED",
+                started_at=now - timedelta(hours=1),
+            )
+        for i in range(2):
+            TaskHistory.objects.create(
+                task_id=f"ok-cd-{i}",
+                type="DOWNLOAD",
+                entity_id="456",
+                entity_type="ALBUM",
+                status="COMPLETED",
                 started_at=now - timedelta(hours=1),
             )
 
@@ -607,13 +629,23 @@ class TestCooldown:
     def test_error_rate_sends_after_cooldown(self, service, notification_settings):
         """Error rate alert sends again after cooldown expires."""
         now = timezone.now()
-        for i in range(12):
+        # 18 failures + 2 successes = 90% failure rate
+        for i in range(18):
             TaskHistory.objects.create(
                 task_id=f"fail-cd2-{i}",
                 type="DOWNLOAD",
                 entity_id="123",
                 entity_type="ALBUM",
                 status="FAILED",
+                started_at=now - timedelta(hours=1),
+            )
+        for i in range(2):
+            TaskHistory.objects.create(
+                task_id=f"ok-cd2-{i}",
+                type="DOWNLOAD",
+                entity_id="456",
+                entity_type="ALBUM",
+                status="COMPLETED",
                 started_at=now - timedelta(hours=1),
             )
 

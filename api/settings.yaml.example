@@ -76,7 +76,11 @@ default:
     # - "ntfy://ntfy.sh/my-topic"
     # - "gotify://hostname/token"
   NOTIFICATIONS_COOLDOWN_MINUTES: 60
-  NOTIFICATIONS_ERROR_THRESHOLD: 10
+  # Download failure alerting (success-rate based)
+  # Alert when failure percentage exceeds this value over the window
+  NOTIFICATIONS_ERROR_MAX_FAILURE_PCT: 50
+  # Minimum downloads in window before alerting (avoids false positives during quiet periods)
+  NOTIFICATIONS_ERROR_MIN_DOWNLOADS: 20
   NOTIFICATIONS_ERROR_WINDOW_HOURS: 6
   # Cookie expiration warnings (days before expiry)
   # - WARN: First warning (default 7 days) - "Consider refreshing soon"
