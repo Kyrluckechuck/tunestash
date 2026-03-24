@@ -133,7 +133,7 @@ class TestErrorRateIntegration:
         """Error rate should only count failures within the configured window."""
         now = timezone.now()
 
-        # Create 5 recent failures (within window)
+        # Create 5 recent failures and 20 successes (25% failure rate, below 50%)
         for i in range(5):
             TaskHistory.objects.create(
                 task_id=f"recent-fail-{i}",
@@ -143,16 +143,14 @@ class TestErrorRateIntegration:
                 status="FAILED",
                 started_at=now - timedelta(hours=2),
             )
-
-        # Create 10 old failures (outside default 6-hour window)
-        for i in range(10):
+        for i in range(20):
             TaskHistory.objects.create(
-                task_id=f"old-fail-{i}",
+                task_id=f"recent-ok-{i}",
                 type="DOWNLOAD",
                 entity_id="456",
                 entity_type="ALBUM",
-                status="FAILED",
-                started_at=now - timedelta(hours=12),
+                status="COMPLETED",
+                started_at=now - timedelta(hours=2),
             )
 
         service = NotificationService()
@@ -166,7 +164,8 @@ class TestErrorRateIntegration:
             mock_settings.NOTIFICATIONS_ENABLED = True
             mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
             mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 10
+            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
+            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
             mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
 
             mock_auth.return_value = MagicMock(
@@ -181,20 +180,30 @@ class TestErrorRateIntegration:
 
             result = service._check_error_rate()
 
-        # Only 5 recent failures, below threshold of 10
+        # 25% failure rate, below 50% threshold
         assert result[NotificationService.ALERT_HIGH_ERROR_RATE] is False
 
     def test_threshold_exactly_met_triggers_alert(self):
-        """Alert should trigger when count equals threshold."""
+        """Alert should trigger when failure rate hits threshold."""
         now = timezone.now()
 
-        for i in range(10):  # Exactly threshold
+        # 15 failures + 5 successes = 75% failure rate (above 50%)
+        for i in range(15):
             TaskHistory.objects.create(
                 task_id=f"threshold-fail-{i}",
                 type="DOWNLOAD",
                 entity_id="123",
                 entity_type="ALBUM",
                 status="FAILED",
+                started_at=now - timedelta(hours=1),
+            )
+        for i in range(5):
+            TaskHistory.objects.create(
+                task_id=f"threshold-ok-{i}",
+                type="DOWNLOAD",
+                entity_id="456",
+                entity_type="ALBUM",
+                status="COMPLETED",
                 started_at=now - timedelta(hours=1),
             )
 
@@ -207,7 +216,8 @@ class TestErrorRateIntegration:
             mock_settings.NOTIFICATIONS_ENABLED = True
             mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
             mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 10
+            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
+            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
             mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
 
             mock_apprise = MagicMock()
@@ -218,32 +228,31 @@ class TestErrorRateIntegration:
 
         assert result[NotificationService.ALERT_HIGH_ERROR_RATE] is True
 
-    def test_ignores_successful_tasks(self):
-        """Only FAILED tasks should count toward error rate."""
+    def test_ignores_low_volume(self):
+        """Should not alert when too few downloads to be meaningful."""
         now = timezone.now()
 
-        # Mix of statuses
-        for i, status in enumerate(
-            ["FAILED"] * 5 + ["SUCCESS"] * 20 + ["PENDING"] * 10
-        ):
+        # 5 failures, 0 successes — 100% failure rate but only 5 downloads
+        for i in range(5):
             TaskHistory.objects.create(
-                task_id=f"mixed-{i}",
+                task_id=f"low-vol-{i}",
                 type="DOWNLOAD",
                 entity_id="123",
                 entity_type="ALBUM",
-                status=status,
+                status="FAILED",
                 started_at=now - timedelta(hours=1),
             )
 
         service = NotificationService()
 
         with patch("src.services.notification.settings") as mock_settings:
-            mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 10
+            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
+            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
             mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
 
             result = service._check_error_rate()
 
-        # Only 5 failures, below threshold
+        # Below min_downloads threshold, should not alert
         assert result[NotificationService.ALERT_HIGH_ERROR_RATE] is False
 
 
@@ -273,7 +282,8 @@ class TestFullNotificationCycle:
             mock_settings.NOTIFICATIONS_ENABLED = True
             mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
             mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 100
+            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
+            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
             mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
             mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
             mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
@@ -353,7 +363,8 @@ class TestFullNotificationCycle:
             mock_settings.NOTIFICATIONS_ENABLED = True
             mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
             mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 100
+            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
+            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
             mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
             mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
             mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
@@ -450,7 +461,8 @@ class TestInstanceNameConfiguration:
             mock_settings.NOTIFICATIONS_ENABLED = True
             mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
             mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_THRESHOLD = 100
+            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
+            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
             mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
             mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
             mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1

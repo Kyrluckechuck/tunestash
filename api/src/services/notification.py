@@ -167,31 +167,41 @@ class NotificationService:
         return results
 
     def _check_error_rate(self) -> dict[str, bool]:
-        """Check if task failure rate exceeds threshold."""
-        threshold = int(getattr(settings, "NOTIFICATIONS_ERROR_THRESHOLD", 10))
+        """Check if download success rate has dropped below threshold.
+
+        Uses success-rate over recent downloads rather than raw failure count.
+        This avoids false alerts from expected catalog gaps (niche music not
+        available on any provider) while catching real provider outages.
+        """
         window_hours = int(getattr(settings, "NOTIFICATIONS_ERROR_WINDOW_HOURS", 6))
+        # Minimum downloads required before alerting (avoids false positives
+        # during low-activity periods where 2/3 failures = 33% rate)
+        min_downloads = int(getattr(settings, "NOTIFICATIONS_ERROR_MIN_DOWNLOADS", 20))
+        # Alert when success rate drops below this percentage
+        max_failure_pct = int(
+            getattr(settings, "NOTIFICATIONS_ERROR_MAX_FAILURE_PCT", 50)
+        )
         name = self.get_instance_name()
 
         window_start = timezone.now() - timedelta(hours=window_hours)
-        failed_tasks = TaskHistory.objects.filter(
-            status="FAILED", started_at__gte=window_start
+        download_tasks = TaskHistory.objects.filter(
+            type="DOWNLOAD", started_at__gte=window_start
         )
-        catalog_gap_patterns = [
-            "No tracks found on Deezer",
-            "No matching track found",
-            "not found on Deezer",
-        ]
-        for pattern in catalog_gap_patterns:
-            failed_tasks = failed_tasks.exclude(
-                type="DOWNLOAD", error_message__icontains=pattern
-            )
-        failed_count = failed_tasks.count()
+        total = download_tasks.count()
+        if total < min_downloads:
+            return {self.ALERT_HIGH_ERROR_RATE: False}
 
-        if failed_count >= threshold:
+        succeeded = download_tasks.filter(status="COMPLETED").count()
+        failure_pct = ((total - succeeded) / total) * 100
+
+        if failure_pct >= max_failure_pct:
             sent = self._send(
-                title=f"{name}: High Error Rate",
-                body=f"{failed_count} tasks have failed in the last {window_hours} hours "
-                f"(threshold: {threshold}). Check worker logs for details.",
+                title=f"{name}: High Download Failure Rate",
+                body=(
+                    f"{failure_pct:.0f}% of downloads have failed in the last "
+                    f"{window_hours} hours ({total - succeeded}/{total}). "
+                    f"Providers may be down — check worker logs."
+                ),
                 alert_type=self.ALERT_HIGH_ERROR_RATE,
             )
             return {self.ALERT_HIGH_ERROR_RATE: sent}
