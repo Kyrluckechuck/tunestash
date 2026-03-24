@@ -114,7 +114,7 @@ default:
 
   # M3U Playlist Export
   # Generates .m3u files from tracked playlists for media server import
-  m3u_playlists_enabled: false
+  m3u_playlists_enabled: true
   m3u_playlists_directory: "Playlists"  # relative to OUTPUT_PATH
 
   # Deezer API (no API key needed — public endpoints)
