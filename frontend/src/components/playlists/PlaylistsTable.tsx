@@ -343,7 +343,9 @@ export function PlaylistsTable({
                     rel='noopener noreferrer'
                     className='text-indigo-600 hover:text-indigo-900 underline'
                   >
-                    Open Spotify
+                    {playlist.provider === 'deezer'
+                      ? 'Open Deezer'
+                      : 'Open Spotify'}
                   </a>
                 </td>
               </tr>
