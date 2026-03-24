@@ -86,7 +86,7 @@ class DownloadProviderChain:
                 p for p in provider_order if p in self.SUPPORTED_PROVIDERS
             ]
         else:
-            self._provider_order = ["youtube", "tidal", "qobuz"]
+            self._provider_order = ["youtube", "tidal", "qobuz", "monochrome"]
 
         self._tidal_endpoint_manager = TidalEndpointManager()
         self._providers: dict[str, DownloadProvider] = {}
