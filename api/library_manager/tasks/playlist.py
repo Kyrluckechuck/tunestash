@@ -59,13 +59,13 @@ def _update_playlist_songs(
 
 
 def _generate_m3u_if_enabled(playlist: TrackedPlaylist) -> None:
-    """Generate M3U file for a playlist if the feature is enabled."""
-    from django.conf import settings as django_settings
-
-    if not getattr(django_settings, "M3U_PLAYLISTS_ENABLED", True):
+    """Generate M3U file for a playlist if m3u_enabled is set."""
+    if not playlist.m3u_enabled:
         return
 
     from pathlib import Path
+
+    from django.conf import settings as django_settings
 
     from downloader.m3u_writer import write_playlist_m3u
 

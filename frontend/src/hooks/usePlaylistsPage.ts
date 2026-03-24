@@ -4,6 +4,7 @@ import {
   GetPlaylistsDocument,
   TogglePlaylistDocument,
   TogglePlaylistAutoTrackDocument,
+  TogglePlaylistM3uDocument,
   SyncPlaylistDocument,
   ForceSyncPlaylistDocument,
   RecheckPlaylistDocument,
@@ -68,6 +69,7 @@ export function usePlaylistsPage() {
   const [togglePlaylistAutoTrack] = useMutation(
     TogglePlaylistAutoTrackDocument
   );
+  const [togglePlaylistM3u] = useMutation(TogglePlaylistM3uDocument);
   const [syncPlaylist] = useMutation(SyncPlaylistDocument);
   const [forceSyncPlaylist] = useMutation(ForceSyncPlaylistDocument);
   const [recheckPlaylist] = useMutation(RecheckPlaylistDocument);
@@ -86,6 +88,12 @@ export function usePlaylistsPage() {
     mutatingIds: autoMutatingIds,
     pulseIds: autoPulseIds,
     handleMutation: handleAutoMutation,
+  } = useMutationState();
+
+  const {
+    mutatingIds: m3uMutatingIds,
+    pulseIds: m3uPulseIds,
+    handleMutation: handleM3uMutation,
   } = useMutationState();
 
   const {
@@ -289,6 +297,21 @@ export function usePlaylistsPage() {
     );
   };
 
+  const handleToggleM3u = async (playlist: Playlist) => {
+    await handleM3uMutation(
+      playlist.id,
+      async () => {
+        await togglePlaylistM3u({
+          variables: { playlistId: playlist.id },
+        });
+        toast.success(
+          `M3U export ${playlist.m3uEnabled ? 'disabled' : 'enabled'}`
+        );
+      },
+      { withPulse: true }
+    );
+  };
+
   const handleEditPlaylist = useCallback((playlist: Playlist) => {
     setEditingPlaylist(playlist);
     setShowPlaylistModal(true);
@@ -408,6 +431,8 @@ export function usePlaylistsPage() {
     enabledPulseIds,
     autoMutatingIds,
     autoPulseIds,
+    m3uMutatingIds,
+    m3uPulseIds,
     syncMutatingIds,
     forceSyncMutatingIds,
     deleteMutatingIds,
@@ -426,6 +451,7 @@ export function usePlaylistsPage() {
     handleRecheckPlaylist,
     handleDeletePlaylist,
     handleToggleAutoTrack,
+    handleToggleM3u,
     handleEditPlaylist,
     handleClosePlaylistModal,
     handleCreatePlaylist,

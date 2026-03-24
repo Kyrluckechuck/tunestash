@@ -142,6 +142,10 @@ class Mutation:  # pylint: disable=too-many-public-methods
         )
 
     @strawberry.mutation
+    async def toggle_playlist_m3u(self, playlist_id: int) -> "MutationResult":
+        return await services.playlist.toggle_playlist_m3u(playlist_id=playlist_id)
+
+    @strawberry.mutation
     async def delete_playlist(self, playlist_id: int) -> "MutationResult":
         """Delete a tracked playlist from the database."""
         return await services.playlist.delete_playlist(playlist_id=playlist_id)

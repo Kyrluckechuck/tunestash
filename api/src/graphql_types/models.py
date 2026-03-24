@@ -138,6 +138,7 @@ class Playlist:
     status_message: Optional[str]
     enabled: bool  # Computed from status for backwards compatibility
     auto_track_artists: bool
+    m3u_enabled: bool
     last_synced_at: Optional[DateTime]
     provider: str = "spotify"
 

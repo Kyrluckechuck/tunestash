@@ -48,6 +48,8 @@ function Playlists() {
     enabledPulseIds,
     autoMutatingIds,
     autoPulseIds,
+    m3uMutatingIds,
+    m3uPulseIds,
     syncMutatingIds,
     forceSyncMutatingIds,
     deleteMutatingIds,
@@ -66,6 +68,7 @@ function Playlists() {
     handleRecheckPlaylist,
     handleDeletePlaylist,
     handleToggleAutoTrack,
+    handleToggleM3u,
     handleEditPlaylist,
     handleClosePlaylistModal,
     handleCreatePlaylist,
@@ -120,6 +123,8 @@ function Playlists() {
           enabledPulseIds={enabledPulseIds}
           autoMutatingIds={autoMutatingIds}
           autoPulseIds={autoPulseIds}
+          m3uMutatingIds={m3uMutatingIds}
+          m3uPulseIds={m3uPulseIds}
           syncMutatingIds={syncMutatingIds}
           forceSyncMutatingIds={forceSyncMutatingIds}
           deleteMutatingIds={deleteMutatingIds}
@@ -136,6 +141,7 @@ function Playlists() {
           handleRecheckPlaylist={handleRecheckPlaylist}
           handleDeletePlaylist={handleDeletePlaylist}
           handleToggleAutoTrack={handleToggleAutoTrack}
+          handleToggleM3u={handleToggleM3u}
           handleEditPlaylist={handleEditPlaylist}
           handleClosePlaylistModal={handleClosePlaylistModal}
           handleCreatePlaylist={handleCreatePlaylist}
@@ -168,6 +174,8 @@ function SyncedPlaylistsTab({
   enabledPulseIds,
   autoMutatingIds,
   autoPulseIds,
+  m3uMutatingIds,
+  m3uPulseIds,
   syncMutatingIds,
   forceSyncMutatingIds,
   deleteMutatingIds,
@@ -184,6 +192,7 @@ function SyncedPlaylistsTab({
   handleRecheckPlaylist,
   handleDeletePlaylist,
   handleToggleAutoTrack,
+  handleToggleM3u,
   handleEditPlaylist,
   handleClosePlaylistModal,
   handleCreatePlaylist,
@@ -256,6 +265,7 @@ function SyncedPlaylistsTab({
           onSort={handleSort}
           onToggleEnabled={handleTogglePlaylist}
           onToggleAutoTrack={handleToggleAutoTrack}
+          onToggleM3u={handleToggleM3u}
           onSyncPlaylist={handleSyncPlaylist}
           onForceSyncPlaylist={handleForceSyncPlaylist}
           onRecheckPlaylist={handleRecheckPlaylist}
@@ -264,12 +274,14 @@ function SyncedPlaylistsTab({
           loading={loading}
           enabledMutatingIds={enabledMutatingIds}
           autoMutatingIds={autoMutatingIds}
+          m3uMutatingIds={m3uMutatingIds}
           syncMutatingIds={syncMutatingIds}
           forceSyncMutatingIds={forceSyncMutatingIds}
           recheckMutatingIds={recheckMutatingIds}
           deleteMutatingIds={deleteMutatingIds}
           enabledPulseIds={enabledPulseIds}
           autoPulseIds={autoPulseIds}
+          m3uPulseIds={m3uPulseIds}
           errorById={errorById}
         />
       </div>

@@ -21,6 +21,7 @@ interface PlaylistsTableProps {
   onSort: (field: PlaylistSortField) => void;
   onToggleEnabled: (playlist: Playlist) => void;
   onToggleAutoTrack: (playlist: Playlist) => void;
+  onToggleM3u: (playlist: Playlist) => void;
   onSyncPlaylist: (playlistId: number) => void;
   onForceSyncPlaylist?: (playlistId: number) => void;
   onRecheckPlaylist?: (playlistId: number) => void;
@@ -29,12 +30,14 @@ interface PlaylistsTableProps {
   loading?: boolean;
   enabledMutatingIds?: Set<number>;
   autoMutatingIds?: Set<number>;
+  m3uMutatingIds?: Set<number>;
   syncMutatingIds?: Set<number>;
   forceSyncMutatingIds?: Set<number>;
   recheckMutatingIds?: Set<number>;
   deleteMutatingIds?: Set<number>;
   enabledPulseIds?: Set<number>;
   autoPulseIds?: Set<number>;
+  m3uPulseIds?: Set<number>;
   errorById?: Record<number, string>;
 }
 
@@ -45,6 +48,7 @@ export function PlaylistsTable({
   onSort,
   onToggleEnabled,
   onToggleAutoTrack,
+  onToggleM3u,
   onSyncPlaylist,
   onForceSyncPlaylist,
   onRecheckPlaylist,
@@ -53,12 +57,14 @@ export function PlaylistsTable({
   loading = false,
   enabledMutatingIds,
   autoMutatingIds,
+  m3uMutatingIds,
   syncMutatingIds,
   forceSyncMutatingIds,
   recheckMutatingIds,
   deleteMutatingIds,
   enabledPulseIds,
   autoPulseIds,
+  m3uPulseIds,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   errorById,
 }: PlaylistsTableProps) {
@@ -101,6 +107,14 @@ export function PlaylistsTable({
                 onSort={onSort}
               >
                 Track Artists
+              </SortableTableHeader>
+              <SortableTableHeader
+                field={null}
+                currentSortField={sortField}
+                currentSortDirection={sortDirection}
+                onSort={onSort}
+              >
+                M3U Export
               </SortableTableHeader>
               <SortableTableHeader
                 field='lastSyncedAt'
@@ -201,6 +215,35 @@ export function PlaylistsTable({
                       playlist.autoTrackArtists
                         ? 'Disable tracking artists'
                         : 'Enable tracking artists'
+                    }
+                  />
+                </td>
+                <td className='px-6 py-4 whitespace-nowrap'>
+                  <ToggleStatusButton
+                    variant='switch'
+                    enabled={playlist.m3uEnabled}
+                    onToggle={() => onToggleM3u(playlist)}
+                    mutating={m3uMutatingIds?.has(playlist.id)}
+                    pulse={m3uPulseIds?.has(playlist.id)}
+                    labels={{ on: 'Yes', off: 'No' }}
+                    ariaLabel={
+                      playlist.m3uEnabled
+                        ? 'Disable M3U export'
+                        : 'Enable M3U export'
+                    }
+                  />
+                  <ToggleStatusButton
+                    variant='badge'
+                    enabled={playlist.m3uEnabled}
+                    onToggle={() => onToggleM3u(playlist)}
+                    mutating={m3uMutatingIds?.has(playlist.id)}
+                    pulse={m3uPulseIds?.has(playlist.id)}
+                    labels={{ on: 'Yes', off: 'No' }}
+                    colors={{ on: 'blue', off: 'red' }}
+                    ariaLabel={
+                      playlist.m3uEnabled
+                        ? 'Disable M3U export'
+                        : 'Enable M3U export'
                     }
                   />
                 </td>

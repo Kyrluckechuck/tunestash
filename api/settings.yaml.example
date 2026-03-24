@@ -112,10 +112,9 @@ default:
   navidrome_user: "admin"
   navidrome_password: "password"
 
-  # M3U Playlist Export
-  # Generates .m3u files from tracked playlists for media server import
-  m3u_playlists_enabled: true
-  m3u_playlists_directory: "Playlists"  # relative to OUTPUT_PATH
+  # M3U Playlist Export (per-playlist toggle in the UI)
+  # Directory for .m3u files, relative to OUTPUT_PATH
+  m3u_playlists_directory: "Playlists"
 
   # Deezer API (no API key needed — public endpoints)
   DEEZER_RATE_LIMIT_PER_SECOND: 10
