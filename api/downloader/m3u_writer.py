@@ -144,7 +144,7 @@ def regenerate_m3u_for_song(song_id: int) -> None:
     """
     from django.conf import settings as django_settings
 
-    if not getattr(django_settings, "M3U_PLAYLISTS_ENABLED", False):
+    if not getattr(django_settings, "M3U_PLAYLISTS_ENABLED", True):
         return
 
     from library_manager.models import PlaylistSong
