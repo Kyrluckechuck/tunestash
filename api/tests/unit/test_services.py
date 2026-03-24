@@ -127,6 +127,66 @@ class TestArtistService:
             assert total == 5
             assert has_next is True
 
+    @pytest.mark.asyncio
+    async def test_to_graphql_type_includes_timestamp_fields(self, artist_service):
+        """Test that GraphQL type conversion includes both timestamp fields."""
+        with (
+            patch.object(
+                artist_service, "_get_undownloaded_count", new_callable=AsyncMock
+            ) as mock_count,
+            patch.object(
+                artist_service, "_get_failed_song_count", new_callable=AsyncMock
+            ) as mock_failed,
+        ):
+            mock_count.return_value = 0
+            mock_failed.return_value = 0
+
+            mock_artist = Mock()
+            mock_artist.id = 1
+            mock_artist.gid = "test_id"
+            mock_artist.name = "Test Artist"
+            mock_artist.tracked = True
+            mock_artist.last_synced_at = datetime.now()
+            mock_artist.last_downloaded_at = datetime.now()
+            mock_artist.added_at = datetime.now()
+            mock_artist.spotify_uri = "spotify:artist:test_id"
+
+            result = await artist_service._to_graphql_type_async(mock_artist)
+
+            assert result.last_synced is not None
+            assert result.last_downloaded is not None
+            assert isinstance(result.last_synced, datetime)
+            assert isinstance(result.last_downloaded, datetime)
+
+    @pytest.mark.asyncio
+    async def test_to_graphql_type_handles_null_timestamps(self, artist_service):
+        """Test that null timestamps are handled correctly."""
+        mock_artist = Mock()
+        mock_artist.id = 1
+        mock_artist.gid = "test_id"
+        mock_artist.name = "Never Synced Artist"
+        mock_artist.tracked = False
+        mock_artist.last_synced_at = None
+        mock_artist.last_downloaded_at = None
+        mock_artist.added_at = datetime.now()
+        mock_artist.spotify_uri = "spotify:artist:test_id"
+
+        with (
+            patch.object(
+                artist_service, "_get_undownloaded_count", new_callable=AsyncMock
+            ) as mock_count,
+            patch.object(
+                artist_service, "_get_failed_song_count", new_callable=AsyncMock
+            ) as mock_failed,
+        ):
+            mock_count.return_value = 10
+            mock_failed.return_value = 0
+
+            result = await artist_service._to_graphql_type_async(mock_artist)
+
+            assert result.last_synced is None
+            assert result.last_downloaded is None
+
 
 @pytest.mark.django_db
 class TestSongService:

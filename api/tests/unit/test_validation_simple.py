@@ -165,6 +165,52 @@ class TestValidationFunctionsSimple:
                 url_type == expected_type
             ), f"Expected {expected_type}, got {url_type} for {url}"
 
+    def test_validate_spotify_url_edge_cases(self) -> None:
+        """Test edge cases for URL validation."""
+        edge_cases = [
+            ("https://open.spotify.com/track/", True),
+            ("spotify:track:", True),
+            ("https://open.spotify.com/unknown/123", True),
+            ("spotify:unknown:123", True),
+        ]
+
+        for url, expected_valid in edge_cases:
+            is_valid, error = validate_spotify_url(url)
+            assert (
+                is_valid == expected_valid
+            ), f"URL {url} should be {expected_valid}, got {is_valid}"
+
+    def test_extract_spotify_id_edge_cases(self) -> None:
+        """Test edge cases for ID extraction."""
+        edge_cases = [
+            ("https://open.spotify.com/track/", None),
+            ("spotify:track:", None),
+            ("https://open.spotify.com/unknown/123", "123"),
+            ("spotify:unknown:123", "123"),
+        ]
+
+        for url, expected_id in edge_cases:
+            extracted_id = extract_spotify_id(url)
+            assert (
+                extracted_id == expected_id
+            ), f"Expected {expected_id}, got {extracted_id} for {url}"
+
+    def test_url_type_detection_case_insensitive(self) -> None:
+        """Test that URL type detection is case insensitive."""
+        test_cases = [
+            ("https://open.spotify.com/TRACK/4iV5W9uYEdYUVa79Axb7Rh", "track"),
+            ("https://open.spotify.com/ALBUM/4aawyAB9vmqN3uQ7FjRGTy", "album"),
+            ("https://open.spotify.com/PLAYLIST/37i9dQZF1DXcBWIGoYBM5M", "playlist"),
+            ("spotify:TRACK:4iV5W9uYEdYUVa79Axb7Rh", "track"),
+            ("spotify:ALBUM:4aawyAB9vmqN3uQ7FjRGTy", "album"),
+        ]
+
+        for url, expected_type in test_cases:
+            url_type = get_spotify_url_type(url)
+            assert (
+                url_type == expected_type
+            ), f"Expected {expected_type}, got {url_type} for {url}"
+
 
 class TestIsLocalTrack:
     """Test local track detection for Spotify playlist items."""
