@@ -48,6 +48,9 @@ class PeriodicTaskService:
         elif hour == "*" and minute == "0":
             # Every hour at the top of the hour
             parts.append("every hour")
+        elif hour == "*" and minute.isdigit():
+            # Every hour at a specific minute
+            parts.append(f"every hour at :{minute.zfill(2)}")
         elif minute == "0" and hour != "*":
             parts.append(f"at {hour}:00")
         elif minute != "*" and hour != "*":
