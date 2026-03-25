@@ -1522,8 +1522,8 @@ def backfill_lyrics_status(self: Any, batch_size: int = 500) -> None:
                 file_path_ref__isnull=False,
             )
             .exclude(lyrics_status__isnull=False)
-            .select_related("file_path_ref")
-            .order_by("id")[:batch_size]
+            .select_related("file_path_ref", "primary_artist")
+            .order_by("-primary_artist__tracked", "id")[:batch_size]
         )
 
         total_remaining = (
