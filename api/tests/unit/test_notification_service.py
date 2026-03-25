@@ -420,6 +420,60 @@ class TestErrorRateAlert:
             result = service.check_and_notify_all()
             assert result[NotificationService.ALERT_HIGH_ERROR_RATE] is False
 
+    def test_excludes_auth_failures_from_error_rate(
+        self, service, notification_settings
+    ):
+        """Auth failures (expired POT, cookies) have their own alerts and
+        should not inflate the error rate metric."""
+        now = timezone.now()
+        # 15 auth failures — these should be excluded
+        for i in range(15):
+            TaskHistory.objects.create(
+                task_id=f"auth-fail-{i}",
+                type="DOWNLOAD",
+                entity_id="123",
+                entity_type="ALBUM",
+                status="FAILED",
+                started_at=now - timedelta(hours=1),
+                error_message="Cannot download: PO Token invalid",
+            )
+        # 5 real provider failures + 15 successes = 25% real failure rate
+        for i in range(5):
+            TaskHistory.objects.create(
+                task_id=f"real-fail-{i}",
+                type="DOWNLOAD",
+                entity_id="456",
+                entity_type="ALBUM",
+                status="FAILED",
+                started_at=now - timedelta(hours=1),
+            )
+        for i in range(15):
+            TaskHistory.objects.create(
+                task_id=f"ok-auth-{i}",
+                type="DOWNLOAD",
+                entity_id="789",
+                entity_type="ALBUM",
+                status="COMPLETED",
+                started_at=now - timedelta(hours=1),
+            )
+
+        with patch(
+            "src.services.system_health.SystemHealthService.check_authentication_status",
+            return_value=MagicMock(
+                cookies_valid=True,
+                cookies_expire_in_days=30,
+                cookies_error_message=None,
+                po_token_configured=False,
+                po_token_valid=False,
+                spotify_auth_mode="public",
+                spotify_token_valid=True,
+            ),
+        ):
+            result = service.check_and_notify_all()
+            # Without exclusion: 20/35 = 57% → would alert
+            # With exclusion: 5/20 = 25% → no alert
+            assert result[NotificationService.ALERT_HIGH_ERROR_RATE] is False
+
 
 class TestSendOnce:
     """Tests for fire-once notification behavior (auth alerts)."""

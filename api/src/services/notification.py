@@ -186,6 +186,10 @@ class NotificationService:
         window_start = timezone.now() - timedelta(hours=window_hours)
         download_tasks = TaskHistory.objects.filter(
             type="DOWNLOAD", started_at__gte=window_start
+        ).exclude(
+            # Auth/capability failures have their own dedicated alerts
+            # (PO Token, cookies, storage) — don't double-count them here
+            error_message__contains="Cannot download:",
         )
         total = download_tasks.count()
         if total < min_downloads:
