@@ -75,12 +75,13 @@ def write_playlist_m3u(
         lines.append(f"#EXTINF:-1,{artist_name} - {song.name}")
 
         if file_path:
-            # Use relative path from the output base dir for portability
+            # Use path relative to the M3U file's directory (Playlists/)
+            # so media servers resolve paths correctly
             try:
-                rel_path = file_path.relative_to(output_base_dir)
-                lines.append(str(rel_path))
+                rel_from_root = file_path.relative_to(output_base_dir)
+                # Prepend ../ since the M3U lives in a subdirectory of the music root
+                lines.append(str(Path("..") / rel_from_root))
             except ValueError:
-                # File is outside output_base_dir, use absolute path
                 lines.append(str(file_path))
 
     m3u_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -75,6 +75,8 @@ class TestWritePlaylistM3u:
         assert "#EXTM3U" in content
         assert "#PLAYLIST:TS | Test Playlist" in content
         assert "Test Artist - Song" in content
+        # Paths should use ../ to navigate from Playlists/ to music root
+        assert "../Test Artist/Album/" in content
 
     def test_returns_none_for_empty_playlist(self, tmp_path):
         from downloader.m3u_writer import write_playlist_m3u
