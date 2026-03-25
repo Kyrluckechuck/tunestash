@@ -11,6 +11,7 @@ This module contains shared utilities used across all task modules:
 
 import os
 import re
+import time
 import unicodedata
 import uuid
 from functools import wraps
@@ -24,6 +25,13 @@ from celery_app import app as celery_app  # noqa: F401 - re-exported
 
 from ..models import TaskHistory
 from ..task_priorities import TaskPriority  # noqa: F401 - re-exported
+
+# Circuit breaker: when True, download tasks are rejected immediately
+# without re-checking auth (saves API calls during extended outages).
+# Re-checked every _PAUSE_RECHECK_SECONDS to detect credential renewal.
+_downloads_paused = False  # pylint: disable=invalid-name
+_downloads_paused_at: float = 0.0  # pylint: disable=invalid-name
+_PAUSE_RECHECK_SECONDS = 900  # 15 minutes
 
 
 class TaskCancelledException(Exception):
@@ -248,12 +256,48 @@ def check_and_update_progress(
     return False
 
 
+def _pause_downloads_queue(reason: str) -> None:
+    """Stop consuming from the downloads queue so tasks stay queued, not lost."""
+    global _downloads_paused, _downloads_paused_at  # pylint: disable=global-statement
+    if _downloads_paused:
+        return
+    _downloads_paused = True
+    _downloads_paused_at = time.monotonic()
+    try:
+        celery_app.control.cancel_consumer("downloads")
+        logger.critical(
+            "[AUTH] Downloads queue paused: %s. "
+            "Renew credentials and restart the stack to resume.",
+            reason,
+        )
+    except Exception as exc:
+        logger.error("[AUTH] Failed to cancel downloads consumer: %s", exc)
+
+
+def resume_downloads_queue() -> None:
+    """Re-enable the downloads queue consumer (called when auth is restored)."""
+    global _downloads_paused, _downloads_paused_at  # pylint: disable=global-statement
+    if not _downloads_paused:
+        return
+    _downloads_paused = False
+    _downloads_paused_at = 0.0
+    try:
+        celery_app.control.add_consumer("downloads")
+        logger.info("[AUTH] Downloads queue resumed — authentication restored.")
+    except Exception as exc:
+        logger.error("[AUTH] Failed to re-add downloads consumer: %s", exc)
+
+
 def require_download_capability(task_history: Optional[TaskHistory] = None) -> None:
     """Check authentication status and block task execution if downloads are not possible.
 
     This function verifies that the system has valid authentication (cookies) before
     allowing download tasks to proceed. If authentication is invalid or expired, the
     task is failed immediately to prevent wasted API calls.
+
+    When ``pause_downloads_on_auth_failure`` is enabled (default), the first failure
+    also pauses the downloads queue so queued tasks are preserved rather than
+    drained as failures.
 
     Args:
         task_history: Optional task history to update with failure status if auth fails
@@ -263,8 +307,24 @@ def require_download_capability(task_history: Optional[TaskHistory] = None) -> N
     """
     from src.services.system_health import SystemHealthService
 
+    # Fast path: if paused and not yet time to re-check, reject immediately
+    if _downloads_paused:
+        elapsed = time.monotonic() - _downloads_paused_at
+        if elapsed < _PAUSE_RECHECK_SECONDS:
+            error_msg = "Downloads paused due to auth failure — waiting for renewal"
+            if task_history:
+                task_history.status = "FAILED"
+                task_history.add_log_message(error_msg)
+                task_history.save()
+            raise RuntimeError(error_msg)
+        logger.info("[AUTH] Re-checking download capability after pause window...")
+
     can_download, reason = SystemHealthService.is_download_capable()
     if not can_download:
+        pause_enabled = getattr(settings, "PAUSE_DOWNLOADS_ON_AUTH_FAILURE", True)
+        if pause_enabled and reason:
+            _pause_downloads_queue(reason)
+
         error_msg = f"Cannot download: {reason}"
         logger.error(error_msg)
         if task_history:
@@ -272,6 +332,10 @@ def require_download_capability(task_history: Optional[TaskHistory] = None) -> N
             task_history.add_log_message(error_msg)
             task_history.save()
         raise RuntimeError(error_msg)
+
+    # Auth is valid — if we were paused, resume
+    if _downloads_paused:
+        resume_downloads_queue()
 
 
 def check_spotify_rate_limit() -> Optional[int]:

@@ -13,8 +13,23 @@ from .core import logger
     ignore_result=True,
 )
 def check_notifications(self: Any) -> dict[str, bool]:
-    """Periodic task to check system health and send notifications via Apprise."""
+    """Periodic task to check system health and send notifications via Apprise.
+
+    Also checks whether downloads were paused due to auth failure and
+    resumes them if credentials are now valid.
+    """
     from src.services.notification import NotificationService
+
+    from .core import _downloads_paused, resume_downloads_queue
+
+    # If downloads are paused, check whether auth has been restored
+    if _downloads_paused:
+        from src.services.system_health import SystemHealthService
+
+        can_download, _reason = SystemHealthService.is_download_capable()
+        if can_download:
+            resume_downloads_queue()
+            logger.info("[NOTIFY] Auth restored — downloads queue resumed")
 
     service = NotificationService()
     results = service.check_and_notify_all()

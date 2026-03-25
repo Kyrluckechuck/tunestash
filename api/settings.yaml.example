@@ -65,6 +65,11 @@ default:
 
   # Operational toggles
   disable_missing_tracked_artist_download: false
+  # When true (default), pauses the downloads queue on auth failure (expired POT
+  # token, invalid cookies, etc.) so queued tasks stay preserved instead of
+  # draining as failures. The worker remains alive for metadata/cleanup tasks.
+  # Downloads resume automatically after a restart or when auth is restored.
+  pause_downloads_on_auth_failure: true
 
   # Notifications (Apprise) - alerts for credential expiry and high error rates
   # See: https://github.com/caronc/apprise/wiki#notification-services
