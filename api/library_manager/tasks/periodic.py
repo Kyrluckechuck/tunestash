@@ -799,7 +799,7 @@ def retry_missing_lyrics(self: Any, batch_size: int = 100) -> None:
     candidates = (
         SongLyricsStatus.objects.filter(has_lyrics=False)
         .select_related("song", "song__file_path_ref", "song__primary_artist")
-        .order_by("attempt_count", "id")[:batch_size]
+        .order_by("-song__primary_artist__tracked", "attempt_count", "id")[:batch_size]
     )
 
     ready = [c for c in candidates if c.is_ready_for_retry()]

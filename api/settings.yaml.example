@@ -112,7 +112,7 @@ default:
   # Lyrics (.lrc sidecar files via LRClib)
   # When enabled, synced lyrics are fetched after each download and saved as .lrc files
   # Media players (Navidrome, Jellyfin, Plex) auto-discover .lrc files for lyrics display
-  lyrics_enabled: false
+  lyrics_enabled: true
 
   # Navidrome integration
   # Triggers a library rescan when new music is downloaded (checks hourly)
