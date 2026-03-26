@@ -3,9 +3,9 @@
 import logging
 from typing import Any, Optional
 
-from django.conf import settings
-
 import requests
+
+from src.app_settings.registry import get_setting
 
 from .base import ExternalListProvider, ExternalListResult, ExternalTrack
 from .rate_limit import check_api_rate_limit
@@ -16,7 +16,7 @@ LASTFM_API_BASE = "https://ws.audioscrobbler.com/2.0/"
 
 
 def _get_api_key() -> str:
-    key = getattr(settings, "LASTFM_API_KEY", "") or ""
+    key = get_setting("lastfm_api_key") or ""
     if not key:
         raise ValueError(
             "Last.fm API key not configured. "

@@ -2,8 +2,6 @@ import logging
 import time
 from typing import Optional
 
-from django.conf import settings
-
 import requests
 import spotipy
 from requests.adapters import HTTPAdapter
@@ -207,16 +205,10 @@ class PublicSpotifyClient:
             return
         self._initialized = True
 
-        # SAFE MODE: Skip initialization to avoid any Spotify API calls
-        # Can be set via settings.yaml (spotify_safe_mode: true) or env var
-        safe_mode = getattr(settings, "spotify_safe_mode", False)
-        if safe_mode:
-            logger.warning("[SAFE MODE] Skipping PublicSpotifyClient initialization")
-            self.sp = None
-            return
+        from src.app_settings.registry import get_setting_with_default
 
-        client_id = getattr(settings, "SPOTIPY_CLIENT_ID", "") or ""
-        client_secret = getattr(settings, "SPOTIPY_CLIENT_SECRET", "") or ""
+        client_id = get_setting_with_default("spotipy_client_id", "") or ""
+        client_secret = get_setting_with_default("spotipy_client_secret", "") or ""
 
         # Only initialize if credentials are available
         if not client_id or not client_secret:
@@ -274,15 +266,6 @@ class OAuthSpotifyClient:
             return
         self._initialized = True
 
-        # SAFE MODE: Skip initialization to avoid any Spotify API calls
-        # Can be set via settings.yaml (spotify_safe_mode: true) or env var
-        safe_mode = getattr(settings, "spotify_safe_mode", False)
-        if safe_mode:
-            logger.warning("[SAFE MODE] Skipping OAuthSpotifyClient initialization")
-            self.sp = None
-            self.is_oauth = False
-            return
-
         logger.info("[SPOTIFY INIT] Initializing OAuthSpotifyClient...")
         oauth_creds = get_spotify_oauth_credentials()
 
@@ -299,9 +282,12 @@ class OAuthSpotifyClient:
                 "[SPOTIFY INIT] No OAuth token, falling back to client credentials"
             )
             # Fall back to client credentials (public access only)
+            from src.app_settings.registry import get_setting_with_default
+
             client_credentials_manager = SpotifyClientCredentials(
-                client_id=getattr(settings, "SPOTIPY_CLIENT_ID", ""),
-                client_secret=getattr(settings, "SPOTIPY_CLIENT_SECRET", ""),
+                client_id=get_setting_with_default("spotipy_client_id", "") or "",
+                client_secret=get_setting_with_default("spotipy_client_secret", "")
+                or "",
                 cache_handler=MemoryCacheHandler(),
             )
             self.sp = spotipy.Spotify(

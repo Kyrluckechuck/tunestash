@@ -5,10 +5,37 @@ the worker should stop consuming from the downloads queue so tasks stay
 preserved in the broker rather than draining as immediate failures.
 """
 
+import sys
 import time
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Pre-inject stubs so that ``@patch("src.services.system_health.…")``
+# does not trigger the real ``src/services/__init__.py`` (which imports
+# ``deezer``, a Docker-only dependency).  We stub the package, then load
+# individual sub-modules via importlib.util to bypass __init__.py.
+if "src.services" not in sys.modules:
+    import importlib.util
+    from pathlib import Path as _Path
+
+    _stub_pkg = ModuleType("src.services")
+    _stub_pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["src.services"] = _stub_pkg
+
+    _services_dir = _Path(__file__).resolve().parents[2] / "src" / "services"
+
+    for _name in ("system_health", "notification"):
+        _fqn = f"src.services.{_name}"
+        _spec = importlib.util.spec_from_file_location(
+            _fqn, _services_dir / f"{_name}.py"
+        )
+        assert _spec and _spec.loader
+        _mod = importlib.util.module_from_spec(_spec)
+        sys.modules[_fqn] = _mod
+        setattr(_stub_pkg, _name, _mod)
+        _spec.loader.exec_module(_mod)
 
 import library_manager.tasks.core as core_module
 from library_manager.tasks.core import (
@@ -97,10 +124,15 @@ class TestRequireDownloadCapability:
 
         require_download_capability()
 
+    @patch(
+        "src.app_settings.registry.get_setting_with_default",
+        side_effect=lambda key, default=None: (
+            True if key == "pause_downloads_on_auth_failure" else default
+        ),
+    )
     @patch("library_manager.tasks.core.celery_app")
     @patch("src.services.system_health.SystemHealthService.is_download_capable")
-    def test_auth_failure_pauses_queue(self, mock_capable, mock_app, settings):
-        settings.PAUSE_DOWNLOADS_ON_AUTH_FAILURE = True
+    def test_auth_failure_pauses_queue(self, mock_capable, mock_app, mock_get_setting):
         mock_capable.return_value = (False, "PO Token expired")
 
         with pytest.raises(RuntimeError, match="Cannot download"):
@@ -109,12 +141,17 @@ class TestRequireDownloadCapability:
         assert core_module._downloads_paused is True
         mock_app.control.cancel_consumer.assert_called_once_with("downloads")
 
+    @patch(
+        "src.app_settings.registry.get_setting_with_default",
+        side_effect=lambda key, default=None: (
+            False if key == "pause_downloads_on_auth_failure" else default
+        ),
+    )
     @patch("library_manager.tasks.core.celery_app")
     @patch("src.services.system_health.SystemHealthService.is_download_capable")
     def test_auth_failure_no_pause_when_disabled(
-        self, mock_capable, mock_app, settings
+        self, mock_capable, mock_app, mock_get_setting
     ):
-        settings.PAUSE_DOWNLOADS_ON_AUTH_FAILURE = False
         mock_capable.return_value = (False, "PO Token expired")
 
         with pytest.raises(RuntimeError, match="Cannot download"):
@@ -177,10 +214,17 @@ class TestRequireDownloadCapability:
         assert core_module._downloads_paused is False
         mock_app.control.add_consumer.assert_called_once_with("downloads")
 
+    @patch(
+        "src.app_settings.registry.get_setting_with_default",
+        side_effect=lambda key, default=None: (
+            True if key == "pause_downloads_on_auth_failure" else default
+        ),
+    )
     @patch("library_manager.tasks.core.celery_app")
     @patch("src.services.system_health.SystemHealthService.is_download_capable")
-    def test_auth_failure_updates_task_history(self, mock_capable, mock_app, settings):
-        settings.PAUSE_DOWNLOADS_ON_AUTH_FAILURE = True
+    def test_auth_failure_updates_task_history(
+        self, mock_capable, mock_app, mock_get_setting
+    ):
         mock_capable.return_value = (False, "Cookies expired")
 
         mock_history = MagicMock()

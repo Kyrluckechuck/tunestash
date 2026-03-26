@@ -14,6 +14,7 @@ from .metadata_update import MetadataUpdateService
 from .one_off_task import OneOffTaskService
 from .periodic_task import PeriodicTaskService
 from .playlist import PlaylistService
+from .settings import SettingsService
 from .song import SongService
 from .task_history import TaskHistoryService
 from .task_management import TaskManagementService
@@ -95,6 +96,10 @@ class ServiceRegistry:
     @cached_property
     def metadata(self) -> MetadataService:
         return MetadataService()
+
+    @cached_property
+    def settings(self) -> SettingsService:
+        return SettingsService()
 
 
 services = ServiceRegistry()

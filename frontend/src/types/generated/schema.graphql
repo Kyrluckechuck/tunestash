@@ -50,6 +50,18 @@ type ArtistConnection {
   totalCount: Int!
 }
 
+type AppSettingType {
+  category: String!
+  description: String!
+  isDefault: Boolean!
+  key: String!
+  label: String!
+  options: [String!]
+  sensitive: Boolean!
+  type: String!
+  value: String!
+}
+
 type AuthenticationStatus {
   cookiesErrorMessage: String
   cookiesErrorType: String
@@ -107,6 +119,11 @@ type CatalogSearchTrack {
   localId: Int
   name: String!
   providerId: String!
+}
+
+type CookieUploadResult {
+  message: String!
+  success: Boolean!
 }
 
 """
@@ -314,6 +331,8 @@ type Mutation {
   importAlbum(deezerId: Int!): MutationResult!
   importArtist(deezerId: Int!, name: String!): MutationResult!
   linkArtistToDeezer(artistId: Int!, deezerId: Int!): MutationResult!
+  migrateSettingsFromYaml: YamlMigrationResult!
+  resetAppSetting(key: String!): UpdateSettingResult!
   retryFailedSongs(artistId: String!): MutationResult!
   runOneOffTask(taskId: String!): MutationResult!
   runPeriodicTaskNow(taskId: Int!): MutationResult!
@@ -333,10 +352,12 @@ type Mutation {
   trackArtist(artistId: Int!): MutationResult!
   trackPlaylist(input: TrackPlaylistInput!): Playlist!
   untrackArtist(artistId: Int!): MutationResult!
+  updateAppSetting(key: String!, value: String!): UpdateSettingResult!
   updateAlbum(input: UpdateAlbumInput!): Album!
   updateArtist(input: UpdateArtistInput!): Artist!
   updateExternalList(listId: Int!, listIdentifier: String = null, name: String = null, period: String = null, username: String = null): MutationResult!
   updatePlaylist(autoTrackArtists: Boolean!, name: String!, playlistId: Int!, url: String!): MutationResult!
+  uploadCookieFile(content: String!): CookieUploadResult!
 }
 
 type MutationResult {
@@ -412,6 +433,8 @@ type PlaylistInfo {
 }
 
 type Query {
+  appSetting(key: String!): AppSettingType
+  appSettings: [SettingsCategoryType!]!
   album(id: String!): Album
   albums(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, wanted: Boolean = null): AlbumConnection!
   artist(id: String!): Artist
@@ -467,6 +490,12 @@ type SongConnection {
   edges: [Song!]!
   pageInfo: PageInfo!
   totalCount: Int!
+}
+
+type SettingsCategoryType {
+  category: String!
+  label: String!
+  settings: [AppSettingType!]!
 }
 
 type SpotifyRateLimitStatus {
@@ -573,9 +602,22 @@ input UpdateArtistInput {
   isTracked: Boolean = null
 }
 
+type UpdateSettingResult {
+  message: String!
+  setting: AppSettingType
+  success: Boolean!
+}
+
 type UpgradeStats {
   notUpgradeable: Int!
   totalLowQuality: Int!
   upgradeable: Int!
   upgraded: Int!
+}
+
+type YamlMigrationResult {
+  message: String!
+  migrated: Int!
+  skipped: Int!
+  success: Boolean!
 }

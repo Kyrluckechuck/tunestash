@@ -286,22 +286,24 @@ def _validate_runtime_configuration() -> None:
         )
 
     # Album selection lists
-    album_types = getattr(
-        cfg, "ALBUM_TYPES_TO_DOWNLOAD", ["single", "album", "compilation"]
+    from src.app_settings.registry import get_setting_with_default
+
+    album_types = get_setting_with_default(
+        "album_types_to_download", ["single", "album", "compilation"]
     )
     if not isinstance(album_types, (list, tuple)) or not album_types:
         logger.warning(
-            "ALBUM_TYPES_TO_DOWNLOAD is not configured as a non-empty list. Check /config/settings.yaml"
+            "album_types_to_download is not configured as a non-empty list. Check Settings page."
         )
 
-    album_groups_ignore = getattr(cfg, "ALBUM_GROUPS_TO_IGNORE", ["appears_on"])
+    album_groups_ignore = get_setting_with_default(
+        "album_groups_to_ignore", ["appears_on"]
+    )
     if not isinstance(album_groups_ignore, (list, tuple)):
-        logger.warning(
-            "ALBUM_GROUPS_TO_IGNORE should be a list. Check /config/settings.yaml"
-        )
+        logger.warning("album_groups_to_ignore should be a list. Check Settings page.")
 
     # Final path exists check (optional)
-    final_path = getattr(cfg, "final_path", None)
+    final_path = get_setting_with_default("final_path", None)
     if final_path:
         try:
             final_path_obj = Path(str(final_path))

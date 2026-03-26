@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 import django.core.validators
-from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
@@ -20,32 +19,23 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# Album selection configuration
-#
-# These are read from Django settings (Dynaconf-backed), which in turn load from
-# `/config/settings.yaml` automatically in containers. Operators should configure
-# values there. Environment variables can still override via Dynaconf if needed.
-#
-# Accepted formats in settings:
-# - List, e.g. ["single", "album", "compilation"]
-# - Comma-separated string, e.g. "single,album,compilation"
+
+def get_album_types_to_download() -> list[str]:
+    from src.app_settings.registry import get_setting_with_default
+
+    result: list[str] = get_setting_with_default(
+        "album_types_to_download", ["single", "album", "compilation"]
+    )
+    return result
 
 
-def _get_setting_list(name: str, default: list[str]) -> list[str]:
-    value = getattr(settings, name, default)
-    if isinstance(value, str):
-        parsed = [item.strip() for item in value.split(",") if item.strip()]
-        return parsed or default
-    if isinstance(value, (list, tuple)):
-        # Normalize to list[str]
-        return [str(item) for item in value if str(item).strip()]
-    return default
+def get_album_groups_to_ignore() -> list[str]:
+    from src.app_settings.registry import get_setting_with_default
 
-
-ALBUM_TYPES_TO_DOWNLOAD = _get_setting_list(
-    "ALBUM_TYPES_TO_DOWNLOAD", ["single", "album", "compilation"]
-)
-ALBUM_GROUPS_TO_IGNORE = _get_setting_list("ALBUM_GROUPS_TO_IGNORE", ["appears_on"])
+    result: list[str] = get_setting_with_default(
+        "album_groups_to_ignore", ["appears_on"]
+    )
+    return result
 
 
 def truncate_name(name: str, max_length: int = 500) -> str:
@@ -170,8 +160,8 @@ class Artist(models.Model):
     @property
     def albums(self) -> dict:
         album_base = Album.objects.filter(
-            artist=self, album_type__in=ALBUM_TYPES_TO_DOWNLOAD
-        ).exclude(album_group__in=ALBUM_GROUPS_TO_IGNORE)
+            artist=self, album_type__in=get_album_types_to_download()
+        ).exclude(album_group__in=get_album_groups_to_ignore())
         return {
             "known": album_base.count(),
             "missing": album_base.filter(wanted=True, downloaded=False).count(),
@@ -856,8 +846,8 @@ class Album(models.Model):
     @property
     def desired_album_type(self) -> bool:
         return (
-            self.album_type in ALBUM_TYPES_TO_DOWNLOAD
-            and self.album_group not in ALBUM_GROUPS_TO_IGNORE
+            self.album_type in get_album_types_to_download()
+            and self.album_group not in get_album_groups_to_ignore()
         )
 
     def increment_failed_count(
@@ -1951,3 +1941,23 @@ class APIRateLimitState(models.Model):
             f"({self.request_count} calls, "
             f"max {self.max_requests_per_second}/s)"
         )
+
+
+class AppSetting(models.Model):
+    """User-configured setting stored in the database.
+
+    Only non-default values are persisted. The registry in
+    ``src.app_settings.registry`` provides the default for each key.
+    """
+
+    key: models.CharField = models.CharField(max_length=100, unique=True)
+    value: models.JSONField = models.JSONField()
+    category: models.CharField = models.CharField(max_length=50)
+    updated_at: models.DateTimeField = models.DateTimeField(auto_now=True)
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "app_setting"
+
+    def __str__(self) -> str:
+        return f"{self.key}={self.value}"

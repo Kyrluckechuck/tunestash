@@ -43,6 +43,12 @@ from ..graphql_types.models import (
     TaskHistoryEdge,
     UpgradeStats,
 )
+from ..graphql_types.settings import (
+    AppSettingType,
+    SettingsCategoryType,
+    dict_to_category_type,
+    dict_to_setting_type,
+)
 from ..services import services
 
 
@@ -728,3 +734,18 @@ class Query:  # pylint: disable=too-many-public-methods
                 for r in data["failure_reasons"]
             ],
         )
+
+    @strawberry.field
+    async def app_settings(self) -> List[SettingsCategoryType]:
+        """Get all application settings grouped by category."""
+        categories = await services.settings.get_settings_by_category()
+        return [dict_to_category_type(c) for c in categories]
+
+    @strawberry.field
+    async def app_setting(self, key: str) -> Optional[AppSettingType]:
+        """Get a single application setting by key."""
+        all_settings = await services.settings.get_all_settings()
+        for s in all_settings:
+            if s["key"] == key.lower():
+                return dict_to_setting_type(s)
+        return None

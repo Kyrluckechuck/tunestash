@@ -12,13 +12,13 @@ from celery_app import app as celery_app
 from .. import helpers
 from ..helpers import generate_task_id, is_task_pending_or_running
 from ..models import (
-    ALBUM_GROUPS_TO_IGNORE,
-    ALBUM_TYPES_TO_DOWNLOAD,
     Album,
     Artist,
     PlaylistStatus,
     TaskHistory,
     TrackedPlaylist,
+    get_album_groups_to_ignore,
+    get_album_types_to_download,
 )
 from .core import extract_deezer_playlist_id as _extract_deezer_playlist_id
 from .core import logger, normalize_name
@@ -321,9 +321,9 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
                 artist__tracked=True,
                 downloaded=False,
                 wanted=True,
-                album_type__in=ALBUM_TYPES_TO_DOWNLOAD,
+                album_type__in=get_album_types_to_download(),
             )
-            .exclude(album_group__in=ALBUM_GROUPS_TO_IGNORE)
+            .exclude(album_group__in=get_album_groups_to_ignore())
             .exclude(unavailable=True)
             .order_by("id")[:max_albums_per_run]
         )
@@ -777,13 +777,13 @@ def scan_new_releases_for_tracked_artists(self: Any) -> None:
     """
     import time
 
-    from django.conf import settings as django_settings
-
     import requests
+
+    from src.app_settings.registry import get_setting_with_default
 
     from ..models import Album, Artist
 
-    genre_ids = getattr(django_settings, "NEW_RELEASES_GENRE_IDS", [0])
+    genre_ids = get_setting_with_default("new_releases_genre_ids", [0])
 
     tracked_deezer_ids = set(
         Artist.objects.filter(tracked=True, deezer_id__isnull=False).values_list(
@@ -862,9 +862,9 @@ def retry_missing_lyrics(self: Any) -> None:
     Queries SongLyricsStatus records where has_lyrics=False and the backoff
     period has expired. Fetches from LRClib and updates status accordingly.
     """
-    from django.conf import settings as django_settings
+    from src.app_settings.registry import get_setting_with_default
 
-    if not getattr(django_settings, "LYRICS_ENABLED", False):
+    if not get_setting_with_default("lyrics_enabled", False):
         return
 
     from pathlib import Path
@@ -939,9 +939,9 @@ def trigger_navidrome_rescan(self: Any) -> None:
     """
     from datetime import timedelta
 
-    from django.conf import settings as django_settings
+    from src.app_settings.registry import get_setting_with_default
 
-    if not getattr(django_settings, "NAVIDROME_ENABLED", False):
+    if not get_setting_with_default("navidrome_enabled", False):
         return
 
     from ..models import FilePath

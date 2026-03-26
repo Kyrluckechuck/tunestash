@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 from typing import Any, List
 
-from django.conf import settings
 from django.core.checks import CheckMessage, Error, Warning, register
 
 from downloader.cookie_validator import CookieValidator
@@ -32,19 +31,7 @@ def check_cookie_file(app_configs: Any, **kwargs: Any) -> List[CheckMessage]:
         or "test" in os.environ.get("DJANGO_SETTINGS_MODULE", "").lower()
     )
 
-    # Get YouTube cookie path from settings
-    cookie_path = getattr(settings, "COOKIE_FILE_PATH", None)
-    if not cookie_path:
-        # Try youtube_cookies_location (new default)
-        cookie_path = Path(
-            getattr(
-                settings,
-                "youtube_cookies_location",
-                "/config/youtube_music_cookies.txt",
-            )
-        )
-
-    cookie_path = Path(cookie_path)
+    cookie_path = Path("/config/youtube_music_cookies.txt")
 
     # Validate cookies
     result = CookieValidator.validate_file(cookie_path)

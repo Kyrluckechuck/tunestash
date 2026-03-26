@@ -6,8 +6,6 @@ import re
 from http.cookiejar import MozillaCookieJar
 from typing import Optional
 
-from django.conf import settings
-
 from ytmusicapi import YTMusic
 
 from .base import ExternalListProvider, ExternalListResult, ExternalTrack
@@ -39,8 +37,7 @@ def _clean_youtube_title(title: str) -> str:
 
 
 def _get_cookies_path() -> Optional[str]:
-    path = getattr(settings, "youtube_cookies_location", "") or ""
-    return str(path) if path else None
+    return "/config/youtube_music_cookies.txt"
 
 
 def _is_json_auth_file(file_path: str) -> bool:

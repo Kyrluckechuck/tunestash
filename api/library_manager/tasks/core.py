@@ -17,8 +17,6 @@ import uuid
 from functools import wraps
 from typing import Any, Callable, Optional, cast
 
-from django.conf import settings
-
 import psutil
 from celery.utils.log import get_task_logger
 from celery_app import app as celery_app  # noqa: F401 - re-exported
@@ -76,7 +74,9 @@ def extract_deezer_playlist_id(url: str) -> Optional[str]:
 
 def log_memory_usage(context: str, task_id: Optional[str] = None) -> None:
     """Log current memory usage for diagnostics (only if enabled in settings)."""
-    diagnostics_enabled = getattr(settings, "worker_diagnostics_enabled", False)
+    from src.app_settings.registry import get_setting_with_default
+
+    diagnostics_enabled = get_setting_with_default("worker_diagnostics_enabled", False)
     if not diagnostics_enabled:
         return
 
@@ -321,7 +321,11 @@ def require_download_capability(task_history: Optional[TaskHistory] = None) -> N
 
     can_download, reason = SystemHealthService.is_download_capable()
     if not can_download:
-        pause_enabled = getattr(settings, "PAUSE_DOWNLOADS_ON_AUTH_FAILURE", True)
+        from src.app_settings.registry import get_setting_with_default
+
+        pause_enabled = get_setting_with_default(
+            "pause_downloads_on_auth_failure", True
+        )
         if pause_enabled and reason:
             _pause_downloads_queue(reason)
 

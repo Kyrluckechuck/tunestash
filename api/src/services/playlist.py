@@ -475,8 +475,10 @@ class PlaylistService(BaseService[Playlist]):
 
         from downloader.m3u_writer import write_playlist_m3u
 
+        from src.app_settings.registry import get_setting
+
         output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
-        playlist_dir = getattr(django_settings, "M3U_PLAYLISTS_DIRECTORY", "Playlists")
+        playlist_dir = get_setting("m3u_playlists_directory")
         write_playlist_m3u(django_playlist.pk, output_dir, playlist_dir)
 
     @staticmethod
@@ -486,10 +488,10 @@ class PlaylistService(BaseService[Playlist]):
 
         from django.conf import settings as django_settings
 
+        from src.app_settings.registry import get_setting
+
         output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
-        playlist_dir_name = getattr(
-            django_settings, "M3U_PLAYLISTS_DIRECTORY", "Playlists"
-        )
+        playlist_dir_name = get_setting("m3u_playlists_directory")
         safe_name = re.sub(r'[/\\:*?"<>|]', "", django_playlist.name)
         safe_name = safe_name.strip(". ")[:200]
         m3u_path = output_dir / playlist_dir_name / f"TS - {safe_name}.m3u"

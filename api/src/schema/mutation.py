@@ -17,6 +17,12 @@ from ..graphql_types.models import (
     UpdateAlbumInput,
     UpdateArtistInput,
 )
+from ..graphql_types.settings import (
+    CookieUploadResult,
+    UpdateSettingResult,
+    YamlMigrationResult,
+    dict_to_setting_type,
+)
 from ..services import services
 
 
@@ -601,3 +607,57 @@ class Mutation:  # pylint: disable=too-many-public-methods
         metadata update.
         """
         return await services.metadata_update.check_song_metadata(song_id)
+
+    # =========================================================================
+    # Settings Mutations
+    # =========================================================================
+
+    @strawberry.mutation
+    async def update_app_setting(self, key: str, value: str) -> UpdateSettingResult:
+        """Update an application setting."""
+        try:
+            result = await services.settings.update_setting(key, value)
+            return UpdateSettingResult(
+                success=True,
+                message="Setting updated",
+                setting=dict_to_setting_type(result),
+            )
+        except ValueError as e:
+            return UpdateSettingResult(success=False, message=str(e))
+
+    @strawberry.mutation
+    async def reset_app_setting(self, key: str) -> UpdateSettingResult:
+        """Reset an application setting to its default value."""
+        try:
+            result = await services.settings.reset_setting(key)
+            return UpdateSettingResult(
+                success=True,
+                message="Setting reset to default",
+                setting=dict_to_setting_type(result),
+            )
+        except ValueError as e:
+            return UpdateSettingResult(success=False, message=str(e))
+
+    @strawberry.mutation
+    async def upload_cookie_file(self, content: str) -> CookieUploadResult:
+        """Upload YouTube Music cookie file content."""
+        result = await services.settings.upload_cookie_file(content)
+        if result.get("success"):
+            return CookieUploadResult(
+                success=True, message="Cookie file uploaded successfully"
+            )
+        return CookieUploadResult(
+            success=False,
+            message=result.get("error", "Failed to upload cookie file"),
+        )
+
+    @strawberry.mutation
+    async def migrate_settings_from_yaml(self) -> YamlMigrationResult:
+        """Migrate settings from settings.yaml to the database."""
+        result = await services.settings.migrate_from_yaml()
+        return YamlMigrationResult(
+            success=result.get("success", False),
+            migrated=result.get("migrated", 0),
+            skipped=result.get("skipped", 0),
+            message=result.get("message", result.get("error", "Unknown error")),
+        )

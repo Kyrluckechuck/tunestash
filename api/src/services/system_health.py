@@ -285,7 +285,8 @@ class SystemHealthService:
         """
         Check if system can perform premium downloads.
 
-        Requires valid YouTube cookies, PO token, and sufficient storage.
+        When youtube_premium is enabled (default), requires valid YouTube cookies,
+        PO token, and sufficient storage. When disabled, skips cookie/POT checks.
         Does NOT check Spotify — downloads use Deezer + FallbackDownloader.
 
         Returns:
@@ -294,41 +295,46 @@ class SystemHealthService:
         if config is None:
             config = Config()
 
-        # Check YouTube cookies
-        if config.youtube_cookies_location:
-            cookie_path = Path(config.youtube_cookies_location)
-            cookie_result = CookieValidator.validate_file(cookie_path)
-        else:
-            cookie_result = CookieValidationResult(
-                valid=False,
-                error_type="missing",
-                error_message="Cookie file path not configured",
-            )
+        from src.app_settings.registry import get_setting_with_default
 
-        if not cookie_result.valid:
-            return (
-                False,
-                f"Cookies {cookie_result.error_type}: {cookie_result.error_message}",
-            )
+        youtube_premium = get_setting_with_default("youtube_premium", True)
 
-        # Check PO token - REQUIRED for premium
-        format_result = CookieValidator.validate_po_token(config.po_token)
-        if not format_result.valid:
-            return (
-                False,
-                f"PO Token invalid: {format_result.error_message}. "
-                "This system requires YouTube Music Premium authentication.",
-            )
+        if youtube_premium:
+            # Check YouTube cookies
+            if config.youtube_cookies_location:
+                cookie_path = Path(config.youtube_cookies_location)
+                cookie_result = CookieValidator.validate_file(cookie_path)
+            else:
+                cookie_result = CookieValidationResult(
+                    valid=False,
+                    error_type="missing",
+                    error_message="Cookie file path not configured",
+                )
 
-        # Live-validate PO token against YouTube
-        detector = SystemHealthService._get_detector(config)
-        po_token_result = detector.validate_po_token_live()
-        if not po_token_result.valid:
-            return (
-                False,
-                f"PO Token invalid: {po_token_result.error_message}. "
-                "This system requires YouTube Music Premium authentication.",
-            )
+            if not cookie_result.valid:
+                return (
+                    False,
+                    f"Cookies {cookie_result.error_type}: {cookie_result.error_message}",
+                )
+
+            # Check PO token - REQUIRED for premium
+            format_result = CookieValidator.validate_po_token(config.po_token)
+            if not format_result.valid:
+                return (
+                    False,
+                    f"PO Token invalid: {format_result.error_message}. "
+                    "This system requires YouTube Music Premium authentication.",
+                )
+
+            # Live-validate PO token against YouTube
+            detector = SystemHealthService._get_detector(config)
+            po_token_result = detector.validate_po_token_live()
+            if not po_token_result.valid:
+                return (
+                    False,
+                    f"PO Token invalid: {po_token_result.error_message}. "
+                    "This system requires YouTube Music Premium authentication.",
+                )
 
         # Check storage health
         storage_status = SystemHealthService.check_storage_status()

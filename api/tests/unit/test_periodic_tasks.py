@@ -7,12 +7,12 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from library_manager.models import (
-    ALBUM_GROUPS_TO_IGNORE,
-    ALBUM_TYPES_TO_DOWNLOAD,
     Album,
     Artist,
     PlaylistStatus,
     TrackedPlaylist,
+    get_album_groups_to_ignore,
+    get_album_types_to_download,
 )
 
 
@@ -265,10 +265,10 @@ class TestPeriodicTasks(TestCase):
 
     @patch("library_manager.tasks.periodic.download_single_album")
     def test_queue_missing_albums_applies_album_type_filter(self, mock_download):
-        """Test that periodic task only queues albums matching ALBUM_TYPES_TO_DOWNLOAD."""
+        """Test that periodic task only queues albums matching get_album_types_to_download()."""
         from library_manager.tasks import queue_missing_albums_for_tracked_artists
 
-        # Create album with excluded type (assuming 'ep' is not in ALBUM_TYPES_TO_DOWNLOAD)
+        # Create album with excluded type (assuming 'ep' is not in get_album_types_to_download())
         excluded_type_album = Album.objects.create(
             name="EP Album",
             spotify_gid="album_ep",
@@ -276,7 +276,7 @@ class TestPeriodicTasks(TestCase):
             artist=self.tracked_artist1,
             wanted=True,
             downloaded=False,
-            album_type="ep",  # Assuming 'ep' is not in ALBUM_TYPES_TO_DOWNLOAD
+            album_type="ep",  # Assuming 'ep' is not in get_album_types_to_download()
             album_group="album",
             total_tracks=6,
         )
@@ -284,15 +284,15 @@ class TestPeriodicTasks(TestCase):
         # Run the periodic task
         queue_missing_albums_for_tracked_artists()
 
-        # Verify EP was not queued if 'ep' not in ALBUM_TYPES_TO_DOWNLOAD
+        # Verify EP was not queued if 'ep' not in get_album_types_to_download()
         queued_album_ids = [call[0][0] for call in mock_download.delay.call_args_list]
 
-        if "ep" not in ALBUM_TYPES_TO_DOWNLOAD:
+        if "ep" not in get_album_types_to_download():
             assert excluded_type_album.id not in queued_album_ids
 
     @patch("library_manager.tasks.periodic.download_single_album")
     def test_queue_missing_albums_excludes_album_groups(self, mock_download):
-        """Test that periodic task excludes albums from ALBUM_GROUPS_TO_IGNORE."""
+        """Test that periodic task excludes albums from get_album_groups_to_ignore()."""
         from library_manager.tasks import queue_missing_albums_for_tracked_artists
 
         # Run the periodic task
@@ -303,7 +303,7 @@ class TestPeriodicTasks(TestCase):
         assert self.appears_on_album.id not in queued_album_ids
 
         # Verify the constant is configured as expected
-        assert "appears_on" in ALBUM_GROUPS_TO_IGNORE
+        assert "appears_on" in get_album_groups_to_ignore()
 
     @patch("library_manager.tasks.periodic.download_single_album")
     def test_queue_missing_albums_handles_task_queue_failure(self, mock_download):

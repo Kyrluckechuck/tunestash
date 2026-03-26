@@ -3,15 +3,67 @@
 Tests realistic flows with actual database state, minimal mocking.
 """
 
+import sys
 from datetime import timedelta
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 from django.utils import timezone
 
 import pytest
 
+# Pre-inject stubs so that ``from src.services.notification import ...``
+# does not trigger ``src/services/__init__.py`` (which imports ``deezer``,
+# a Docker-only dependency).
+if "src.services" not in sys.modules:
+    import importlib.util
+    from pathlib import Path as _Path
+
+    _stub_pkg = ModuleType("src.services")
+    _stub_pkg.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["src.services"] = _stub_pkg
+
+    _services_dir = _Path(__file__).resolve().parents[2] / "src" / "services"
+
+    for _name in ("system_health", "notification"):
+        _fqn = f"src.services.{_name}"
+        if _fqn not in sys.modules:
+            _spec = importlib.util.spec_from_file_location(
+                _fqn, _services_dir / f"{_name}.py"
+            )
+            assert _spec and _spec.loader
+            _mod = importlib.util.module_from_spec(_spec)
+            sys.modules[_fqn] = _mod
+            setattr(_stub_pkg, _name, _mod)
+            _spec.loader.exec_module(_mod)
+
 from library_manager.models import NotificationState, TaskHistory
 from src.services.notification import NotificationService
+
+# Default notification settings for get_setting mock
+_NOTIFICATION_DEFAULTS = {
+    "notifications_enabled": True,
+    "notifications_urls": ["json://stdout"],
+    "notifications_cooldown_minutes": 60,
+    "notifications_error_max_failure_pct": 50,
+    "notifications_error_min_downloads": 20,
+    "notifications_error_window_hours": 6,
+    "notifications_cookie_warn_days": 7,
+    "notifications_cookie_urgent_days": 1,
+    "notifications_instance_name": "",
+}
+
+
+def _mock_get_setting(overrides=None):
+    """Return a side_effect function for get_setting with optional overrides."""
+    defaults = {**_NOTIFICATION_DEFAULTS, **(overrides or {})}
+
+    def _side_effect(key):
+        if key in defaults:
+            return defaults[key]
+        raise KeyError(f"Unknown setting: {key!r}")
+
+    return _side_effect
 
 
 @pytest.mark.django_db
@@ -25,11 +77,12 @@ class TestNotificationCooldownFlow:
         assert NotificationState.objects.count() == 0
 
         with (
-            patch("src.services.notification.settings") as mock_settings,
+            patch(
+                "src.services.notification.get_setting",
+                side_effect=_mock_get_setting(),
+            ),
             patch("apprise.Apprise") as mock_apprise_cls,
         ):
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
@@ -49,11 +102,12 @@ class TestNotificationCooldownFlow:
         service = NotificationService()
 
         with (
-            patch("src.services.notification.settings") as mock_settings,
+            patch(
+                "src.services.notification.get_setting",
+                side_effect=_mock_get_setting(),
+            ),
             patch("apprise.Apprise") as mock_apprise_cls,
         ):
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
@@ -78,11 +132,12 @@ class TestNotificationCooldownFlow:
         service = NotificationService()
 
         with (
-            patch("src.services.notification.settings") as mock_settings,
+            patch(
+                "src.services.notification.get_setting",
+                side_effect=_mock_get_setting(),
+            ),
             patch("apprise.Apprise") as mock_apprise_cls,
         ):
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
@@ -113,15 +168,18 @@ class TestNotificationCooldownFlow:
 
         service = NotificationService()
 
-        with patch("src.services.notification.settings") as mock_settings:
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 30
-
-            # 45 minutes ago > 30 minute cooldown, should be allowed
+        # 45 minutes ago > 30 minute cooldown, should be allowed
+        with patch(
+            "src.services.notification.get_setting",
+            side_effect=_mock_get_setting({"notifications_cooldown_minutes": 30}),
+        ):
             assert service._cooldown_elapsed("configured_cooldown_test") is True
 
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-
-            # 45 minutes ago < 60 minute cooldown, should be blocked
+        # 45 minutes ago < 60 minute cooldown, should be blocked
+        with patch(
+            "src.services.notification.get_setting",
+            side_effect=_mock_get_setting({"notifications_cooldown_minutes": 60}),
+        ):
             assert service._cooldown_elapsed("configured_cooldown_test") is False
 
 
@@ -156,18 +214,14 @@ class TestErrorRateIntegration:
         service = NotificationService()
 
         with (
-            patch("src.services.notification.settings") as mock_settings,
+            patch(
+                "src.services.notification.get_setting",
+                side_effect=_mock_get_setting(),
+            ),
             patch(
                 "src.services.system_health.SystemHealthService.check_authentication_status"
             ) as mock_auth,
         ):
-            mock_settings.NOTIFICATIONS_ENABLED = True
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
-            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
-            mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
-
             mock_auth.return_value = MagicMock(
                 cookies_valid=True,
                 cookies_expire_in_days=30,
@@ -210,16 +264,12 @@ class TestErrorRateIntegration:
         service = NotificationService()
 
         with (
-            patch("src.services.notification.settings") as mock_settings,
+            patch(
+                "src.services.notification.get_setting",
+                side_effect=_mock_get_setting(),
+            ),
             patch("apprise.Apprise") as mock_apprise_cls,
         ):
-            mock_settings.NOTIFICATIONS_ENABLED = True
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
-            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
-            mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
-
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
@@ -232,7 +282,7 @@ class TestErrorRateIntegration:
         """Should not alert when too few downloads to be meaningful."""
         now = timezone.now()
 
-        # 5 failures, 0 successes — 100% failure rate but only 5 downloads
+        # 5 failures, 0 successes -- 100% failure rate but only 5 downloads
         for i in range(5):
             TaskHistory.objects.create(
                 task_id=f"low-vol-{i}",
@@ -245,11 +295,10 @@ class TestErrorRateIntegration:
 
         service = NotificationService()
 
-        with patch("src.services.notification.settings") as mock_settings:
-            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
-            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
-            mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
-
+        with patch(
+            "src.services.notification.get_setting",
+            side_effect=_mock_get_setting(),
+        ):
             result = service._check_error_rate()
 
         # Below min_downloads threshold, should not alert
@@ -261,7 +310,7 @@ class TestFullNotificationCycle:
     """Test complete notification cycles with state persistence."""
 
     def test_alert_recovery_cycle(self):
-        """Test alert → recovery → re-alert cycle with proper state tracking."""
+        """Test alert -> recovery -> re-alert cycle with proper state tracking."""
         service = NotificationService()
 
         def make_auth_status(cookies_valid: bool):
@@ -276,18 +325,12 @@ class TestFullNotificationCycle:
             )
 
         with (
-            patch("src.services.notification.settings") as mock_settings,
+            patch(
+                "src.services.notification.get_setting",
+                side_effect=_mock_get_setting(),
+            ),
             patch("apprise.Apprise") as mock_apprise_cls,
         ):
-            mock_settings.NOTIFICATIONS_ENABLED = True
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
-            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
-            mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
-            mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
-            mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
-
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
@@ -312,7 +355,7 @@ class TestFullNotificationCycle:
             assert result2[NotificationService.ALERT_COOKIES_EXPIRED] is False
             assert mock_apprise.notify.call_count == 1  # No new notification
 
-            # Phase 3: Cookies fixed → state is cleared automatically
+            # Phase 3: Cookies fixed -> state is cleared automatically
             with patch(
                 "src.services.system_health.SystemHealthService.check_authentication_status",
                 return_value=make_auth_status(cookies_valid=True),
@@ -326,7 +369,7 @@ class TestFullNotificationCycle:
                 alert_type=NotificationService.ALERT_COOKIES_EXPIRED
             ).exists()
 
-            # Phase 4: Cookies expire again → fires immediately (no cooldown needed)
+            # Phase 4: Cookies expire again -> fires immediately (no cooldown needed)
             with patch(
                 "src.services.system_health.SystemHealthService.check_authentication_status",
                 return_value=make_auth_status(cookies_valid=False),
@@ -353,22 +396,16 @@ class TestFullNotificationCycle:
         )
 
         with (
-            patch("src.services.notification.settings") as mock_settings,
+            patch(
+                "src.services.notification.get_setting",
+                side_effect=_mock_get_setting(),
+            ),
             patch("apprise.Apprise") as mock_apprise_cls,
             patch(
                 "src.services.system_health.SystemHealthService.check_authentication_status",
                 return_value=all_broken_status,
             ),
         ):
-            mock_settings.NOTIFICATIONS_ENABLED = True
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
-            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
-            mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
-            mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
-            mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
-
             mock_apprise = MagicMock()
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
@@ -428,10 +465,10 @@ class TestInstanceNameConfiguration:
         """Default instance name should be 'TuneStash'."""
         service = NotificationService()
 
-        with patch("src.services.notification.settings") as mock_settings:
-            # Simulate attribute not existing
-            del mock_settings.NOTIFICATIONS_INSTANCE_NAME
-
+        with patch(
+            "src.services.notification.get_setting",
+            side_effect=_mock_get_setting({"notifications_instance_name": ""}),
+        ):
             name = service.get_instance_name()
 
         assert name == "TuneStash"
@@ -440,9 +477,12 @@ class TestInstanceNameConfiguration:
         """Custom instance name from settings should be used."""
         service = NotificationService()
 
-        with patch("src.services.notification.settings") as mock_settings:
-            mock_settings.NOTIFICATIONS_INSTANCE_NAME = "My Dev Server"
-
+        with patch(
+            "src.services.notification.get_setting",
+            side_effect=_mock_get_setting(
+                {"notifications_instance_name": "My Dev Server"}
+            ),
+        ):
             name = service.get_instance_name()
 
         assert name == "My Dev Server"
@@ -452,22 +492,17 @@ class TestInstanceNameConfiguration:
         service = NotificationService()
 
         with (
-            patch("src.services.notification.settings") as mock_settings,
+            patch(
+                "src.services.notification.get_setting",
+                side_effect=_mock_get_setting(
+                    {"notifications_instance_name": "Production NAS"}
+                ),
+            ),
             patch("apprise.Apprise") as mock_apprise_cls,
             patch(
                 "src.services.system_health.SystemHealthService.check_authentication_status"
             ) as mock_auth,
         ):
-            mock_settings.NOTIFICATIONS_ENABLED = True
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
-            mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-            mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
-            mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
-            mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
-            mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
-            mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
-            mock_settings.NOTIFICATIONS_INSTANCE_NAME = "Production NAS"
-
             mock_auth.return_value = MagicMock(
                 cookies_valid=False,
                 cookies_expire_in_days=None,
