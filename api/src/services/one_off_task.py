@@ -37,7 +37,6 @@ class OneOffTaskService:
             cleanup_appears_on_albums,
             cleanup_orphaned_albums,
             merge_duplicate_songs,
-            migrate_all_tracked_artists_to_deezer,
             repair_misassigned_songs,
             resolve_all_artists_to_deezer,
             retry_failed_external_mappings,
@@ -92,20 +91,6 @@ class OneOffTaskService:
             ),
             category="external-lists",
             task_func=retry_failed_external_mappings,
-        )
-
-        self._tasks["migrate_catalog_to_deezer"] = OneOffTaskDefinition(
-            id="migrate_catalog_to_deezer",
-            name="Migrate Catalog to Deezer",
-            description=(
-                "Link existing albums and songs to Deezer IDs using ISRC and "
-                "name matching. For each artist with a Deezer ID, fetches "
-                "their full Deezer catalog, matches existing records, and creates "
-                "new ones for missing content. Run 'Resolve Artists to Deezer' "
-                "first to maximize coverage. Safe to re-run."
-            ),
-            category="data-migration",
-            task_func=migrate_all_tracked_artists_to_deezer,
         )
 
         self._tasks["resolve_artists_to_deezer"] = OneOffTaskDefinition(

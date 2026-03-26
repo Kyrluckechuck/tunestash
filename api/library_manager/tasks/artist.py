@@ -1,20 +1,12 @@
 """Artist tasks for the Tunestash."""
 
-from typing import Any, Optional
+from typing import Any
 
-from django.conf import settings
 from django.db.models.functions import Now
-from django.utils import timezone
 
 from celery_app import app as celery_app
 
-from .. import helpers
-from ..models import (
-    ALBUM_GROUPS_TO_IGNORE,
-    ALBUM_TYPES_TO_DOWNLOAD,
-    Artist,
-    DownloadHistory,
-)
+from ..models import Artist
 from .core import (
     complete_task,
     create_task_history,
@@ -76,57 +68,3 @@ def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
         if task_history:
             complete_task(task_history, success=False, error_message=str(e))
         raise
-
-
-@celery_app.task(bind=True, name="library_manager.tasks.update_tracked_artists")
-def update_tracked_artists(self: Any, task_id: Optional[str] = None) -> None:
-    all_tracked_artists = Artist.objects.filter(tracked=True).order_by(
-        "last_synced_at", "added_at", "id"
-    )
-    helpers.update_tracked_artists_albums(
-        [],
-        list(all_tracked_artists),
-        priority=None,  # task.priority not available
-    )
-
-
-# Severely throttling automatic playlist download for tracked artists for the time being;
-# There is a high likelyhood of being flagged due to high usage at the moment and a new scalable solution needs to be investigated.
-
-
-@celery_app.task(
-    bind=True, name="library_manager.tasks.download_missing_tracked_artists"
-)
-def download_missing_tracked_artists(self: Any, task_id: Optional[str] = None) -> None:
-    if settings.disable_missing_tracked_artist_download:
-        logger.info(
-            "Skipping queued missing tracked artists due to disable_missing_tracked_artist_download setting"
-        )
-        return
-
-    from datetime import timedelta
-
-    twelve_hours_ago = timezone.now() - timedelta(hours=12)
-    recently_downloaded_songs = DownloadHistory.objects.filter(
-        added_at__gte=twelve_hours_ago
-    )
-    if recently_downloaded_songs.count() > 250:
-        logger.info(
-            f"Skipping queued missing tracked artists due to quantity of recent downloads ({recently_downloaded_songs.count()})"
-        )
-        return
-    # Limit to only desired album types (ignoring `appears_on`), and limit results so this won't throttle
-    all_tracked_artists = (
-        Artist.objects.filter(
-            tracked=True,
-            album__downloaded=False,
-            album__wanted=True,
-            album__album_type__in=ALBUM_TYPES_TO_DOWNLOAD,
-        )
-        .exclude(album__album_group__in=ALBUM_GROUPS_TO_IGNORE)
-        .distinct()
-        .order_by("last_synced_at", "added_at", "id")[:150]
-    )
-    helpers.download_missing_tracked_artists(
-        [], list(all_tracked_artists), priority=None
-    )
