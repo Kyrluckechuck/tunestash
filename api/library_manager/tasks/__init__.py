@@ -13,9 +13,7 @@ All tasks are re-exported here for backwards compatibility.
 
 # Re-export artist tasks
 from .artist import (
-    download_missing_tracked_artists,
     fetch_all_albums_for_artist,
-    update_tracked_artists,
 )
 
 # Re-export core utilities
@@ -97,7 +95,6 @@ from .metadata import (
 
 # Re-export migration tasks
 from .migration import (
-    migrate_all_tracked_artists_to_deezer,
     migrate_artist_to_deezer,
     resolve_all_artists_to_deezer,
 )
@@ -146,9 +143,7 @@ __all__ = [
     "update_task_heartbeat",
     "update_task_progress",
     # Artist tasks
-    "download_missing_tracked_artists",
     "fetch_all_albums_for_artist",
-    "update_tracked_artists",
     # Playlist tasks
     "_sync_tracked_playlist_internal",
     "sync_deezer_playlist",
@@ -206,7 +201,6 @@ __all__ = [
     "sync_all_external_lists",
     "sync_external_list",
     # Migration tasks
-    "migrate_all_tracked_artists_to_deezer",
     "migrate_artist_to_deezer",
     "resolve_all_artists_to_deezer",
     # Deezer tasks

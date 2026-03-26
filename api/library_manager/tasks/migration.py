@@ -11,7 +11,6 @@ from celery_app import app as celery_app
 
 from src.providers.metadata_base import TrackResult
 
-from ..helpers import generate_task_id, is_task_pending_or_running
 from ..models import Album, Artist, Song
 from ..task_priorities import TaskPriority
 from .core import (
@@ -288,101 +287,6 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
             pass
         if task_history:
             complete_task(task_history, success=False, error_message=str(e))
-        raise
-
-
-@celery_app.task(
-    bind=True,
-    name="library_manager.tasks.migrate_all_tracked_artists_to_deezer",
-)
-def migrate_all_tracked_artists_to_deezer(self: Any) -> None:
-    """Orchestrator: queue per-artist Deezer migration for eligible artists.
-
-    Only migrates artists that are tracked OR are direct contributors to
-    tracked artists' songs. This prevents exponential catalog bloat from
-    cascading through the collaboration graph.
-    """
-    from django.db.models import Q
-
-    from ..models import ContributingArtist
-
-    task_history = create_task_history(
-        task_id=self.request.id,
-        task_type="MIGRATION",
-        entity_type="SYSTEM",
-        task_name="migrate_all_tracked_artists_to_deezer",
-    )
-    task_history.status = "RUNNING"
-    task_history.save()
-
-    try:
-        # Build set of artist IDs eligible for migration:
-        # 1. Tracked artists
-        # 2. Direct contributors to tracked artists' songs
-        contributor_ids = set(
-            ContributingArtist.objects.filter(song__primary_artist__tracked=True)
-            .values_list("artist_id", flat=True)
-            .distinct()
-        )
-
-        eligible_filter = Q(tracked=True) | Q(id__in=contributor_ids)
-
-        artists = (
-            Artist.objects.filter(
-                eligible_filter,
-                deezer_id__isnull=False,
-            )
-            .filter(
-                Q(deezer_migration_status__isnull=True)
-                | ~Q(deezer_migration_status="complete")
-            )
-            .order_by("-tracked", "id")
-        )
-
-        total = artists.count()
-        if total == 0:
-            msg = "No artists need Deezer migration"
-            logger.info(msg)
-            update_task_progress(task_history, 100.0, msg)
-            complete_task(task_history)
-            return
-
-        queued_tracked = 0
-        queued_untracked = 0
-        skipped = 0
-        for artist in artists:
-            task_id = generate_task_id(
-                "library_manager.tasks.migrate_artist_to_deezer", artist.id
-            )
-            is_pending, reason = is_task_pending_or_running(task_id)
-            if is_pending:
-                logger.debug(f"[DEDUP] Skipping migration for {artist.name}: {reason}")
-                skipped += 1
-                continue
-
-            if artist.deezer_migration_status != "in_progress":
-                artist.deezer_migration_status = "pending"
-                artist.save(update_fields=["deezer_migration_status"])
-
-            migrate_artist_to_deezer.apply_async(args=[artist.id], task_id=task_id)
-            if artist.tracked:
-                queued_tracked += 1
-            else:
-                queued_untracked += 1
-
-        summary = (
-            f"Deezer migration orchestrator: queued {queued_tracked} tracked + "
-            f"{queued_untracked} contributor artists "
-            f"(skipped {skipped} already pending, "
-            f"{len(contributor_ids)} contributors eligible, {total} total)"
-        )
-        logger.info(summary)
-        update_task_progress(task_history, 100.0, summary)
-        complete_task(task_history)
-
-    except Exception as e:
-        logger.exception(f"Error in migrate_all_tracked_artists_to_deezer: {e}")
-        complete_task(task_history, success=False, error_message=str(e))
         raise
 
 

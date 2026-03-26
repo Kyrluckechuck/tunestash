@@ -125,6 +125,12 @@ default:
   # Directory for .m3u files, relative to OUTPUT_PATH
   m3u_playlists_directory: "Playlists"
 
+  # New release scanning — Deezer editorial genre IDs to check for tracked artist releases
+  # 0=All, 113=Dance, 106=Electro, 132=Pop, 116=Rap/Hip Hop, 152=Rock, 84=Country
+  # See https://api.deezer.com/editorial for full list
+  new_releases_genre_ids:
+    - 0
+
   # Deezer API (no API key needed — public endpoints)
   DEEZER_RATE_LIMIT_PER_SECOND: 10
 

@@ -768,12 +768,87 @@ def sync_tracked_artists_metadata(
     bind=True, name="library_manager.tasks.scan_new_releases_for_tracked_artists"
 )
 def scan_new_releases_for_tracked_artists(self: Any) -> None:
-    """No-op stub — this task was removed but persists in the Beat DB schedule.
+    """Scan Deezer editorial new releases for tracked artists.
 
-    TODO: Re-implement as a dedicated new-release scanner (separate from
-    sync_tracked_artists_metadata which already detects new albums).
+    Fetches recent releases from Deezer's editorial endpoints and checks
+    if any belong to tracked artists. New albums are created and queued
+    for download. This catches new releases faster than the per-artist
+    hourly metadata scan since it covers all releases in a single API call.
     """
-    logger.info("scan_new_releases_for_tracked_artists is a no-op stub, skipping")
+    import time
+
+    from django.conf import settings as django_settings
+
+    import requests
+
+    from ..models import Album, Artist
+
+    genre_ids = getattr(django_settings, "NEW_RELEASES_GENRE_IDS", [0])
+
+    tracked_deezer_ids = set(
+        Artist.objects.filter(tracked=True, deezer_id__isnull=False).values_list(
+            "deezer_id", flat=True
+        )
+    )
+    if not tracked_deezer_ids:
+        logger.info("[NEW RELEASES] No tracked artists with Deezer IDs")
+        return
+
+    matched_albums: list[dict] = []
+    seen_album_ids: set[int] = set()
+
+    for genre_id in genre_ids:
+        try:
+            resp = requests.get(
+                f"https://api.deezer.com/editorial/{genre_id}/releases",
+                params={"limit": 200},
+                timeout=15,
+                headers={"User-Agent": "TuneStash/1.0"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            for album_data in data.get("data", []):
+                artist_deezer_id = album_data.get("artist", {}).get("id")
+                album_deezer_id = album_data.get("id")
+                if (
+                    artist_deezer_id in tracked_deezer_ids
+                    and album_deezer_id not in seen_album_ids
+                ):
+                    matched_albums.append(album_data)
+                    seen_album_ids.add(album_deezer_id)
+
+            time.sleep(0.5)
+        except Exception as exc:
+            logger.warning("[NEW RELEASES] Failed to fetch genre %s: %s", genre_id, exc)
+
+    if not matched_albums:
+        logger.info(
+            "[NEW RELEASES] Scanned %d genre(s), no new releases for tracked artists",
+            len(genre_ids),
+        )
+        return
+
+    queued = 0
+    skipped = 0
+    for album_data in matched_albums:
+        album_deezer_id = album_data["id"]
+        if Album.objects.filter(deezer_id=album_deezer_id).exists():
+            skipped += 1
+            continue
+
+        from .download import download_album_by_deezer_id
+
+        download_album_by_deezer_id.delay(album_deezer_id)
+        queued += 1
+
+    logger.info(
+        "[NEW RELEASES] Scanned %d genre(s): %d matched, %d queued, %d already known",
+        len(genre_ids),
+        len(matched_albums),
+        queued,
+        skipped,
+    )
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.retry_missing_lyrics")

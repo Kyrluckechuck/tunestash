@@ -51,12 +51,10 @@ app.conf.task_routes = {
     "library_manager.tasks.download_extra_album_types_for_artist": {
         "queue": "downloads"
     },
-    "library_manager.tasks.download_missing_tracked_artists": {"queue": "downloads"},
     # Metadata tasks - route to 'metadata' queue (API calls, moderate rate limits)
     "library_manager.tasks.fetch_all_albums_for_artist": {"queue": "metadata"},
     "library_manager.tasks.sync_tracked_playlist": {"queue": "metadata"},
     "library_manager.tasks.sync_tracked_playlist_artists": {"queue": "metadata"},
-    "library_manager.tasks.update_tracked_artists": {"queue": "metadata"},
     "library_manager.tasks.sync_tracked_playlists": {"queue": "metadata"},
     # Maintenance/cleanup tasks - route to default 'celery' queue
     "library_manager.tasks.cleanup_stuck_tasks_periodic": {"queue": "celery"},
@@ -82,12 +80,10 @@ app.conf.task_annotations = {
     "library_manager.tasks.download_extra_album_types_for_artist": {
         "rate_limit": "2/s"
     },
-    "library_manager.tasks.download_missing_tracked_artists": {"rate_limit": "2/s"},
     # Metadata tasks: Conservative rate to avoid API 429s at startup
     "library_manager.tasks.fetch_all_albums_for_artist": {"rate_limit": "2/s"},
     "library_manager.tasks.sync_tracked_playlist": {"rate_limit": "2/s"},
     "library_manager.tasks.sync_tracked_playlist_artists": {"rate_limit": "2/s"},
-    "library_manager.tasks.update_tracked_artists": {"rate_limit": "2/s"},
     "library_manager.tasks.sync_tracked_playlists": {"rate_limit": "2/s"},
 }
 
