@@ -186,14 +186,6 @@ class TestSettingsServiceUpdate:
         with pytest.raises(ValueError, match="Unknown setting"):
             self.service._update_setting_sync("nonexistent_xyz", "val")
 
-    def test_update_skips_masked_placeholder(self):
-        AppSetting.objects.create(
-            key="po_token", value="real_secret", category="authentication"
-        )
-        result = self.service._update_setting_sync("po_token", "**configured**")
-        assert AppSetting.objects.get(key="po_token").value == "real_secret"
-        assert result["sensitive"] is True
-
     def test_update_sensitive_actually_saves_new_value(self):
         self.service._update_setting_sync("po_token", "new_token_value")
         row = AppSetting.objects.get(key="po_token")
@@ -280,13 +272,14 @@ class TestSensitiveMasking:
     def setup_method(self):
         self.service = SettingsService()
 
-    def test_sensitive_value_is_masked(self):
+    def test_sensitive_value_is_returned_unmasked(self):
         AppSetting.objects.create(
             key="po_token", value="real_secret", category="authentication"
         )
         settings = self.service._get_all_settings_sync()
         po_setting = next(s for s in settings if s["key"] == "po_token")
-        assert po_setting["value"] == "**configured**"
+        assert po_setting["value"] == "real_secret"
+        assert po_setting["sensitive"] is True
 
     def test_unset_sensitive_shows_default(self):
         settings = self.service._get_all_settings_sync()

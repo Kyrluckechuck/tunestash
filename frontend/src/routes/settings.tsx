@@ -20,8 +20,10 @@ function SettingsPage() {
     statusMessage,
     cookieContent,
     showCookieUpload,
+    showSensitive,
     setCookieContent,
     setShowCookieUpload,
+    handleToggleSensitive,
     handleUpdateSetting,
     handleResetSetting,
     handleUploadCookie,
@@ -51,6 +53,16 @@ function SettingsPage() {
           Settings
         </h1>
         <div className='flex items-center gap-3'>
+          <button
+            onClick={handleToggleSensitive}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              showSensitive
+                ? 'bg-amber-100 dark:bg-amber-700 text-amber-800 dark:text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+            }`}
+          >
+            {showSensitive ? 'Hide Secrets' : 'Show Secrets'}
+          </button>
           <button
             onClick={() => setShowCookieUpload(!showCookieUpload)}
             className='px-3 py-1.5 text-sm rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors'
@@ -92,6 +104,7 @@ function SettingsPage() {
           key={category.category}
           category={category}
           pendingKey={pendingKey}
+          showSensitive={showSensitive}
           onUpdate={handleUpdateSetting}
           onReset={handleResetSetting}
         />
@@ -144,11 +157,13 @@ function CookieUploadSection({
 function SettingsSection({
   category,
   pendingKey,
+  showSensitive,
   onUpdate,
   onReset,
 }: {
   category: SettingsCategoryType;
   pendingKey: string | null;
+  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
   onReset: (key: string) => void;
 }) {
@@ -165,6 +180,7 @@ function SettingsSection({
             key={setting.key}
             setting={setting}
             isPending={pendingKey === setting.key}
+            showSensitive={showSensitive}
             onUpdate={onUpdate}
             onReset={onReset}
           />
@@ -177,11 +193,13 @@ function SettingsSection({
 function SettingRow({
   setting,
   isPending,
+  showSensitive,
   onUpdate,
   onReset,
 }: {
   setting: AppSettingType;
   isPending: boolean;
+  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
   onReset: (key: string) => void;
 }) {
@@ -206,7 +224,11 @@ function SettingRow({
         </p>
       </div>
       <div className='flex items-center gap-2 shrink-0'>
-        <SettingControl setting={setting} onUpdate={onUpdate} />
+        <SettingControl
+          setting={setting}
+          showSensitive={showSensitive}
+          onUpdate={onUpdate}
+        />
         {!setting.isDefault && (
           <button
             onClick={() => onReset(setting.key)}
@@ -223,9 +245,11 @@ function SettingRow({
 
 function SettingControl({
   setting,
+  showSensitive,
   onUpdate,
 }: {
   setting: AppSettingType;
+  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
 }) {
   if (setting.type === 'bool') {
@@ -242,10 +266,22 @@ function SettingControl({
     return <NumberControl setting={setting} onUpdate={onUpdate} />;
   }
   if (setting.type === 'list') {
-    return <ListControl setting={setting} onUpdate={onUpdate} />;
+    return (
+      <ListControl
+        setting={setting}
+        showSensitive={showSensitive}
+        onUpdate={onUpdate}
+      />
+    );
   }
   if (setting.type === 'secret') {
-    return <SecretControl setting={setting} onUpdate={onUpdate} />;
+    return (
+      <SecretControl
+        setting={setting}
+        showSensitive={showSensitive}
+        onUpdate={onUpdate}
+      />
+    );
   }
   return <TextControl setting={setting} onUpdate={onUpdate} />;
 }
@@ -354,19 +390,26 @@ function TextControl({
 
 function SecretControl({
   setting,
+  showSensitive,
   onUpdate,
 }: {
   setting: AppSettingType;
+  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [localValue, setLocalValue] = useState('');
+  const hasValue = setting.value && !setting.isDefault;
 
   if (!editing) {
     return (
       <div className='flex items-center gap-2'>
-        <span className='text-sm text-gray-500 dark:text-gray-400 font-mono'>
-          {setting.value === '**configured**' ? '**configured**' : '(not set)'}
+        <span className='text-sm text-gray-500 dark:text-gray-400 font-mono max-w-xs truncate'>
+          {hasValue
+            ? showSensitive
+              ? setting.value
+              : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'
+            : '(not set)'}
         </span>
         <button
           onClick={() => setEditing(true)}
@@ -413,9 +456,11 @@ function SecretControl({
 
 function ListControl({
   setting,
+  showSensitive,
   onUpdate,
 }: {
   setting: AppSettingType;
+  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
 }) {
   let currentList: string[] = [];
@@ -429,6 +474,7 @@ function ListControl({
   }
 
   const hasOptions = !!(setting.options && setting.options.length > 0);
+  const isSensitive = setting.sensitive;
 
   const [localValue, setLocalValue] = useState(
     Array.isArray(currentList) ? currentList.join(', ') : setting.value
@@ -462,20 +508,30 @@ function ListControl({
     );
   }
 
+  if (isSensitive && !showSensitive && currentList.length > 0) {
+    return (
+      <span className='text-sm text-gray-500 dark:text-gray-400 font-mono'>
+        {currentList.length} URL{currentList.length !== 1 ? 's' : ''} configured
+      </span>
+    );
+  }
+
   return (
-    <input
-      type='text'
-      value={localValue}
-      onChange={e => setLocalValue(e.target.value)}
-      onBlur={() => {
-        const items = localValue
-          .split(',')
-          .map(s => s.trim())
-          .filter(Boolean);
-        onUpdate(setting.key, JSON.stringify(items));
-      }}
-      placeholder='Comma-separated values'
-      className='w-48 text-sm px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
-    />
+    <div className='flex flex-col gap-1'>
+      <textarea
+        value={localValue}
+        onChange={e => setLocalValue(e.target.value)}
+        onBlur={() => {
+          const items = localValue
+            .split(/[,\n]/)
+            .map(s => s.trim())
+            .filter(Boolean);
+          onUpdate(setting.key, JSON.stringify(items));
+        }}
+        placeholder='One per line, or comma-separated'
+        rows={Math.max(2, currentList.length)}
+        className='w-64 text-sm px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono resize-y'
+      />
+    </div>
   );
 }

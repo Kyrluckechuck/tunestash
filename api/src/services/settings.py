@@ -17,7 +17,6 @@ from asgiref.sync import sync_to_async
 from src.app_settings.registry import (
     CATEGORY_LABELS,
     CATEGORY_ORDER,
-    SENSITIVE_PLACEHOLDER,
     SETTINGS_REGISTRY,
     TYPE_BOOL,
     TYPE_FLOAT,
@@ -101,11 +100,6 @@ class SettingsService:
         entry = SETTINGS_REGISTRY.get(norm_key)
         if entry is None:
             raise ValueError(f"Unknown setting: {key!r}")
-
-        # Skip save for masked placeholder
-        if is_sensitive(norm_key) and value == SENSITIVE_PLACEHOLDER:
-            raw = self._get_db_value(norm_key, entry["default"])
-            return self._format_setting(norm_key, entry, raw)
 
         coerced = self._coerce_value(norm_key, entry, value)
 
@@ -255,28 +249,13 @@ class SettingsService:
     def _format_setting(
         self, key: str, entry: dict[str, Any], raw_value: Any
     ) -> dict[str, Any]:
-        """Format a setting for API responses (masking sensitive values)."""
-        display_value = raw_value
+        """Format a setting for API responses."""
         is_default = raw_value == entry["default"]
-
-        if is_sensitive(key) and raw_value and raw_value != entry["default"]:
-            display_value = SENSITIVE_PLACEHOLDER
 
         return {
             "key": key,
             "value": (
-                json.dumps(display_value)
-                if not isinstance(display_value, str)
-                else display_value
-            ),
-            "rawValue": (
-                raw_value
-                if not is_sensitive(key)
-                else (
-                    SENSITIVE_PLACEHOLDER
-                    if raw_value and raw_value != entry["default"]
-                    else raw_value
-                )
+                json.dumps(raw_value) if not isinstance(raw_value, str) else raw_value
             ),
             "default": entry["default"],
             "type": entry["type"],
