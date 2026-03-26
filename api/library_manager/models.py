@@ -1885,6 +1885,13 @@ class SongLyricsStatus(models.Model):
     class Meta(TypedModelMeta):
         app_label = "library_manager"
         db_table = "song_lyrics_status"
+        indexes = [
+            models.Index(
+                fields=["attempt_count", "id"],
+                condition=models.Q(has_lyrics=False),
+                name="idx_lyrics_pending_retry",
+            ),
+        ]
 
 
 class PlaylistSong(models.Model):
