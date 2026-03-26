@@ -1,0 +1,69 @@
+query GetAppSettings {
+  appSettings {
+    category
+    label
+    settings {
+      key
+      value
+      type
+      category
+      label
+      description
+      isDefault
+      sensitive
+      options
+    }
+  }
+}
+
+mutation UpdateAppSetting($key: String!, $value: String!) {
+  updateAppSetting(key: $key, value: $value) {
+    success
+    message
+    setting {
+      key
+      value
+      type
+      category
+      label
+      description
+      isDefault
+      sensitive
+      options
+    }
+  }
+}
+
+mutation ResetAppSetting($key: String!) {
+  resetAppSetting(key: $key) {
+    success
+    message
+    setting {
+      key
+      value
+      type
+      category
+      label
+      description
+      isDefault
+      sensitive
+      options
+    }
+  }
+}
+
+mutation UploadCookieFile($content: String!) {
+  uploadCookieFile(content: $content) {
+    success
+    message
+  }
+}
+
+mutation MigrateSettingsFromYaml {
+  migrateSettingsFromYaml {
+    success
+    migrated
+    skipped
+    message
+  }
+}

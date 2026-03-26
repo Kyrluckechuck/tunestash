@@ -9,13 +9,13 @@ from datetime import timedelta
 from typing import Any, Dict, Optional, cast
 from urllib.parse import urlencode
 
-from django.conf import settings
 from django.utils import timezone
 
 import requests
 from asgiref.sync import sync_to_async
 
 from library_manager.models import SpotifyOAuthToken
+from src.app_settings.registry import get_setting
 
 
 class SpotifyOAuthService:
@@ -48,15 +48,11 @@ class SpotifyOAuthService:
         if state is None:
             state = secrets.token_urlsafe(32)
 
-        client_id = getattr(settings, "SPOTIPY_CLIENT_ID", "")
+        client_id = get_setting("spotipy_client_id")
 
         # Use provided redirect_uri, or fall back to configured value
         if redirect_uri is None:
-            redirect_uri = getattr(
-                settings,
-                "spotify_redirect_uri",
-                "http://127.0.0.1:5000/auth/spotify/callback",
-            )
+            redirect_uri = get_setting("spotify_redirect_uri")
 
         params = {
             "client_id": client_id,
@@ -88,15 +84,11 @@ class SpotifyOAuthService:
         Raises:
             requests.HTTPError: If token exchange fails
         """
-        client_id = getattr(settings, "SPOTIPY_CLIENT_ID", "")
-        client_secret = getattr(settings, "SPOTIPY_CLIENT_SECRET", "")
+        client_id = get_setting("spotipy_client_id")
+        client_secret = get_setting("spotipy_client_secret")
 
         if redirect_uri is None:
-            redirect_uri = getattr(
-                settings,
-                "spotify_redirect_uri",
-                "http://127.0.0.1:5000/auth/spotify/callback",
-            )
+            redirect_uri = get_setting("spotify_redirect_uri")
 
         response = requests.post(
             "https://accounts.spotify.com/api/token",
@@ -126,8 +118,8 @@ class SpotifyOAuthService:
         Raises:
             requests.HTTPError: If token refresh fails
         """
-        client_id = getattr(settings, "SPOTIPY_CLIENT_ID", "")
-        client_secret = getattr(settings, "SPOTIPY_CLIENT_SECRET", "")
+        client_id = get_setting("spotipy_client_id")
+        client_secret = get_setting("spotipy_client_secret")
 
         response = requests.post(
             "https://accounts.spotify.com/api/token",

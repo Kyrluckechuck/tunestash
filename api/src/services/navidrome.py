@@ -9,9 +9,9 @@ import hashlib
 import logging
 import secrets
 
-from django.conf import settings as django_settings
-
 import requests
+
+from src.app_settings.registry import get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +22,9 @@ class NavidromeService:
     """Service for interacting with Navidrome via the Subsonic API."""
 
     def __init__(self) -> None:
-        self._url = getattr(
-            django_settings, "NAVIDROME_URL", "http://navidrome:4533"
-        ).rstrip("/")
-        self._user = getattr(django_settings, "NAVIDROME_USER", "admin")
-        self._password = getattr(django_settings, "NAVIDROME_PASSWORD", "")
+        self._url = str(get_setting("navidrome_url")).rstrip("/")
+        self._user = str(get_setting("navidrome_user"))
+        self._password = str(get_setting("navidrome_password"))
 
     def _build_auth_params(self) -> dict[str, str]:
         """Build Subsonic token auth parameters (MD5 challenge-response)."""

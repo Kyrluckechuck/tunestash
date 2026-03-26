@@ -53,20 +53,10 @@ YOUTUBE_CAPABILITIES = ProviderCapabilities(
 
 
 def _get_cookies_path() -> Optional[str]:
-    """Get the YouTube cookies path from settings."""
-    try:
-        from django.conf import settings
-
-        cookies_path = getattr(settings, "youtube_cookies_location", None)
-        if cookies_path and Path(cookies_path).exists():
-            return str(cookies_path)
-    except Exception:
-        pass
-
+    """Get the YouTube cookies path (hardcoded, managed via UI)."""
     default_path = Path("/config/youtube_music_cookies.txt")
     if default_path.exists():
         return str(default_path)
-
     return None
 
 

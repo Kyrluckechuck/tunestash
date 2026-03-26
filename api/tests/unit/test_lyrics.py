@@ -249,18 +249,18 @@ class TestFetchAndSaveLyrics:
 class TestFetchAndSaveLyricsIfEnabled:
     """Test the settings-gated wrapper."""
 
+    @patch("src.app_settings.registry.get_setting", return_value=False)
     @patch("downloader.lyrics.fetch_and_save_lyrics")
-    def test_skips_when_disabled(self, mock_fetch, tmp_path, settings):
-        settings.LYRICS_ENABLED = False
+    def test_skips_when_disabled(self, mock_fetch, mock_get_setting, tmp_path):
         result = fetch_and_save_lyrics_if_enabled(
             tmp_path / "song.m4a", "Song", "Artist"
         )
         assert result is False
         mock_fetch.assert_not_called()
 
+    @patch("src.app_settings.registry.get_setting", return_value=True)
     @patch("downloader.lyrics.fetch_and_save_lyrics", return_value=True)
-    def test_calls_when_enabled(self, mock_fetch, tmp_path, settings):
-        settings.LYRICS_ENABLED = True
+    def test_calls_when_enabled(self, mock_fetch, mock_get_setting, tmp_path):
         result = fetch_and_save_lyrics_if_enabled(
             tmp_path / "song.m4a", "Song", "Artist"
         )

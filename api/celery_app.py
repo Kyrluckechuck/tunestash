@@ -193,9 +193,9 @@ _register_signal_handlers()
 @worker_process_init.connect  # type: ignore[misc]
 def worker_process_init_handler(sender: Any = None, **kwargs: Any) -> None:
     """Log when worker process starts."""
-    from django.conf import settings
+    from src.app_settings.registry import get_setting_with_default
 
-    diagnostics_enabled = getattr(settings, "worker_diagnostics_enabled", False)
+    diagnostics_enabled = get_setting_with_default("worker_diagnostics_enabled", False)
     if diagnostics_enabled:
         logger.info(
             f"[WORKER LIFECYCLE] Worker process started - PID: {os.getpid()}, "
@@ -254,9 +254,9 @@ def _log_spotify_rate_limit_status() -> None:
 @worker_process_shutdown.connect  # type: ignore[misc]
 def worker_process_shutdown_handler(sender: Any = None, **kwargs: Any) -> None:
     """Log when worker process shuts down (only if diagnostics enabled)."""
-    from django.conf import settings
+    from src.app_settings.registry import get_setting_with_default
 
-    diagnostics_enabled = getattr(settings, "worker_diagnostics_enabled", False)
+    diagnostics_enabled = get_setting_with_default("worker_diagnostics_enabled", False)
     if diagnostics_enabled:
         logger.warning(
             f"[WORKER LIFECYCLE] Worker process shutting down - PID: {os.getpid()}"
@@ -267,9 +267,9 @@ def worker_process_shutdown_handler(sender: Any = None, **kwargs: Any) -> None:
 @worker_shutdown.connect  # type: ignore[misc]
 def worker_shutdown_handler(sender: Any = None, **kwargs: Any) -> None:
     """Log when main worker shuts down (only if diagnostics enabled)."""
-    from django.conf import settings
+    from src.app_settings.registry import get_setting_with_default
 
-    diagnostics_enabled = getattr(settings, "worker_diagnostics_enabled", False)
+    diagnostics_enabled = get_setting_with_default("worker_diagnostics_enabled", False)
     if diagnostics_enabled:
         logger.warning(
             f"[WORKER LIFECYCLE] Main worker shutting down - PID: {os.getpid()}"

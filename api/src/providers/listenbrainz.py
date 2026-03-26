@@ -3,9 +3,9 @@
 import logging
 from typing import Any, Optional
 
-from django.conf import settings
-
 import requests
+
+from src.app_settings.registry import get_setting
 
 from .base import ExternalListProvider, ExternalListResult, ExternalTrack
 from .rate_limit import check_api_rate_limit
@@ -16,7 +16,7 @@ LISTENBRAINZ_API_BASE = "https://api.listenbrainz.org"
 
 
 def _get_user_token() -> Optional[str]:
-    token = getattr(settings, "LISTENBRAINZ_USER_TOKEN", "") or ""
+    token = get_setting("listenbrainz_user_token") or ""
     return str(token) if token else None
 
 

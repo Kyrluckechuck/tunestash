@@ -164,8 +164,10 @@ def regenerate_m3u_for_song(song_id: int) -> None:
 
     from django.conf import settings as django_settings
 
+    from src.app_settings.registry import get_setting
+
     output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
-    playlist_dir = getattr(django_settings, "M3U_PLAYLISTS_DIRECTORY", "Playlists")
+    playlist_dir = get_setting("m3u_playlists_directory")
 
     for playlist_id in enabled_ids:
         write_playlist_m3u(playlist_id, output_dir, playlist_dir)

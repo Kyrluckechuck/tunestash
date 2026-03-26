@@ -74,44 +74,58 @@ def mock_auth_status_cookies_expiring_urgent():
     return status
 
 
+NOTIFICATION_DEFAULTS = {
+    "notifications_enabled": True,
+    "notifications_urls": ["json://stdout"],
+    "notifications_cooldown_minutes": 60,
+    "notifications_error_max_failure_pct": 50,
+    "notifications_error_min_downloads": 20,
+    "notifications_error_window_hours": 6,
+    "notifications_cookie_warn_days": 7,
+    "notifications_cookie_urgent_days": 1,
+    "notifications_instance_name": "",
+}
+
+
+def _mock_get_setting(overrides=None):
+    vals = {**NOTIFICATION_DEFAULTS, **(overrides or {})}
+    return lambda key: vals.get(key, "")
+
+
 @pytest.fixture
 def notification_settings():
-    """Patch Django settings for notifications."""
-    with patch("src.services.notification.settings") as mock_settings:
-        mock_settings.NOTIFICATIONS_ENABLED = True
-        mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
-        mock_settings.NOTIFICATIONS_COOLDOWN_MINUTES = 60
-        mock_settings.NOTIFICATIONS_ERROR_MAX_FAILURE_PCT = 50
-        mock_settings.NOTIFICATIONS_ERROR_MIN_DOWNLOADS = 20
-        mock_settings.NOTIFICATIONS_ERROR_WINDOW_HOURS = 6
-        mock_settings.NOTIFICATIONS_COOKIE_WARN_DAYS = 7
-        mock_settings.NOTIFICATIONS_COOKIE_URGENT_DAYS = 1
-        yield mock_settings
+    """Patch get_setting for notifications."""
+    with patch(
+        "src.services.notification.get_setting",
+        side_effect=_mock_get_setting(),
+    ) as mock:
+        yield mock
 
 
 class TestNotificationServiceConfiguration:
     """Tests for configuration and early-exit behavior."""
 
     def test_returns_empty_when_disabled(self, service):
-        with patch("src.services.notification.settings") as mock_settings:
-            mock_settings.NOTIFICATIONS_ENABLED = False
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
+        with patch(
+            "src.services.notification.get_setting",
+            side_effect=_mock_get_setting({"notifications_enabled": False}),
+        ):
             result = service.check_and_notify_all()
             assert result == {}
 
     def test_returns_empty_when_no_urls(self, service):
-        with patch("src.services.notification.settings") as mock_settings:
-            mock_settings.NOTIFICATIONS_ENABLED = True
-            mock_settings.NOTIFICATIONS_URLS = []
+        with patch(
+            "src.services.notification.get_setting",
+            side_effect=_mock_get_setting({"notifications_urls": []}),
+        ):
             result = service.check_and_notify_all()
             assert result == {}
 
     def test_returns_empty_when_enabled_not_set(self, service):
-        with patch("src.services.notification.settings", spec=[]) as mock_settings:
-            # getattr on a spec=[] mock returns MagicMock for missing attrs,
-            # but we explicitly make it falsy
-            mock_settings.NOTIFICATIONS_ENABLED = False
-            mock_settings.NOTIFICATIONS_URLS = ["json://stdout"]
+        with patch(
+            "src.services.notification.get_setting",
+            side_effect=_mock_get_setting({"notifications_enabled": False}),
+        ):
             result = service.check_and_notify_all()
             assert result == {}
 

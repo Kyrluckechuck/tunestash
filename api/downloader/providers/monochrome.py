@@ -19,6 +19,8 @@ from typing import Any, Optional
 import requests
 from asgiref.sync import sync_to_async
 
+from src.providers.rate_limit import check_api_rate_limit
+
 from .base import (
     DownloadProvider,
     DownloadResult,
@@ -126,13 +128,9 @@ class MonochromeProvider(DownloadProvider):
         min_confidence: float = MIN_MATCH_CONFIDENCE,
     ) -> None:
         if api_urls is None:
-            from django.conf import settings as django_settings
+            from src.app_settings.registry import get_setting
 
-            api_urls = getattr(
-                django_settings,
-                "MONOCHROME_API_URLS",
-                ["https://api.monochrome.tf"],
-            )
+            api_urls = get_setting("monochrome_api_urls")
         self._endpoint_manager = MonochromeEndpointManager.from_urls(api_urls)
         self._min_confidence = min_confidence
 
@@ -202,6 +200,18 @@ class MonochromeProvider(DownloadProvider):
                 endpoint.mark_success()
                 return best_match
 
+            except requests.HTTPError as e:
+                if e.response is not None and e.response.status_code == 429:
+                    retry_after = int(e.response.headers.get("Retry-After", 30))
+                    logger.warning(
+                        f"Monochrome {endpoint.url} rate limited, "
+                        f"sleeping {retry_after}s"
+                    )
+                    time.sleep(retry_after)
+                    continue
+                logger.warning(f"Monochrome search on {endpoint.url} failed: {e}")
+                endpoint.mark_failure()
+                continue
             except requests.RequestException as e:
                 logger.warning(f"Monochrome search on {endpoint.url} failed: {e}")
                 endpoint.mark_failure()
@@ -263,6 +273,19 @@ class MonochromeProvider(DownloadProvider):
                     metadata_embedded=False,
                 )
 
+            except requests.HTTPError as e:
+                if e.response is not None and e.response.status_code == 429:
+                    retry_after = int(e.response.headers.get("Retry-After", 30))
+                    logger.warning(
+                        f"Monochrome {endpoint.url} rate limited, "
+                        f"sleeping {retry_after}s"
+                    )
+                    time.sleep(retry_after)
+                    continue
+                logger.warning(f"Monochrome endpoint {endpoint.url} failed: {e}")
+                endpoint.mark_failure()
+                last_error = str(e)
+                continue
             except requests.RequestException as e:
                 logger.warning(f"Monochrome endpoint {endpoint.url} failed: {e}")
                 endpoint.mark_failure()
@@ -283,6 +306,7 @@ class MonochromeProvider(DownloadProvider):
         title: str,
         artist: str,
     ) -> list[dict[str, Any]]:
+        check_api_rate_limit("monochrome", default_rate=2.0)
         query = f"{title} {artist}"
         url = f"{endpoint.url}/search/"
         params = {"s": query}
@@ -305,6 +329,7 @@ class MonochromeProvider(DownloadProvider):
         track_id: str,
         quality: QualityPreference,
     ) -> Optional[dict[str, Any]]:
+        check_api_rate_limit("monochrome", default_rate=2.0)
         monochrome_quality = MONOCHROME_QUALITY_MAP.get(quality, "LOSSLESS")
         url = f"{endpoint.url}/track/"
         params = {"id": track_id, "quality": monochrome_quality}

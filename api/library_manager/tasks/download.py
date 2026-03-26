@@ -13,8 +13,6 @@ from downloader.spotipy_tasks import SpotifyRateLimitError
 from downloader.utils import sanitize_and_strip_url
 
 from ..models import (
-    ALBUM_GROUPS_TO_IGNORE,
-    ALBUM_TYPES_TO_DOWNLOAD,
     Album,
     AlbumFailureReason,
     Artist,
@@ -23,6 +21,8 @@ from ..models import DownloadProvider as DownloadProviderEnum
 from ..models import (
     Song,
     TaskHistory,
+    get_album_groups_to_ignore,
+    get_album_types_to_download,
 )
 from .core import (
     check_and_update_progress,
@@ -200,9 +200,9 @@ def download_missing_albums_for_artist(
                 artist=artist,
                 downloaded=False,
                 wanted=True,
-                album_type__in=ALBUM_TYPES_TO_DOWNLOAD,
+                album_type__in=get_album_types_to_download(),
             )
-            .exclude(album_group__in=ALBUM_GROUPS_TO_IGNORE)
+            .exclude(album_group__in=get_album_groups_to_ignore())
             .exclude(unavailable=True)
         )
         logger.info(
@@ -321,8 +321,8 @@ def download_single_album(self: Any, album_id: int) -> None:
             if not _resolve_and_assign_deezer_id(album):
                 album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
                 msg = (
-                    f"Album '{album.name}' has no deezer_id and "
-                    f"couldn't be found on Deezer"
+                    f"Content unavailable: Album '{album.name}' has no "
+                    f"deezer_id and couldn't be found on Deezer"
                 )
                 logger.error(msg)
                 complete_task(task_history, success=False, error_message=msg)
@@ -331,7 +331,8 @@ def download_single_album(self: Any, album_id: int) -> None:
         dl_count, fail_count = _download_deezer_album(album, task_history)
         total = dl_count + fail_count
         if fail_count > 0:
-            msg = f"Downloaded {dl_count}/{total} tracks"
+            prefix = "Content unavailable: " if dl_count == 0 else ""
+            msg = f"{prefix}Downloaded {dl_count}/{total} tracks"
             complete_task(task_history, success=False, error_message=msg)
             logger.warning(f"Partial failure for album {album.name}: {msg}")
             return
@@ -847,7 +848,7 @@ def download_extra_album_types_for_artist(
         artist=artist,
         downloaded=False,
         wanted=True,
-        album_group__in=ALBUM_GROUPS_TO_IGNORE,
+        album_group__in=get_album_groups_to_ignore(),
     ).exclude(unavailable=True)
     logger.info(
         f"extra album missing albums search for artist {artist.id} "
@@ -1039,7 +1040,8 @@ def download_album_by_deezer_id(self: Any, deezer_album_id: int) -> None:
         dl_count, fail_count = _download_deezer_album(album, task_history)
         total = dl_count + fail_count
         if fail_count > 0:
-            msg = f"Downloaded {dl_count}/{total} tracks"
+            prefix = "Content unavailable: " if dl_count == 0 else ""
+            msg = f"{prefix}Downloaded {dl_count}/{total} tracks"
             complete_task(task_history, success=False, error_message=msg)
             logger.warning(f"Partial failure for album {album.name}: {msg}")
             return
@@ -1205,7 +1207,14 @@ def download_deezer_track(self: Any, song_id: int) -> None:
         else:
             song.increment_failed_count()
             song.save()
-            error_msg = f"Failed to download '{song.name}': {result.error_message}"
+            is_unavailable = result.error_message and (
+                "No matching track found" in result.error_message
+                or "All providers failed" in result.error_message
+            )
+            prefix = "Content unavailable: " if is_unavailable else ""
+            error_msg = (
+                f"{prefix}Failed to download '{song.name}': {result.error_message}"
+            )
             logger.warning(error_msg)
             complete_task(task_history, success=False, error_message=error_msg)
 

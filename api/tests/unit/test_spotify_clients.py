@@ -25,6 +25,13 @@ class TestPublicSpotifyClient:
         """Reset singleton after each test."""
         PublicSpotifyClient.reset()
 
+    @patch(
+        "src.app_settings.registry.get_setting_with_default",
+        side_effect=lambda k, d="": {
+            "spotipy_client_id": "test_id",
+            "spotipy_client_secret": "test_secret",
+        }.get(k, d),
+    )
     @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.SpotifyClientCredentials")
     @patch("downloader.spotipy_tasks.spotipy.Spotify")
@@ -33,6 +40,7 @@ class TestPublicSpotifyClient:
         mock_spotify: MagicMock,
         mock_creds: MagicMock,
         mock_create_session: MagicMock,
+        _mock_settings: MagicMock,
     ) -> None:
         """PublicSpotifyClient should use Client Credentials flow."""
         client = PublicSpotifyClient()
@@ -41,6 +49,13 @@ class TestPublicSpotifyClient:
         mock_spotify.assert_called_once()
         assert client.sp is not None
 
+    @patch(
+        "src.app_settings.registry.get_setting_with_default",
+        side_effect=lambda k, d="": {
+            "spotipy_client_id": "test_id",
+            "spotipy_client_secret": "test_secret",
+        }.get(k, d),
+    )
     @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.SpotifyClientCredentials")
     @patch("downloader.spotipy_tasks.spotipy.Spotify")
@@ -49,6 +64,7 @@ class TestPublicSpotifyClient:
         mock_spotify: MagicMock,
         mock_creds: MagicMock,
         mock_create_session: MagicMock,
+        _mock_settings: MagicMock,
     ) -> None:
         """PublicSpotifyClient should reuse the same instance."""
         client1 = PublicSpotifyClient()
@@ -57,6 +73,13 @@ class TestPublicSpotifyClient:
         assert client1 is client2
         assert mock_creds.call_count == 1
 
+    @patch(
+        "src.app_settings.registry.get_setting_with_default",
+        side_effect=lambda k, d="": {
+            "spotipy_client_id": "test_id",
+            "spotipy_client_secret": "test_secret",
+        }.get(k, d),
+    )
     @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.SpotifyClientCredentials")
     @patch("downloader.spotipy_tasks.spotipy.Spotify")
@@ -65,6 +88,7 @@ class TestPublicSpotifyClient:
         mock_spotify: MagicMock,
         mock_creds: MagicMock,
         mock_create_session: MagicMock,
+        _mock_settings: MagicMock,
     ) -> None:
         """PublicSpotifyClient.reset() should clear the singleton."""
         client1 = PublicSpotifyClient()
@@ -107,6 +131,13 @@ class TestOAuthSpotifyClient:
         )
         assert client.is_oauth is True
 
+    @patch(
+        "src.app_settings.registry.get_setting_with_default",
+        side_effect=lambda k, d="": {
+            "spotipy_client_id": "test_id",
+            "spotipy_client_secret": "test_secret",
+        }.get(k, d),
+    )
     @patch("downloader.spotipy_tasks.create_limited_session")
     @patch("downloader.spotipy_tasks.get_spotify_oauth_credentials")
     @patch("downloader.spotipy_tasks.SpotifyClientCredentials")
@@ -117,6 +148,7 @@ class TestOAuthSpotifyClient:
         mock_creds: MagicMock,
         mock_get_oauth: MagicMock,
         mock_create_session: MagicMock,
+        _mock_settings: MagicMock,
     ) -> None:
         """OAuthSpotifyClient should fall back to Client Credentials when no OAuth."""
         mock_get_oauth.return_value = None

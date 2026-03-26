@@ -48,6 +48,19 @@ export type AlbumConnection = {
   totalCount: Scalars['Int']['output'];
 };
 
+export type AppSettingType = {
+  __typename?: 'AppSettingType';
+  category: Scalars['String']['output'];
+  description: Scalars['String']['output'];
+  isDefault: Scalars['Boolean']['output'];
+  key: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  options: Maybe<Array<Scalars['String']['output']>>;
+  sensitive: Scalars['Boolean']['output'];
+  type: Scalars['String']['output'];
+  value: Scalars['String']['output'];
+};
+
 export type Artist = {
   __typename?: 'Artist';
   addedAt: Maybe<Scalars['DateTime']['output']>;
@@ -136,6 +149,12 @@ export type CatalogSearchTrack = {
   localId: Maybe<Scalars['Int']['output']>;
   name: Scalars['String']['output'];
   providerId: Scalars['String']['output'];
+};
+
+export type CookieUploadResult = {
+  __typename?: 'CookieUploadResult';
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
 };
 
 export type DeezerArtistPreview = {
@@ -349,6 +368,8 @@ export type Mutation = {
   importAlbum: MutationResult;
   importArtist: MutationResult;
   linkArtistToDeezer: MutationResult;
+  migrateSettingsFromYaml: YamlMigrationResult;
+  resetAppSetting: UpdateSettingResult;
   retryFailedSongs: MutationResult;
   runOneOffTask: MutationResult;
   runPeriodicTaskNow: MutationResult;
@@ -369,9 +390,11 @@ export type Mutation = {
   trackPlaylist: Playlist;
   untrackArtist: MutationResult;
   updateAlbum: Album;
+  updateAppSetting: UpdateSettingResult;
   updateArtist: Artist;
   updateExternalList: MutationResult;
   updatePlaylist: MutationResult;
+  uploadCookieFile: CookieUploadResult;
 };
 
 
@@ -481,6 +504,11 @@ export type MutationLinkArtistToDeezerArgs = {
 };
 
 
+export type MutationResetAppSettingArgs = {
+  key: Scalars['String']['input'];
+};
+
+
 export type MutationRetryFailedSongsArgs = {
   artistId: Scalars['String']['input'];
 };
@@ -577,6 +605,12 @@ export type MutationUpdateAlbumArgs = {
 };
 
 
+export type MutationUpdateAppSettingArgs = {
+  key: Scalars['String']['input'];
+  value: Scalars['String']['input'];
+};
+
+
 export type MutationUpdateArtistArgs = {
   input: UpdateArtistInput;
 };
@@ -596,6 +630,11 @@ export type MutationUpdatePlaylistArgs = {
   name: Scalars['String']['input'];
   playlistId: Scalars['Int']['input'];
   url: Scalars['String']['input'];
+};
+
+
+export type MutationUploadCookieFileArgs = {
+  content: Scalars['String']['input'];
 };
 
 export type MutationResult = {
@@ -682,6 +721,8 @@ export type Query = {
   __typename?: 'Query';
   album: Maybe<Album>;
   albums: AlbumConnection;
+  appSetting: Maybe<AppSettingType>;
+  appSettings: Array<SettingsCategoryType>;
   artist: Maybe<Artist>;
   artists: ArtistConnection;
   catalogSearch: CatalogSearchResults;
@@ -721,6 +762,11 @@ export type QueryAlbumsArgs = {
   sortBy?: InputMaybe<Scalars['String']['input']>;
   sortDirection?: InputMaybe<Scalars['String']['input']>;
   wanted?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type QueryAppSettingArgs = {
+  key: Scalars['String']['input'];
 };
 
 
@@ -858,6 +904,13 @@ export type QueueStatus = {
   queueSize: Scalars['Int']['output'];
   taskCounts: Array<TaskCount>;
   totalPendingTasks: Scalars['Int']['output'];
+};
+
+export type SettingsCategoryType = {
+  __typename?: 'SettingsCategoryType';
+  category: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  settings: Array<AppSettingType>;
 };
 
 export type Song = {
@@ -1001,12 +1054,27 @@ export type UpdateArtistInput = {
   isTracked?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
+export type UpdateSettingResult = {
+  __typename?: 'UpdateSettingResult';
+  message: Scalars['String']['output'];
+  setting: Maybe<AppSettingType>;
+  success: Scalars['Boolean']['output'];
+};
+
 export type UpgradeStats = {
   __typename?: 'UpgradeStats';
   notUpgradeable: Scalars['Int']['output'];
   totalLowQuality: Scalars['Int']['output'];
   upgradeable: Scalars['Int']['output'];
   upgraded: Scalars['Int']['output'];
+};
+
+export type YamlMigrationResult = {
+  __typename?: 'YamlMigrationResult';
+  message: Scalars['String']['output'];
+  migrated: Scalars['Int']['output'];
+  skipped: Scalars['Int']['output'];
+  success: Scalars['Boolean']['output'];
 };
 
 export type GetArtistQueryVariables = Exact<{
@@ -1419,6 +1487,38 @@ export type GetPlaylistInfoQueryVariables = Exact<{
 
 export type GetPlaylistInfoQuery = { __typename?: 'Query', playlistInfo: { __typename?: 'PlaylistInfo', name: string, ownerName: string | null, trackCount: number, imageUrl: string | null, provider: string } | null };
 
+export type GetAppSettingsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type GetAppSettingsQuery = { __typename?: 'Query', appSettings: Array<{ __typename?: 'SettingsCategoryType', category: string, label: string, settings: Array<{ __typename?: 'AppSettingType', key: string, value: string, type: string, category: string, label: string, description: string, isDefault: boolean, sensitive: boolean, options: Array<string> | null }> }> };
+
+export type UpdateAppSettingMutationVariables = Exact<{
+  key: Scalars['String']['input'];
+  value: Scalars['String']['input'];
+}>;
+
+
+export type UpdateAppSettingMutation = { __typename?: 'Mutation', updateAppSetting: { __typename?: 'UpdateSettingResult', success: boolean, message: string, setting: { __typename?: 'AppSettingType', key: string, value: string, type: string, category: string, label: string, description: string, isDefault: boolean, sensitive: boolean, options: Array<string> | null } | null } };
+
+export type ResetAppSettingMutationVariables = Exact<{
+  key: Scalars['String']['input'];
+}>;
+
+
+export type ResetAppSettingMutation = { __typename?: 'Mutation', resetAppSetting: { __typename?: 'UpdateSettingResult', success: boolean, message: string, setting: { __typename?: 'AppSettingType', key: string, value: string, type: string, category: string, label: string, description: string, isDefault: boolean, sensitive: boolean, options: Array<string> | null } | null } };
+
+export type UploadCookieFileMutationVariables = Exact<{
+  content: Scalars['String']['input'];
+}>;
+
+
+export type UploadCookieFileMutation = { __typename?: 'Mutation', uploadCookieFile: { __typename?: 'CookieUploadResult', success: boolean, message: string } };
+
+export type MigrateSettingsFromYamlMutationVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MigrateSettingsFromYamlMutation = { __typename?: 'Mutation', migrateSettingsFromYaml: { __typename?: 'YamlMigrationResult', success: boolean, migrated: number, skipped: number, message: string } };
+
 export type GetSongsQueryVariables = Exact<{
   first?: InputMaybe<Scalars['Int']['input']>;
   after?: InputMaybe<Scalars['String']['input']>;
@@ -1639,6 +1739,11 @@ export const CheckAlbumMetadataDocument = {"kind":"Document","definitions":[{"ki
 export const CheckSongMetadataDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CheckSongMetadata"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"songId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkSongMetadata"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"songId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"songId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"changeDetected"}},{"kind":"Field","name":{"kind":"Name","value":"oldValue"}},{"kind":"Field","name":{"kind":"Name","value":"newValue"}}]}}]}}]} as unknown as DocumentNode<CheckSongMetadataMutation, CheckSongMetadataMutationVariables>;
 export const DeletePlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeletePlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deletePlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DeletePlaylistMutation, DeletePlaylistMutationVariables>;
 export const GetPlaylistInfoDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaylistInfo"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playlistInfo"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"ownerName"}},{"kind":"Field","name":{"kind":"Name","value":"trackCount"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"provider"}}]}}]}}]} as unknown as DocumentNode<GetPlaylistInfoQuery, GetPlaylistInfoQueryVariables>;
+export const GetAppSettingsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetAppSettings"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"appSettings"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"category"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"settings"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"key"}},{"kind":"Field","name":{"kind":"Name","value":"value"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"category"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isDefault"}},{"kind":"Field","name":{"kind":"Name","value":"sensitive"}},{"kind":"Field","name":{"kind":"Name","value":"options"}}]}}]}}]}}]} as unknown as DocumentNode<GetAppSettingsQuery, GetAppSettingsQueryVariables>;
+export const UpdateAppSettingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateAppSetting"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"key"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"value"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateAppSetting"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"key"},"value":{"kind":"Variable","name":{"kind":"Name","value":"key"}}},{"kind":"Argument","name":{"kind":"Name","value":"value"},"value":{"kind":"Variable","name":{"kind":"Name","value":"value"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"setting"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"key"}},{"kind":"Field","name":{"kind":"Name","value":"value"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"category"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isDefault"}},{"kind":"Field","name":{"kind":"Name","value":"sensitive"}},{"kind":"Field","name":{"kind":"Name","value":"options"}}]}}]}}]}}]} as unknown as DocumentNode<UpdateAppSettingMutation, UpdateAppSettingMutationVariables>;
+export const ResetAppSettingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ResetAppSetting"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"key"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"resetAppSetting"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"key"},"value":{"kind":"Variable","name":{"kind":"Name","value":"key"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"setting"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"key"}},{"kind":"Field","name":{"kind":"Name","value":"value"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"category"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isDefault"}},{"kind":"Field","name":{"kind":"Name","value":"sensitive"}},{"kind":"Field","name":{"kind":"Name","value":"options"}}]}}]}}]}}]} as unknown as DocumentNode<ResetAppSettingMutation, ResetAppSettingMutationVariables>;
+export const UploadCookieFileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UploadCookieFile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"content"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uploadCookieFile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"content"},"value":{"kind":"Variable","name":{"kind":"Name","value":"content"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<UploadCookieFileMutation, UploadCookieFileMutationVariables>;
+export const MigrateSettingsFromYamlDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MigrateSettingsFromYaml"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"migrateSettingsFromYaml"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"migrated"}},{"kind":"Field","name":{"kind":"Name","value":"skipped"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<MigrateSettingsFromYamlMutation, MigrateSettingsFromYamlMutationVariables>;
 export const GetSongsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSongs"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"first"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"after"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"artistId"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"downloaded"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"unavailable"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"sortBy"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"sortDirection"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"search"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"maxBitrate"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"songs"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"Variable","name":{"kind":"Name","value":"first"}}},{"kind":"Argument","name":{"kind":"Name","value":"after"},"value":{"kind":"Variable","name":{"kind":"Name","value":"after"}}},{"kind":"Argument","name":{"kind":"Name","value":"artistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"artistId"}}},{"kind":"Argument","name":{"kind":"Name","value":"downloaded"},"value":{"kind":"Variable","name":{"kind":"Name","value":"downloaded"}}},{"kind":"Argument","name":{"kind":"Name","value":"unavailable"},"value":{"kind":"Variable","name":{"kind":"Name","value":"unavailable"}}},{"kind":"Argument","name":{"kind":"Name","value":"sortBy"},"value":{"kind":"Variable","name":{"kind":"Name","value":"sortBy"}}},{"kind":"Argument","name":{"kind":"Name","value":"sortDirection"},"value":{"kind":"Variable","name":{"kind":"Name","value":"sortDirection"}}},{"kind":"Argument","name":{"kind":"Name","value":"search"},"value":{"kind":"Variable","name":{"kind":"Name","value":"search"}}},{"kind":"Argument","name":{"kind":"Name","value":"maxBitrate"},"value":{"kind":"Variable","name":{"kind":"Name","value":"maxBitrate"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"gid"}},{"kind":"Field","name":{"kind":"Name","value":"deezerId"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtist"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtistId"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtistGid"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"failedCount"}},{"kind":"Field","name":{"kind":"Name","value":"bitrate"}},{"kind":"Field","name":{"kind":"Name","value":"unavailable"}},{"kind":"Field","name":{"kind":"Name","value":"filePath"}},{"kind":"Field","name":{"kind":"Name","value":"downloaded"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUri"}},{"kind":"Field","name":{"kind":"Name","value":"downloadProvider"}}]}},{"kind":"Field","name":{"kind":"Name","value":"pageInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasNextPage"}},{"kind":"Field","name":{"kind":"Name","value":"hasPreviousPage"}},{"kind":"Field","name":{"kind":"Name","value":"startCursor"}},{"kind":"Field","name":{"kind":"Name","value":"endCursor"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}}]}}]}}]} as unknown as DocumentNode<GetSongsQuery, GetSongsQueryVariables>;
 export const GetSongDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSong"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"song"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"gid"}},{"kind":"Field","name":{"kind":"Name","value":"deezerId"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtist"}},{"kind":"Field","name":{"kind":"Name","value":"primaryArtistId"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"failedCount"}},{"kind":"Field","name":{"kind":"Name","value":"bitrate"}},{"kind":"Field","name":{"kind":"Name","value":"unavailable"}},{"kind":"Field","name":{"kind":"Name","value":"filePath"}},{"kind":"Field","name":{"kind":"Name","value":"downloaded"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUri"}},{"kind":"Field","name":{"kind":"Name","value":"downloadProvider"}}]}}]}}]} as unknown as DocumentNode<GetSongQuery, GetSongQueryVariables>;
 export const GetSystemHealthDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSystemHealth"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"systemHealth"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"canDownload"}},{"kind":"Field","name":{"kind":"Name","value":"downloadBlockerReason"}},{"kind":"Field","name":{"kind":"Name","value":"authentication"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cookiesValid"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesErrorType"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesErrorMessage"}},{"kind":"Field","name":{"kind":"Name","value":"cookiesExpireInDays"}},{"kind":"Field","name":{"kind":"Name","value":"poTokenConfigured"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyAuthMode"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyTokenValid"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyTokenExpired"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyTokenExpiresInHours"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyTokenErrorMessage"}}]}}]}}]}}]} as unknown as DocumentNode<GetSystemHealthQuery, GetSystemHealthQueryVariables>;

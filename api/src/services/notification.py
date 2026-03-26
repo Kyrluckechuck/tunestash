@@ -3,10 +3,10 @@
 import logging
 from datetime import timedelta
 
-from django.conf import settings
 from django.utils import timezone
 
 from library_manager.models import NotificationState, TaskHistory
+from src.app_settings.registry import get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -62,19 +62,19 @@ class NotificationService:
         return results
 
     def _is_configured(self) -> bool:
-        enabled = getattr(settings, "NOTIFICATIONS_ENABLED", False)
-        urls = getattr(settings, "NOTIFICATIONS_URLS", [])
+        enabled = get_setting("notifications_enabled")
+        urls = get_setting("notifications_urls")
         return bool(enabled and urls)
 
     def get_instance_name(self) -> str:
         """Get the instance name for notification titles."""
-        name = getattr(settings, "NOTIFICATIONS_INSTANCE_NAME", "")
+        name = get_setting("notifications_instance_name")
         if name:
             return str(name)
         return "TuneStash"
 
     def _get_cooldown_minutes(self) -> int:
-        return int(getattr(settings, "NOTIFICATIONS_COOLDOWN_MINUTES", 60))
+        return int(get_setting("notifications_cooldown_minutes"))
 
     def _check_auth_alerts(self) -> dict[str, bool]:
         """Check all authentication conditions and send alerts."""
@@ -86,8 +86,8 @@ class NotificationService:
         auth_status = SystemHealthService.check_authentication_status()
 
         # Get configurable warning thresholds
-        warn_days = int(getattr(settings, "NOTIFICATIONS_COOKIE_WARN_DAYS", 7))
-        urgent_days = int(getattr(settings, "NOTIFICATIONS_COOKIE_URGENT_DAYS", 1))
+        warn_days = int(get_setting("notifications_cookie_warn_days"))
+        urgent_days = int(get_setting("notifications_cookie_urgent_days"))
 
         # YouTube cookies - check expiration state with tiered warnings
         # Auth alerts use fire-once: send once per condition, reset when resolved
@@ -173,23 +173,26 @@ class NotificationService:
         This avoids false alerts from expected catalog gaps (niche music not
         available on any provider) while catching real provider outages.
         """
-        window_hours = int(getattr(settings, "NOTIFICATIONS_ERROR_WINDOW_HOURS", 6))
+        window_hours = int(get_setting("notifications_error_window_hours"))
         # Minimum downloads required before alerting (avoids false positives
         # during low-activity periods where 2/3 failures = 33% rate)
-        min_downloads = int(getattr(settings, "NOTIFICATIONS_ERROR_MIN_DOWNLOADS", 20))
+        min_downloads = int(get_setting("notifications_error_min_downloads"))
         # Alert when success rate drops below this percentage
-        max_failure_pct = int(
-            getattr(settings, "NOTIFICATIONS_ERROR_MAX_FAILURE_PCT", 50)
-        )
+        max_failure_pct = int(get_setting("notifications_error_max_failure_pct"))
         name = self.get_instance_name()
 
         window_start = timezone.now() - timedelta(hours=window_hours)
-        download_tasks = TaskHistory.objects.filter(
-            type="DOWNLOAD", started_at__gte=window_start
-        ).exclude(
-            # Auth/capability failures have their own dedicated alerts
-            # (PO Token, cookies, storage) — don't double-count them here
-            error_message__contains="Cannot download:",
+        download_tasks = (
+            TaskHistory.objects.filter(type="DOWNLOAD", started_at__gte=window_start)
+            .exclude(
+                # Auth/capability failures have their own dedicated alerts
+                error_message__contains="Cannot download:",
+            )
+            .exclude(
+                # Catalog gaps (song/album not on any provider) are expected,
+                # not system errors — don't count them toward error rate
+                error_message__startswith="Content unavailable:",
+            )
         )
         total = download_tasks.count()
         if total < min_downloads:
@@ -234,7 +237,7 @@ class NotificationService:
 
         import apprise
 
-        urls = getattr(settings, "NOTIFICATIONS_URLS", [])
+        urls = get_setting("notifications_urls")
         if not urls:
             return False
 

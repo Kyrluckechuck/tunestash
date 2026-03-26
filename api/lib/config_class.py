@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Optional
 
-from django.conf import settings
+from src.app_settings.registry import get_setting
 
 
 class Config:
@@ -13,7 +13,6 @@ class Config:
         spotify_user_auth_enabled: Optional[bool] = None,
         po_token: Optional[str] = None,
         log_level: Optional[str] = None,
-        spotdl_log_level: Optional[str] = None,
         no_lrc: Optional[bool] = None,
         overwrite: Optional[bool] = None,
         track_artists: bool = False,
@@ -23,71 +22,48 @@ class Config:
         download_provider_order: Optional[List[str]] = None,
         qobuz_use_mp3: Optional[bool] = None,
     ):
-        # Handle YouTube cookies with backwards compatibility
+        # Cookie path is now hardcoded (managed via UI cookie upload)
         self.youtube_cookies_location = youtube_cookies_location or Path(
-            getattr(
-                settings,
-                "youtube_cookies_location",
-                "/config/youtube_music_cookies.txt",
-            )
+            "/config/youtube_music_cookies.txt"
         )
-        # Legacy fallback: cookies_location → youtube_cookies_location
         if cookies_location:
             self.youtube_cookies_location = Path(cookies_location)
-        self.cookies_location = self.youtube_cookies_location  # Backwards compat
+        self.cookies_location = self.youtube_cookies_location
 
-        # Handle Spotify user authentication for private playlists
         self.spotify_user_auth_enabled = (
             spotify_user_auth_enabled
             if spotify_user_auth_enabled is not None
-            else getattr(settings, "spotify_user_auth_enabled", False)
+            else get_setting("spotify_user_auth_enabled")
         )
-        self.po_token = (
-            po_token if po_token is not None else getattr(settings, "po_token", None)
-        )
+        self.po_token = po_token if po_token is not None else get_setting("po_token")
         self.log_level = (
-            log_level
-            if log_level is not None
-            else getattr(settings, "log_level", "INFO")
-        )
-        # Legacy: kept for config compat but no longer used
-        self.spotdl_log_level = spotdl_log_level or getattr(
-            settings, "spotdl_log_level", "INFO"
+            log_level if log_level is not None else get_setting("log_level")
         )
         self.no_lrc = (
-            no_lrc if no_lrc is not None else getattr(settings, "no_lrc", False)
+            no_lrc if no_lrc is not None else get_setting("lyrics_enabled") is False
         )
         self.overwrite = (
-            overwrite
-            if overwrite is not None
-            else getattr(settings, "overwrite", False)
+            overwrite if overwrite is not None else get_setting("overwrite")
         )
 
-        # Quality preference: "high" (320kbps AAC), "lossless" (FLAC), "hi_res" (24-bit FLAC)
         self.fallback_quality = (
             fallback_quality
             if fallback_quality is not None
-            else getattr(settings, "fallback_quality", "high")
+            else get_setting("fallback_quality")
         )
 
-        # Provider order (default: try all providers for maximum success rate)
         raw_order = (
             download_provider_order
             if download_provider_order is not None
-            else getattr(
-                settings, "download_provider_order", ["youtube", "tidal", "qobuz"]
-            )
+            else get_setting("download_provider_order")
         )
-        # Map legacy "spotdl" → "youtube" (both use YouTube Music via yt-dlp)
+        # Map legacy "spotdl" -> "youtube" (both use YouTube Music via yt-dlp)
         self.download_provider_order = [
             "youtube" if p == "spotdl" else p for p in raw_order
         ]
 
-        # Qobuz format preference: if True, get MP3 directly instead of FLAC→M4A conversion
         self.qobuz_use_mp3 = (
-            qobuz_use_mp3
-            if qobuz_use_mp3 is not None
-            else getattr(settings, "qobuz_use_mp3", False)
+            qobuz_use_mp3 if qobuz_use_mp3 is not None else get_setting("qobuz_use_mp3")
         )
 
         # Direct assignments

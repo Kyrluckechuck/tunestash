@@ -90,9 +90,9 @@ def fetch_and_save_lyrics_if_enabled(
     duration_seconds: Optional[int] = None,
 ) -> bool:
     """Fetch lyrics only if lyrics_enabled is True in settings."""
-    from django.conf import settings as django_settings
+    from src.app_settings.registry import get_setting
 
-    if not getattr(django_settings, "LYRICS_ENABLED", False):
+    if not get_setting("lyrics_enabled"):
         return False
 
     return fetch_and_save_lyrics(

@@ -51,12 +51,11 @@ def check_notifications(self: Any) -> dict[str, bool]:
 )
 def send_test_notification(self: Any) -> bool:
     """Send a test notification to all configured Apprise URLs."""
-    from django.conf import settings
-
+    from src.app_settings.registry import get_setting
     from src.services.notification import NotificationService
 
-    urls = getattr(settings, "NOTIFICATIONS_URLS", [])
-    enabled = getattr(settings, "NOTIFICATIONS_ENABLED", False)
+    urls = get_setting("notifications_urls")
+    enabled = get_setting("notifications_enabled")
 
     if not enabled or not urls:
         logger.info(

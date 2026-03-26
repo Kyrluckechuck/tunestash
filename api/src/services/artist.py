@@ -3,14 +3,19 @@ import logging
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple, Union
 
-from django.conf import settings
 from django.db.models import Count, Exists, F, OuterRef, Q
 
 from asgiref.sync import sync_to_async
 
-from library_manager.models import Album
+from library_manager.models import (
+    Album,
+)
 from library_manager.models import Artist as DjangoArtist
-from library_manager.models import Song
+from library_manager.models import (
+    Song,
+    get_album_groups_to_ignore,
+    get_album_types_to_download,
+)
 
 from ..graphql_types.models import Artist, MutationResult
 from .base import BaseService
@@ -83,13 +88,8 @@ class ArtistService(BaseService[Artist]):
         # Apply has_undownloaded filter at database level using subqueries
         # This ensures proper pagination counts
         if has_undownloaded is not None:
-            # Get settings for album type filtering (must match _get_undownloaded_count)
-            album_types_to_download = getattr(
-                settings, "ALBUM_TYPES_TO_DOWNLOAD", ["single", "album", "compilation"]
-            )
-            album_groups_to_ignore = getattr(
-                settings, "ALBUM_GROUPS_TO_IGNORE", ["appears_on"]
-            )
+            album_types_to_download = get_album_types_to_download()
+            album_groups_to_ignore = get_album_groups_to_ignore()
 
             has_undownloaded_album = Exists(
                 Album.objects.filter(
@@ -539,12 +539,8 @@ class ArtistService(BaseService[Artist]):
 
     async def _get_undownloaded_count(self, django_artist: DjangoArtist) -> int:
         """Calculate undownloaded count for an artist asynchronously."""
-        album_types_to_download = getattr(
-            settings, "ALBUM_TYPES_TO_DOWNLOAD", ["single", "album", "compilation"]
-        )
-        album_groups_to_ignore = getattr(
-            settings, "ALBUM_GROUPS_TO_IGNORE", ["appears_on"]
-        )
+        album_types_to_download = get_album_types_to_download()
+        album_groups_to_ignore = get_album_groups_to_ignore()
 
         return await (
             Album.objects.filter(
