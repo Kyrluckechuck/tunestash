@@ -777,8 +777,12 @@ def scan_new_releases_for_tracked_artists(self: Any) -> None:
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.retry_missing_lyrics")
-def retry_missing_lyrics(self: Any, batch_size: int = 100) -> None:
+def retry_missing_lyrics(self: Any) -> None:
     """Retry fetching lyrics for songs that didn't have them previously.
+
+    Uses adaptive batch sizing:
+    - While fresh songs exist (attempt_count <= 1): 500 per run (backlog mode)
+    - Once all have 2+ attempts: 50 per run (maintenance mode)
 
     Queries SongLyricsStatus records where has_lyrics=False and the backoff
     period has expired. Fetches from LRClib and updates status accordingly.
@@ -795,6 +799,12 @@ def retry_missing_lyrics(self: Any, batch_size: int = 100) -> None:
     from downloader.lyrics import fetch_and_save_lyrics
 
     from ..models import SongLyricsStatus
+
+    # Adaptive batch size: large while clearing backlog, small for retries
+    fresh_count = SongLyricsStatus.objects.filter(
+        has_lyrics=False, attempt_count__lte=1
+    ).count()
+    batch_size = 500 if fresh_count > 0 else 50
 
     candidates = (
         SongLyricsStatus.objects.filter(has_lyrics=False)
@@ -836,7 +846,13 @@ def retry_missing_lyrics(self: Any, batch_size: int = 100) -> None:
             status.save(update_fields=["attempt_count", "last_attempt"])
             failed += 1
 
-    logger.info(f"Lyrics retry: {fetched} fetched, {failed} still missing")
+    logger.info(
+        "Lyrics retry (%s mode, batch=%d): %d fetched, %d still missing",
+        "backlog" if fresh_count > 0 else "maintenance",
+        batch_size,
+        fetched,
+        failed,
+    )
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.trigger_navidrome_rescan")
