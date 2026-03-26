@@ -354,10 +354,14 @@ class DownloadProviderChain:
         except Exception as e:
             logger.warning(f"[{provider_name}] Validation failed with exception: {e}")
 
-        # Step 6: Fetch lyrics (non-blocking, failure never fails download)
+        # Step 6: Clean up old .lrc files and fetch fresh lyrics (non-blocking)
         try:
-            from downloader.lyrics import fetch_and_save_lyrics_if_enabled
+            from downloader.lyrics import (
+                cleanup_misnamed_lrc,
+                fetch_and_save_lyrics_if_enabled,
+            )
 
+            cleanup_misnamed_lrc(file_path)
             fetch_and_save_lyrics_if_enabled(
                 file_path=file_path,
                 track_name=track_metadata.title,

@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from downloader.lyrics import (
+    cleanup_misnamed_lrc,
+    extract_title,
     fetch_and_save_lyrics,
     fetch_and_save_lyrics_if_enabled,
     find_existing_lrc,
@@ -67,9 +69,99 @@ class TestFindExistingLrc:
 
         assert find_existing_lrc(audio) is None
 
+    def test_title_match_old_tracknum_convention(self, tmp_path):
+        """Old spotdl: '15 Still Learning.lrc' matches 'Halsey - Still Learning.m4a'."""
+        audio = tmp_path / "Halsey - Still Learning.m4a"
+        lrc = tmp_path / "15 Still Learning.lrc"
+        audio.touch()
+        lrc.write_text("[00:00.00] lyrics")
+
+        assert find_existing_lrc(audio) == lrc
+
+    def test_title_match_disc_track_convention(self, tmp_path):
+        """Old spotdl: '1-08 All The Small Things.lrc' matches audio."""
+        audio = tmp_path / "blink-182 - All The Small Things.m4a"
+        lrc = tmp_path / "1-08 All The Small Things.lrc"
+        audio.touch()
+        lrc.write_text("[00:00.00] lyrics")
+
+        assert find_existing_lrc(audio) == lrc
+
+    def test_title_match_skipped_when_ambiguous(self, tmp_path):
+        """Multiple .lrc files matching the same title → no match (safety)."""
+        audio = tmp_path / "Artist - Song.m4a"
+        lrc1 = tmp_path / "01 Song.lrc"
+        lrc2 = tmp_path / "05 Song.lrc"
+        audio.touch()
+        lrc1.write_text("[00:00.00] lyrics v1")
+        lrc2.write_text("[00:00.00] lyrics v2")
+
+        assert find_existing_lrc(audio) is None
+
     def test_nonexistent_directory(self):
         audio = Path("/nonexistent/dir/song.m4a")
         assert find_existing_lrc(audio) is None
+
+
+class TestExtractTitle:
+    """Test title extraction from different naming conventions."""
+
+    def test_strips_track_number(self):
+        assert extract_title("15 Still Learning") == "still learning"
+
+    def test_strips_disc_track_number(self):
+        assert extract_title("1-08 All The Small Things") == "all the small things"
+
+    def test_strips_artist_prefix(self):
+        assert extract_title("Halsey - Still Learning") == "still learning"
+
+    def test_strips_multi_artist_prefix(self):
+        assert extract_title("ARMNHMR, Convex, Jex - Title") == "title"
+
+    def test_no_prefix(self):
+        assert extract_title("Just A Title") == "just a title"
+
+    def test_both_tracknum_and_artist(self):
+        # Edge case: "01 Artist - Title" → strips "01 " → "Artist - Title" → "Title"
+        assert extract_title("01 Artist - Title") == "title"
+
+
+class TestCleanupMisnamedLrc:
+    """Test cleanup of old .lrc files with mismatched naming."""
+
+    def test_removes_old_tracknum_lrc(self, tmp_path):
+        audio = tmp_path / "Halsey - Still Learning.m4a"
+        old_lrc = tmp_path / "15 Still Learning.lrc"
+        audio.touch()
+        old_lrc.write_text("[00:00.00] lyrics")
+
+        cleanup_misnamed_lrc(audio)
+
+        assert not old_lrc.exists()
+
+    def test_preserves_correctly_named_lrc(self, tmp_path):
+        audio = tmp_path / "Halsey - Still Learning.m4a"
+        correct_lrc = tmp_path / "Halsey - Still Learning.lrc"
+        audio.touch()
+        correct_lrc.write_text("[00:00.00] lyrics")
+
+        cleanup_misnamed_lrc(audio)
+
+        assert correct_lrc.exists()
+
+    def test_ignores_unrelated_lrc(self, tmp_path):
+        audio = tmp_path / "Halsey - Still Learning.m4a"
+        other_lrc = tmp_path / "08 3am.lrc"
+        audio.touch()
+        other_lrc.write_text("[00:00.00] lyrics")
+
+        cleanup_misnamed_lrc(audio)
+
+        assert other_lrc.exists()
+
+    def test_nonexistent_directory(self):
+        audio = Path("/nonexistent/dir/song.m4a")
+        cleanup_misnamed_lrc(audio)  # should not raise
 
 
 class TestFetchAndSaveLyrics:
