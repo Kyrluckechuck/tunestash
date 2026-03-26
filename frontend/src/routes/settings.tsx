@@ -412,7 +412,10 @@ function SecretControl({
             : '(not set)'}
         </span>
         <button
-          onClick={() => setEditing(true)}
+          onClick={() => {
+            setLocalValue(hasValue ? setting.value : '');
+            setEditing(true);
+          }}
           className='text-xs px-2 py-1 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors'
         >
           Change
