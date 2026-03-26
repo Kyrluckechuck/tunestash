@@ -9,6 +9,7 @@ auto-discover .lrc files for synchronized lyrics display.
 from __future__ import annotations
 
 import logging
+import re
 import unicodedata
 from pathlib import Path
 from typing import Optional
@@ -116,11 +117,33 @@ def normalize_filename(name: str) -> str:
     return "".join(c for c in lowered if c.isalnum() or c in (" ", "-"))
 
 
+def extract_title(stem: str) -> str:
+    """Extract the song title from a filename stem.
+
+    Handles two conventions:
+    - Old spotdl: ``15 Still Learning`` or ``1-08 All The Small Things``
+    - New pipeline: ``Halsey - Still Learning`` or ``ARMNHMR, Convex - Title``
+
+    Returns the normalized title portion for cross-convention matching.
+    """
+    name = stem
+    # Strip leading track/disc numbers: "15 ", "08 ", "1-08 "
+    name = re.sub(r"^\d{1,2}(-\d{1,2})?\s+", "", name)
+    # Strip leading "Artist - " or "Artist, Artist2 - " (split on first " - ")
+    if " - " in name:
+        name = name.split(" - ", 1)[1]
+    return normalize_filename(name)
+
+
 def find_existing_lrc(audio_path: Path) -> Optional[Path]:
     """Find an existing .lrc file for the given audio file.
 
-    Tries exact stem match first, then fuzzy match with accent normalization.
-    Guards against remix false positives when multiple .lrc files exist.
+    Matching tiers:
+    1. Exact stem match (same filename, different extension)
+    2. Normalized stem match (accent-stripped comparison)
+    3. Title-based match (strips track numbers and artist prefixes)
+
+    Returns the matched .lrc path, or None.
     """
     # Exact match
     exact_lrc = audio_path.with_suffix(".lrc")
@@ -143,4 +166,46 @@ def find_existing_lrc(audio_path: Path) -> Optional[Path]:
         if lrc_stem_normalized == audio_stem_normalized:
             return lrc_file
 
+    # Title-based match: strip track numbers and artist prefixes
+    audio_title = extract_title(audio_path.stem)
+    if not audio_title:
+        return None
+
+    matches = []
+    for lrc_file in lrc_files:
+        lrc_title = extract_title(lrc_file.stem)
+        if lrc_title and lrc_title == audio_title:
+            matches.append(lrc_file)
+
+    # Only return if exactly one match (avoid ambiguity)
+    if len(matches) == 1:
+        return matches[0]
+
     return None
+
+
+def cleanup_misnamed_lrc(audio_path: Path) -> None:
+    """Remove old .lrc files that match by title but have the wrong filename.
+
+    Called during downloads to clean up .lrc files left from old naming
+    conventions (e.g. spotdl's ``15 Title.lrc`` alongside new
+    ``Artist - Title.m4a``).
+    """
+    correct_lrc = audio_path.with_suffix(".lrc")
+    parent = audio_path.parent
+    if not parent.exists():
+        return
+
+    audio_title = extract_title(audio_path.stem)
+    if not audio_title:
+        return
+
+    for lrc_file in parent.glob("*.lrc"):
+        if lrc_file == correct_lrc:
+            continue
+        if extract_title(lrc_file.stem) == audio_title:
+            try:
+                lrc_file.unlink()
+                logger.info("Removed old .lrc file: %s", lrc_file.name)
+            except OSError as e:
+                logger.warning("Failed to remove old .lrc %s: %s", lrc_file, e)

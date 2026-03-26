@@ -1558,6 +1558,15 @@ def backfill_lyrics_status(self: Any, batch_size: int = 500) -> None:
             audio_path = Path(song.file_path_ref.path)  # type: ignore[attr-defined]
             existing_lrc = find_existing_lrc(audio_path)
 
+            # Rename misnamed .lrc to match the audio file so media players find it
+            if existing_lrc is not None:
+                correct_lrc = audio_path.with_suffix(".lrc")
+                if existing_lrc != correct_lrc:
+                    try:
+                        existing_lrc.rename(correct_lrc)
+                    except OSError:
+                        pass
+
             statuses_to_create.append(
                 SongLyricsStatus(
                     song=song,
