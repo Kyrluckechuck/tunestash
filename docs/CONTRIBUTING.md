@@ -18,7 +18,7 @@ Thank you for your interest in contributing! This project uses a **Docker-first 
    git clone <repository-url>
    cd tunestash
    cp .env.example .env
-   mkdir -p ./config && cp api/settings.yaml.example ./config/settings.yaml
+   mkdir -p ./config
    ```
 
 2. **Setup dependencies** (if doing any local development)

@@ -214,7 +214,8 @@ make setup  # Installs both Python and Node.js dependencies
 mkdir -p ./config
 
 # Copy example settings
-cp api/settings.yaml.example ./config/settings.yaml
+mkdir -p ./config
+# Settings are configured via the in-app Settings page on first run
 
 # Copy environment template
 cp .env.example .env
