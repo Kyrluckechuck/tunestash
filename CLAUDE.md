@@ -13,9 +13,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Setup
 1. `cp .env.example .env` - Configure environment
-2. `mkdir -p ./config && cp api/settings.yaml.example ./config/settings.yaml`
-3. Export Spotify cookies to `./config/youtube_music_cookies.txt`
-4. `make dev-container` - Start full development stack
+2. Export Spotify cookies to `./config/youtube_music_cookies.txt`
+3. `make dev-container` - Start full development stack
+4. Configure settings via the in-app Settings page on first run
 5. Access:
    - Frontend: http://localhost:3000
    - API: http://localhost:5000/graphql (internal)
@@ -123,7 +123,7 @@ This is a **full-stack music library sync application** (TuneStash) with the fol
 ### Required Configuration
 - `.env` - Docker environment variables
 - `./config/settings.yaml` - Application settings (mounted volume)
-- `./config/youtube_music_cookies.txt` - YouTube Music cookies (used by spotdl for audio sourcing)
+- `./config/youtube_music_cookies.txt` - YouTube Music cookies (used by yt-dlp for audio sourcing)
 - `docker-compose.override.yml` - Local Docker overrides (auto-created)
 
 ### Testing Configuration
@@ -268,6 +268,8 @@ The following tasks run automatically via Celery Beat (`api/celery_beat_schedule
 | `cleanup-app-metrics` | Daily (6 AM) | Removes old fallback provider metrics (older than 30 days) |
 | `cleanup-stale-tasks` | Every 5 minutes | Marks stuck/stale tasks as failed |
 | `memory-health-check` | Every 10 minutes | Monitors worker memory usage |
+| `retry-missing-lyrics` | Daily (5 AM) | Retries fetching lyrics for songs without .lrc files |
+| `trigger-navidrome-rescan` | Hourly at :45 | Triggers Navidrome library rescan if new downloads exist |
 | `check-notifications` | Every 15 minutes | Checks credentials and sends alerts via Apprise |
 
 **Note**: Celery Beat uses `DatabaseScheduler` which stores schedules in PostgreSQL. To manage schedules:
