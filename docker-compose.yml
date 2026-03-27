@@ -4,7 +4,7 @@ networks:
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-tunestash}
       POSTGRES_USER: ${POSTGRES_USER:-slm_user}
