@@ -4,14 +4,14 @@ networks:
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-tunestash}
       POSTGRES_USER: ${POSTGRES_USER:-slm_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slm_dev_password}
     shm_size: 256m
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     networks:
       - slm_net
     healthcheck:
