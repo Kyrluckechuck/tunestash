@@ -63,7 +63,7 @@ describe('Navbar', () => {
     renderNavbar();
 
     const navbar = screen.getByRole('navigation');
-    expect(navbar).toHaveClass('bg-white', 'border-b', 'border-gray-300');
+    expect(navbar).toHaveClass('bg-white', 'border-b', 'border-slate-200');
 
     const title = screen.getByText('TuneStash');
     expect(title).toHaveClass('font-extrabold', 'text-2xl');
