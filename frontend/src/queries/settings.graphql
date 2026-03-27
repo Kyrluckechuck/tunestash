@@ -52,6 +52,13 @@ mutation ResetAppSetting($key: String!) {
   }
 }
 
+query GetDeezerGenres {
+  deezerGenres {
+    id
+    name
+  }
+}
+
 mutation UploadCookieFile($content: String!) {
   uploadCookieFile(content: $content) {
     success

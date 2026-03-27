@@ -17,9 +17,6 @@ export function useSettingsPage() {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [cookieContent, setCookieContent] = useState('');
   const [showCookieUpload, setShowCookieUpload] = useState(false);
-  const [showSensitive, setShowSensitive] = useState(
-    () => localStorage.getItem('settings_show_sensitive') === 'true'
-  );
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -132,14 +129,6 @@ export function useSettingsPage() {
     }
   }, [migrateFromYaml, refetch, showStatus]);
 
-  const handleToggleSensitive = useCallback(() => {
-    setShowSensitive(prev => {
-      const next = !prev;
-      localStorage.setItem('settings_show_sensitive', String(next));
-      return next;
-    });
-  }, []);
-
   return {
     categories,
     loading,
@@ -148,10 +137,8 @@ export function useSettingsPage() {
     statusMessage,
     cookieContent,
     showCookieUpload,
-    showSensitive,
     setCookieContent,
     setShowCookieUpload,
-    handleToggleSensitive,
     handleUpdateSetting,
     handleResetSetting,
     handleUploadCookie,
