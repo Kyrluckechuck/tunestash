@@ -1,3 +1,4 @@
+import { useQuery } from '@apollo/client/react';
 import { createFileRoute } from '@tanstack/react-router';
 import React, { useState } from 'react';
 
@@ -6,6 +7,7 @@ import type {
   AppSettingType,
   SettingsCategoryType,
 } from '../hooks/useSettingsPage';
+import { GetDeezerGenresDocument } from '../types/generated/graphql';
 
 export const Route = createFileRoute('/settings')({
   component: SettingsPage,
@@ -20,10 +22,8 @@ function SettingsPage() {
     statusMessage,
     cookieContent,
     showCookieUpload,
-    showSensitive,
     setCookieContent,
     setShowCookieUpload,
-    handleToggleSensitive,
     handleUpdateSetting,
     handleResetSetting,
     handleUploadCookie,
@@ -53,16 +53,6 @@ function SettingsPage() {
           Settings
         </h1>
         <div className='flex items-center gap-3'>
-          <button
-            onClick={handleToggleSensitive}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-              showSensitive
-                ? 'bg-amber-100 dark:bg-amber-700 text-amber-800 dark:text-white'
-                : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-            }`}
-          >
-            {showSensitive ? 'Hide Secrets' : 'Show Secrets'}
-          </button>
           <button
             onClick={() => setShowCookieUpload(!showCookieUpload)}
             className='px-3 py-1.5 text-sm rounded-md bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors'
@@ -104,7 +94,6 @@ function SettingsPage() {
           key={category.category}
           category={category}
           pendingKey={pendingKey}
-          showSensitive={showSensitive}
           onUpdate={handleUpdateSetting}
           onReset={handleResetSetting}
         />
@@ -157,13 +146,11 @@ function CookieUploadSection({
 function SettingsSection({
   category,
   pendingKey,
-  showSensitive,
   onUpdate,
   onReset,
 }: {
   category: SettingsCategoryType;
   pendingKey: string | null;
-  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
   onReset: (key: string) => void;
 }) {
@@ -180,7 +167,6 @@ function SettingsSection({
             key={setting.key}
             setting={setting}
             isPending={pendingKey === setting.key}
-            showSensitive={showSensitive}
             onUpdate={onUpdate}
             onReset={onReset}
           />
@@ -193,13 +179,11 @@ function SettingsSection({
 function SettingRow({
   setting,
   isPending,
-  showSensitive,
   onUpdate,
   onReset,
 }: {
   setting: AppSettingType;
   isPending: boolean;
-  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
   onReset: (key: string) => void;
 }) {
@@ -224,11 +208,7 @@ function SettingRow({
         </p>
       </div>
       <div className='flex items-center gap-2 shrink-0'>
-        <SettingControl
-          setting={setting}
-          showSensitive={showSensitive}
-          onUpdate={onUpdate}
-        />
+        <SettingControl setting={setting} onUpdate={onUpdate} />
         {!setting.isDefault && (
           <button
             onClick={() => onReset(setting.key)}
@@ -245,11 +225,9 @@ function SettingRow({
 
 function SettingControl({
   setting,
-  showSensitive,
   onUpdate,
 }: {
   setting: AppSettingType;
-  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
 }) {
   if (setting.type === 'bool') {
@@ -265,23 +243,14 @@ function SettingControl({
   if (setting.type === 'int' || setting.type === 'float') {
     return <NumberControl setting={setting} onUpdate={onUpdate} />;
   }
+  if (setting.key === 'new_releases_genre_ids') {
+    return <GenreSelector setting={setting} onUpdate={onUpdate} />;
+  }
   if (setting.type === 'list') {
-    return (
-      <ListControl
-        setting={setting}
-        showSensitive={showSensitive}
-        onUpdate={onUpdate}
-      />
-    );
+    return <ListControl setting={setting} onUpdate={onUpdate} />;
   }
   if (setting.type === 'secret') {
-    return (
-      <SecretControl
-        setting={setting}
-        showSensitive={showSensitive}
-        onUpdate={onUpdate}
-      />
-    );
+    return <SecretControl setting={setting} onUpdate={onUpdate} />;
   }
   return <TextControl setting={setting} onUpdate={onUpdate} />;
 }
@@ -390,14 +359,13 @@ function TextControl({
 
 function SecretControl({
   setting,
-  showSensitive,
   onUpdate,
 }: {
   setting: AppSettingType;
-  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [revealed, setRevealed] = useState(false);
   const [localValue, setLocalValue] = useState('');
   const hasValue = setting.value && !setting.isDefault;
 
@@ -406,11 +374,19 @@ function SecretControl({
       <div className='flex items-center gap-2'>
         <span className='text-sm text-gray-500 dark:text-gray-400 font-mono max-w-xs truncate'>
           {hasValue
-            ? showSensitive
+            ? revealed
               ? setting.value
               : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'
             : '(not set)'}
         </span>
+        {hasValue && (
+          <button
+            onClick={() => setRevealed(r => !r)}
+            className='text-xs px-2 py-1 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors'
+          >
+            {revealed ? 'Hide' : 'Show'}
+          </button>
+        )}
         <button
           onClick={() => {
             setLocalValue(hasValue ? setting.value : '');
@@ -418,7 +394,7 @@ function SecretControl({
           }}
           className='text-xs px-2 py-1 rounded text-[var(--color-accent)] dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors'
         >
-          Change
+          Edit
         </button>
       </div>
     );
@@ -427,11 +403,14 @@ function SecretControl({
   return (
     <div className='flex items-center gap-2'>
       <input
-        type='password'
+        type='text'
         value={localValue}
         onChange={e => setLocalValue(e.target.value)}
         placeholder='Enter new value...'
         className='w-48 text-sm px-2 py-1 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100'
+        autoComplete='off'
+        data-1p-ignore
+        data-lpignore='true'
         autoFocus
       />
       <button
@@ -459,11 +438,9 @@ function SecretControl({
 
 function ListControl({
   setting,
-  showSensitive,
   onUpdate,
 }: {
   setting: AppSettingType;
-  showSensitive: boolean;
   onUpdate: (key: string, value: string) => void;
 }) {
   let currentList: string[] = [];
@@ -479,8 +456,9 @@ function ListControl({
   const hasOptions = !!(setting.options && setting.options.length > 0);
   const isSensitive = setting.sensitive;
 
+  const [revealed, setRevealed] = useState(false);
   const [localValue, setLocalValue] = useState(
-    Array.isArray(currentList) ? currentList.join(', ') : setting.value
+    Array.isArray(currentList) ? currentList.join('\n') : setting.value
   );
 
   if (hasOptions) {
@@ -511,11 +489,21 @@ function ListControl({
     );
   }
 
-  if (isSensitive && !showSensitive && currentList.length > 0) {
+  if (isSensitive && !revealed) {
     return (
-      <span className='text-sm text-gray-500 dark:text-gray-400 font-mono'>
-        {currentList.length} URL{currentList.length !== 1 ? 's' : ''} configured
-      </span>
+      <div className='flex items-center gap-2'>
+        <span className='text-sm text-gray-500 dark:text-gray-400 font-mono'>
+          {currentList.length > 0
+            ? `${currentList.length} URL${currentList.length !== 1 ? 's' : ''} configured`
+            : '(not set)'}
+        </span>
+        <button
+          onClick={() => setRevealed(true)}
+          className='text-xs px-2 py-1 rounded text-[var(--color-accent)] dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors'
+        >
+          Edit
+        </button>
+      </div>
     );
   }
 
@@ -532,9 +520,74 @@ function ListControl({
           onUpdate(setting.key, JSON.stringify(items));
         }}
         placeholder='One per line, or comma-separated'
-        rows={Math.max(2, currentList.length)}
+        rows={Math.max(2, currentList.length + 1)}
         className='w-64 text-sm px-2 py-1 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 font-mono resize-y'
+        autoComplete='off'
+        data-1p-ignore
+        data-lpignore='true'
       />
+      {isSensitive && (
+        <button
+          onClick={() => setRevealed(false)}
+          className='text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 self-end'
+        >
+          Hide
+        </button>
+      )}
+    </div>
+  );
+}
+
+function GenreSelector({
+  setting,
+  onUpdate,
+}: {
+  setting: AppSettingType;
+  onUpdate: (key: string, value: string) => void;
+}) {
+  const { data, loading } = useQuery(GetDeezerGenresDocument, {
+    fetchPolicy: 'cache-first',
+  });
+
+  let selectedIds: number[] = [];
+  try {
+    const parsed = JSON.parse(setting.value);
+    if (Array.isArray(parsed)) selectedIds = parsed.map(Number);
+  } catch {
+    selectedIds = [0];
+  }
+
+  const genres = data?.deezerGenres ?? [];
+
+  if (loading && genres.length === 0) {
+    return <span className='text-sm text-slate-400'>Loading genres...</span>;
+  }
+
+  const toggle = (id: number) => {
+    const next = selectedIds.includes(id)
+      ? selectedIds.filter(v => v !== id)
+      : [...selectedIds, id];
+    onUpdate(setting.key, JSON.stringify(next.length > 0 ? next : [0]));
+  };
+
+  return (
+    <div className='flex flex-wrap gap-1.5 max-w-md'>
+      {genres.map(genre => {
+        const isSelected = selectedIds.includes(genre.id);
+        return (
+          <button
+            key={genre.id}
+            onClick={() => toggle(genre.id)}
+            className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+              isSelected
+                ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                : 'bg-gray-50 dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400'
+            }`}
+          >
+            {genre.name}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -46,6 +46,12 @@ class YamlMigrationResult:
     message: str
 
 
+@strawberry.type
+class DeezerGenreType:
+    id: int
+    name: str
+
+
 def dict_to_setting_type(data: dict[str, Any]) -> AppSettingType:
     """Convert a service dict to an AppSettingType."""
     return AppSettingType(

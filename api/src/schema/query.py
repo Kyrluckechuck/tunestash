@@ -45,6 +45,7 @@ from ..graphql_types.models import (
 )
 from ..graphql_types.settings import (
     AppSettingType,
+    DeezerGenreType,
     SettingsCategoryType,
     dict_to_category_type,
     dict_to_setting_type,
@@ -749,3 +750,8 @@ class Query:  # pylint: disable=too-many-public-methods
             if s["key"] == key.lower():
                 return dict_to_setting_type(s)
         return None
+
+    @strawberry.field
+    async def deezer_genres(self) -> List[DeezerGenreType]:
+        """Get available Deezer editorial genres for new releases scanning."""
+        return await services.settings.get_deezer_genres()

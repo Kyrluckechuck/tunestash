@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,11 @@ from src.app_settings.registry import (
 logger = logging.getLogger(__name__)
 
 COOKIE_FILE_PATH = Path("/config/youtube_music_cookies.txt")
+
+# Simple cache for Deezer genres (rarely changes)
+_genre_cache: list[Any] = []
+_genre_cache_time: float = 0
+_GENRE_CACHE_TTL = 3600  # 1 hour
 
 
 class SettingsService:
@@ -82,6 +88,38 @@ class SettingsService:
                     }
                 )
         return categories
+
+    # ── Deezer genres ─────────────────────────────────────────────────────
+
+    async def get_deezer_genres(self) -> list[Any]:
+        """Fetch Deezer editorial genres, cached for 1 hour."""
+        from src.graphql_types.settings import DeezerGenreType
+
+        global _genre_cache, _genre_cache_time  # pylint: disable=global-statement
+
+        if _genre_cache and (time.monotonic() - _genre_cache_time) < _GENRE_CACHE_TTL:
+            return _genre_cache
+
+        import requests
+
+        try:
+            resp = requests.get(
+                "https://api.deezer.com/editorial",
+                timeout=10,
+                headers={"User-Agent": "TuneStash/1.0"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            genres = [
+                DeezerGenreType(id=g["id"], name=g["name"])
+                for g in data.get("data", [])
+            ]
+            _genre_cache = genres
+            _genre_cache_time = time.monotonic()
+            return genres
+        except Exception as exc:
+            logger.warning("Failed to fetch Deezer genres: %s", exc)
+            return _genre_cache or []
 
     # ── Write ─────────────────────────────────────────────────────────────
 

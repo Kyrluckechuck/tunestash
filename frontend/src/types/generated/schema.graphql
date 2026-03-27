@@ -121,6 +121,11 @@ type CatalogSearchTrack {
   providerId: String!
 }
 
+type DeezerGenreType {
+  id: Int!
+  name: String!
+}
+
 type CookieUploadResult {
   message: String!
   success: Boolean!
@@ -435,6 +440,7 @@ type PlaylistInfo {
 type Query {
   appSetting(key: String!): AppSettingType
   appSettings: [SettingsCategoryType!]!
+  deezerGenres: [DeezerGenreType!]!
   album(id: String!): Album
   albums(after: String = null, artistId: Int = null, downloaded: Boolean = null, first: Int = 20, search: String = null, sortBy: String = null, sortDirection: String = null, wanted: Boolean = null): AlbumConnection!
   artist(id: String!): Artist
