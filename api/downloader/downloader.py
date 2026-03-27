@@ -139,7 +139,3 @@ class SpotifyPlaylistClient:
             pass
 
         return None
-
-
-# Backward-compat alias
-Downloader = SpotifyPlaylistClient

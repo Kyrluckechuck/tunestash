@@ -97,115 +97,118 @@ def apply_metadata_update(self: Any, update_id: int) -> None:
         )
         return
 
-    # Update the entity's name in the database
-    old_name = entity.name
-    entity.name = update.new_value
-    entity.save()
-    logger.info(
-        f"Updated {model_name} #{entity.id} name: '{old_name}' → '{update.new_value}'"
-    )
-
-    update_task_progress(task_history, 0.2, "Collecting affected songs...")
-
-    # Collect songs that need re-downloading
-    songs_to_redownload: List[Song] = []
-    old_file_paths: List[str] = []
-
-    if model_name == "artist":
-        # All downloaded songs by this artist
-        songs_to_redownload = list(
-            Song.objects.filter(
-                primary_artist_id=entity.id,
-                downloaded=True,
-            )
+    try:
+        # Update the entity's name in the database
+        old_name = entity.name
+        entity.name = update.new_value
+        entity.save()
+        logger.info(
+            f"Updated {model_name} #{entity.id} name: "
+            f"'{old_name}' → '{update.new_value}'"
         )
-    elif model_name == "album":
-        # All downloaded songs in this album
-        songs_to_redownload = list(
-            Song.objects.filter(
-                album_id=entity.id,
-                downloaded=True,
-            )
-        )
-    elif model_name == "song":
-        # Just this song if downloaded
-        if entity.downloaded:
-            songs_to_redownload = [entity]
 
-    # Store old paths and mark songs for re-download
-    for song in songs_to_redownload:
-        if song.file_path:
-            old_file_paths.append(song.file_path)
-        song.downloaded = False
-        song.save()
+        update_task_progress(task_history, 0.2, "Collecting affected songs...")
 
-    update_task_progress(
-        task_history, 0.3, f"Marked {len(songs_to_redownload)} songs for re-download..."
-    )
+        # Collect songs that need re-downloading
+        songs_to_redownload: List[Song] = []
+        old_file_paths: List[str] = []
 
-    if check_task_cancellation(task_history):
-        return
-
-    # Queue re-downloads
-    if songs_to_redownload:
         if model_name == "artist":
-            # Queue album downloads for this artist
-            from library_manager.tasks import download_missing_albums_for_artist
-
-            download_missing_albums_for_artist.delay(entity.id)
-            logger.info(
-                f"Queued download_missing_albums_for_artist for artist #{entity.id}"
+            songs_to_redownload = list(
+                Song.objects.filter(
+                    primary_artist_id=entity.id,
+                    downloaded=True,
+                )
             )
         elif model_name == "album":
-            # Queue single album download
-            from library_manager.tasks import download_single_album
-
-            download_single_album.delay(entity.id)
-            logger.info(f"Queued download_single_album for album #{entity.id}")
-        elif model_name == "song":
-            if entity.deezer_id:
-                from library_manager.tasks import download_deezer_track
-
-                download_deezer_track.delay(entity.id)
-                logger.info(f"Queued download_deezer_track for song #{entity.id}")
-            elif entity.gid:
-                from library_manager.tasks import download_track_by_spotify_gid
-
-                download_track_by_spotify_gid.delay(entity.gid)
-                logger.info(
-                    f"Queued download_track_by_spotify_gid for song #{entity.id}"
+            songs_to_redownload = list(
+                Song.objects.filter(
+                    album_id=entity.id,
+                    downloaded=True,
                 )
+            )
+        elif model_name == "song":
+            if entity.downloaded:
+                songs_to_redownload = [entity]
 
-    update_task_progress(task_history, 0.7, "Scheduling file cleanup...")
+        # Store old paths and mark songs for re-download
+        for song in songs_to_redownload:
+            if song.file_path:
+                old_file_paths.append(song.file_path)
+            song.downloaded = False
+            song.save()
 
-    # Queue cleanup of old files (after a delay to allow re-downloads to complete)
-    if old_file_paths:
-        cleanup_old_files.apply_async(
-            args=[old_file_paths],
-            countdown=300,  # 5 minute delay
+        update_task_progress(
+            task_history,
+            0.3,
+            f"Marked {len(songs_to_redownload)} songs for re-download...",
         )
-        logger.info(f"Scheduled cleanup of {len(old_file_paths)} old files")
 
-    # Mark update as applied
-    update.mark_applied()
+        if check_task_cancellation(task_history):
+            return
 
-    update_task_progress(task_history, 0.9, "Cleaning up superseded updates...")
+        # Queue re-downloads
+        if songs_to_redownload:
+            if model_name == "artist":
+                from library_manager.tasks import download_missing_albums_for_artist
 
-    # Dismiss any superseded child updates
-    if model_name == "artist":
-        dismissed = dismiss_superseded_updates(artist_id=entity.id)
-        if dismissed > 0:
-            logger.info(f"Auto-dismissed {dismissed} superseded updates")
-    elif model_name == "album":
-        dismissed = dismiss_superseded_updates(album_id=entity.id)
-        if dismissed > 0:
-            logger.info(f"Auto-dismissed {dismissed} superseded updates")
+                download_missing_albums_for_artist.delay(entity.id)
+                logger.info(
+                    f"Queued download_missing_albums_for_artist for artist #{entity.id}"
+                )
+            elif model_name == "album":
+                from library_manager.tasks import download_single_album
 
-    logger.info(
-        f"Applied metadata update: '{old_name}' → '{update.new_value}' "
-        f"({len(songs_to_redownload)} songs queued for re-download)"
-    )
-    complete_task(task_history, success=True)
+                download_single_album.delay(entity.id)
+                logger.info(f"Queued download_single_album for album #{entity.id}")
+            elif model_name == "song":
+                if entity.deezer_id:
+                    from library_manager.tasks import download_deezer_track
+
+                    download_deezer_track.delay(entity.id)
+                    logger.info(f"Queued download_deezer_track for song #{entity.id}")
+                elif entity.gid:
+                    from library_manager.tasks import download_track_by_spotify_gid
+
+                    download_track_by_spotify_gid.delay(entity.gid)
+                    logger.info(
+                        f"Queued download_track_by_spotify_gid for song #{entity.id}"
+                    )
+
+        update_task_progress(task_history, 0.7, "Scheduling file cleanup...")
+
+        # Queue cleanup of old files (after a delay to allow re-downloads to complete)
+        if old_file_paths:
+            cleanup_old_files.apply_async(
+                args=[old_file_paths],
+                countdown=300,  # 5 minute delay
+            )
+            logger.info(f"Scheduled cleanup of {len(old_file_paths)} old files")
+
+        # Mark update as applied
+        update.mark_applied()
+
+        update_task_progress(task_history, 0.9, "Cleaning up superseded updates...")
+
+        # Dismiss any superseded child updates
+        if model_name == "artist":
+            dismissed = dismiss_superseded_updates(artist_id=entity.id)
+            if dismissed > 0:
+                logger.info(f"Auto-dismissed {dismissed} superseded updates")
+        elif model_name == "album":
+            dismissed = dismiss_superseded_updates(album_id=entity.id)
+            if dismissed > 0:
+                logger.info(f"Auto-dismissed {dismissed} superseded updates")
+
+        logger.info(
+            f"Applied metadata update: '{old_name}' → '{update.new_value}' "
+            f"({len(songs_to_redownload)} songs queued for re-download)"
+        )
+        complete_task(task_history, success=True)
+    except Exception as e:
+        logger.error(f"Error applying metadata update #{update_id}: {e}")
+        complete_task(task_history, success=False, error_message=str(e))
+        raise
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.cleanup_old_files")

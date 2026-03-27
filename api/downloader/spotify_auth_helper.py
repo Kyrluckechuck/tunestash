@@ -1,5 +1,5 @@
 """
-Helper module for integrating Spotify OAuth tokens with SpotDL.
+Helper module for Spotify OAuth token management.
 
 Provides functionality to check for stored OAuth tokens and use them
 with spotipy for accessing private playlists.
