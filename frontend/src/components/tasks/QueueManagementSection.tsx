@@ -156,14 +156,14 @@ export function QueueManagementSection() {
 
   return (
     <>
-      <div className='bg-white rounded-lg shadow-sm border border-gray-200'>
-        <div className='px-6 py-4 border-b border-gray-200'>
+      <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
+        <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
           <div className='flex items-center justify-between'>
-            <h2 className='text-lg font-semibold text-gray-900'>
+            <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
               Celery Task Queue
             </h2>
             <div className='flex items-center gap-2'>
-              <span className='text-sm text-gray-600'>
+              <span className='text-sm text-gray-600 dark:text-slate-400'>
                 {queueLoading
                   ? 'Loading...'
                   : `${totalPendingTasks} pending tasks`}
@@ -174,7 +174,7 @@ export function QueueManagementSection() {
 
         <div className='p-6'>
           {totalPendingTasks === 0 ? (
-            <div className='text-center py-8 text-gray-500'>
+            <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
               <div className='text-4xl mb-4'>✅</div>
               <p>No tasks queued</p>
               <p className='text-sm'>
@@ -188,10 +188,10 @@ export function QueueManagementSection() {
                 {taskCounts.map((taskCount: TaskCount) => (
                   <div
                     key={taskCount.taskName}
-                    className='flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg border border-gray-200'
+                    className='flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700'
                   >
                     <div className='flex items-center gap-3 min-w-0'>
-                      <span className='text-sm font-medium text-gray-900 truncate'>
+                      <span className='text-sm font-medium text-gray-900 dark:text-slate-100 truncate'>
                         {formatTaskName(taskCount.taskName)}
                       </span>
                       <span className='flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800'>
@@ -202,7 +202,7 @@ export function QueueManagementSection() {
                       onClick={() =>
                         handleCancelTasksByName(taskCount.taskName)
                       }
-                      className='flex-shrink-0 ml-3 px-2 py-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors'
+                      className='flex-shrink-0 ml-3 px-2 py-1 text-xs text-red-600 dark:text-red-400 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-950 rounded transition-colors'
                       title={`Cancel all ${formatTaskName(taskCount.taskName)} tasks`}
                     >
                       Cancel All
@@ -216,7 +216,7 @@ export function QueueManagementSection() {
                 <div className='pt-2'>
                   <button
                     onClick={() => setShowIndividualTasks(!showIndividualTasks)}
-                    className='text-sm text-indigo-600 hover:text-indigo-800 hover:underline'
+                    className='text-sm text-indigo-600 dark:text-blue-400 hover:text-indigo-800 dark:hover:text-blue-300 hover:underline'
                   >
                     {showIndividualTasks
                       ? '▼ Hide individual tasks'
@@ -227,22 +227,22 @@ export function QueueManagementSection() {
 
               {/* Individual Tasks List */}
               {showIndividualTasks && pendingTasks.length > 0 && (
-                <div className='space-y-1 max-h-80 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50'>
+                <div className='space-y-1 max-h-80 overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-lg p-2 bg-gray-50 dark:bg-slate-900'>
                   {pendingTasks.map((task: PendingTask) => (
                     <div
                       key={task.taskId}
-                      className='flex items-center justify-between py-1.5 px-2 bg-white rounded border border-gray-100 hover:border-gray-200 transition-colors'
+                      className='flex items-center justify-between py-1.5 px-2 bg-white dark:bg-slate-800 rounded border border-gray-100 dark:border-slate-700 hover:border-gray-200 dark:hover:border-slate-600 transition-colors'
                     >
                       <div className='flex items-center gap-2 min-w-0 flex-1'>
                         <span className='flex-shrink-0'>
                           {getEntityIcon(task.entityType)}
                         </span>
                         <div className='min-w-0 flex-1'>
-                          <span className='text-xs font-medium text-gray-700 truncate block'>
+                          <span className='text-xs font-medium text-gray-700 dark:text-slate-300 truncate block'>
                             {task.displayName}
                           </span>
                           {task.entityName && (
-                            <span className='text-xs text-gray-500 truncate block'>
+                            <span className='text-xs text-gray-500 dark:text-slate-400 truncate block'>
                               {task.entityName}
                             </span>
                           )}
@@ -253,7 +253,7 @@ export function QueueManagementSection() {
                               ? 'bg-yellow-100 text-yellow-800'
                               : task.status === 'RETRY'
                                 ? 'bg-orange-100 text-orange-800'
-                                : 'bg-gray-100 text-gray-700'
+                                : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300'
                           }`}
                         >
                           {task.status}
@@ -263,7 +263,7 @@ export function QueueManagementSection() {
                         onClick={() =>
                           handleCancelTaskById(task.taskId, task.displayName)
                         }
-                        className='flex-shrink-0 ml-2 p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors'
+                        className='flex-shrink-0 ml-2 p-1 text-gray-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 rounded transition-colors'
                         title='Cancel this task'
                       >
                         <svg
@@ -285,7 +285,7 @@ export function QueueManagementSection() {
                 </div>
               )}
 
-              <div className='flex justify-center pt-4 border-t border-gray-200'>
+              <div className='flex justify-center pt-4 border-t border-gray-200 dark:border-slate-700'>
                 <button
                   onClick={handleCancelAllTasks}
                   className='px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium'

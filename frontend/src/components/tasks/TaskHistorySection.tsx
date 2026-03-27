@@ -68,18 +68,20 @@ export function TaskHistorySection({
   const relativeTime = useRelativeTime(lastUpdated);
 
   return (
-    <div className='bg-white rounded-lg shadow-sm border border-gray-200'>
-      <div className='px-6 py-4 border-b border-gray-200'>
+    <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
+      <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-3'>
-            <h2 className='text-lg font-semibold text-gray-900'>
+            <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
               Task History
             </h2>
-            <div className='flex items-center gap-1.5 text-xs text-gray-500'>
+            <div className='flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400'>
               {isRefreshing ? (
                 <>
                   <div className='animate-spin rounded-full h-3 w-3 border-2 border-blue-500 border-t-transparent' />
-                  <span className='text-blue-600'>Updating...</span>
+                  <span className='text-blue-600 dark:text-blue-400'>
+                    Updating...
+                  </span>
                 </>
               ) : (
                 <>
@@ -114,7 +116,7 @@ export function TaskHistorySection({
             <select
               value={statusFilter}
               onChange={e => onStatusFilterChange(e.target.value as TaskStatus)}
-              className='px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+              className='px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-800 dark:text-slate-100'
             >
               <option value='all'>All Status</option>
               <option value='running'>Running</option>
@@ -125,7 +127,7 @@ export function TaskHistorySection({
             <select
               value={typeFilter}
               onChange={e => onTypeFilterChange(e.target.value as TaskType)}
-              className='px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+              className='px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-800 dark:text-slate-100'
             >
               <option value='all'>All Types</option>
               <option value='sync'>Sync</option>
@@ -135,7 +137,7 @@ export function TaskHistorySection({
             <select
               value={entityFilter}
               onChange={e => onEntityFilterChange(e.target.value as EntityType)}
-              className='px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+              className='px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-800 dark:text-slate-100'
             >
               <option value='all'>All Entities</option>
               <option value='artist'>Artist</option>
@@ -155,14 +157,16 @@ export function TaskHistorySection({
         {loading && !isRefreshing && !data ? (
           <div className='text-center py-8'>
             <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto' />
-            <p className='mt-2 text-gray-600'>Loading task history...</p>
+            <p className='mt-2 text-gray-600 dark:text-slate-400'>
+              Loading task history...
+            </p>
           </div>
         ) : error ? (
-          <div className='text-center py-8 text-red-600'>
+          <div className='text-center py-8 text-red-600 dark:text-red-400'>
             <p>Error loading task history: {error.message}</p>
           </div>
         ) : data?.taskHistory?.edges?.length === 0 ? (
-          <div className='text-center py-8 text-gray-500'>
+          <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
             <div className='text-4xl mb-4'>📝</div>
             <p>No task history found</p>
             <p className='text-sm'>
@@ -172,45 +176,48 @@ export function TaskHistorySection({
         ) : (
           <div className='space-y-3'>
             <div className='overflow-x-auto'>
-              <table className='min-w-full divide-y divide-gray-200 text-sm'>
-                <thead className='bg-gray-50'>
+              <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-sm'>
+                <thead className='bg-gray-50 dark:bg-slate-900'>
                   <tr>
-                    <th className='px-3 py-2 text-left font-medium text-gray-700'>
+                    <th className='px-3 py-2 text-left font-medium text-gray-700 dark:text-slate-300'>
                       Status
                     </th>
-                    <th className='px-3 py-2 text-left font-medium text-gray-700'>
+                    <th className='px-3 py-2 text-left font-medium text-gray-700 dark:text-slate-300'>
                       Type
                     </th>
-                    <th className='px-3 py-2 text-left font-medium text-gray-700 w-48'>
+                    <th className='px-3 py-2 text-left font-medium text-gray-700 dark:text-slate-300 w-48'>
                       Entity
                     </th>
-                    <th className='px-3 py-2 text-left font-medium text-gray-700'>
+                    <th className='px-3 py-2 text-left font-medium text-gray-700 dark:text-slate-300'>
                       Task ID
                     </th>
-                    <th className='px-3 py-2 text-left font-medium text-gray-700'>
+                    <th className='px-3 py-2 text-left font-medium text-gray-700 dark:text-slate-300'>
                       Started
                     </th>
-                    <th className='px-3 py-2 text-left font-medium text-gray-700'>
+                    <th className='px-3 py-2 text-left font-medium text-gray-700 dark:text-slate-300'>
                       Completed
                     </th>
-                    <th className='px-3 py-2 text-left font-medium text-gray-700'>
+                    <th className='px-3 py-2 text-left font-medium text-gray-700 dark:text-slate-300'>
                       Duration
                     </th>
-                    <th className='px-3 py-2 text-left font-medium text-gray-700'>
+                    <th className='px-3 py-2 text-left font-medium text-gray-700 dark:text-slate-300'>
                       Progress
                     </th>
-                    <th className='px-3 py-2 text-left font-medium text-gray-700'>
+                    <th className='px-3 py-2 text-left font-medium text-gray-700 dark:text-slate-300'>
                       Logs
                     </th>
                   </tr>
                 </thead>
-                <tbody className='divide-y divide-gray-100'>
+                <tbody className='divide-y divide-gray-100 dark:divide-slate-700'>
                   {data?.taskHistory?.edges?.map((edge: TaskHistoryEdge) => {
                     const task = edge.node;
                     const isLogsOpen = !!expandedLogs[task.id];
                     return (
                       <>
-                        <tr key={task.id} className='hover:bg-gray-50'>
+                        <tr
+                          key={task.id}
+                          className='hover:bg-gray-50 dark:hover:bg-slate-700'
+                        >
                           <td className='px-3 py-2 whitespace-nowrap'>
                             <span
                               className={`inline-block w-2.5 h-2.5 rounded-full align-middle ${
@@ -224,34 +231,34 @@ export function TaskHistorySection({
                               }`}
                               title={task.status}
                             />
-                            <span className='ml-2 text-gray-700 text-xs sm:text-sm'>
+                            <span className='ml-2 text-gray-700 dark:text-slate-300 text-xs sm:text-sm'>
                               {task.status}
                             </span>
                           </td>
-                          <td className='px-3 py-2 whitespace-nowrap text-gray-900'>
+                          <td className='px-3 py-2 whitespace-nowrap text-gray-900 dark:text-slate-100'>
                             {task.type.charAt(0).toUpperCase() +
                               task.type.slice(1)}
                           </td>
-                          <td className='px-3 py-2 text-gray-700 max-w-xs'>
+                          <td className='px-3 py-2 text-gray-700 dark:text-slate-300 max-w-xs'>
                             <EnhancedEntityDisplay
                               entityType={task.entityType}
                               entityId={task.entityId}
                               compact={true}
                             />
                           </td>
-                          <td className='px-3 py-2 whitespace-nowrap text-gray-700'>
+                          <td className='px-3 py-2 whitespace-nowrap text-gray-700 dark:text-slate-300'>
                             <span className='font-mono text-xs'>
                               {task.taskId}
                             </span>
                           </td>
                           <td
-                            className='px-3 py-2 whitespace-nowrap text-gray-700'
+                            className='px-3 py-2 whitespace-nowrap text-gray-700 dark:text-slate-300'
                             title={new Date(task.startedAt).toLocaleString()}
                           >
                             {new Date(task.startedAt).toLocaleTimeString()}
                           </td>
                           <td
-                            className='px-3 py-2 whitespace-nowrap text-gray-700'
+                            className='px-3 py-2 whitespace-nowrap text-gray-700 dark:text-slate-300'
                             title={
                               task.completedAt
                                 ? new Date(task.completedAt).toLocaleString()
@@ -262,12 +269,12 @@ export function TaskHistorySection({
                               ? new Date(task.completedAt).toLocaleTimeString()
                               : '-'}
                           </td>
-                          <td className='px-3 py-2 whitespace-nowrap text-gray-700'>
+                          <td className='px-3 py-2 whitespace-nowrap text-gray-700 dark:text-slate-300'>
                             {task.durationSeconds
                               ? `${task.durationSeconds}s`
                               : '-'}
                           </td>
-                          <td className='px-3 py-2 whitespace-nowrap text-gray-700'>
+                          <td className='px-3 py-2 whitespace-nowrap text-gray-700 dark:text-slate-300'>
                             {task.progressPercentage !== null &&
                             task.progressPercentage !== undefined
                               ? `${task.progressPercentage}%`
@@ -277,7 +284,7 @@ export function TaskHistorySection({
                             {task.logMessages && task.logMessages.length > 0 ? (
                               <button
                                 type='button'
-                                className='text-indigo-600 hover:underline text-sm'
+                                className='text-indigo-600 dark:text-blue-400 hover:underline text-sm'
                                 onClick={() =>
                                   setExpandedLogs(prev => ({
                                     ...prev,
@@ -291,7 +298,7 @@ export function TaskHistorySection({
                                   : `Show logs (${task.logMessages.length})`}
                               </button>
                             ) : (
-                              <span className='text-gray-400 text-sm'>
+                              <span className='text-gray-400 dark:text-slate-500 text-sm'>
                                 None
                               </span>
                             )}
@@ -300,7 +307,7 @@ export function TaskHistorySection({
                         {isLogsOpen && task.logMessages && (
                           <tr>
                             <td colSpan={9} className='px-3 pb-3'>
-                              <div className='mt-1 bg-gray-50 rounded p-3 text-xs sm:text-sm font-mono text-gray-700 max-h-40 overflow-y-auto'>
+                              <div className='mt-1 bg-gray-50 dark:bg-slate-900 rounded p-3 text-xs sm:text-sm font-mono text-gray-700 dark:text-slate-300 max-h-40 overflow-y-auto'>
                                 {task.logMessages.map(
                                   (log: string, idx: number) => (
                                     <div

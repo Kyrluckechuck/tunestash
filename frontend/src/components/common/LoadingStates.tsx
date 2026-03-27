@@ -33,9 +33,9 @@ export function LoadingOverlay({
 }: LoadingOverlayProps) {
   return (
     <div
-      className={`absolute inset-0 bg-white bg-opacity-50 flex items-center justify-center pointer-events-none ${className}`}
+      className={`absolute inset-0 bg-white dark:bg-slate-800 bg-opacity-50 dark:bg-opacity-50 flex items-center justify-center pointer-events-none ${className}`}
     >
-      <div className='flex items-center gap-2 text-sm text-gray-600'>
+      <div className='flex items-center gap-2 text-sm text-gray-600 dark:text-slate-400'>
         <LoadingSpinner size='sm' />
         <span>{message}</span>
       </div>
@@ -54,7 +54,7 @@ export function LoadingCard({
 }: LoadingCardProps) {
   return (
     <div
-      className={`bg-white rounded shadow p-6 min-h-[200px] flex items-center justify-center text-gray-400 ${className}`}
+      className={`bg-white dark:bg-slate-800 rounded shadow p-6 min-h-[200px] flex items-center justify-center text-gray-400 dark:text-slate-500 ${className}`}
     >
       <div className='flex items-center gap-2'>
         <LoadingSpinner size='sm' />

@@ -186,10 +186,12 @@ export function PlaylistModal({
 
   return (
     <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'>
-      <div className='bg-white rounded-lg shadow-xl max-w-md w-full mx-4'>
-        <div className='px-6 py-4 border-b border-gray-200'>
-          <h3 className='text-lg font-semibold text-gray-900'>{title}</h3>
-          <p className='text-sm text-gray-600 mt-1'>
+      <div className='bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full mx-4'>
+        <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
+          <h3 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
+            {title}
+          </h3>
+          <p className='text-sm text-gray-600 dark:text-slate-400 mt-1'>
             {mode === 'create'
               ? 'Create a new playlist and choose whether to auto-track artists'
               : 'Update the playlist name'}
@@ -200,7 +202,7 @@ export function PlaylistModal({
           <div className='mb-4'>
             <label
               htmlFor='url'
-              className='block text-sm font-medium text-gray-700 mb-2'
+              className='block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2'
             >
               Playlist URL
             </label>
@@ -210,10 +212,10 @@ export function PlaylistModal({
               value={url}
               onChange={e => setUrl(e.target.value)}
               placeholder='Spotify or Deezer playlist URL'
-              className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
+              className='w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-slate-700 dark:text-slate-100'
               disabled={isSubmitting}
             />
-            <p className='text-xs text-gray-500 mt-1'>
+            <p className='text-xs text-gray-500 dark:text-slate-400 mt-1'>
               Paste a playlist link to auto-fill the name
             </p>
           </div>
@@ -221,11 +223,11 @@ export function PlaylistModal({
           <div className='mb-4'>
             <label
               htmlFor='name'
-              className='block text-sm font-medium text-gray-700 mb-2'
+              className='block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2'
             >
               Playlist Name
               {fetchingInfo && (
-                <span className='ml-2 text-xs text-gray-400 font-normal'>
+                <span className='ml-2 text-xs text-gray-400 dark:text-slate-500 font-normal'>
                   Loading...
                 </span>
               )}
@@ -240,7 +242,7 @@ export function PlaylistModal({
                   ? 'Fetching playlist name...'
                   : 'Enter playlist name'
               }
-              className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
+              className='w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-slate-700 dark:text-slate-100'
               disabled={isSubmitting}
             />
           </div>
@@ -252,14 +254,14 @@ export function PlaylistModal({
                   type='checkbox'
                   checked={autoTrackArtists}
                   onChange={e => setAutoTrackArtists(e.target.checked)}
-                  className='h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded'
+                  className='h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-slate-600 rounded'
                   disabled={isSubmitting}
                 />
-                <span className='ml-2 text-sm text-gray-700'>
+                <span className='ml-2 text-sm text-gray-700 dark:text-slate-300'>
                   Track artists found in this playlist
                 </span>
               </label>
-              <p className='text-xs text-gray-500 mt-1'>
+              <p className='text-xs text-gray-500 dark:text-slate-400 mt-1'>
                 When enabled, all artists from the playlist will be
                 automatically tracked for future releases
               </p>
@@ -267,8 +269,8 @@ export function PlaylistModal({
           )}
 
           {error && (
-            <div className='mb-4 p-3 bg-red-50 border border-red-200 rounded-md'>
-              <p className='text-sm text-red-600'>{error}</p>
+            <div className='mb-4 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md'>
+              <p className='text-sm text-red-600 dark:text-red-400'>{error}</p>
             </div>
           )}
 
@@ -277,7 +279,7 @@ export function PlaylistModal({
               type='button'
               onClick={handleClose}
               disabled={isSubmitting}
-              className='px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50'
+              className='px-4 py-2 text-sm font-medium text-gray-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-md hover:bg-gray-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50'
             >
               Cancel
             </button>

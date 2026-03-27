@@ -87,17 +87,20 @@ function getStatusBadge(status: MetadataUpdateStatus): {
       };
     case 'APPLIED':
       return {
-        className: 'bg-green-100 text-green-700',
+        className:
+          'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
         label: 'Applied',
       };
     case 'DISMISSED':
       return {
-        className: 'bg-gray-100 text-gray-700',
+        className:
+          'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300',
         label: 'Dismissed',
       };
     default:
       return {
-        className: 'bg-gray-100 text-gray-700',
+        className:
+          'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300',
         label: 'Unknown',
       };
   }
@@ -263,10 +266,10 @@ export function MetadataChangesSection() {
   const entityTypeOrder: MetadataEntityType[] = ['ARTIST', 'ALBUM', 'SONG'];
 
   return (
-    <div className='bg-white rounded-lg shadow-sm border border-gray-200'>
-      <div className='px-6 py-4 border-b border-gray-200'>
+    <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
+      <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
         <div className='flex items-center justify-between'>
-          <h2 className='text-lg font-semibold text-gray-900'>
+          <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
             Metadata Changes
           </h2>
           {statusFilter === 'pending' && pendingCount > 0 && (
@@ -280,12 +283,12 @@ export function MetadataChangesSection() {
             </button>
           )}
         </div>
-        <p className='text-sm text-gray-600 mt-1'>
+        <p className='text-sm text-gray-600 dark:text-slate-400 mt-1'>
           Name changes detected from Spotify that can be applied to your library
         </p>
       </div>
 
-      <div className='px-6 py-4 border-b border-gray-200'>
+      <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
         <FilterButtonGroup
           value={statusFilter}
           options={STATUS_FILTER_OPTIONS}
@@ -295,32 +298,36 @@ export function MetadataChangesSection() {
       </div>
 
       {summary && statusFilter === 'pending' && (
-        <div className='px-6 py-4 bg-gray-50 border-b border-gray-200'>
+        <div className='px-6 py-4 bg-gray-50 dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700'>
           <div className='flex gap-6 text-sm'>
             <div className='flex items-center gap-2'>
               <span className='text-2xl'>🎤</span>
-              <span className='text-gray-600'>Artists:</span>
-              <span className='font-medium text-gray-900'>
+              <span className='text-gray-600 dark:text-slate-400'>
+                Artists:
+              </span>
+              <span className='font-medium text-gray-900 dark:text-slate-100'>
                 {summary.artistUpdates}
               </span>
             </div>
             <div className='flex items-center gap-2'>
               <span className='text-2xl'>💿</span>
-              <span className='text-gray-600'>Albums:</span>
-              <span className='font-medium text-gray-900'>
+              <span className='text-gray-600 dark:text-slate-400'>Albums:</span>
+              <span className='font-medium text-gray-900 dark:text-slate-100'>
                 {summary.albumUpdates}
               </span>
             </div>
             <div className='flex items-center gap-2'>
               <span className='text-2xl'>🎵</span>
-              <span className='text-gray-600'>Songs:</span>
-              <span className='font-medium text-gray-900'>
+              <span className='text-gray-600 dark:text-slate-400'>Songs:</span>
+              <span className='font-medium text-gray-900 dark:text-slate-100'>
                 {summary.songUpdates}
               </span>
             </div>
-            <div className='border-l border-gray-300 pl-6 flex items-center gap-2'>
-              <span className='text-gray-600'>Total affected songs:</span>
-              <span className='font-semibold text-gray-900'>
+            <div className='border-l border-gray-300 dark:border-slate-600 pl-6 flex items-center gap-2'>
+              <span className='text-gray-600 dark:text-slate-400'>
+                Total affected songs:
+              </span>
+              <span className='font-semibold text-gray-900 dark:text-slate-100'>
                 {summary.totalAffectedSongs}
               </span>
             </div>
@@ -330,12 +337,12 @@ export function MetadataChangesSection() {
 
       <div className='p-6'>
         {loading ? (
-          <div className='text-center py-8 text-gray-500'>
+          <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
             <div className='animate-spin text-4xl mb-4'>⏳</div>
             <p>Loading metadata changes...</p>
           </div>
         ) : updates.length === 0 ? (
-          <div className='text-center py-8 text-gray-500'>
+          <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
             <div className='text-4xl mb-4'>✅</div>
             <p>
               {statusFilter === 'pending'
@@ -356,7 +363,7 @@ export function MetadataChangesSection() {
 
               return (
                 <div key={entityType}>
-                  <h3 className='text-sm font-medium text-gray-700 mb-3 flex items-center gap-2'>
+                  <h3 className='text-sm font-medium text-gray-700 dark:text-slate-300 mb-3 flex items-center gap-2'>
                     <span>{getEntityTypeIcon(entityType)}</span>
                     {getEntityTypeLabel(entityType)} Changes (
                     {typeUpdates.length})
@@ -372,8 +379,8 @@ export function MetadataChangesSection() {
                           key={update.id}
                           className={`flex items-center justify-between p-4 rounded-lg border ${
                             isPending
-                              ? 'bg-orange-50 border-orange-200'
-                              : 'bg-gray-50 border-gray-200'
+                              ? 'bg-orange-50 dark:bg-orange-950 border-orange-200 dark:border-orange-900'
+                              : 'bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700'
                           }`}
                         >
                           <div className='flex-1 min-w-0'>
@@ -383,21 +390,23 @@ export function MetadataChangesSection() {
                               >
                                 {statusBadge.label}
                               </span>
-                              <span className='text-sm text-gray-500'>
+                              <span className='text-sm text-gray-500 dark:text-slate-400'>
                                 {formatRelativeTime(update.detectedAt)}
                               </span>
                             </div>
                             <div className='mt-2 flex items-center gap-2 text-sm'>
-                              <span className='text-gray-600 line-through'>
+                              <span className='text-gray-600 dark:text-slate-400 line-through'>
                                 {update.oldValue}
                               </span>
-                              <span className='text-gray-400'>→</span>
-                              <span className='font-medium text-gray-900'>
+                              <span className='text-gray-400 dark:text-slate-500'>
+                                →
+                              </span>
+                              <span className='font-medium text-gray-900 dark:text-slate-100'>
                                 {update.newValue}
                               </span>
                             </div>
                             {update.affectedSongsCount > 0 && isPending && (
-                              <div className='mt-1 text-xs text-gray-500'>
+                              <div className='mt-1 text-xs text-gray-500 dark:text-slate-400'>
                                 {update.affectedSongsCount} song
                                 {update.affectedSongsCount === 1
                                   ? ''
@@ -415,7 +424,7 @@ export function MetadataChangesSection() {
                                   handleApply(update.id, update.entityName)
                                 }
                                 disabled={isLoading}
-                                className='px-3 py-1.5 text-xs font-medium rounded-md bg-indigo-100 text-indigo-700 hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+                                className='px-3 py-1.5 text-xs font-medium rounded-md bg-indigo-100 dark:bg-blue-950 text-indigo-700 dark:text-blue-400 hover:bg-indigo-200 dark:hover:bg-blue-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
                               >
                                 {isLoading ? 'Applying...' : 'Apply'}
                               </button>
@@ -425,7 +434,7 @@ export function MetadataChangesSection() {
                                   handleDismiss(update.id, update.entityName)
                                 }
                                 disabled={isLoading}
-                                className='px-3 py-1.5 text-xs font-medium rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+                                className='px-3 py-1.5 text-xs font-medium rounded-md bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
                               >
                                 Dismiss
                               </button>

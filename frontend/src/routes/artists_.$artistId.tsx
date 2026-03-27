@@ -127,23 +127,23 @@ function ArtistDetail() {
       <div className='mb-4'>
         <Link
           to='/artists'
-          className='text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1'
+          className='text-sm text-indigo-600 dark:text-blue-400 hover:text-indigo-800 flex items-center gap-1'
         >
           ← Back to Artists
         </Link>
       </div>
 
       {/* Artist Header */}
-      <div className='bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-6 mb-6'>
+      <div className='bg-gradient-to-r from-indigo-50 dark:from-slate-800 to-purple-50 dark:to-slate-800 border border-indigo-200 rounded-lg p-6 mb-6'>
         <div className='flex items-start justify-between'>
           <div>
             <div className='flex items-center gap-3 mb-2'>
-              <h1 className='text-3xl font-bold text-indigo-900'>
+              <h1 className='text-3xl font-bold text-indigo-900 dark:text-slate-100'>
                 {artist.name}
               </h1>
               {artistRefreshing && <InlineSpinner label='Updating...' />}
             </div>
-            <div className='flex items-center gap-4 text-sm text-indigo-700'>
+            <div className='flex items-center gap-4 text-sm text-indigo-700 dark:text-blue-400'>
               {artist.deezerId && (
                 <a
                   href={`https://www.deezer.com/artist/${artist.deezerId}`}
@@ -167,8 +167,8 @@ function ArtistDetail() {
               <span
                 className={`px-2 py-0.5 rounded text-xs font-medium ${
                   artist.isTracked
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-gray-100 text-gray-600'
+                    ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400'
+                    : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400'
                 }`}
               >
                 {artist.isTracked ? 'Tracked' : 'Not Tracked'}
@@ -180,7 +180,7 @@ function ArtistDetail() {
               onClick={handleTrackToggle}
               className={`px-4 py-2 rounded-md transition-colors ${
                 artist.isTracked
-                  ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  ? 'bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-300'
                   : 'bg-indigo-600 text-white hover:bg-indigo-700'
               }`}
             >
@@ -213,34 +213,42 @@ function ArtistDetail() {
 
         {/* Stats Grid */}
         <div className='grid grid-cols-2 md:grid-cols-4 gap-4 mt-6'>
-          <div className='bg-white/60 rounded-lg p-3'>
-            <div className='text-2xl font-bold text-indigo-900'>
+          <div className='bg-white/60 dark:bg-slate-800/60 rounded-lg p-3'>
+            <div className='text-2xl font-bold text-indigo-900 dark:text-slate-100'>
               {artist.albumCount}
             </div>
-            <div className='text-xs text-indigo-600'>Total Albums</div>
+            <div className='text-xs text-indigo-600 dark:text-blue-400'>
+              Total Albums
+            </div>
           </div>
-          <div className='bg-white/60 rounded-lg p-3'>
-            <div className='text-2xl font-bold text-green-700'>
+          <div className='bg-white/60 dark:bg-slate-800/60 rounded-lg p-3'>
+            <div className='text-2xl font-bold text-green-700 dark:text-green-400'>
               {artist.downloadedAlbumCount}
             </div>
-            <div className='text-xs text-green-600'>Downloaded</div>
+            <div className='text-xs text-green-600 dark:text-green-400'>
+              Downloaded
+            </div>
           </div>
-          <div className='bg-white/60 rounded-lg p-3'>
-            <div className='text-2xl font-bold text-orange-700'>
+          <div className='bg-white/60 dark:bg-slate-800/60 rounded-lg p-3'>
+            <div className='text-2xl font-bold text-orange-700 dark:text-orange-400'>
               {artist.undownloadedCount}
             </div>
-            <div className='text-xs text-orange-600'>Pending</div>
+            <div className='text-xs text-orange-600 dark:text-orange-400'>
+              Pending
+            </div>
           </div>
-          <div className='bg-white/60 rounded-lg p-3'>
-            <div className='text-2xl font-bold text-indigo-900'>
+          <div className='bg-white/60 dark:bg-slate-800/60 rounded-lg p-3'>
+            <div className='text-2xl font-bold text-indigo-900 dark:text-slate-100'>
               {artist.songCount}
             </div>
-            <div className='text-xs text-indigo-600'>Total Songs</div>
+            <div className='text-xs text-indigo-600 dark:text-blue-400'>
+              Total Songs
+            </div>
           </div>
         </div>
 
         {/* Timestamps */}
-        <div className='flex gap-6 mt-4 text-xs text-indigo-600'>
+        <div className='flex gap-6 mt-4 text-xs text-indigo-600 dark:text-blue-400'>
           {artist.addedAt && (
             <span>Added: {new Date(artist.addedAt).toLocaleDateString()}</span>
           )}
@@ -342,7 +350,7 @@ function ArtistDetail() {
               className={`px-3 py-1 rounded-full text-sm transition-colors ${
                 songDownloadFilter === filter
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-500'
               }`}
             >
               {filter === 'all'

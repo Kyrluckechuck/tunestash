@@ -23,15 +23,19 @@ export function FullEntityDisplay({
           href={link}
           target='_blank'
           rel='noopener noreferrer'
-          className='text-blue-600 hover:text-blue-800 hover:underline font-medium'
+          className='text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:underline font-medium'
           title={`View ${entityType.toLowerCase()}: ${name}`}
         >
           {name}
         </a>
       ) : (
-        <span className='font-medium text-gray-900'>{name}</span>
+        <span className='font-medium text-gray-900 dark:text-slate-100'>
+          {name}
+        </span>
       )}
-      <span className='text-gray-500 text-xs'>({label})</span>
+      <span className='text-gray-500 dark:text-slate-400 text-xs'>
+        ({label})
+      </span>
     </div>
   );
 }

@@ -21,11 +21,14 @@ export function InlineSpinner({
   return (
     <span className={`inline-flex items-center gap-2 ${className ?? ''}`}>
       <span
-        className={`${sizeClasses[size]} border-gray-300 border-t-blue-500 rounded-full animate-spin`}
+        className={`${sizeClasses[size]} border-gray-300 dark:border-slate-600 border-t-blue-500 rounded-full animate-spin`}
         aria-hidden='true'
       />
       {label ? (
-        <span className='text-sm text-gray-500' aria-live='polite'>
+        <span
+          className='text-sm text-gray-500 dark:text-slate-400'
+          aria-live='polite'
+        >
           {label}
         </span>
       ) : null}

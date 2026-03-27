@@ -98,10 +98,10 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
 
   return (
     <>
-      <tr className='hover:bg-gray-50'>
+      <tr className='hover:bg-gray-50 dark:hover:bg-slate-700'>
         <td className='px-6 py-4 whitespace-nowrap'>
           <div className='flex items-center gap-2'>
-            <span className='text-sm font-medium text-gray-900'>
+            <span className='text-sm font-medium text-gray-900 dark:text-slate-100'>
               {artist.name}
             </span>
             {artist.isTracked && (
@@ -111,7 +111,7 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
             )}
           </div>
         </td>
-        <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+        <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
           {artist.downloadedSongCount}/{artist.songCount}
         </td>
         <td className='px-6 py-4 whitespace-nowrap'>
@@ -139,13 +139,13 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder='or enter ID'
-                  className='w-24 px-2 py-1 text-xs border border-gray-300 rounded bg-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500'
+                  className='w-24 px-2 py-1 text-xs border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500'
                 />
                 {manualId && (
                   <button
                     onClick={handleManualPreview}
                     disabled={previewLoading}
-                    className='px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+                    className='px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
                   >
                     {previewLoading ? '...' : 'Go'}
                   </button>
@@ -177,7 +177,7 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
                 </button>
                 <button
                   onClick={handleReset}
-                  className='px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors'
+                  className='px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-500 transition-colors'
                 >
                   Cancel
                 </button>
@@ -185,10 +185,14 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
             )}
 
             {inputError && (
-              <span className='text-red-600 text-xs'>{inputError}</span>
+              <span className='text-red-600 dark:text-red-400 text-xs'>
+                {inputError}
+              </span>
             )}
             {!previewLoading && previewData && !preview && (
-              <span className='text-red-600 text-xs'>Not found on Deezer</span>
+              <span className='text-red-600 dark:text-red-400 text-xs'>
+                Not found on Deezer
+              </span>
             )}
           </div>
         </td>
@@ -198,15 +202,15 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
       {showSearch && searchResults.length > 0 && (
         <tr>
           <td colSpan={3} className='px-6 py-0'>
-            <div className='ml-0 mb-3 border border-gray-200 rounded-lg bg-gray-50 overflow-hidden'>
-              <div className='px-3 py-1.5 bg-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wider'>
+            <div className='ml-0 mb-3 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900 overflow-hidden'>
+              <div className='px-3 py-1.5 bg-gray-100 dark:bg-slate-700 text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
                 Deezer results for &ldquo;{artist.name}&rdquo;
               </div>
               {searchResults.map(result => (
                 <button
                   key={result.providerId}
                   onClick={() => handleSelectResult(result.providerId)}
-                  className='w-full flex items-center gap-3 px-3 py-2 hover:bg-white transition-colors text-left border-t border-gray-100'
+                  className='w-full flex items-center gap-3 px-3 py-2 hover:bg-white dark:hover:bg-slate-800 transition-colors text-left border-t border-gray-100 dark:border-slate-700'
                 >
                   {result.imageUrl ? (
                     <img
@@ -215,9 +219,9 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
                       className='w-8 h-8 rounded-full object-cover flex-shrink-0'
                     />
                   ) : (
-                    <div className='w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0'>
+                    <div className='w-8 h-8 rounded-full bg-gray-200 dark:bg-slate-600 flex items-center justify-center flex-shrink-0'>
                       <svg
-                        className='w-4 h-4 text-gray-400'
+                        className='w-4 h-4 text-gray-400 dark:text-slate-500'
                         fill='currentColor'
                         viewBox='0 0 24 24'
                       >
@@ -226,10 +230,10 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
                     </div>
                   )}
                   <div className='flex-1 min-w-0'>
-                    <div className='text-sm font-medium text-gray-900 truncate'>
+                    <div className='text-sm font-medium text-gray-900 dark:text-slate-100 truncate'>
                       {result.name}
                     </div>
-                    <div className='text-xs text-gray-500'>
+                    <div className='text-xs text-gray-500 dark:text-slate-400'>
                       ID: {result.providerId}
                     </div>
                   </div>
@@ -254,7 +258,7 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
         searchData && (
           <tr>
             <td colSpan={3} className='px-6 py-0'>
-              <div className='ml-0 mb-3 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-500'>
+              <div className='ml-0 mb-3 px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900 text-sm text-gray-500 dark:text-slate-400'>
                 No Deezer artists found for &ldquo;{artist.name}&rdquo; — try
                 entering an ID manually
               </div>

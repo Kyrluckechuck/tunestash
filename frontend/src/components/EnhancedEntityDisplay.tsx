@@ -54,8 +54,10 @@ const EnhancedEntityDisplay: React.FC<EnhancedEntityDisplayProps> = ({
     return (
       <div className='flex items-center space-x-1 min-w-0 w-full'>
         <span className={`text-sm flex-shrink-0 ${color}`}>{icon}</span>
-        <div className='w-16 h-3 bg-gray-200 rounded animate-pulse flex-1' />
-        <span className='text-gray-500 text-xs flex-shrink-0'>({label})</span>
+        <div className='w-16 h-3 bg-gray-200 dark:bg-slate-600 rounded animate-pulse flex-1' />
+        <span className='text-gray-500 dark:text-slate-400 text-xs flex-shrink-0'>
+          ({label})
+        </span>
       </div>
     );
   }
@@ -138,12 +140,14 @@ const EnhancedEntityDisplay: React.FC<EnhancedEntityDisplayProps> = ({
       <div className='flex items-center space-x-1 min-w-0 w-full'>
         <span className={`text-sm flex-shrink-0 ${color}`}>{icon}</span>
         <span
-          className='text-xs text-gray-500 truncate flex-1 min-w-0'
+          className='text-xs text-gray-500 dark:text-slate-400 truncate flex-1 min-w-0'
           title={entityId}
         >
           {fallbackText}
         </span>
-        <span className='text-gray-500 text-xs flex-shrink-0'>({label})</span>
+        <span className='text-gray-500 dark:text-slate-400 text-xs flex-shrink-0'>
+          ({label})
+        </span>
       </div>
     );
   } else {
@@ -151,7 +155,7 @@ const EnhancedEntityDisplay: React.FC<EnhancedEntityDisplayProps> = ({
     return (
       <div className='flex items-center space-x-2'>
         <span className={`text-lg ${color}`}>{icon}</span>
-        <span className='text-gray-700'>
+        <span className='text-gray-700 dark:text-slate-300'>
           {label} {entityId}
         </span>
       </div>

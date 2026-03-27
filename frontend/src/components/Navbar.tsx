@@ -1,6 +1,13 @@
 import { Link } from '@tanstack/react-router';
+import { useTheme } from '../hooks/useTheme';
 import { useDownloadModal } from './ui/useDownloadModal';
 import { useSearch } from './ui/useSearch';
+
+const themeIcons: Record<string, { icon: string; title: string }> = {
+  system: { icon: '\u{1F5A5}', title: 'Theme: System' },
+  light: { icon: '\u2600', title: 'Theme: Light' },
+  dark: { icon: '\u{1F319}', title: 'Theme: Dark' },
+};
 
 const navLinks = [
   { to: '/', label: 'Home' },
@@ -16,44 +23,48 @@ const navLinks = [
 export const Navbar = () => {
   const downloadModal = useDownloadModal();
   const search = useSearch();
-  const titleClasses =
-    'font-extrabold text-2xl tracking-tight text-indigo-700 hover:text-indigo-800';
-  const navLinkClasses =
-    'px-3 py-1.5 rounded-md transition-colors font-semibold text-gray-800 hover:text-indigo-700 hover:bg-indigo-50';
-  const activeNavLinkClasses =
-    'bg-indigo-100 text-indigo-700 hover:text-indigo-800';
-  const searchButtonClasses =
-    'px-3 py-1.5 border border-gray-300 text-gray-600 rounded-md hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center gap-2 text-sm';
-  const downloadButtonClasses =
-    'px-4 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors font-semibold flex items-center gap-2';
+  const { theme, cycle } = useTheme();
+  const themeInfo = themeIcons[theme] ?? themeIcons.system;
 
   return (
-    <nav className='bg-white border-b border-gray-300 px-6 py-3 shadow-sm sticky top-0 z-10'>
+    <nav className='bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 sticky top-0 z-10'>
       <div className='flex items-center justify-between w-full mx-auto'>
         <Link
           to='/'
-          className={titleClasses}
-          activeProps={{ className: titleClasses }}
+          className='font-extrabold text-2xl tracking-tight text-slate-800 dark:text-slate-100 hover:text-[var(--color-accent)]'
+          activeProps={{
+            className:
+              'font-extrabold text-2xl tracking-tight text-slate-800 dark:text-slate-100 hover:text-[var(--color-accent)]',
+          }}
         >
           TuneStash
         </Link>
-        <div className='flex items-center gap-4'>
+        <div className='flex items-center gap-1'>
           {navLinks.map(link => (
             <Link
               key={link.to}
               to={link.to}
-              className={navLinkClasses}
+              className='px-3 py-1.5 rounded-md transition-colors text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800'
               activeProps={{
-                className: `${navLinkClasses} ${activeNavLinkClasses}`,
+                className:
+                  'px-3 py-1.5 rounded-md transition-colors text-sm font-medium text-[var(--color-accent)] bg-[var(--color-accent-light)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-light)]',
               }}
               activeOptions={{ exact: true }}
             >
               {link.label}
             </Link>
           ))}
+          <div className='w-px h-5 bg-slate-200 dark:bg-slate-700 mx-2' />
+          <button
+            onClick={cycle}
+            className='px-2 py-1.5 text-slate-500 dark:text-slate-400 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-colors text-base'
+            title={themeInfo.title}
+          >
+            {themeInfo.icon}
+          </button>
           <button
             onClick={search.open}
-            className={searchButtonClasses}
+            className='px-3 py-1.5 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 rounded-md hover:border-slate-400 dark:hover:border-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex items-center gap-2 text-sm'
             title='Search (Ctrl+K)'
           >
             <svg
@@ -70,13 +81,13 @@ export const Navbar = () => {
               />
             </svg>
             <span className='hidden sm:inline'>Search</span>
-            <kbd className='hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-gray-100 rounded'>
+            <kbd className='hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 rounded'>
               <span className='text-xs'>⌘</span>K
             </kbd>
           </button>
           <button
             onClick={downloadModal.open}
-            className={downloadButtonClasses}
+            className='px-4 py-1.5 bg-[var(--color-accent)] text-white rounded-md hover:bg-[var(--color-accent-hover)] transition-colors font-medium flex items-center gap-2 text-sm'
             title='Download music'
           >
             <svg

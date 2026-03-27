@@ -22,7 +22,7 @@ export function AuthStatusBanner() {
   ) {
     return (
       <div
-        className='border-l-4 border-red-400 bg-red-50 p-4 mb-4'
+        className='border-l-4 border-red-400 bg-red-50 dark:bg-red-950 p-4 mb-4'
         role='alert'
       >
         <div className='flex items-start'>
@@ -42,10 +42,10 @@ export function AuthStatusBanner() {
             </svg>
           </div>
           <div className='ml-3 flex-1'>
-            <h3 className='text-sm font-medium text-red-800'>
+            <h3 className='text-sm font-medium text-red-800 dark:text-red-300'>
               Spotify Authentication Expired
             </h3>
-            <div className='mt-2 text-sm text-red-800'>
+            <div className='mt-2 text-sm text-red-800 dark:text-red-300'>
               <p>
                 {authentication.spotifyTokenErrorMessage ||
                   'Your Spotify OAuth token has expired. Album downloads and private playlist access may fail.'}
@@ -74,9 +74,9 @@ export function AuthStatusBanner() {
     const errorMessage =
       authentication.cookiesErrorMessage || downloadBlockerReason;
 
-    const bgColor = 'bg-red-50';
+    const bgColor = 'bg-red-50 dark:bg-red-950';
     const borderColor = 'border-red-400';
-    const textColor = 'text-red-800';
+    const textColor = 'text-red-800 dark:text-red-300';
     const iconColor = 'text-red-400';
     let title = 'Authentication Error';
 
@@ -123,7 +123,7 @@ export function AuthStatusBanner() {
                 </li>
                 <li>
                   Save the cookies in Netscape format to{' '}
-                  <code className='bg-red-100 px-1 py-0.5 rounded'>
+                  <code className='bg-red-100 dark:bg-red-900/30 px-1 py-0.5 rounded'>
                     /config/youtube_music_cookies.txt
                   </code>
                 </li>
@@ -144,7 +144,7 @@ export function AuthStatusBanner() {
   ) {
     return (
       <div
-        className='border-l-4 border-yellow-400 bg-yellow-50 p-4 mb-4'
+        className='border-l-4 border-yellow-400 bg-yellow-50 dark:bg-yellow-950 p-4 mb-4'
         role='alert'
       >
         <div className='flex items-start'>
@@ -164,10 +164,10 @@ export function AuthStatusBanner() {
             </svg>
           </div>
           <div className='ml-3'>
-            <h3 className='text-sm font-medium text-yellow-800'>
+            <h3 className='text-sm font-medium text-yellow-800 dark:text-yellow-300'>
               Cookies Expiring Soon
             </h3>
-            <div className='mt-2 text-sm text-yellow-700'>
+            <div className='mt-2 text-sm text-yellow-700 dark:text-yellow-400'>
               <p>
                 Your YouTube Music cookies will expire in{' '}
                 <strong>{authentication.cookiesExpireInDays} day(s)</strong>.

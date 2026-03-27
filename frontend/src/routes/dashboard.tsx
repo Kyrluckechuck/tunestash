@@ -72,30 +72,36 @@ function StatCard({
   color?: 'gray' | 'green' | 'blue' | 'red' | 'yellow' | 'purple';
 }) {
   const colorClasses = {
-    gray: 'bg-gray-50 border-gray-200',
-    green: 'bg-green-50 border-green-200',
-    blue: 'bg-blue-50 border-blue-200',
-    red: 'bg-red-50 border-red-200',
+    gray: 'bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700',
+    green: 'bg-green-50 dark:bg-green-950 border-green-200',
+    blue: 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800',
+    red: 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800',
     yellow: 'bg-yellow-50 border-yellow-200',
     purple: 'bg-purple-50 border-purple-200',
   };
 
   const textColorClasses = {
-    gray: 'text-gray-900',
-    green: 'text-green-900',
-    blue: 'text-blue-900',
-    red: 'text-red-900',
-    yellow: 'text-yellow-900',
-    purple: 'text-purple-900',
+    gray: 'text-gray-900 dark:text-slate-100',
+    green: 'text-green-900 dark:text-green-400',
+    blue: 'text-blue-900 dark:text-blue-400',
+    red: 'text-red-900 dark:text-red-400',
+    yellow: 'text-yellow-900 dark:text-yellow-300',
+    purple: 'text-purple-900 dark:text-purple-400',
   };
 
   return (
     <div className={`rounded-lg border p-4 ${colorClasses[color]}`}>
-      <div className='text-sm text-gray-600 mb-1'>{title}</div>
+      <div className='text-sm text-gray-600 dark:text-slate-400 mb-1'>
+        {title}
+      </div>
       <div className={`text-2xl font-bold ${textColorClasses[color]}`}>
         {typeof value === 'number' ? formatNumber(value) : value}
       </div>
-      {subtitle && <div className='text-xs text-gray-500 mt-1'>{subtitle}</div>}
+      {subtitle && (
+        <div className='text-xs text-gray-500 dark:text-slate-400 mt-1'>
+          {subtitle}
+        </div>
+      )}
     </div>
   );
 }
@@ -114,7 +120,7 @@ function ProgressBar({
   };
 
   return (
-    <div className='w-full bg-gray-200 rounded-full h-3'>
+    <div className='w-full bg-gray-200 dark:bg-slate-600 rounded-full h-3'>
       <div
         className={`h-3 rounded-full transition-all duration-500 ${colorClasses[color]}`}
         style={{ width: `${Math.min(percentage, 100)}%` }}
@@ -143,10 +149,13 @@ function Dashboard() {
       <div className='space-y-6'>
         <h1 className='text-2xl font-semibold'>Library Dashboard</h1>
         <div className='animate-pulse space-y-4'>
-          <div className='h-32 bg-gray-200 rounded-lg' />
+          <div className='h-32 bg-gray-200 dark:bg-slate-600 rounded-lg' />
           <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className='h-24 bg-gray-200 rounded-lg' />
+              <div
+                key={i}
+                className='h-24 bg-gray-200 dark:bg-slate-600 rounded-lg'
+              />
             ))}
           </div>
         </div>
@@ -158,8 +167,8 @@ function Dashboard() {
     return (
       <div className='space-y-6'>
         <h1 className='text-2xl font-semibold'>Library Dashboard</h1>
-        <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
-          <p className='text-red-700'>
+        <div className='bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4'>
+          <p className='text-red-700 dark:text-red-400'>
             Failed to load library stats: {error.message}
           </p>
         </div>
@@ -182,7 +191,7 @@ function Dashboard() {
       <div className='flex items-start justify-between'>
         <div>
           <h1 className='text-2xl font-semibold mb-1'>Library Dashboard</h1>
-          <p className='text-gray-700'>
+          <p className='text-gray-700 dark:text-slate-300'>
             Download progress for your {stats.trackedArtists.toLocaleString()}{' '}
             tracked artists.
           </p>
@@ -190,7 +199,7 @@ function Dashboard() {
         <button
           onClick={handleRefresh}
           disabled={isRefetching}
-          className='flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed'
+          className='flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed'
         >
           <RefreshIcon
             className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`}
@@ -200,19 +209,21 @@ function Dashboard() {
       </div>
 
       {/* Main Song Progress - Tracked Artists */}
-      <div className='bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-200 p-6'>
+      <div className='bg-gradient-to-r from-indigo-50 dark:from-slate-800 to-purple-50 dark:to-slate-800 rounded-lg border border-indigo-200 p-6'>
         <div className='flex items-center justify-between mb-4'>
           <div>
-            <h2 className='text-lg font-semibold text-gray-900'>
+            <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
               Song Progress
             </h2>
-            <p className='text-sm text-gray-600'>Songs from tracked artists</p>
+            <p className='text-sm text-gray-600 dark:text-slate-400'>
+              Songs from tracked artists
+            </p>
           </div>
           <div className='text-right'>
-            <div className='text-3xl font-bold text-indigo-700'>
+            <div className='text-3xl font-bold text-indigo-700 dark:text-blue-400'>
               {stats.desiredCompletionPercentage}%
             </div>
-            <div className='text-sm text-gray-600'>
+            <div className='text-sm text-gray-600 dark:text-slate-400'>
               {formatNumber(stats.desiredDownloaded)} /{' '}
               {formatNumber(stats.desiredSongs)}
             </div>
@@ -226,7 +237,7 @@ function Dashboard() {
 
       {/* Song Statistics - Tracked Artists */}
       <div>
-        <h2 className='text-lg font-semibold text-gray-900 mb-3'>
+        <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100 mb-3'>
           Song Breakdown
         </h2>
         <div className='grid grid-cols-2 md:grid-cols-5 gap-4'>
@@ -260,7 +271,7 @@ function Dashboard() {
 
       {/* Album Statistics - Tracked Artists */}
       <div>
-        <h2 className='text-lg font-semibold text-gray-900 mb-3'>
+        <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100 mb-3'>
           Album Breakdown
         </h2>
         <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
@@ -287,14 +298,14 @@ function Dashboard() {
       </div>
 
       {/* Overall Progress Bars */}
-      <div className='bg-white rounded-lg border border-gray-200 p-6'>
-        <h2 className='text-lg font-semibold text-gray-900 mb-4'>
+      <div className='bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-6'>
+        <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4'>
           Completion Progress
         </h2>
         <div className='space-y-4'>
           <div>
             <div className='flex justify-between text-sm mb-1'>
-              <span className='text-gray-600'>Songs</span>
+              <span className='text-gray-600 dark:text-slate-400'>Songs</span>
               <span className='font-medium'>
                 {stats.desiredCompletionPercentage}%
               </span>
@@ -306,7 +317,7 @@ function Dashboard() {
           </div>
           <div>
             <div className='flex justify-between text-sm mb-1'>
-              <span className='text-gray-600'>Albums</span>
+              <span className='text-gray-600 dark:text-slate-400'>Albums</span>
               <span className='font-medium'>
                 {stats.desiredAlbumCompletionPercentage}%
               </span>
@@ -320,30 +331,30 @@ function Dashboard() {
       </div>
 
       {/* Full Library Stats - Collapsible */}
-      <div className='border border-gray-200 rounded-lg'>
+      <div className='border border-gray-200 dark:border-slate-700 rounded-lg'>
         <button
           onClick={() => setShowFullStats(!showFullStats)}
-          className='w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors'
+          className='w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors'
         >
           <div>
-            <h2 className='text-lg font-semibold text-gray-900'>
+            <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
               Full Library Statistics
             </h2>
-            <p className='text-sm text-gray-500'>
+            <p className='text-sm text-gray-500 dark:text-slate-400'>
               Includes all artists, not just tracked ones
             </p>
           </div>
           <ChevronIcon
-            className='w-5 h-5 text-gray-500'
+            className='w-5 h-5 text-gray-500 dark:text-slate-400'
             expanded={showFullStats}
           />
         </button>
 
         {showFullStats && (
-          <div className='p-4 pt-0 space-y-6 border-t border-gray-200'>
+          <div className='p-4 pt-0 space-y-6 border-t border-gray-200 dark:border-slate-700'>
             {/* Full Library Artist Stats */}
             <div>
-              <h3 className='text-md font-medium text-gray-700 mb-3'>
+              <h3 className='text-md font-medium text-gray-700 dark:text-slate-300 mb-3'>
                 Artists
               </h3>
               <div className='grid grid-cols-2 gap-4'>
@@ -363,7 +374,7 @@ function Dashboard() {
 
             {/* Full Library Song Stats */}
             <div>
-              <h3 className='text-md font-medium text-gray-700 mb-3'>
+              <h3 className='text-md font-medium text-gray-700 dark:text-slate-300 mb-3'>
                 All Songs
               </h3>
               <div className='grid grid-cols-2 md:grid-cols-5 gap-4'>
@@ -394,7 +405,7 @@ function Dashboard() {
 
             {/* Full Library Album Stats */}
             <div>
-              <h3 className='text-md font-medium text-gray-700 mb-3'>
+              <h3 className='text-md font-medium text-gray-700 dark:text-slate-300 mb-3'>
                 All Albums
               </h3>
               <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
@@ -426,32 +437,35 @@ function Dashboard() {
       </div>
 
       {/* Fallback Provider Metrics - Collapsible */}
-      <div className='border border-gray-200 rounded-lg'>
+      <div className='border border-gray-200 dark:border-slate-700 rounded-lg'>
         <button
           onClick={() => setShowFallbackMetrics(!showFallbackMetrics)}
-          className='w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors'
+          className='w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors'
         >
           <div>
-            <h2 className='text-lg font-semibold text-gray-900'>
+            <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
               Fallback Provider Metrics
             </h2>
-            <p className='text-sm text-gray-500'>
+            <p className='text-sm text-gray-500 dark:text-slate-400'>
               Tidal fallback download statistics (last 7 days)
             </p>
           </div>
           <ChevronIcon
-            className='w-5 h-5 text-gray-500'
+            className='w-5 h-5 text-gray-500 dark:text-slate-400'
             expanded={showFallbackMetrics}
           />
         </button>
 
         {showFallbackMetrics && (
-          <div className='p-4 pt-0 space-y-6 border-t border-gray-200'>
+          <div className='p-4 pt-0 space-y-6 border-t border-gray-200 dark:border-slate-700'>
             {metricsLoading && !fallback ? (
               <div className='animate-pulse space-y-4'>
                 <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
                   {[1, 2, 3, 4].map(i => (
-                    <div key={i} className='h-24 bg-gray-200 rounded-lg' />
+                    <div
+                      key={i}
+                      className='h-24 bg-gray-200 dark:bg-slate-600 rounded-lg'
+                    />
                   ))}
                 </div>
               </div>
@@ -459,7 +473,7 @@ function Dashboard() {
               <>
                 {/* Fallback Overview */}
                 <div>
-                  <h3 className='text-md font-medium text-gray-700 mb-3'>
+                  <h3 className='text-md font-medium text-gray-700 dark:text-slate-300 mb-3'>
                     Overview
                   </h3>
                   <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
@@ -494,9 +508,11 @@ function Dashboard() {
                 </div>
 
                 {/* Success Rate Progress Bar */}
-                <div className='bg-white rounded-lg border border-gray-200 p-4'>
+                <div className='bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4'>
                   <div className='flex justify-between text-sm mb-2'>
-                    <span className='text-gray-600'>Fallback Success Rate</span>
+                    <span className='text-gray-600 dark:text-slate-400'>
+                      Fallback Success Rate
+                    </span>
                     <span className='font-medium'>{fallback.successRate}%</span>
                   </div>
                   <ProgressBar
@@ -508,20 +524,20 @@ function Dashboard() {
                 {/* Failure Reasons */}
                 {fallback.failureReasons.length > 0 && (
                   <div>
-                    <h3 className='text-md font-medium text-gray-700 mb-3'>
+                    <h3 className='text-md font-medium text-gray-700 dark:text-slate-300 mb-3'>
                       Failure Reasons
                     </h3>
-                    <div className='bg-gray-50 rounded-lg border border-gray-200 p-4'>
+                    <div className='bg-gray-50 dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700 p-4'>
                       <div className='space-y-2'>
                         {fallback.failureReasons.map(reason => (
                           <div
                             key={reason.reason}
                             className='flex justify-between items-center'
                           >
-                            <span className='text-sm text-gray-600 font-mono'>
+                            <span className='text-sm text-gray-600 dark:text-slate-400 font-mono'>
                               {reason.reason}
                             </span>
-                            <span className='text-sm font-medium text-gray-900'>
+                            <span className='text-sm font-medium text-gray-900 dark:text-slate-100'>
                               {reason.count}
                             </span>
                           </div>
@@ -532,7 +548,7 @@ function Dashboard() {
                 )}
               </>
             ) : (
-              <div className='text-center py-8 text-gray-500'>
+              <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
                 <p>
                   No fallback download attempts recorded in the last 7 days.
                 </p>

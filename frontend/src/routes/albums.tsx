@@ -99,7 +99,7 @@ function Albums() {
             onPageSizeChange={handlePageSizeChange}
           />
           {totalCount > albums.length && (
-            <span className='text-sm text-gray-500'>
+            <span className='text-sm text-gray-500 dark:text-slate-400'>
               Showing first {albums.length} albums
             </span>
           )}

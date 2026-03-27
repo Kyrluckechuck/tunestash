@@ -22,7 +22,7 @@ interface ToggleStatusButtonProps {
 
 const CheckIcon = () => (
   <svg
-    className='w-3 h-3 text-green-700'
+    className='w-3 h-3 text-green-700 dark:text-green-400'
     viewBox='0 0 20 20'
     fill='currentColor'
     aria-hidden='true'
@@ -37,7 +37,7 @@ const CheckIcon = () => (
 
 const CrossIcon = () => (
   <svg
-    className='w-3 h-3 text-red-700'
+    className='w-3 h-3 text-red-700 dark:text-red-400'
     viewBox='0 0 20 20'
     fill='currentColor'
     aria-hidden='true'
@@ -92,21 +92,21 @@ export function ToggleStatusButton({
   const colorClasses = {
     green: {
       active:
-        'bg-green-100 text-green-800 hover:bg-red-100 hover:text-red-800 focus:bg-red-100 focus:text-red-800',
+        'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-800 dark:hover:text-red-300 focus:bg-red-100 focus:text-red-800',
       inactive:
-        'bg-red-100 text-red-800 hover:bg-green-100 hover:text-green-800 focus:bg-green-100 focus:text-green-800',
+        'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 hover:bg-green-100 dark:hover:bg-green-900/30 hover:text-green-800 dark:hover:text-green-300 focus:bg-green-100 focus:text-green-800',
     },
     blue: {
       active:
-        'bg-blue-100 text-blue-800 hover:bg-gray-100 hover:text-gray-800 focus:bg-gray-100 focus:text-gray-800',
+        'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-gray-800 dark:hover:text-slate-200 focus:bg-gray-100 focus:text-gray-800',
       inactive:
-        'bg-gray-100 text-gray-800 hover:bg-blue-100 hover:text-blue-800 focus:bg-blue-100 focus:text-blue-800',
+        'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-200 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-800 dark:hover:text-blue-300 focus:bg-blue-100 focus:text-blue-800',
     },
     red: {
       active:
-        'bg-red-100 text-red-800 hover:bg-green-100 hover:text-green-800 focus:bg-green-100 focus:text-green-800',
+        'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 hover:bg-green-100 dark:hover:bg-green-900/30 hover:text-green-800 dark:hover:text-green-300 focus:bg-green-100 focus:text-green-800',
       inactive:
-        'bg-green-100 text-green-800 hover:bg-red-100 hover:text-red-800 focus:bg-red-100 focus:text-red-800',
+        'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-800 dark:hover:text-red-300 focus:bg-red-100 focus:text-red-800',
     },
   };
 

@@ -23,8 +23,10 @@ export function SortableTableHeader<T>({
   };
 
   const baseClasses =
-    'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
-  const interactiveClasses = field ? 'cursor-pointer hover:bg-gray-100' : '';
+    'px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider';
+  const interactiveClasses = field
+    ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-600'
+    : '';
 
   return (
     <th

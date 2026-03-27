@@ -21,22 +21,22 @@ function getCategoryStyle(category: string): {
   switch (category) {
     case 'data-migration':
       return {
-        bg: 'bg-purple-50',
-        text: 'text-purple-700',
-        border: 'border-purple-200',
+        bg: 'bg-purple-50 dark:bg-purple-950',
+        text: 'text-purple-700 dark:text-purple-400',
+        border: 'border-purple-200 dark:border-purple-900',
       };
     case 'cleanup':
       return {
-        bg: 'bg-orange-50',
-        text: 'text-orange-700',
-        border: 'border-orange-200',
+        bg: 'bg-orange-50 dark:bg-orange-950',
+        text: 'text-orange-700 dark:text-orange-400',
+        border: 'border-orange-200 dark:border-orange-900',
       };
     case 'maintenance':
     default:
       return {
-        bg: 'bg-blue-50',
-        text: 'text-blue-700',
-        border: 'border-blue-200',
+        bg: 'bg-blue-50 dark:bg-blue-950',
+        text: 'text-blue-700 dark:text-blue-400',
+        border: 'border-blue-200 dark:border-blue-900',
       };
   }
 }
@@ -119,18 +119,18 @@ export function OneOffTasksSection() {
   );
 
   return (
-    <div className='bg-white rounded-lg shadow-sm border border-gray-200'>
-      <div className='px-6 py-4 border-b border-gray-200'>
+    <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
+      <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
         <div className='flex items-center justify-between'>
           <div>
-            <h2 className='text-lg font-semibold text-gray-900'>
+            <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
               One-Off Tasks
             </h2>
-            <p className='text-sm text-gray-500 mt-1'>
+            <p className='text-sm text-gray-500 dark:text-slate-400 mt-1'>
               Manual maintenance tasks that can be run on demand
             </p>
           </div>
-          <span className='text-sm text-gray-600'>
+          <span className='text-sm text-gray-600 dark:text-slate-400'>
             {loading ? 'Loading...' : `${tasks.length} available`}
           </span>
         </div>
@@ -138,7 +138,7 @@ export function OneOffTasksSection() {
 
       <div className='p-6'>
         {tasks.length === 0 ? (
-          <div className='text-center py-8 text-gray-500'>
+          <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
             <div className='text-4xl mb-4'>🔧</div>
             <p>No one-off tasks available</p>
             <p className='text-sm'>
@@ -150,7 +150,7 @@ export function OneOffTasksSection() {
             {Object.entries(tasksByCategory).map(
               ([category, categoryTasks]) => (
                 <div key={category}>
-                  <div className='text-xs font-medium text-gray-500 uppercase tracking-wider mb-2'>
+                  <div className='text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2'>
                     {formatCategory(category)}
                   </div>
                   <div className='space-y-3'>
@@ -163,7 +163,7 @@ export function OneOffTasksSection() {
                         >
                           <div className='flex-1 min-w-0 pr-4'>
                             <div className='flex items-center gap-2'>
-                              <span className='font-medium text-gray-900'>
+                              <span className='font-medium text-gray-900 dark:text-slate-100'>
                                 {task.name}
                               </span>
                               <span
@@ -172,7 +172,7 @@ export function OneOffTasksSection() {
                                 {formatCategory(task.category)}
                               </span>
                             </div>
-                            <p className='text-sm text-gray-600 mt-1'>
+                            <p className='text-sm text-gray-600 dark:text-slate-400 mt-1'>
                               {task.description}
                             </p>
                           </div>

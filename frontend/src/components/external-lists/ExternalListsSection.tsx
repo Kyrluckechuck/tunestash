@@ -72,7 +72,7 @@ export function ExternalListsSection() {
     <>
       <div className='flex items-center justify-between mb-4'>
         <div className='flex items-center gap-3'>
-          <h2 className='text-lg font-medium text-gray-700'>
+          <h2 className='text-lg font-medium text-gray-700 dark:text-slate-300'>
             External Lists ({lists.length} of {totalCount})
           </h2>
           {isRefreshing && <InlineSpinner label='Updating...' />}

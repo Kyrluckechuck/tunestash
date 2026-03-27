@@ -19,22 +19,22 @@ const statusConfig: Record<
   }
 > = {
   running: {
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    bgColor: 'bg-blue-50 dark:bg-blue-950',
+    borderColor: 'border-blue-200 dark:border-blue-900',
     dotColor: 'bg-blue-500',
     label: 'Started',
     animate: true,
   },
   completed: {
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-200',
+    bgColor: 'bg-green-50 dark:bg-green-950',
+    borderColor: 'border-green-200 dark:border-green-900',
     dotColor: 'bg-green-500',
     label: 'Completed',
     animate: false,
   },
   failed: {
-    bgColor: 'bg-red-50',
-    borderColor: 'border-red-200',
+    bgColor: 'bg-red-50 dark:bg-red-950',
+    borderColor: 'border-red-200 dark:border-red-900',
     dotColor: 'bg-red-500',
     label: 'Failed',
     animate: false,
@@ -58,26 +58,28 @@ export function TaskCard({ task, status }: TaskCardProps) {
           }`}
         />
         <div>
-          <div className='font-medium text-gray-900'>
+          <div className='font-medium text-gray-900 dark:text-slate-100'>
             {task.type.charAt(0).toUpperCase() + task.type.slice(1)}{' '}
             <EnhancedEntityDisplay
               entityType={task.entityType}
               entityId={task.entityId}
             />
           </div>
-          <div className='text-sm text-gray-600'>
+          <div className='text-sm text-gray-600 dark:text-slate-400'>
             {config.label} {new Date(timestamp).toLocaleTimeString()}
           </div>
         </div>
       </div>
       {status === 'running' && task.progressPercentage !== null && (
-        <div className='text-sm text-gray-600'>
+        <div className='text-sm text-gray-600 dark:text-slate-400'>
           {task.progressPercentage}% complete
         </div>
       )}
       {(status === 'completed' || status === 'failed') &&
         task.durationSeconds && (
-          <div className='text-sm text-gray-600'>{task.durationSeconds}s</div>
+          <div className='text-sm text-gray-600 dark:text-slate-400'>
+            {task.durationSeconds}s
+          </div>
         )}
     </div>
   );

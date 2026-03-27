@@ -151,12 +151,14 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
 
   return (
     <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'>
-      <div className='bg-white rounded-lg p-6 w-full max-w-md mx-4'>
+      <div className='bg-white dark:bg-slate-800 rounded-lg p-6 w-full max-w-md mx-4'>
         <div className='flex justify-between items-center mb-4'>
-          <h2 className='text-xl font-semibold'>Download Music</h2>
+          <h2 className='text-xl font-semibold dark:text-slate-100'>
+            Download Music
+          </h2>
           <button
             onClick={handleClose}
-            className='text-gray-400 hover:text-gray-600'
+            className='text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300'
             disabled={isLoading}
           >
             <svg
@@ -179,7 +181,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
           <div className='mb-4'>
             <label
               htmlFor='url'
-              className='block text-sm font-medium text-gray-700 mb-2'
+              className='block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2'
             >
               Music URL
             </label>
@@ -189,7 +191,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
               value={url}
               onChange={e => setUrl(e.target.value)}
               placeholder='https://www.deezer.com/playlist/... or https://open.spotify.com/...'
-              className='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
+              className='w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-slate-100'
               disabled={isLoading}
             />
             {detectedContent.type !== 'unknown' || url.trim() === '' ? (
@@ -197,9 +199,9 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                 className={`text-sm mt-1 flex items-center ${
                   detectedContent.type === 'unknown'
                     ? url.trim() === ''
-                      ? 'text-gray-500'
-                      : 'text-red-600'
-                    : 'text-green-600'
+                      ? 'text-gray-500 dark:text-slate-400'
+                      : 'text-red-600 dark:text-red-400'
+                    : 'text-green-600 dark:text-green-400'
                 }`}
               >
                 <span className='mr-1'>{detectedContent.icon}</span>
@@ -217,7 +219,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                 className='mr-2'
                 disabled={isLoading}
               />
-              <span className='text-sm text-gray-700'>
+              <span className='text-sm text-gray-700 dark:text-slate-300'>
                 Track artists found in this content
               </span>
             </label>
@@ -231,7 +233,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                   className='mr-2'
                   disabled={isLoading}
                 />
-                <span className='text-sm text-gray-700'>
+                <span className='text-sm text-gray-700 dark:text-slate-300'>
                   Save playlist to your library for future syncing
                 </span>
               </label>
@@ -239,7 +241,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
           </div>
 
           {errorMessage && (
-            <div className='mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded'>
+            <div className='mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded'>
               {errorMessage}
             </div>
           )}
@@ -248,7 +250,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
             <button
               type='button'
               onClick={handleClose}
-              className='px-4 py-2 text-gray-600 hover:text-gray-800'
+              className='px-4 py-2 text-gray-600 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200'
               disabled={isLoading}
             >
               Cancel

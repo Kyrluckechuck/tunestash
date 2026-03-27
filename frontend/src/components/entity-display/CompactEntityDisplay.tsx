@@ -25,20 +25,22 @@ export function CompactEntityDisplay({
           href={link}
           target='_blank'
           rel='noopener noreferrer'
-          className='text-blue-600 hover:text-blue-800 hover:underline text-xs truncate flex-1 min-w-0'
+          className='text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:underline text-xs truncate flex-1 min-w-0'
           title={`View ${entityType.toLowerCase()}: ${fullName}`}
         >
           {displayName}
         </a>
       ) : (
         <span
-          className='text-xs text-gray-900 truncate flex-1 min-w-0 font-medium'
+          className='text-xs text-gray-900 dark:text-slate-100 truncate flex-1 min-w-0 font-medium'
           title={fullName}
         >
           {displayName}
         </span>
       )}
-      <span className='text-gray-500 text-xs flex-shrink-0'>({label})</span>
+      <span className='text-gray-500 dark:text-slate-400 text-xs flex-shrink-0'>
+        ({label})
+      </span>
     </div>
   );
 }

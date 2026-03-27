@@ -83,7 +83,9 @@ export function FilterButtonGroup<T extends string>({
   return (
     <div className={className}>
       {label && (
-        <h3 className='text-sm font-medium text-gray-700 mb-2'>{label}</h3>
+        <h3 className='text-sm font-medium text-gray-700 dark:text-slate-300 mb-2'>
+          {label}
+        </h3>
       )}
       <div className='flex gap-4'>
         {options.map(option => {
@@ -99,7 +101,7 @@ export function FilterButtonGroup<T extends string>({
               className={`px-4 py-2 rounded transition-colors font-medium border ${
                 isActive
                   ? colorStyle.active
-                  : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                  : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 border-gray-300 dark:border-slate-600'
               }`}
               style={{
                 backgroundColor: isActive ? colorStyle.activeBg : 'white',

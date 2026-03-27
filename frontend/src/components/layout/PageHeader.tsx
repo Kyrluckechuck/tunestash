@@ -16,8 +16,12 @@ export function PageHeader({
   return (
     <div className={`flex items-center justify-between ${className}`}>
       <div>
-        <h1 className='text-3xl font-bold text-gray-900'>{title}</h1>
-        {subtitle && <p className='text-gray-600 mt-2'>{subtitle}</p>}
+        <h1 className='text-3xl font-bold text-gray-900 dark:text-slate-100'>
+          {title}
+        </h1>
+        {subtitle && (
+          <p className='text-gray-600 dark:text-slate-400 mt-2'>{subtitle}</p>
+        )}
       </div>
       {children && <div className='flex items-center gap-4'>{children}</div>}
     </div>

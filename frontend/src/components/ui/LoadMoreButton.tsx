@@ -16,7 +16,7 @@ export function LoadMoreButton({
   }
 
   return (
-    <div className='p-4 text-center border-t border-gray-200'>
+    <div className='p-4 text-center border-t border-gray-200 dark:border-slate-700'>
       <button
         onClick={onLoadMore}
         disabled={loading}

@@ -45,7 +45,7 @@ export function FilterBar({
           onPageSizeChange={onPageSizeChange}
         />
         {totalCount > currentCount && (
-          <span className='text-sm text-gray-500'>
+          <span className='text-sm text-gray-500 dark:text-slate-400'>
             Showing first {currentCount} items
           </span>
         )}

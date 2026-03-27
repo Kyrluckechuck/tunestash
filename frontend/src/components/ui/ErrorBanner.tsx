@@ -23,7 +23,7 @@ export function ErrorBanner({
       tabIndex={-1}
       role='alert'
       aria-live='polite'
-      className='bg-red-50 border border-red-200 text-red-800 rounded p-4 flex items-start justify-between gap-4'
+      className='bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 rounded p-4 flex items-start justify-between gap-4'
     >
       <div>
         <div className='font-semibold'>{title}</div>
@@ -32,7 +32,7 @@ export function ErrorBanner({
       {onRetry ? (
         <button
           onClick={onRetry}
-          className='px-3 py-1 text-sm bg-red-100 hover:bg-red-200 rounded border border-red-300'
+          className='px-3 py-1 text-sm bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 rounded border border-red-300 dark:border-red-800'
         >
           Retry
         </button>
