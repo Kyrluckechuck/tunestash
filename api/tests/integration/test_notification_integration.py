@@ -250,6 +250,7 @@ class TestErrorRateIntegration:
                 entity_type="ALBUM",
                 status="FAILED",
                 started_at=now - timedelta(hours=1),
+                error_message="Error downloading album: some exception",
             )
         for i in range(5):
             TaskHistory.objects.create(

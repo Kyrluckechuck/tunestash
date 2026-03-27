@@ -344,6 +344,7 @@ class TestErrorRateAlert:
                 entity_type="ALBUM",
                 status="FAILED",
                 started_at=now - timedelta(hours=1),
+                error_message="Error downloading album: some exception",
             )
         for i in range(2):
             TaskHistory.objects.create(
@@ -706,6 +707,7 @@ class TestCooldown:
                 entity_type="ALBUM",
                 status="FAILED",
                 started_at=now - timedelta(hours=1),
+                error_message="Error downloading album: some exception",
             )
         for i in range(2):
             TaskHistory.objects.create(

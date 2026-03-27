@@ -169,45 +169,57 @@ class NotificationService:
     def _check_error_rate(self) -> dict[str, bool]:
         """Check if download success rate has dropped below threshold.
 
-        Uses success-rate over recent downloads rather than raw failure count.
-        This avoids false alerts from expected catalog gaps (niche music not
-        available on any provider) while catching real provider outages.
+        Only counts "real" failures — exceptions/crashes in download code.
+        Excluded from error rate (these have their own alerts or are expected):
+        - Auth/capability failures ("Cannot download:", "Downloads paused")
+        - Catalog gaps ("Content unavailable:", "Downloaded X/Y tracks")
+        - Album not found on Deezer ("has no deezer_id")
+        - Any single-song provider failure (backup providers being flaky is normal)
+
+        This means the error rate only fires when the download code itself
+        is crashing — the "Error downloading album/track:" exceptions.
         """
         window_hours = int(get_setting("notifications_error_window_hours"))
-        # Minimum downloads required before alerting (avoids false positives
-        # during low-activity periods where 2/3 failures = 33% rate)
         min_downloads = int(get_setting("notifications_error_min_downloads"))
-        # Alert when success rate drops below this percentage
         max_failure_pct = int(get_setting("notifications_error_max_failure_pct"))
         name = self.get_instance_name()
 
         window_start = timezone.now() - timedelta(hours=window_hours)
-        download_tasks = (
-            TaskHistory.objects.filter(type="DOWNLOAD", started_at__gte=window_start)
-            .exclude(
-                # Auth/capability failures have their own dedicated alerts
-                error_message__contains="Cannot download:",
-            )
-            .exclude(
-                # Catalog gaps (song/album not on any provider) are expected,
-                # not system errors — don't count them toward error rate
-                error_message__startswith="Content unavailable:",
-            )
+
+        # Start with all downloads in window
+        all_tasks = TaskHistory.objects.filter(
+            type="DOWNLOAD", started_at__gte=window_start
         )
-        total = download_tasks.count()
-        if total < min_downloads:
+
+        # Only count tasks that completed successfully OR failed with a
+        # real exception (not catalog gaps, auth issues, or provider noise).
+        # Real exceptions have "Error downloading" prefix from except handlers.
+        real_failures = (
+            all_tasks.filter(status="FAILED")
+            .filter(error_message__startswith="Error downloading")
+            .exclude(error_message__contains="auth failure")
+            .exclude(error_message__contains="Cannot download:")
+        )
+
+        succeeded = all_tasks.filter(status="COMPLETED").count()
+        real_failure_count = real_failures.count()
+        total_meaningful = succeeded + real_failure_count
+
+        if total_meaningful < min_downloads:
             return {self.ALERT_HIGH_ERROR_RATE: False}
 
-        succeeded = download_tasks.filter(status="COMPLETED").count()
-        failure_pct = ((total - succeeded) / total) * 100
+        if total_meaningful == 0:
+            return {self.ALERT_HIGH_ERROR_RATE: False}
+
+        failure_pct = (real_failure_count / total_meaningful) * 100
 
         if failure_pct >= max_failure_pct:
             sent = self._send(
                 title=f"{name}: High Download Failure Rate",
                 body=(
-                    f"{failure_pct:.0f}% of downloads have failed in the last "
-                    f"{window_hours} hours ({total - succeeded}/{total}). "
-                    f"Providers may be down — check worker logs."
+                    f"{failure_pct:.0f}% of downloads have crashed in the last "
+                    f"{window_hours} hours ({real_failure_count}/{total_meaningful}). "
+                    f"Check worker logs for exceptions."
                 ),
                 alert_type=self.ALERT_HIGH_ERROR_RATE,
             )
