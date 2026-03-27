@@ -64,7 +64,10 @@ export const SongsTable: React.FC<SongsTableProps> = ({
       );
     }
     return (
-      <span className='text-gray-400' title='Not downloaded'>
+      <span
+        className='text-gray-400 dark:text-slate-500'
+        title='Not downloaded'
+      >
         ○
       </span>
     );
@@ -85,8 +88,8 @@ export const SongsTable: React.FC<SongsTableProps> = ({
 
   if (loading && songs.length === 0) {
     return (
-      <div className='bg-white shadow overflow-hidden sm:rounded-md'>
-        <div className='px-6 py-4 text-center text-gray-500'>
+      <div className='bg-white dark:bg-slate-800 shadow overflow-hidden sm:rounded-md'>
+        <div className='px-6 py-4 text-center text-gray-500 dark:text-slate-400'>
           Loading songs...
         </div>
       </div>
@@ -95,8 +98,8 @@ export const SongsTable: React.FC<SongsTableProps> = ({
 
   if (songs.length === 0) {
     return (
-      <div className='bg-white shadow overflow-hidden sm:rounded-md'>
-        <div className='px-6 py-4 text-center text-gray-500'>
+      <div className='bg-white dark:bg-slate-800 shadow overflow-hidden sm:rounded-md'>
+        <div className='px-6 py-4 text-center text-gray-500 dark:text-slate-400'>
           No songs found.
         </div>
       </div>
@@ -104,9 +107,9 @@ export const SongsTable: React.FC<SongsTableProps> = ({
   }
 
   return (
-    <div className='bg-white shadow overflow-hidden sm:rounded-md overflow-x-auto'>
-      <table className='min-w-full divide-y divide-gray-200'>
-        <thead className='bg-gray-50'>
+    <div className='bg-white dark:bg-slate-800 shadow overflow-hidden sm:rounded-md overflow-x-auto'>
+      <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
+        <thead className='bg-gray-50 dark:bg-slate-900'>
           <tr>
             <SortableTableHeader
               field='downloaded'
@@ -141,21 +144,24 @@ export const SongsTable: React.FC<SongsTableProps> = ({
             >
               Added
             </SortableTableHeader>
-            <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+            <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
               Bitrate
             </th>
-            <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+            <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
               File Path
             </th>
           </tr>
         </thead>
-        <tbody className='bg-white divide-y divide-gray-200'>
+        <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
           {songs.map(song => (
-            <tr key={song.id} className='hover:bg-gray-50'>
+            <tr
+              key={song.id}
+              className='hover:bg-gray-50 dark:hover:bg-slate-700'
+            >
               <td className='px-6 py-4 whitespace-nowrap'>
                 <div className='flex items-center gap-2'>
                   {getStatusIcon(song)}
-                  <span className='text-sm text-gray-900'>
+                  <span className='text-sm text-gray-900 dark:text-slate-100'>
                     {getStatusText(song)}
                   </span>
                 </div>
@@ -186,33 +192,35 @@ export const SongsTable: React.FC<SongsTableProps> = ({
                       )}
                       target='_blank'
                       rel='noopener noreferrer'
-                      className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600 hover:bg-green-100 transition-colors'
+                      className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 hover:bg-green-100 transition-colors'
                       title='Also available on Spotify'
                     >
                       Spotify
                     </a>
                   )}
                 </div>
-                <div className='text-sm text-gray-500'>ID: {song.id}</div>
+                <div className='text-sm text-gray-500 dark:text-slate-400'>
+                  ID: {song.id}
+                </div>
               </td>
               <td className='px-6 py-4 whitespace-nowrap'>
                 <Link
                   to='/albums'
                   search={{ artistId: song.primaryArtistId }}
-                  className='text-sm font-medium text-blue-600 hover:text-blue-900'
+                  className='text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-900'
                   title={`View albums by ${song.primaryArtist}`}
                 >
                   {song.primaryArtist}
                 </Link>
               </td>
-              <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+              <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
                 {formatDate(song.createdAt)}
               </td>
 
-              <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+              <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
                 {formatBitrate(song.bitrate)}
               </td>
-              <td className='px-6 py-4 text-sm text-gray-500 min-w-0'>
+              <td className='px-6 py-4 text-sm text-gray-500 dark:text-slate-400 min-w-0'>
                 {song.filePath ? (
                   <span
                     className='truncate max-w-md block'

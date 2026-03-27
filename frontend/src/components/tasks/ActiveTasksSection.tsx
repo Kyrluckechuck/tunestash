@@ -24,17 +24,19 @@ export function ActiveTasksSection({
   onCancelRunningTasksByName,
 }: ActiveTasksSectionProps) {
   return (
-    <div className='bg-white rounded-lg shadow-sm border border-gray-200'>
-      <div className='px-6 py-4 border-b border-gray-200'>
+    <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
+      <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
         <div className='flex items-center justify-between'>
-          <h2 className='text-lg font-semibold text-gray-900'>Active Tasks</h2>
+          <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
+            Active Tasks
+          </h2>
           <div className='flex items-center gap-4'>
             <select
               value={activeTasksFilter}
               onChange={e =>
                 onActiveTasksFilterChange(e.target.value as TaskType)
               }
-              className='px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+              className='px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-800 dark:text-slate-100'
             >
               <option value='all'>All Types</option>
               <option value='sync'>Sync</option>
@@ -46,7 +48,7 @@ export function ActiveTasksSection({
               onChange={e =>
                 onActiveTasksEntityFilterChange(e.target.value as EntityType)
               }
-              className='px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+              className='px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-800 dark:text-slate-100'
             >
               <option value='all'>All Entities</option>
               <option value='artist'>Artist</option>
@@ -59,7 +61,7 @@ export function ActiveTasksSection({
 
       <div className='p-6'>
         {runningTasks.length === 0 ? (
-          <div className='text-center py-8 text-gray-500'>
+          <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
             <div className='text-4xl mb-4'>📋</div>
             <p>No active tasks found</p>
             <p className='text-sm'>
@@ -71,7 +73,7 @@ export function ActiveTasksSection({
             {runningTasks.length > 0 && (
               <div>
                 <div className='flex items-center justify-between mb-3'>
-                  <h3 className='text-sm font-medium text-gray-700'>
+                  <h3 className='text-sm font-medium text-gray-700 dark:text-slate-300'>
                     Running ({runningTasks.length})
                   </h3>
                   <button
@@ -91,7 +93,7 @@ export function ActiveTasksSection({
 
             {completedTasks.length > 0 && (
               <div>
-                <h3 className='text-sm font-medium text-gray-700 mb-3'>
+                <h3 className='text-sm font-medium text-gray-700 dark:text-slate-300 mb-3'>
                   Completed ({completedTasks.length})
                 </h3>
                 <div className='space-y-2'>
@@ -104,7 +106,7 @@ export function ActiveTasksSection({
 
             {failedTasks.length > 0 && (
               <div>
-                <h3 className='text-sm font-medium text-gray-700 mb-3'>
+                <h3 className='text-sm font-medium text-gray-700 dark:text-slate-300 mb-3'>
                   Failed ({failedTasks.length})
                 </h3>
                 <div className='space-y-2'>

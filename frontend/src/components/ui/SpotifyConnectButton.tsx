@@ -47,10 +47,10 @@ function RestartInstructions() {
   if (isDev) {
     return (
       <>
-        <div className='bg-gray-100 rounded-md p-3 mb-6 font-mono text-sm text-gray-800'>
+        <div className='bg-gray-100 dark:bg-slate-700 rounded-md p-3 mb-6 font-mono text-sm text-gray-800 dark:text-slate-200'>
           make dev-container-down && make dev-container
         </div>
-        <p className='text-sm text-gray-500 mb-6'>
+        <p className='text-sm text-gray-500 dark:text-slate-400 mb-6'>
           This ensures the worker processes pick up the new authentication
           state.
         </p>
@@ -60,13 +60,13 @@ function RestartInstructions() {
 
   return (
     <>
-      <p className='text-gray-600 mb-4'>
+      <p className='text-gray-600 dark:text-slate-400 mb-4'>
         Restart your containers using one of these methods:
       </p>
-      <ul className='list-disc list-inside text-sm text-gray-600 mb-4 space-y-1'>
+      <ul className='list-disc list-inside text-sm text-gray-600 dark:text-slate-400 mb-4 space-y-1'>
         <li>
           <strong>Docker Compose:</strong>
-          <code className='ml-2 bg-gray-100 px-2 py-0.5 rounded text-xs'>
+          <code className='ml-2 bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded text-xs'>
             docker compose down && docker compose up -d
           </code>
         </li>
@@ -75,7 +75,7 @@ function RestartInstructions() {
           dashboard
         </li>
       </ul>
-      <p className='text-sm text-gray-500 mb-6'>
+      <p className='text-sm text-gray-500 dark:text-slate-400 mb-6'>
         This ensures the worker processes pick up the new authentication state.
       </p>
     </>
@@ -98,7 +98,7 @@ function GlobalRestartModal() {
       <div className='fixed inset-0 bg-black bg-opacity-50' />
 
       {/* Modal */}
-      <div className='relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6'>
+      <div className='relative bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6'>
         <div className='flex items-center gap-3 mb-4'>
           <div className='flex-shrink-0 w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center'>
             <svg
@@ -115,12 +115,12 @@ function GlobalRestartModal() {
               />
             </svg>
           </div>
-          <h3 className='text-lg font-semibold text-gray-900'>
+          <h3 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
             Restart Required
           </h3>
         </div>
 
-        <p className='text-gray-600 mb-6'>
+        <p className='text-gray-600 dark:text-slate-400 mb-6'>
           {modalAction === 'connected' ? (
             <>
               Your Spotify account has been linked successfully! To apply this
@@ -230,7 +230,7 @@ export function SpotifyConnectButton() {
   if (loading) {
     return (
       <div className='animate-pulse'>
-        <div className='h-9 w-28 rounded-md bg-gray-200' />
+        <div className='h-9 w-28 rounded-md bg-gray-200 dark:bg-slate-600' />
       </div>
     );
   }
@@ -239,7 +239,7 @@ export function SpotifyConnectButton() {
     return (
       <button
         onClick={handleDisconnect}
-        className='px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors'
+        className='px-4 py-2 text-sm font-medium text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors'
       >
         Disconnect
       </button>

@@ -48,8 +48,8 @@ export function ArtistsTable({
 }: ArtistsTableProps) {
   if (artists.length === 0) {
     return (
-      <div className='bg-white rounded shadow overflow-hidden'>
-        <div className='p-6 text-center text-gray-500'>
+      <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
+        <div className='p-6 text-center text-gray-500 dark:text-slate-400'>
           {loading ? 'Loading artists...' : 'No artists found.'}
         </div>
       </div>
@@ -57,10 +57,10 @@ export function ArtistsTable({
   }
 
   return (
-    <div className='bg-white rounded shadow overflow-hidden'>
+    <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
       <div className='overflow-x-auto'>
-        <table className='min-w-full divide-y divide-gray-200'>
-          <thead className='bg-gray-50'>
+        <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
+          <thead className='bg-gray-50 dark:bg-slate-900'>
             <tr>
               <SortableTableHeader
                 field='name'
@@ -104,15 +104,18 @@ export function ArtistsTable({
               </SortableTableHeader>
             </tr>
           </thead>
-          <tbody className='bg-white divide-y divide-gray-200'>
+          <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
             {artists.map(artist => (
-              <tr key={artist.id} className='hover:bg-gray-50'>
+              <tr
+                key={artist.id}
+                className='hover:bg-gray-50 dark:hover:bg-slate-700'
+              >
                 <td className='px-6 py-4 whitespace-nowrap'>
                   <div className='text-sm font-medium'>
                     <Link
                       to='/artists/$artistId'
                       params={{ artistId: artist.id.toString() }}
-                      className='text-indigo-600 hover:text-indigo-800 hover:underline'
+                      className='text-indigo-600 dark:text-blue-400 hover:text-indigo-800 dark:hover:text-blue-300 hover:underline'
                       title={`View ${artist.name} details`}
                     >
                       {artist.name}
@@ -144,12 +147,12 @@ export function ArtistsTable({
                     }
                   />
                 </td>
-                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
                   {artist.lastSynced
                     ? new Date(artist.lastSynced).toLocaleString()
                     : 'Never'}
                 </td>
-                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
                   {artist.lastDownloaded
                     ? new Date(artist.lastDownloaded).toLocaleString()
                     : 'Never'}
@@ -211,12 +214,12 @@ export function ArtistsTable({
                   <Link
                     to='/artists/$artistId'
                     params={{ artistId: artist.id.toString() }}
-                    className='text-indigo-600 hover:text-indigo-900 underline'
+                    className='text-indigo-600 dark:text-blue-400 hover:text-indigo-900 underline'
                   >
                     View Details
                   </Link>
                   {errorById?.[artist.id] && (
-                    <div className='text-xs text-red-600 mt-1'>
+                    <div className='text-xs text-red-600 dark:text-red-400 mt-1'>
                       {errorById[artist.id]}
                     </div>
                   )}

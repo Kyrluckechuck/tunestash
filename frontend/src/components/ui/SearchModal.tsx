@@ -260,13 +260,13 @@ export const SearchModal: React.FC<SearchModalProps> = ({
     <div className='fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 pt-[10vh]'>
       <div
         ref={modalRef}
-        className='bg-white rounded-lg w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col shadow-2xl'
+        className='bg-white dark:bg-slate-800 rounded-lg w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col shadow-2xl'
       >
         {/* Header with search input */}
-        <div className='p-4 border-b'>
+        <div className='p-4 border-b dark:border-slate-700'>
           <div className='flex items-center gap-3'>
             <svg
-              className='w-5 h-5 text-gray-400'
+              className='w-5 h-5 text-gray-400 dark:text-slate-500'
               fill='none'
               stroke='currentColor'
               viewBox='0 0 24 24'
@@ -284,11 +284,11 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder='Search for artists, albums, or tracks...'
-              className='flex-1 text-lg outline-none placeholder-gray-400'
+              className='flex-1 text-lg outline-none placeholder-gray-400 dark:placeholder-slate-500 dark:bg-slate-800 dark:text-slate-100'
             />
             <button
               onClick={onClose}
-              className='text-gray-400 hover:text-gray-600 p-1'
+              className='text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 p-1'
             >
               <svg
                 className='w-5 h-5'
@@ -315,8 +315,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                     activeTab === tab.id
-                      ? 'bg-indigo-100 text-indigo-700'
-                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                      ? 'bg-indigo-100 dark:bg-blue-900/30 text-indigo-700'
+                      : 'text-gray-600 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-600'
                   }`}
                 >
                   {tab.label}
@@ -336,7 +336,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
           {loading && (
             <div className='flex items-center justify-center py-12'>
               <svg
-                className='animate-spin h-8 w-8 text-indigo-600'
+                className='animate-spin h-8 w-8 text-indigo-600 dark:text-blue-400'
                 fill='none'
                 viewBox='0 0 24 24'
               >
@@ -358,13 +358,13 @@ export const SearchModal: React.FC<SearchModalProps> = ({
           )}
 
           {error && (
-            <div className='p-4 text-red-600 text-center'>
+            <div className='p-4 text-red-600 dark:text-red-400 text-center'>
               Search failed: {error.message}
             </div>
           )}
 
           {!loading && !error && query.trim().length < 2 && (
-            <div className='flex flex-col items-center justify-center py-12 text-gray-500'>
+            <div className='flex flex-col items-center justify-center py-12 text-gray-500 dark:text-slate-400'>
               <svg
                 className='w-12 h-12 mb-3 opacity-50'
                 fill='none'
@@ -383,13 +383,13 @@ export const SearchModal: React.FC<SearchModalProps> = ({
           )}
 
           {!loading && !error && query.trim().length >= 2 && !hasResults && (
-            <div className='flex flex-col items-center justify-center py-12 text-gray-500'>
+            <div className='flex flex-col items-center justify-center py-12 text-gray-500 dark:text-slate-400'>
               <p>No results found for &ldquo;{query}&rdquo;</p>
             </div>
           )}
 
           {!loading && hasResults && (
-            <div className='divide-y'>
+            <div className='divide-y dark:divide-slate-700'>
               {/* Artists */}
               {(activeTab === 'all' || activeTab === 'artists') &&
                 results.artists.length > 0 && (
@@ -458,7 +458,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className='px-4 py-2 border-t bg-gray-50 text-xs text-gray-500 flex justify-between items-center rounded-b-lg'>
+        <div className='px-4 py-2 border-t dark:border-slate-700 bg-gray-50 dark:bg-slate-900 text-xs text-gray-500 dark:text-slate-400 flex justify-between items-center rounded-b-lg'>
           <span>Press ESC to close</span>
           <span>Powered by Deezer</span>
         </div>
@@ -476,7 +476,7 @@ interface ResultSectionProps {
 
 const ResultSection: React.FC<ResultSectionProps> = ({ title, children }) => (
   <div className='py-2'>
-    <h3 className='px-4 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider'>
+    <h3 className='px-4 py-1 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
       {title}
     </h3>
     <div>{children}</div>
@@ -532,7 +532,7 @@ const ArtistResult: React.FC<ArtistResultProps> = ({
   onNavigate,
   isLoading,
 }) => (
-  <div className='flex items-center gap-3 px-4 py-2 hover:bg-gray-50'>
+  <div className='flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700'>
     {artist.imageUrl ? (
       <img
         src={artist.imageUrl}
@@ -540,9 +540,9 @@ const ArtistResult: React.FC<ArtistResultProps> = ({
         className='w-12 h-12 rounded-full object-cover'
       />
     ) : (
-      <div className='w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center'>
+      <div className='w-12 h-12 rounded-full bg-gray-200 dark:bg-slate-600 flex items-center justify-center'>
         <svg
-          className='w-6 h-6 text-gray-400'
+          className='w-6 h-6 text-gray-400 dark:text-slate-500'
           fill='currentColor'
           viewBox='0 0 24 24'
         >
@@ -551,7 +551,9 @@ const ArtistResult: React.FC<ArtistResultProps> = ({
       </div>
     )}
     <div className='flex-1 min-w-0'>
-      <div className='font-medium text-gray-900 truncate'>{artist.name}</div>
+      <div className='font-medium text-gray-900 dark:text-slate-100 truncate'>
+        {artist.name}
+      </div>
     </div>
     <div className='flex items-center gap-2'>
       {artist.inLibrary && !artist.isTracked && (
@@ -564,7 +566,7 @@ const ArtistResult: React.FC<ArtistResultProps> = ({
           href={artist.externalUrl}
           target='_blank'
           rel='noopener noreferrer'
-          className='px-3 py-1 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded'
+          className='px-3 py-1 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded'
           title='View on Deezer'
         >
           <ExternalLinkIcon />
@@ -573,7 +575,7 @@ const ArtistResult: React.FC<ArtistResultProps> = ({
       {onNavigate && (
         <button
           onClick={onNavigate}
-          className='px-3 py-1 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded'
+          className='px-3 py-1 text-sm text-indigo-600 dark:text-blue-400 hover:text-indigo-700 hover:bg-indigo-50 rounded'
         >
           View
         </button>
@@ -616,7 +618,7 @@ const AlbumResult: React.FC<AlbumResultProps> = ({
   onImport,
   isLoading,
 }) => (
-  <div className='flex items-center gap-3 px-4 py-2 hover:bg-gray-50'>
+  <div className='flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700'>
     {album.imageUrl ? (
       <img
         src={album.imageUrl}
@@ -624,9 +626,9 @@ const AlbumResult: React.FC<AlbumResultProps> = ({
         className='w-12 h-12 rounded object-cover'
       />
     ) : (
-      <div className='w-12 h-12 rounded bg-gray-200 flex items-center justify-center'>
+      <div className='w-12 h-12 rounded bg-gray-200 dark:bg-slate-600 flex items-center justify-center'>
         <svg
-          className='w-6 h-6 text-gray-400'
+          className='w-6 h-6 text-gray-400 dark:text-slate-500'
           fill='currentColor'
           viewBox='0 0 24 24'
         >
@@ -635,8 +637,10 @@ const AlbumResult: React.FC<AlbumResultProps> = ({
       </div>
     )}
     <div className='flex-1 min-w-0'>
-      <div className='font-medium text-gray-900 truncate'>{album.name}</div>
-      <div className='text-sm text-gray-500 truncate'>
+      <div className='font-medium text-gray-900 dark:text-slate-100 truncate'>
+        {album.name}
+      </div>
+      <div className='text-sm text-gray-500 dark:text-slate-400 truncate'>
         {album.artistName}
         {' · '}
         {album.albumType} · {album.totalTracks} tracks
@@ -656,7 +660,7 @@ const AlbumResult: React.FC<AlbumResultProps> = ({
           href={album.externalUrl}
           target='_blank'
           rel='noopener noreferrer'
-          className='px-3 py-1 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded'
+          className='px-3 py-1 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded'
           title='View on Deezer'
         >
           <ExternalLinkIcon />
@@ -685,10 +689,10 @@ const TrackResult: React.FC<TrackResultProps> = ({ track }) => {
   };
 
   return (
-    <div className='flex items-center gap-3 px-4 py-2 hover:bg-gray-50'>
-      <div className='w-10 h-10 rounded bg-gray-200 flex items-center justify-center'>
+    <div className='flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700'>
+      <div className='w-10 h-10 rounded bg-gray-200 dark:bg-slate-600 flex items-center justify-center'>
         <svg
-          className='w-5 h-5 text-gray-400'
+          className='w-5 h-5 text-gray-400 dark:text-slate-500'
           fill='currentColor'
           viewBox='0 0 24 24'
         >
@@ -696,8 +700,10 @@ const TrackResult: React.FC<TrackResultProps> = ({ track }) => {
         </svg>
       </div>
       <div className='flex-1 min-w-0'>
-        <div className='font-medium text-gray-900 truncate'>{track.name}</div>
-        <div className='text-sm text-gray-500 truncate'>
+        <div className='font-medium text-gray-900 dark:text-slate-100 truncate'>
+          {track.name}
+        </div>
+        <div className='text-sm text-gray-500 dark:text-slate-400 truncate'>
           {track.artistName}
           {track.albumName && (
             <>
@@ -707,7 +713,7 @@ const TrackResult: React.FC<TrackResultProps> = ({ track }) => {
           )}
         </div>
       </div>
-      <div className='text-sm text-gray-400'>
+      <div className='text-sm text-gray-400 dark:text-slate-500'>
         {formatDuration(track.durationMs)}
       </div>
       <div className='flex items-center gap-2'>
@@ -721,7 +727,7 @@ const TrackResult: React.FC<TrackResultProps> = ({ track }) => {
             href={track.externalUrl}
             target='_blank'
             rel='noopener noreferrer'
-            className='px-3 py-1 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded'
+            className='px-3 py-1 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-600 rounded'
             title='View on Deezer'
           >
             <ExternalLinkIcon />

@@ -7,8 +7,8 @@ import { SpotifyConnectButton } from '../components/ui/SpotifyConnectButton';
 function StatusSkeleton() {
   return (
     <div className='flex items-center gap-2 animate-pulse'>
-      <div className='h-4 w-4 rounded-full bg-gray-200 flex-shrink-0' />
-      <div className='h-3.5 w-36 rounded bg-gray-200' />
+      <div className='h-4 w-4 rounded-full bg-gray-200 dark:bg-slate-600 flex-shrink-0' />
+      <div className='h-3.5 w-36 rounded bg-gray-200 dark:bg-slate-600' />
     </div>
   );
 }
@@ -22,19 +22,21 @@ function Home() {
     <section className='space-y-6'>
       <div>
         <h1 className='text-2xl font-semibold mb-1'>TuneStash</h1>
-        <p className='text-gray-700'>
+        <p className='text-gray-700 dark:text-slate-300'>
           Quickly navigate and manage your library.
         </p>
       </div>
 
       {/* System Health Card */}
-      <div className='bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-4'>
+      <div className='bg-gradient-to-r from-blue-50 dark:from-slate-800 to-indigo-50 dark:to-slate-800 rounded-lg border border-blue-200 dark:border-blue-800 p-4'>
         <div className='flex items-center justify-between mb-3'>
-          <div className='text-gray-900 font-semibold'>System Status</div>
+          <div className='text-gray-900 dark:text-slate-100 font-semibold'>
+            System Status
+          </div>
           <Link
             to='/tasks'
             search={{}}
-            className='text-sm text-blue-600 hover:text-blue-700 font-medium'
+            className='text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 font-medium'
           >
             View Tasks →
           </Link>
@@ -58,9 +60,11 @@ function Home() {
                     clipRule='evenodd'
                   />
                 </svg>
-                <span className='text-sm text-gray-700'>
+                <span className='text-sm text-gray-700 dark:text-slate-300'>
                   Spotify OAuth:{' '}
-                  <span className='text-green-700 font-medium'>Connected</span>
+                  <span className='text-green-700 dark:text-green-400 font-medium'>
+                    Connected
+                  </span>
                 </span>
               </>
             ) : (
@@ -76,9 +80,9 @@ function Home() {
                     clipRule='evenodd'
                   />
                 </svg>
-                <span className='text-sm text-gray-700'>
+                <span className='text-sm text-gray-700 dark:text-slate-300'>
                   Spotify OAuth:{' '}
-                  <span className='text-blue-700 font-medium'>
+                  <span className='text-blue-700 dark:text-blue-400 font-medium'>
                     Not Connected
                   </span>
                 </span>
@@ -103,9 +107,9 @@ function Home() {
                     clipRule='evenodd'
                   />
                 </svg>
-                <span className='text-sm text-gray-700'>
+                <span className='text-sm text-gray-700 dark:text-slate-300'>
                   YouTube Music:{' '}
-                  <span className='text-green-700 font-medium'>
+                  <span className='text-green-700 dark:text-green-400 font-medium'>
                     Valid
                     {data.systemHealth.authentication.cookiesExpireInDays !==
                       null &&
@@ -128,9 +132,9 @@ function Home() {
                     clipRule='evenodd'
                   />
                 </svg>
-                <span className='text-sm text-gray-700'>
+                <span className='text-sm text-gray-700 dark:text-slate-300'>
                   YouTube Music:{' '}
-                  <span className='text-red-700 font-medium'>
+                  <span className='text-red-700 dark:text-red-400 font-medium'>
                     {data?.systemHealth.authentication.cookiesErrorType ||
                       'Invalid'}
                   </span>
@@ -154,10 +158,10 @@ function Home() {
                     ? 'text-yellow-500'
                     : 'text-green-500';
                 const statusColor = isLimited
-                  ? 'text-red-700'
+                  ? 'text-red-700 dark:text-red-400'
                   : isThrottling
-                    ? 'text-yellow-700'
-                    : 'text-green-700';
+                    ? 'text-yellow-700 dark:text-yellow-400'
+                    : 'text-green-700 dark:text-green-400';
                 const statusText = isLimited
                   ? 'Limited'
                   : isThrottling
@@ -180,7 +184,7 @@ function Home() {
                       />
                     </svg>
                     <span
-                      className='text-sm text-gray-700'
+                      className='text-sm text-gray-700 dark:text-slate-300'
                       title={`Burst: ${rl?.burstCalls}/${rl?.burstMax} | Sustained: ${rl?.sustainedCalls}/${rl?.sustainedMax} | Hourly: ${rl?.hourlyCalls}/${rl?.hourlyMax}`}
                     >
                       Spotify API:{' '}
@@ -188,7 +192,7 @@ function Home() {
                         {statusText}
                       </span>
                       {isLimited && rl?.rateLimitedUntil ? (
-                        <span className='text-gray-500 ml-1 text-xs'>
+                        <span className='text-gray-500 dark:text-slate-400 ml-1 text-xs'>
                           (until{' '}
                           {new Date(rl.rateLimitedUntil).toLocaleTimeString(
                             [],
@@ -200,7 +204,7 @@ function Home() {
                           )
                         </span>
                       ) : (
-                        <span className='text-gray-500 ml-1 text-xs'>
+                        <span className='text-gray-500 dark:text-slate-400 ml-1 text-xs'>
                           ({rl?.hourlyCalls}/{rl?.hourlyMax} this hour)
                         </span>
                       )}
@@ -242,14 +246,14 @@ function Home() {
                       clipRule='evenodd'
                     />
                   </svg>
-                  <span className='text-sm text-gray-700'>
+                  <span className='text-sm text-gray-700 dark:text-slate-300'>
                     {name}:{' '}
                     <span
-                      className={`${api.isRateLimited ? 'text-red-700' : 'text-green-700'} font-medium`}
+                      className={`${api.isRateLimited ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'} font-medium`}
                     >
                       {api.isRateLimited ? 'Limited' : 'OK'}
                     </span>
-                    <span className='text-gray-500 ml-1 text-xs'>
+                    <span className='text-gray-500 dark:text-slate-400 ml-1 text-xs'>
                       ({api.requestCount} req, max {api.maxRequestsPerSecond}
                       /s)
                     </span>
@@ -265,7 +269,7 @@ function Home() {
             ) : data?.queueStatus.totalPendingTasks === 0 ? (
               <>
                 <svg
-                  className='h-4 w-4 text-gray-400 flex-shrink-0'
+                  className='h-4 w-4 text-gray-400 dark:text-slate-500 flex-shrink-0'
                   fill='currentColor'
                   viewBox='0 0 20 20'
                 >
@@ -275,8 +279,11 @@ function Home() {
                     clipRule='evenodd'
                   />
                 </svg>
-                <span className='text-sm text-gray-700'>
-                  Task Queue: <span className='text-gray-600'>Idle</span>
+                <span className='text-sm text-gray-700 dark:text-slate-300'>
+                  Task Queue:{' '}
+                  <span className='text-gray-600 dark:text-slate-400'>
+                    Idle
+                  </span>
                 </span>
               </>
             ) : (
@@ -300,9 +307,9 @@ function Home() {
                     d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
                   />
                 </svg>
-                <span className='text-sm text-gray-700'>
+                <span className='text-sm text-gray-700 dark:text-slate-300'>
                   Task Queue:{' '}
-                  <span className='text-blue-700 font-medium'>
+                  <span className='text-blue-700 dark:text-blue-400 font-medium'>
                     {data?.queueStatus.totalPendingTasks} pending
                   </span>
                 </span>
@@ -328,14 +335,16 @@ function Home() {
                   />
                 </svg>
                 <span
-                  className='text-sm text-gray-700'
+                  className='text-sm text-gray-700 dark:text-slate-300'
                   title={
                     data?.systemHealth.storage.errorMessage ||
                     'Storage unavailable'
                   }
                 >
                   Storage:{' '}
-                  <span className='text-red-700 font-medium'>Unavailable</span>
+                  <span className='text-red-700 dark:text-red-400 font-medium'>
+                    Unavailable
+                  </span>
                 </span>
               </>
             ) : data?.systemHealth.storage.isCriticallyLow ? (
@@ -352,11 +361,11 @@ function Home() {
                   />
                 </svg>
                 <span
-                  className='text-sm text-gray-700'
+                  className='text-sm text-gray-700 dark:text-slate-300'
                   title={`${data.systemHealth.storage.availableGb?.toFixed(1)}GB free (${data.systemHealth.storage.usagePercent?.toFixed(0)}% used)`}
                 >
                   Storage:{' '}
-                  <span className='text-red-700 font-medium'>
+                  <span className='text-red-700 dark:text-red-400 font-medium'>
                     Critical (
                     {data.systemHealth.storage.availableGb?.toFixed(1)}GB free)
                   </span>
@@ -376,11 +385,11 @@ function Home() {
                   />
                 </svg>
                 <span
-                  className='text-sm text-gray-700'
+                  className='text-sm text-gray-700 dark:text-slate-300'
                   title={`${data.systemHealth.storage.availableGb?.toFixed(1)}GB free (${data.systemHealth.storage.usagePercent?.toFixed(0)}% used)`}
                 >
                   Storage:{' '}
-                  <span className='text-yellow-700 font-medium'>
+                  <span className='text-yellow-700 dark:text-yellow-400 font-medium'>
                     Low ({data.systemHealth.storage.availableGb?.toFixed(1)}GB
                     free)
                   </span>
@@ -400,11 +409,11 @@ function Home() {
                   />
                 </svg>
                 <span
-                  className='text-sm text-gray-700'
+                  className='text-sm text-gray-700 dark:text-slate-300'
                   title={`${data?.systemHealth.storage.availableGb?.toFixed(1)}GB free (${data?.systemHealth.storage.usagePercent?.toFixed(0)}% used)`}
                 >
                   Storage:{' '}
-                  <span className='text-green-700 font-medium'>
+                  <span className='text-green-700 dark:text-green-400 font-medium'>
                     {data?.systemHealth.storage.availableGb?.toFixed(0)}GB free
                   </span>
                 </span>
@@ -422,43 +431,61 @@ function Home() {
         <Link
           to='/artists'
           search={{}}
-          className='block bg-white rounded-lg border border-gray-200 p-5 hover:shadow transition-shadow'
+          className='block bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow transition-shadow'
         >
-          <div className='text-gray-900 font-semibold'>Artists</div>
-          <div className='text-gray-600 text-sm'>Track and sync artists</div>
+          <div className='text-gray-900 dark:text-slate-100 font-semibold'>
+            Artists
+          </div>
+          <div className='text-gray-600 dark:text-slate-400 text-sm'>
+            Track and sync artists
+          </div>
         </Link>
 
         <Link
           to='/albums'
           search={{ artistId: undefined }}
-          className='block bg-white rounded-lg border border-gray-200 p-5 hover:shadow transition-shadow'
+          className='block bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow transition-shadow'
         >
-          <div className='text-gray-900 font-semibold'>Albums</div>
-          <div className='text-gray-600 text-sm'>Manage wanted/downloaded</div>
+          <div className='text-gray-900 dark:text-slate-100 font-semibold'>
+            Albums
+          </div>
+          <div className='text-gray-600 dark:text-slate-400 text-sm'>
+            Manage wanted/downloaded
+          </div>
         </Link>
 
         <Link
           to='/songs'
           search={{ artistId: undefined, search: undefined }}
-          className='block bg-white rounded-lg border border-gray-200 p-5 hover:shadow transition-shadow'
+          className='block bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow transition-shadow'
         >
-          <div className='text-gray-900 font-semibold'>Songs</div>
-          <div className='text-gray-600 text-sm'>View downloaded tracks</div>
+          <div className='text-gray-900 dark:text-slate-100 font-semibold'>
+            Songs
+          </div>
+          <div className='text-gray-600 dark:text-slate-400 text-sm'>
+            View downloaded tracks
+          </div>
         </Link>
 
         <Link
           to='/playlists'
           search={{}}
-          className='block bg-white rounded-lg border border-gray-200 p-5 hover:shadow transition-shadow'
+          className='block bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow transition-shadow'
         >
-          <div className='text-gray-900 font-semibold'>Playlists</div>
-          <div className='text-gray-600 text-sm'>Manage and sync playlists</div>
+          <div className='text-gray-900 dark:text-slate-100 font-semibold'>
+            Playlists
+          </div>
+          <div className='text-gray-600 dark:text-slate-400 text-sm'>
+            Manage and sync playlists
+          </div>
         </Link>
       </div>
 
-      <div className='bg-white rounded-lg border border-gray-200 p-5'>
-        <div className='text-gray-900 font-semibold mb-2'>Get started</div>
-        <ol className='list-decimal pl-5 space-y-1 text-sm text-gray-700'>
+      <div className='bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5'>
+        <div className='text-gray-900 dark:text-slate-100 font-semibold mb-2'>
+          Get started
+        </div>
+        <ol className='list-decimal pl-5 space-y-1 text-sm text-gray-700 dark:text-slate-300'>
           <li>Visit Playlists to add or enable syncing</li>
           <li>Use Download to fetch a Spotify or Deezer link</li>
           <li>Track artists you care about from Artists</li>

@@ -262,9 +262,11 @@ function Tasks() {
             }
           />
 
-          <div className='bg-white rounded-lg shadow-sm border border-gray-200'>
-            <div className='px-6 py-4 border-b border-gray-200'>
-              <h2 className='text-lg font-semibold text-gray-900'>Task Logs</h2>
+          <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
+            <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
+              <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
+                Task Logs
+              </h2>
             </div>
 
             <div className='p-6'>
@@ -284,11 +286,11 @@ function Tasks() {
                       return (
                         <div
                           key={task.id}
-                          className='border border-gray-200 rounded p-2'
+                          className='border border-gray-200 dark:border-slate-700 rounded p-2'
                         >
                           <div className='flex items-center justify-between gap-3'>
                             <div className='flex items-center gap-2 text-sm min-w-0 flex-1'>
-                              <span className='font-medium text-gray-900 whitespace-nowrap'>
+                              <span className='font-medium text-gray-900 dark:text-slate-100 whitespace-nowrap'>
                                 {task.type.charAt(0).toUpperCase() +
                                   task.type.slice(1)}
                               </span>
@@ -300,7 +302,7 @@ function Tasks() {
                                 />
                               </div>
                               {!isExpanded && task.logMessages && (
-                                <span className='text-xs text-gray-500 whitespace-nowrap flex-shrink-0'>
+                                <span className='text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap flex-shrink-0'>
                                   ({task.logMessages.length} logs)
                                 </span>
                               )}
@@ -314,13 +316,13 @@ function Tasks() {
                                 }))
                               }
                               aria-expanded={isExpanded}
-                              className='text-xs text-indigo-600 hover:underline px-2 py-1 rounded hover:bg-indigo-50'
+                              className='text-xs text-indigo-600 dark:text-blue-400 hover:underline px-2 py-1 rounded hover:bg-indigo-50 dark:hover:bg-blue-950'
                             >
                               {isExpanded ? 'Hide' : 'Show logs'}
                             </button>
                           </div>
                           {isExpanded && (
-                            <div className='mt-2 bg-gray-50 rounded p-2 text-xs font-mono text-gray-700 max-h-32 overflow-y-auto'>
+                            <div className='mt-2 bg-gray-50 dark:bg-slate-900 rounded p-2 text-xs font-mono text-gray-700 dark:text-slate-300 max-h-32 overflow-y-auto'>
                               {task.logMessages?.map(
                                 (log: string, idx: number) => (
                                   <div
@@ -339,7 +341,7 @@ function Tasks() {
                     })}
                 </div>
               ) : (
-                <div className='text-center py-8 text-gray-500'>
+                <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
                   <div className='text-4xl mb-4'>📝</div>
                   <p>No task logs available</p>
                   <p className='text-sm'>

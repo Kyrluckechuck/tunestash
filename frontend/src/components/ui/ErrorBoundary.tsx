@@ -34,11 +34,11 @@ export class ErrorBoundary extends Component<
       }
 
       return (
-        <div className='min-h-screen flex items-center justify-center bg-gray-50'>
-          <div className='max-w-md w-full bg-white shadow-lg rounded-lg p-8'>
-            <div className='flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full'>
+        <div className='min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900'>
+          <div className='max-w-md w-full bg-white dark:bg-slate-800 shadow-lg dark:shadow-none rounded-lg p-8'>
+            <div className='flex items-center justify-center w-12 h-12 mx-auto bg-red-100 dark:bg-red-900/30 rounded-full'>
               <svg
-                className='w-6 h-6 text-red-600'
+                className='w-6 h-6 text-red-600 dark:text-red-400'
                 fill='none'
                 stroke='currentColor'
                 viewBox='0 0 24 24'
@@ -51,10 +51,10 @@ export class ErrorBoundary extends Component<
                 />
               </svg>
             </div>
-            <h2 className='mt-4 text-xl font-semibold text-gray-900 text-center'>
+            <h2 className='mt-4 text-xl font-semibold text-gray-900 dark:text-slate-100 text-center'>
               Something went wrong
             </h2>
-            <p className='mt-2 text-sm text-gray-600 text-center'>
+            <p className='mt-2 text-sm text-gray-600 dark:text-slate-400 text-center'>
               {this.state.error?.message ||
                 'An unexpected error occurred. Please try refreshing the page.'}
             </p>
@@ -67,7 +67,7 @@ export class ErrorBoundary extends Component<
               </button>
               <button
                 onClick={() => this.setState({ hasError: false, error: null })}
-                className='flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm font-medium'
+                className='flex-1 px-4 py-2 bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-300 rounded-md hover:bg-gray-300 dark:hover:bg-slate-500 text-sm font-medium'
               >
                 Try Again
               </button>

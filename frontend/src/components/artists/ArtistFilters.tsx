@@ -39,7 +39,7 @@ export function ArtistFilters({
           className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
             hasUndownloadedFilter === true
               ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-500'
           }`}
         >
           Has Undownloaded

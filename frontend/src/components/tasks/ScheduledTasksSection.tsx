@@ -54,8 +54,8 @@ function RunNowButton({ task, onRunNow, isRunning }: RunNowButtonProps) {
         px-3 py-1 text-xs font-medium rounded-md transition-colors
         ${
           task.enabled
-            ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
-            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-900'
+            : 'bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed'
         }
         ${isRunning ? 'opacity-50 cursor-wait' : ''}
       `}
@@ -76,7 +76,7 @@ function TaskToggle({ task, onToggle, isToggling }: TaskToggleProps) {
   if (task.isCore) {
     return (
       <div
-        className='text-xs text-gray-400 italic'
+        className='text-xs text-gray-400 dark:text-slate-500 italic'
         title='Core system task - cannot be disabled'
       >
         System
@@ -92,7 +92,7 @@ function TaskToggle({ task, onToggle, isToggling }: TaskToggleProps) {
       className={`
         relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
         transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
-        ${task.enabled ? 'bg-indigo-600' : 'bg-gray-200'}
+        ${task.enabled ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-slate-600'}
         ${isToggling ? 'opacity-50 cursor-not-allowed' : ''}
       `}
       role='switch'
@@ -169,13 +169,13 @@ export function ScheduledTasksSection() {
   const disabledUserTasks = userTasks.filter(t => !t.enabled);
 
   return (
-    <div className='bg-white rounded-lg shadow-sm border border-gray-200'>
-      <div className='px-6 py-4 border-b border-gray-200'>
+    <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
+      <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
         <div className='flex items-center justify-between'>
-          <h2 className='text-lg font-semibold text-gray-900'>
+          <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
             Scheduled Tasks (Celery Beat)
           </h2>
-          <span className='text-sm text-gray-600'>
+          <span className='text-sm text-gray-600 dark:text-slate-400'>
             {loading
               ? 'Loading...'
               : `${enabledUserTasks.length + coreTasks.length} active, ${disabledUserTasks.length} disabled`}
@@ -185,7 +185,7 @@ export function ScheduledTasksSection() {
 
       <div className='p-6'>
         {tasks.length === 0 ? (
-          <div className='text-center py-8 text-gray-500'>
+          <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
             <div className='text-4xl mb-4'>📅</div>
             <p>No scheduled tasks configured</p>
             <p className='text-sm'>
@@ -198,22 +198,22 @@ export function ScheduledTasksSection() {
             {enabledUserTasks.map(task => (
               <div
                 key={task.id}
-                className='flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200'
+                className='flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700'
               >
                 <div className='flex-1 min-w-0'>
                   <div className='flex items-center gap-2'>
-                    <span className='font-medium text-gray-900'>
+                    <span className='font-medium text-gray-900 dark:text-slate-100'>
                       {task.name}
                     </span>
-                    <span className='px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700'>
+                    <span className='px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'>
                       Active
                     </span>
                   </div>
-                  <div className='text-sm text-gray-600 mt-1'>
+                  <div className='text-sm text-gray-600 dark:text-slate-400 mt-1'>
                     {formatTaskName(task.task)}
                   </div>
                   {task.description && (
-                    <div className='text-xs text-gray-500 mt-1'>
+                    <div className='text-xs text-gray-500 dark:text-slate-400 mt-1'>
                       {task.description}
                     </div>
                   )}
@@ -221,20 +221,26 @@ export function ScheduledTasksSection() {
 
                 <div className='flex items-center gap-4 text-sm'>
                   <div className='text-right'>
-                    <div className='text-gray-500'>Schedule</div>
-                    <div className='font-medium text-gray-900'>
+                    <div className='text-gray-500 dark:text-slate-400'>
+                      Schedule
+                    </div>
+                    <div className='font-medium text-gray-900 dark:text-slate-100'>
                       {task.scheduleDescription}
                     </div>
                   </div>
                   <div className='text-right'>
-                    <div className='text-gray-500'>Last Run</div>
-                    <div className='font-medium text-gray-900'>
+                    <div className='text-gray-500 dark:text-slate-400'>
+                      Last Run
+                    </div>
+                    <div className='font-medium text-gray-900 dark:text-slate-100'>
                       {formatRelativeTime(task.lastRunAt)}
                     </div>
                   </div>
                   <div className='text-right'>
-                    <div className='text-gray-500'>Total Runs</div>
-                    <div className='font-medium text-gray-900'>
+                    <div className='text-gray-500 dark:text-slate-400'>
+                      Total Runs
+                    </div>
+                    <div className='font-medium text-gray-900 dark:text-slate-100'>
                       {task.totalRunCount}
                     </div>
                   </div>
@@ -255,29 +261,29 @@ export function ScheduledTasksSection() {
             {/* Disabled user tasks */}
             {disabledUserTasks.length > 0 && (
               <>
-                <div className='text-sm font-medium text-gray-500 mt-4 pt-4 border-t'>
+                <div className='text-sm font-medium text-gray-500 dark:text-slate-400 mt-4 pt-4 border-t dark:border-slate-700'>
                   Disabled Tasks
                 </div>
                 {disabledUserTasks.map(task => (
                   <div
                     key={task.id}
-                    className='flex items-center justify-between p-4 bg-gray-100 rounded-lg border border-gray-200 opacity-75'
+                    className='flex items-center justify-between p-4 bg-gray-100 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-700 opacity-75'
                   >
                     <div className='flex-1 min-w-0'>
                       <div className='flex items-center gap-2'>
-                        <span className='font-medium text-gray-700'>
+                        <span className='font-medium text-gray-700 dark:text-slate-300'>
                           {task.name}
                         </span>
-                        <span className='px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-600'>
+                        <span className='px-2 py-0.5 text-xs rounded-full bg-gray-200 dark:bg-slate-600 text-gray-600 dark:text-slate-400'>
                           Disabled
                         </span>
                       </div>
-                      <div className='text-sm text-gray-500 mt-1'>
+                      <div className='text-sm text-gray-500 dark:text-slate-400 mt-1'>
                         {formatTaskName(task.task)}
                       </div>
                     </div>
                     <div className='flex items-center gap-4 text-sm'>
-                      <div className='text-gray-500'>
+                      <div className='text-gray-500 dark:text-slate-400'>
                         {task.scheduleDescription}
                       </div>
                       <RunNowButton
@@ -299,44 +305,50 @@ export function ScheduledTasksSection() {
             {/* Core system tasks */}
             {coreTasks.length > 0 && (
               <>
-                <div className='text-sm font-medium text-gray-500 mt-4 pt-4 border-t'>
+                <div className='text-sm font-medium text-gray-500 dark:text-slate-400 mt-4 pt-4 border-t dark:border-slate-700'>
                   System Tasks
                 </div>
                 {coreTasks.map(task => (
                   <div
                     key={task.id}
-                    className='flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100'
+                    className='flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-100 dark:border-blue-900'
                   >
                     <div className='flex-1 min-w-0'>
                       <div className='flex items-center gap-2'>
-                        <span className='font-medium text-gray-900'>
+                        <span className='font-medium text-gray-900 dark:text-slate-100'>
                           {task.name}
                         </span>
-                        <span className='px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700'>
+                        <span className='px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'>
                           System
                         </span>
                       </div>
-                      <div className='text-sm text-gray-600 mt-1'>
+                      <div className='text-sm text-gray-600 dark:text-slate-400 mt-1'>
                         {formatTaskName(task.task)}
                       </div>
                     </div>
 
                     <div className='flex items-center gap-4 text-sm'>
                       <div className='text-right'>
-                        <div className='text-gray-500'>Schedule</div>
-                        <div className='font-medium text-gray-900'>
+                        <div className='text-gray-500 dark:text-slate-400'>
+                          Schedule
+                        </div>
+                        <div className='font-medium text-gray-900 dark:text-slate-100'>
                           {task.scheduleDescription}
                         </div>
                       </div>
                       <div className='text-right'>
-                        <div className='text-gray-500'>Last Run</div>
-                        <div className='font-medium text-gray-900'>
+                        <div className='text-gray-500 dark:text-slate-400'>
+                          Last Run
+                        </div>
+                        <div className='font-medium text-gray-900 dark:text-slate-100'>
                           {formatRelativeTime(task.lastRunAt)}
                         </div>
                       </div>
                       <div className='text-right'>
-                        <div className='text-gray-500'>Total Runs</div>
-                        <div className='font-medium text-gray-900'>
+                        <div className='text-gray-500 dark:text-slate-400'>
+                          Total Runs
+                        </div>
+                        <div className='font-medium text-gray-900 dark:text-slate-100'>
                           {task.totalRunCount}
                         </div>
                       </div>

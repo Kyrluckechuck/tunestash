@@ -63,7 +63,8 @@ function typeLabel(listType: string): string {
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
     active: 'bg-green-100 text-green-800',
-    disabled_by_user: 'bg-gray-100 text-gray-800',
+    disabled_by_user:
+      'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-200',
     auth_error: 'bg-red-100 text-red-800',
     not_found: 'bg-yellow-100 text-yellow-800',
     sync_error: 'bg-red-100 text-red-800',
@@ -77,7 +78,7 @@ function statusBadge(status: string) {
   };
   return (
     <span
-      className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-800'}`}
+      className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-200'}`}
     >
       {labels[status] || status}
     </span>
@@ -125,7 +126,7 @@ function SortHeader({
 }) {
   return (
     <th
-      className='px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700'
+      className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-slate-200'
       onClick={() => onSort(field)}
     >
       {label}
@@ -155,7 +156,7 @@ export function ExternalListsTable({
 }: ExternalListsTableProps) {
   if (lists.length === 0) {
     return (
-      <div className='text-center py-12 text-gray-500'>
+      <div className='text-center py-12 text-gray-500 dark:text-slate-400'>
         <p className='text-lg'>No external lists found</p>
         <p className='text-sm mt-1'>
           Add a Last.fm, ListenBrainz, or YouTube Music list to get started
@@ -166,8 +167,8 @@ export function ExternalListsTable({
 
   return (
     <div className='overflow-x-auto'>
-      <table className='min-w-full divide-y divide-gray-200'>
-        <thead className='bg-gray-50'>
+      <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
+        <thead className='bg-gray-50 dark:bg-slate-900'>
           <tr>
             <SortHeader
               label='Name'
@@ -183,7 +184,7 @@ export function ExternalListsTable({
               direction={sortDirection}
               onSort={onSort}
             />
-            <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+            <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
               Type
             </th>
             <SortHeader
@@ -214,16 +215,19 @@ export function ExternalListsTable({
               direction={sortDirection}
               onSort={onSort}
             />
-            <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>
+            <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
               Actions
             </th>
           </tr>
         </thead>
-        <tbody className='bg-white divide-y divide-gray-200'>
+        <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
           {lists.map(list => (
-            <tr key={list.id} className='hover:bg-gray-50'>
+            <tr
+              key={list.id}
+              className='hover:bg-gray-50 dark:hover:bg-slate-700'
+            >
               <td className='px-4 py-3'>
-                <div className='text-sm font-medium text-gray-900'>
+                <div className='text-sm font-medium text-gray-900 dark:text-slate-100'>
                   {(() => {
                     const url = getExternalUrl(list);
                     return url ? (
@@ -231,10 +235,10 @@ export function ExternalListsTable({
                         href={url}
                         target='_blank'
                         rel='noopener noreferrer'
-                        className='text-indigo-600 hover:text-indigo-800 hover:underline'
+                        className='text-indigo-600 dark:text-blue-400 hover:text-indigo-800 dark:hover:text-blue-300 hover:underline'
                       >
                         {list.name}
-                        <span className='ml-1 text-xs text-gray-400'>
+                        <span className='ml-1 text-xs text-gray-400 dark:text-slate-500'>
                           &#8599;
                         </span>
                       </a>
@@ -244,7 +248,7 @@ export function ExternalListsTable({
                   })()}
                 </div>
                 {list.period && (
-                  <div className='text-xs text-gray-500'>
+                  <div className='text-xs text-gray-500 dark:text-slate-400'>
                     Period: {list.period}
                   </div>
                 )}
@@ -253,7 +257,7 @@ export function ExternalListsTable({
                 <span
                   className={`px-2 py-0.5 rounded text-xs font-medium ${
                     list.source === 'lastfm'
-                      ? 'bg-red-50 text-red-700'
+                      ? 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400'
                       : list.source === 'youtube_music'
                         ? 'bg-amber-50 text-amber-700'
                         : 'bg-orange-50 text-orange-700'
@@ -262,10 +266,10 @@ export function ExternalListsTable({
                   {sourceLabel(list.source)}
                 </span>
               </td>
-              <td className='px-4 py-3 text-sm text-gray-600'>
+              <td className='px-4 py-3 text-sm text-gray-600 dark:text-slate-400'>
                 {typeLabel(list.listType)}
               </td>
-              <td className='px-4 py-3 text-sm text-gray-600'>
+              <td className='px-4 py-3 text-sm text-gray-600 dark:text-slate-400'>
                 {list.username}
               </td>
               <td className='px-4 py-3'>{statusBadge(list.status)}</td>
@@ -276,7 +280,7 @@ export function ExternalListsTable({
                   failedTracks={list.failedTracks}
                 />
               </td>
-              <td className='px-4 py-3 text-sm text-gray-500'>
+              <td className='px-4 py-3 text-sm text-gray-500 dark:text-slate-400'>
                 {list.lastSyncedAt
                   ? new Date(list.lastSyncedAt).toLocaleDateString()
                   : 'Never'}
@@ -286,7 +290,7 @@ export function ExternalListsTable({
                   <button
                     onClick={() => onToggleEnabled(list)}
                     disabled={enabledMutatingIds.has(list.id)}
-                    className='text-xs px-2 py-1 rounded border hover:bg-gray-50 disabled:opacity-50'
+                    className='text-xs px-2 py-1 rounded border hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50'
                     title={
                       list.status === 'active'
                         ? 'Disable'
@@ -303,7 +307,7 @@ export function ExternalListsTable({
                   </button>
                   <button
                     onClick={() => onEditList(list)}
-                    className='text-xs px-2 py-1 rounded border text-indigo-600 hover:bg-indigo-50'
+                    className='text-xs px-2 py-1 rounded border text-indigo-600 dark:text-blue-400 hover:bg-indigo-50 dark:hover:bg-blue-950'
                     title='Edit list settings'
                   >
                     Edit
@@ -314,7 +318,7 @@ export function ExternalListsTable({
                       syncMutatingIds.has(list.id) ||
                       forceSyncMutatingIds.has(list.id)
                     }
-                    className='text-xs px-2 py-1 rounded border text-blue-600 hover:bg-blue-50 disabled:opacity-50'
+                    className='text-xs px-2 py-1 rounded border text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950 disabled:opacity-50'
                     title='Sync now'
                   >
                     {syncMutatingIds.has(list.id) ? 'Syncing...' : 'Sync'}
@@ -336,8 +340,8 @@ export function ExternalListsTable({
                     onClick={() => onToggleAutoTrack(list)}
                     className={`text-xs px-2 py-1 rounded border ${
                       list.autoTrackArtists
-                        ? 'bg-green-50 text-green-700 border-green-200'
-                        : 'text-gray-500 hover:bg-gray-50'
+                        ? 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 border-green-200'
+                        : 'text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'
                     }`}
                     title={
                       list.autoTrackArtists
@@ -350,7 +354,7 @@ export function ExternalListsTable({
                   <button
                     onClick={() => onDeleteList(list.id, list.name)}
                     disabled={deleteMutatingIds.has(list.id)}
-                    className='text-xs px-2 py-1 rounded border text-red-600 hover:bg-red-50 disabled:opacity-50'
+                    className='text-xs px-2 py-1 rounded border text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50'
                     title='Delete list'
                   >
                     Delete

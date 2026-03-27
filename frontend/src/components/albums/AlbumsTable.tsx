@@ -53,8 +53,8 @@ export function AlbumsTable({
 }: AlbumsTableProps) {
   if (albums.length === 0) {
     return (
-      <div className='bg-white rounded shadow overflow-hidden'>
-        <div className='p-6 text-center text-gray-500'>
+      <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
+        <div className='p-6 text-center text-gray-500 dark:text-slate-400'>
           {loading ? 'Loading albums...' : 'No albums found.'}
         </div>
       </div>
@@ -62,10 +62,10 @@ export function AlbumsTable({
   }
 
   return (
-    <div className='bg-white rounded shadow overflow-hidden'>
+    <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
       <div className='overflow-x-auto'>
-        <table className='min-w-full divide-y divide-gray-200'>
-          <thead className='bg-gray-50'>
+        <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
+          <thead className='bg-gray-50 dark:bg-slate-900'>
             <tr>
               <SortableTableHeader
                 field='name'
@@ -133,9 +133,12 @@ export function AlbumsTable({
               </SortableTableHeader>
             </tr>
           </thead>
-          <tbody className='bg-white divide-y divide-gray-200'>
+          <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
             {albums.map(album => (
-              <tr key={album.id} className='hover:bg-gray-50'>
+              <tr
+                key={album.id}
+                className='hover:bg-gray-50 dark:hover:bg-slate-700'
+              >
                 <td className='px-6 py-4 whitespace-nowrap'>
                   <div className='text-sm font-medium'>
                     <a
@@ -156,7 +159,7 @@ export function AlbumsTable({
                         href={`https://open.spotify.com/album/${album.spotifyGid}`}
                         target='_blank'
                         rel='noopener noreferrer'
-                        className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600 hover:bg-green-100 transition-colors'
+                        className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 hover:bg-green-100 transition-colors'
                         title='Also available on Spotify'
                       >
                         Spotify
@@ -170,28 +173,28 @@ export function AlbumsTable({
                       <Link
                         to='/artists'
                         search={{ search: String(album.artistId) }}
-                        className='text-blue-600 hover:text-blue-900 hover:underline'
+                        className='text-blue-600 dark:text-blue-400 hover:text-blue-900 hover:underline'
                       >
                         {album.artist}
                       </Link>
                     ) : (
-                      <span className='text-gray-500'>
+                      <span className='text-gray-500 dark:text-slate-400'>
                         {album.artist || 'Unknown Artist'}
                       </span>
                     )}
                   </div>
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap'>
-                  <div className='text-sm text-gray-500'>
+                  <div className='text-sm text-gray-500 dark:text-slate-400'>
                     {formatAlbumValue(album.albumType)}
                   </div>
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap'>
-                  <div className='text-sm text-gray-500'>
+                  <div className='text-sm text-gray-500 dark:text-slate-400'>
                     {formatAlbumValue(album.albumGroup)}
                   </div>
                 </td>
-                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
                   {album.totalTracks}
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap'>
@@ -222,7 +225,7 @@ export function AlbumsTable({
                       <button
                         onClick={() => onDownloadAlbum(album.id)}
                         disabled={mutatingIds?.has(album.id)}
-                        className='text-blue-600 hover:text-blue-900 disabled:text-gray-400 disabled:cursor-not-allowed'
+                        className='text-blue-600 dark:text-blue-400 hover:text-blue-900 disabled:text-gray-400 disabled:cursor-not-allowed'
                         title='Download album'
                       >
                         <svg

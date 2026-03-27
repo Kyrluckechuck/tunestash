@@ -54,7 +54,9 @@ export function DataTable<T>({
 
   return (
     <div className='space-y-4'>
-      <div className='bg-white rounded shadow overflow-hidden'>{children}</div>
+      <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
+        {children}
+      </div>
 
       <LoadMoreButton
         hasNextPage={hasNextPage}

@@ -10,7 +10,7 @@ export function RetryButton({
   return (
     <button
       onClick={onClick}
-      className='inline-flex items-center gap-2 px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded border border-gray-300'
+      className='inline-flex items-center gap-2 px-3 py-1 text-sm bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-500 rounded border border-gray-300 dark:border-slate-600 dark:text-slate-100'
     >
       <svg
         className='w-4 h-4'

@@ -27,10 +27,10 @@ export function SkeletonTable({ columns, rows = 10 }: SkeletonTableProps) {
     [rowKeys, columns]
   );
   return (
-    <div className='bg-white rounded shadow overflow-hidden'>
+    <div className='bg-white dark:bg-slate-800 rounded shadow dark:shadow-none overflow-hidden'>
       <div className='overflow-x-auto'>
-        <table className='min-w-full divide-y divide-gray-200'>
-          <thead className='bg-gray-50'>
+        <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
+          <thead className='bg-gray-50 dark:bg-slate-900'>
             <tr>
               {headerKeys.map(key => (
                 <th key={key} className='px-6 py-3'>
@@ -39,7 +39,7 @@ export function SkeletonTable({ columns, rows = 10 }: SkeletonTableProps) {
               ))}
             </tr>
           </thead>
-          <tbody className='bg-white divide-y divide-gray-200'>
+          <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
             {rowKeys.map((rowKey, rIdx) => (
               <tr key={rowKey}>
                 {rowCellKeys[rIdx].map(cellKey => (

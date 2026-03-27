@@ -79,15 +79,15 @@ function Playlists() {
   const tabClass = (tab: PlaylistTab) =>
     `px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors ${
       activeTab === tab
-        ? 'border-indigo-500 text-indigo-600'
-        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+        ? 'border-indigo-500 text-indigo-600 dark:text-blue-400'
+        : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-600'
     }`;
 
   return (
     <section>
       <h1 className='text-2xl font-semibold mb-4'>Playlists</h1>
 
-      <div className='flex gap-1 border-b border-gray-200 mb-6'>
+      <div className='flex gap-1 border-b border-gray-200 dark:border-slate-700 mb-6'>
         <button
           className={tabClass('synced')}
           onClick={() => setActiveTab('synced')}
@@ -213,7 +213,7 @@ function SyncedPlaylistsTab({
     <>
       <div className='flex items-center justify-between mb-4'>
         <div className='flex items-center gap-3'>
-          <h2 className='text-lg font-medium text-gray-700'>
+          <h2 className='text-lg font-medium text-gray-700 dark:text-slate-300'>
             Synced Playlists ({playlists.length} of {totalCount})
           </h2>
           {isRefreshing && <InlineSpinner label='Updating...' />}
@@ -243,7 +243,7 @@ function SyncedPlaylistsTab({
             onPageSizeChange={handlePageSizeChange}
           />
           {totalCount > playlists.length && (
-            <span className='text-sm text-gray-500'>
+            <span className='text-sm text-gray-500 dark:text-slate-400'>
               Showing first {playlists.length} playlists
             </span>
           )}

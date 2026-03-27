@@ -70,8 +70,8 @@ export function PlaylistsTable({
 }: PlaylistsTableProps) {
   if (playlists.length === 0) {
     return (
-      <div className='bg-white rounded shadow overflow-hidden'>
-        <div className='p-6 text-center text-gray-500'>
+      <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
+        <div className='p-6 text-center text-gray-500 dark:text-slate-400'>
           {loading ? 'Loading playlists...' : 'No playlists found.'}
         </div>
       </div>
@@ -79,10 +79,10 @@ export function PlaylistsTable({
   }
 
   return (
-    <div className='bg-white rounded shadow overflow-hidden'>
+    <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
       <div className='overflow-x-auto'>
-        <table className='min-w-full divide-y divide-gray-200'>
-          <thead className='bg-gray-50'>
+        <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
+          <thead className='bg-gray-50 dark:bg-slate-900'>
             <tr>
               <SortableTableHeader
                 field='name'
@@ -134,11 +134,14 @@ export function PlaylistsTable({
               </SortableTableHeader>
             </tr>
           </thead>
-          <tbody className='bg-white divide-y divide-gray-200'>
+          <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
             {playlists.map(playlist => (
-              <tr key={playlist.id} className='hover:bg-gray-50'>
+              <tr
+                key={playlist.id}
+                className='hover:bg-gray-50 dark:hover:bg-slate-700'
+              >
                 <td className='px-6 py-4 whitespace-nowrap'>
-                  <div className='text-sm font-medium text-gray-900'>
+                  <div className='text-sm font-medium text-gray-900 dark:text-slate-100'>
                     {playlist.name}
                   </div>
                 </td>
@@ -247,7 +250,7 @@ export function PlaylistsTable({
                     }
                   />
                 </td>
-                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500'>
+                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
                   {playlist.lastSyncedAt
                     ? new Date(playlist.lastSyncedAt).toLocaleString()
                     : 'Never'}
@@ -341,7 +344,7 @@ export function PlaylistsTable({
                     href={playlist.url}
                     target='_blank'
                     rel='noopener noreferrer'
-                    className='text-indigo-600 hover:text-indigo-900 underline'
+                    className='text-indigo-600 dark:text-blue-400 hover:text-indigo-900 underline'
                   >
                     {playlist.provider === 'deezer'
                       ? 'Open Deezer'

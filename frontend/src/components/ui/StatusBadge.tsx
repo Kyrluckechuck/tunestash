@@ -21,10 +21,10 @@ const WarningIcon = () => (
 );
 
 const colorClasses: Record<string, string> = {
-  green: 'bg-green-100 text-green-800',
-  red: 'bg-red-100 text-red-800',
-  amber: 'bg-amber-100 text-amber-800',
-  gray: 'bg-gray-100 text-gray-600',
+  green: 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300',
+  red: 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300',
+  amber: 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300',
+  gray: 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400',
 };
 
 export function StatusBadge({
