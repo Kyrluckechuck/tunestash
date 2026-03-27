@@ -239,7 +239,3 @@ def create_metadata_from_match(
         release_date=track_match.release_date,
         cover_url=track_match.cover_url,
     )
-
-
-# Backward-compat alias
-create_spotify_metadata_from_match = create_metadata_from_match

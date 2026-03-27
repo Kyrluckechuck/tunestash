@@ -343,7 +343,7 @@ class Song(models.Model):
     )
     download_provider: models.SmallIntegerField = models.SmallIntegerField(
         choices=DownloadProvider.choices,
-        default=DownloadProvider.SPOTDL,
+        default=DownloadProvider.UNKNOWN,
         help_text="Provider used to download this song",
     )
 

@@ -875,35 +875,44 @@ def download_extra_album_types_for_artist(
             entity_type="ARTIST",
         )
 
-    albums_to_download = []
-    for album in missing_albums.iterator():
-        if not album.deezer_id:
-            try:
-                if not _resolve_and_assign_deezer_id(album):
-                    album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
-                    logger.warning(
-                        f"Extra album '{album.name}' not found on Deezer, skipping"
-                    )
+    try:
+        albums_to_download = []
+        for album in missing_albums.iterator():
+            if not album.deezer_id:
+                try:
+                    if not _resolve_and_assign_deezer_id(album):
+                        album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
+                        logger.warning(
+                            f"Extra album '{album.name}' not found on Deezer, skipping"
+                        )
+                        continue
+                except _AlbumMerged:
                     continue
-            except _AlbumMerged:
-                continue
-        albums_to_download.append(album)
+            albums_to_download.append(album)
 
-    if albums_to_download:
-        logger.info(
-            f"Downloading {len(albums_to_download)} extra albums "
-            f"for artist {artist.name}"
-        )
-        for dl_album in albums_to_download:
-            try:
-                _download_deezer_album(dl_album, task_history)
-            except _AlbumMerged:
-                pass
-            except Exception as e:
-                logger.error(f"Failed to download extra album '{dl_album.name}': {e}")
+        if albums_to_download:
+            logger.info(
+                f"Downloading {len(albums_to_download)} extra albums "
+                f"for artist {artist.name}"
+            )
+            for dl_album in albums_to_download:
+                try:
+                    _download_deezer_album(dl_album, task_history)
+                except _AlbumMerged:
+                    pass
+                except Exception as e:
+                    logger.error(
+                        f"Failed to download extra album '{dl_album.name}': {e}"
+                    )
 
-    artist.last_downloaded_at = Now()
-    artist.save()
+        artist.last_downloaded_at = Now()
+        artist.save()
+        complete_task(task_history, success=True)
+    except Exception as e:
+        logger.error(f"Error downloading extra album types for artist {artist_id}: {e}")
+        if task_history:
+            complete_task(task_history, success=False, error_message=str(e))
+        raise
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.download_album_by_spotify_id")

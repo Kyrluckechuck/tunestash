@@ -1,22 +1,6 @@
-from datetime import datetime
 from urllib.parse import urljoin, urlparse
 
 import base62
-from lib.config_class import Config
-
-
-def convert_date_string_to_datetime(string: str) -> datetime:
-    added_at: str = string
-    # Convert from Zulu UTC to datetime UTC
-    added_at = added_at.replace("Z", "+00:00")
-    return datetime.fromisoformat(added_at)
-
-
-def update_process_info(config: Config, progress: int) -> None:
-    if config.process_info is None:
-        return
-    config.process_info.total_progress = progress
-    config.process_info.update(n=0)
 
 
 def uri_to_gid(uri: str) -> str:

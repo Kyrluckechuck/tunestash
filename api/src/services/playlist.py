@@ -1,19 +1,18 @@
 # mypy: disable-error-code=attr-defined
-import re
 from typing import Any, List, Optional, Tuple, cast
 
 from django.db.models import Q
 
 from asgiref.sync import sync_to_async
+from downloader.utils import normalize_spotify_url
 
 from library_manager.models import PlaylistStatus
 from library_manager.models import TrackedPlaylist as DjangoPlaylist
+from library_manager.tasks.core import extract_deezer_playlist_id
 from library_manager.validators import is_spotify_owned_playlist
 
 from ..graphql_types.models import MutationResult, Playlist
 from .base import BaseService
-
-_DEEZER_PLAYLIST_REGEX = re.compile(r"deezer\.com/(?:\w+/)?playlist/(\d+)")
 
 
 class PlaylistService(BaseService[Playlist]):
@@ -27,31 +26,19 @@ class PlaylistService(BaseService[Playlist]):
 
     @staticmethod
     def _extract_deezer_playlist_id(url: str) -> Optional[str]:
-        match = _DEEZER_PLAYLIST_REGEX.search(url)
-        return match.group(1) if match else None
+        return extract_deezer_playlist_id(url)
 
     @staticmethod
     def _normalize_deezer_url(url: str) -> str:
         """Extract canonical Deezer playlist URL."""
-        match = _DEEZER_PLAYLIST_REGEX.search(url)
-        if match:
-            return f"https://www.deezer.com/playlist/{match.group(1)}"
+        playlist_id = extract_deezer_playlist_id(url)
+        if playlist_id:
+            return f"https://www.deezer.com/playlist/{playlist_id}"
         return url
 
-    def _normalize_spotify_url(self, url: str) -> str:
-        """Convert various Spotify URL formats to a standard format, stripping tracking parameters."""
-        # Handle spotify: URIs (already normalized)
-        if url.startswith("spotify:"):
-            return url
-
-        # Handle web URLs - extract content type and ID, ignoring parameters
-        if "open.spotify.com" in url:
-            match = re.search(r"open\.spotify\.com/([^/?]+)/([^/?]+)", url)
-            if match:
-                content_type, content_id = match.groups()
-                return f"spotify:{content_type}:{content_id}"
-
-        return url
+    @staticmethod
+    def _normalize_spotify_url(url: str) -> str:
+        return normalize_spotify_url(url)
 
     def _find_duplicate_playlist(
         self, normalized_url: str, exclude_id: Optional[int] = None

@@ -2,6 +2,8 @@
 # pylint: disable=R0911  # allow many return statements for routing logic
 import re
 
+from downloader.utils import normalize_spotify_url
+
 from ..graphql_types.models import MutationResult
 from .album import AlbumService
 from .artist import ArtistService
@@ -154,21 +156,9 @@ class DownloaderService:
                 message=f"Unsupported Deezer content type: {content_type}",
             )
 
-    def _normalize_spotify_url(self, url: str) -> str:
-        """Convert various Spotify URL formats to a standard format."""
-        # Handle spotify: URIs
-        if url.startswith("spotify:"):
-            return url
-
-        # Handle web URLs
-        if "open.spotify.com" in url:
-            # Extract the path and convert to URI format
-            match = re.search(r"open\.spotify\.com/([^/?]+)/([^/?]+)", url)
-            if match:
-                content_type, content_id = match.groups()
-                return f"spotify:{content_type}:{content_id}"
-
-        return url
+    @staticmethod
+    def _normalize_spotify_url(url: str) -> str:
+        return normalize_spotify_url(url)
 
     def _get_content_type(self, url: str) -> str:
         """Determine the type of Spotify content from URL/URI."""

@@ -519,9 +519,7 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
     except Exception as e:
         logger.error(f"Error retrying failed songs for artist {artist_id}: {e}")
         if task_history:
-            task_history.status = "FAILED"
-            task_history.add_log_message(str(e))
-            task_history.save()
+            complete_task(task_history, success=False, error_message=str(e))
         raise
 
 
