@@ -1961,3 +1961,20 @@ class AppSetting(models.Model):
 
     def __str__(self) -> str:
         return f"{self.key}={self.value}"
+
+
+class CachedStat(models.Model):
+    """Pre-computed statistics for fast dashboard/home page reads."""
+
+    key = models.CharField(max_length=100, unique=True, db_index=True)
+    display_name = models.CharField(max_length=200)
+    value = models.JSONField()
+    category = models.CharField(max_length=50, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta(TypedModelMeta):
+        app_label = "library_manager"
+        db_table = "cached_stats"
+
+    def __str__(self) -> str:
+        return f"{self.key}: {self.value}"
