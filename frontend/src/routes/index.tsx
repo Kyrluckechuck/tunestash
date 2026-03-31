@@ -20,9 +20,7 @@ function Home() {
   const { data, loading } = useQuery(GetSystemStatusDocument, {
     pollInterval: 30 * 1000, // Poll every 30 seconds
   });
-  const { data: statsData } = useQuery(GetCachedStatsDocument, {
-    variables: { category: 'library' },
-  });
+  const { data: statsData } = useQuery(GetCachedStatsDocument);
   const [statusExpanded, setStatusExpanded] = useState(false);
 
   const getStat = (key: string): string => {
