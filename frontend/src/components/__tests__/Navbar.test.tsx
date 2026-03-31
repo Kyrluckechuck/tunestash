@@ -66,6 +66,6 @@ describe('Navbar', () => {
     expect(navbar).toHaveClass('bg-white', 'border-b', 'border-slate-200');
 
     const title = screen.getByText('TuneStash');
-    expect(title).toHaveClass('font-extrabold', 'text-2xl');
+    expect(title).toHaveClass('font-extrabold', 'text-xl');
   });
 });

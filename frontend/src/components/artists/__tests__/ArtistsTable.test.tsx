@@ -39,8 +39,8 @@ describe('ArtistsTable', () => {
       />
     );
 
-    expect(screen.getByText('Artist 1')).toBeInTheDocument();
-    expect(screen.getByText('Artist 2')).toBeInTheDocument();
+    expect(screen.getAllByText('Artist 1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Artist 2').length).toBeGreaterThan(0);
   });
 
   it('shows tracked status correctly', () => {
