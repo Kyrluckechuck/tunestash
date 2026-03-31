@@ -82,4 +82,9 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute=45),  # Every hour at :45
         "options": {"priority": TaskPriority.MAINTENANCE},
     },
+    "refresh-cached-stats": {
+        "task": "library_manager.tasks.refresh_cached_stats",
+        "schedule": crontab(minute="*/15"),
+        "options": {"priority": TaskPriority.MAINTENANCE},
+    },
 }
