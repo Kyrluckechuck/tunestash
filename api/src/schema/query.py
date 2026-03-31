@@ -205,11 +205,16 @@ class Query:  # pylint: disable=too-many-public-methods
         return await services.album.get_by_id(id)
 
     @strawberry.field
+    async def album_by_id(self, id: int) -> Optional[Album]:
+        return await services.album.get_by_db_id(id)
+
+    @strawberry.field
     async def songs(
         self,
         first: Optional[int] = 20,
         after: Optional[str] = None,
         artist_id: Optional[int] = None,
+        album_id: Optional[int] = None,
         downloaded: Optional[bool] = None,
         unavailable: Optional[bool] = None,
         sort_by: Optional[str] = None,
@@ -222,6 +227,7 @@ class Query:  # pylint: disable=too-many-public-methods
             first=first_int,
             after=after,
             artist_id=artist_id,
+            album_id=album_id,
             downloaded=downloaded,
             unavailable=unavailable,
             sort_by=sort_by,

@@ -33,6 +33,23 @@ query GetAlbum($id: String!) {
   }
 }
 
+query GetAlbumById($id: Int!) {
+  albumById(id: $id) {
+    id
+    name
+    spotifyGid
+    deezerId
+    totalTracks
+    wanted
+    downloaded
+    albumType
+    albumGroup
+    artist
+    artistId
+    artistGid
+  }
+}
+
 query GetArtists(
   $isTracked: Boolean
   $hasUndownloaded: Boolean

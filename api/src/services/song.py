@@ -66,9 +66,18 @@ class SongService(BaseService[Song]):
         # Copy the exact pattern from ArtistService
         queryset = self.model.objects.all()
 
+        album_id = (
+            filters.get("album_id")
+            if isinstance(filters.get("album_id"), int)
+            else None
+        )
+
         # Apply filters
         if artist_id is not None:
             queryset = queryset.filter(primary_artist_id=artist_id)
+
+        if album_id is not None:
+            queryset = queryset.filter(album_id=album_id)
 
         if downloaded is not None:
             queryset = queryset.filter(downloaded=downloaded)

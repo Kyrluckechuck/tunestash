@@ -457,7 +457,8 @@ type Query {
   artist(id: String!): Artist
   albums(first: Int = 20, after: String = null, artistId: Int = null, downloaded: Boolean = null, wanted: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null): AlbumConnection!
   album(id: String!): Album
-  songs(first: Int = 20, after: String = null, artistId: Int = null, downloaded: Boolean = null, unavailable: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null, maxBitrate: Int = null): SongConnection!
+  albumById(id: Int!): Album
+  songs(first: Int = 20, after: String = null, artistId: Int = null, albumId: Int = null, downloaded: Boolean = null, unavailable: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null, maxBitrate: Int = null): SongConnection!
   song(id: String!): Song
   playlists(first: Int = 20, after: String = null, enabled: Boolean = null, status: String = null, sortBy: String = null, sortDirection: String = null, search: String = null): PlaylistConnection!
   playlist(id: String!): Playlist

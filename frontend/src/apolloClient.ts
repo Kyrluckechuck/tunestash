@@ -93,6 +93,7 @@ export const apolloClient = new ApolloClient({
           songs: {
             keyArgs: [
               'artistId',
+              'albumId',
               'downloaded',
               'unavailable',
               'search',

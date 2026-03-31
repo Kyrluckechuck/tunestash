@@ -2,6 +2,7 @@ query GetSongs(
   $first: Int
   $after: String
   $artistId: Int
+  $albumId: Int
   $downloaded: Boolean
   $unavailable: Boolean
   $sortBy: String
@@ -13,6 +14,7 @@ query GetSongs(
     first: $first
     after: $after
     artistId: $artistId
+    albumId: $albumId
     downloaded: $downloaded
     unavailable: $unavailable
     sortBy: $sortBy
