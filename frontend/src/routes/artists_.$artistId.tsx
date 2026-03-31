@@ -127,6 +127,7 @@ function ArtistDetail() {
       <div className='mb-4'>
         <Link
           to='/artists'
+          search={{ tab: undefined }}
           className='text-sm text-indigo-600 dark:text-blue-400 hover:text-indigo-800 flex items-center gap-1'
         >
           ← Back to Artists

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { InlineSpinner } from '../components/ui/InlineSpinner';
 import { PageSpinner } from '../components/ui/PageSpinner';
@@ -18,10 +18,13 @@ import { DeezerLinkingSection } from '../components/artists/DeezerLinkingSection
 // Hooks
 import { useArtistsPage } from '../hooks/useArtistsPage';
 
-type ArtistTab = 'library' | 'link-deezer';
-
 function Artists() {
-  const [activeTab, setActiveTab] = useState<ArtistTab>('library');
+  const { tab } = Route.useSearch();
+  const activeTab = tab || 'library';
+  const navigate = Route.useNavigate();
+  const setActiveTab = (tab: string) => {
+    navigate({ search: { tab } });
+  };
 
   const {
     // Data
@@ -171,4 +174,7 @@ function Artists() {
 
 export const Route = createFileRoute('/artists')({
   component: Artists,
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: search.tab as string | undefined,
+  }),
 });

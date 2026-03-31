@@ -172,7 +172,7 @@ export function AlbumsTable({
                     {album.artist && album.artistId ? (
                       <Link
                         to='/artists'
-                        search={{ search: String(album.artistId) }}
+                        search={{ tab: undefined }}
                         className='text-blue-600 dark:text-blue-400 hover:text-blue-900 hover:underline'
                       >
                         {album.artist}

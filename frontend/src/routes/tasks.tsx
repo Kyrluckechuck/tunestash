@@ -32,7 +32,12 @@ const TABS = [
 ];
 
 function Tasks() {
-  const [activeTab, setActiveTab] = useState<TasksTab>('active');
+  const { tab } = Route.useSearch();
+  const activeTab = tab || 'active';
+  const navigate = Route.useNavigate();
+  const setActiveTab = (tab: string) => {
+    navigate({ search: { tab } });
+  };
   const [activeTasksFilter, setActiveTasksFilter] = useState<TaskType>('all');
   const [activeTasksEntityFilter, setActiveTasksEntityFilter] =
     useState<EntityType>('all');
@@ -370,4 +375,7 @@ function Tasks() {
 
 export const Route = createFileRoute('/tasks')({
   component: Tasks,
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: search.tab as string | undefined,
+  }),
 });
