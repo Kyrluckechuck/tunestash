@@ -29,6 +29,7 @@ export function ArtistContext({
         <div className='flex items-center space-x-3'>
           <Link
             to='/artists'
+            search={{ tab: undefined }}
             className='text-sm text-indigo-600 hover:text-indigo-800 underline'
           >
             ← Back to Artists

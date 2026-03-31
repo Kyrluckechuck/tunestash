@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 // Components
@@ -19,7 +18,12 @@ import { usePlaylistsPage } from '../hooks/usePlaylistsPage';
 type PlaylistTab = 'synced' | 'external';
 
 function Playlists() {
-  const [activeTab, setActiveTab] = useState<PlaylistTab>('synced');
+  const { tab } = Route.useSearch();
+  const activeTab = tab || 'synced';
+  const navigate = Route.useNavigate();
+  const setActiveTab = (tab: string) => {
+    navigate({ search: { tab } });
+  };
 
   const {
     // Data
@@ -305,4 +309,7 @@ function SyncedPlaylistsTab({
 
 export const Route = createFileRoute('/playlists')({
   component: Playlists,
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: search.tab as string | undefined,
+  }),
 });

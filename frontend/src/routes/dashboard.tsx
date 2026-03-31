@@ -72,12 +72,12 @@ function StatCard({
   color?: 'gray' | 'green' | 'blue' | 'red' | 'yellow' | 'purple';
 }) {
   const colorClasses = {
-    gray: 'bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700',
-    green: 'bg-green-50 dark:bg-green-950 border-green-200',
-    blue: 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800',
-    red: 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800',
-    yellow: 'bg-yellow-50 border-yellow-200',
-    purple: 'bg-purple-50 border-purple-200',
+    gray: 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+    green: 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+    blue: 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+    red: 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+    yellow: 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+    purple: 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700',
   };
 
   const textColorClasses = {

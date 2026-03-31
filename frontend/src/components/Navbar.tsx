@@ -44,6 +44,7 @@ export const Navbar = () => {
             <Link
               key={link.to}
               to={link.to}
+              search={{} as Record<string, unknown>}
               className='px-3 py-1.5 rounded-md transition-colors text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800'
               activeProps={{
                 className:
