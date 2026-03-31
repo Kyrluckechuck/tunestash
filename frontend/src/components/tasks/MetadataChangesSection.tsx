@@ -343,8 +343,7 @@ export function MetadataChangesSection() {
           </div>
         ) : updates.length === 0 ? (
           <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
-            <div className='text-4xl mb-4'>✅</div>
-            <p>
+            <p className='font-medium'>
               {statusFilter === 'pending'
                 ? 'No pending metadata changes'
                 : `No ${statusFilter} metadata changes`}

@@ -347,8 +347,7 @@ function Tasks() {
                 </div>
               ) : (
                 <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
-                  <div className='text-4xl mb-4'>📝</div>
-                  <p>No task logs available</p>
+                  <p className='font-medium'>No task logs available</p>
                   <p className='text-sm'>
                     Logs will appear here when tasks are executed
                   </p>

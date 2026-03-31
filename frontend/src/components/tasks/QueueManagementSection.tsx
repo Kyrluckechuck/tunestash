@@ -175,8 +175,7 @@ export function QueueManagementSection() {
         <div className='p-6'>
           {totalPendingTasks === 0 ? (
             <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
-              <div className='text-4xl mb-4'>✅</div>
-              <p>No tasks queued</p>
+              <p className='font-medium'>No tasks queued</p>
               <p className='text-sm'>
                 Tasks will appear here when queued for processing
               </p>
