@@ -62,224 +62,295 @@ export function AlbumsTable({
   }
 
   return (
-    <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
-      <div className='overflow-x-auto'>
-        <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
-          <thead className='bg-gray-50 dark:bg-slate-900'>
-            <tr>
-              <SortableTableHeader
-                field='name'
-                currentSortField={sortField}
-                currentSortDirection={sortDirection}
-                onSort={onSort}
+    <>
+      {/* Mobile card view */}
+      <div className='md:hidden space-y-3'>
+        {albums.map(album => (
+          <div
+            key={album.id}
+            className='bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4'
+          >
+            <div className='flex items-center justify-between mb-2'>
+              <a
+                href={
+                  album.deezerId
+                    ? `https://www.deezer.com/album/${album.deezerId}`
+                    : `https://open.spotify.com/album/${album.spotifyGid}`
+                }
+                target='_blank'
+                rel='noopener noreferrer'
+                className='text-sm font-semibold text-green-600 hover:text-green-800 truncate mr-2'
               >
-                Album
-              </SortableTableHeader>
-              <SortableTableHeader
-                field='artist'
-                currentSortField={sortField}
-                currentSortDirection={sortDirection}
-                onSort={onSort}
+                {album.name}
+              </a>
+              <span
+                className={`shrink-0 inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${
+                  album.downloaded
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-yellow-100 text-yellow-800'
+                }`}
               >
-                Artist
-              </SortableTableHeader>
-              <SortableTableHeader
-                field='albumType'
-                currentSortField={sortField}
-                currentSortDirection={sortDirection}
-                onSort={onSort}
-              >
-                Type
-              </SortableTableHeader>
-              <SortableTableHeader
-                field='albumGroup'
-                currentSortField={sortField}
-                currentSortDirection={sortDirection}
-                onSort={onSort}
-              >
-                Group
-              </SortableTableHeader>
-              <SortableTableHeader
-                field='totalTracks'
-                currentSortField={sortField}
-                currentSortDirection={sortDirection}
-                onSort={onSort}
-              >
-                Tracks
-              </SortableTableHeader>
-              <SortableTableHeader
-                field='downloaded'
-                currentSortField={sortField}
-                currentSortDirection={sortDirection}
-                onSort={onSort}
-              >
-                Downloaded
-              </SortableTableHeader>
-              <SortableTableHeader
-                field='wanted'
-                currentSortField={sortField}
-                currentSortDirection={sortDirection}
-                onSort={onSort}
-              >
-                Wanted
-              </SortableTableHeader>
-              <SortableTableHeader
-                field={null}
-                currentSortField={sortField}
-                currentSortDirection={sortDirection}
-                onSort={onSort}
-              >
-                Actions
-              </SortableTableHeader>
-            </tr>
-          </thead>
-          <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
-            {albums.map(album => (
-              <tr
-                key={album.id}
-                className='hover:bg-gray-50 dark:hover:bg-slate-700'
-              >
-                <td className='px-6 py-4 whitespace-nowrap'>
-                  <div className='text-sm font-medium'>
-                    <a
-                      href={
-                        album.deezerId
-                          ? `https://www.deezer.com/album/${album.deezerId}`
-                          : `https://open.spotify.com/album/${album.spotifyGid}`
-                      }
-                      target='_blank'
-                      rel='noopener noreferrer'
-                      className='text-green-600 hover:text-green-800 hover:underline'
-                      title={`Open ${album.name} on ${album.deezerId ? 'Deezer' : 'Spotify'}`}
-                    >
-                      {album.name}
-                    </a>
-                    {album.deezerId && album.spotifyGid && (
+                {album.downloaded ? 'Downloaded' : 'Pending'}
+              </span>
+            </div>
+            <div className='text-xs text-slate-500 dark:text-slate-400 space-y-1'>
+              {album.artist && (
+                <div>
+                  Artist:{' '}
+                  <span className='text-slate-700 dark:text-slate-300'>
+                    {album.artist}
+                  </span>
+                </div>
+              )}
+              <div className='flex gap-4'>
+                <span>{formatAlbumValue(album.albumType)}</span>
+                <span>{album.totalTracks} tracks</span>
+              </div>
+            </div>
+            <div className='flex items-center gap-2 mt-3'>
+              <ToggleStatusButton
+                variant='badge'
+                enabled={album.wanted}
+                onToggle={() => onToggleWanted(album.id, !album.wanted)}
+                mutating={mutatingIds?.has(album.id)}
+                pulse={pulseIds?.has(album.id)}
+                labels={{ on: 'Wanted', off: 'Unwanted' }}
+                colors={{ on: 'blue', off: 'red' }}
+              />
+              {onDownloadAlbum && (
+                <button
+                  onClick={() => onDownloadAlbum(album.id)}
+                  disabled={mutatingIds?.has(album.id)}
+                  className='text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 hover:bg-blue-200 disabled:opacity-60'
+                >
+                  Download
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop table view */}
+      <div className='hidden md:block bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
+        <div className='overflow-x-auto'>
+          <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
+            <thead className='bg-gray-50 dark:bg-slate-900'>
+              <tr>
+                <SortableTableHeader
+                  field='name'
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Album
+                </SortableTableHeader>
+                <SortableTableHeader
+                  field='artist'
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Artist
+                </SortableTableHeader>
+                <SortableTableHeader
+                  field='albumType'
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Type
+                </SortableTableHeader>
+                <SortableTableHeader
+                  field='albumGroup'
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Group
+                </SortableTableHeader>
+                <SortableTableHeader
+                  field='totalTracks'
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Tracks
+                </SortableTableHeader>
+                <SortableTableHeader
+                  field='downloaded'
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Downloaded
+                </SortableTableHeader>
+                <SortableTableHeader
+                  field='wanted'
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Wanted
+                </SortableTableHeader>
+                <SortableTableHeader
+                  field={null}
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Actions
+                </SortableTableHeader>
+              </tr>
+            </thead>
+            <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
+              {albums.map(album => (
+                <tr
+                  key={album.id}
+                  className='hover:bg-gray-50 dark:hover:bg-slate-700'
+                >
+                  <td className='px-6 py-4 whitespace-nowrap'>
+                    <div className='text-sm font-medium'>
                       <a
-                        href={`https://open.spotify.com/album/${album.spotifyGid}`}
+                        href={
+                          album.deezerId
+                            ? `https://www.deezer.com/album/${album.deezerId}`
+                            : `https://open.spotify.com/album/${album.spotifyGid}`
+                        }
                         target='_blank'
                         rel='noopener noreferrer'
-                        className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 hover:bg-green-100 transition-colors'
-                        title='Also available on Spotify'
+                        className='text-green-600 hover:text-green-800 hover:underline'
+                        title={`Open ${album.name} on ${album.deezerId ? 'Deezer' : 'Spotify'}`}
                       >
-                        Spotify
+                        {album.name}
                       </a>
-                    )}
-                  </div>
-                </td>
-                <td className='px-6 py-4 whitespace-nowrap'>
-                  <div className='text-sm font-medium'>
-                    {album.artist && album.artistId ? (
-                      <Link
-                        to='/artists'
-                        search={{ tab: undefined }}
-                        className='text-blue-600 dark:text-blue-400 hover:text-blue-900 hover:underline'
-                      >
-                        {album.artist}
-                      </Link>
-                    ) : (
-                      <span className='text-gray-500 dark:text-slate-400'>
-                        {album.artist || 'Unknown Artist'}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className='px-6 py-4 whitespace-nowrap'>
-                  <div className='text-sm text-gray-500 dark:text-slate-400'>
-                    {formatAlbumValue(album.albumType)}
-                  </div>
-                </td>
-                <td className='px-6 py-4 whitespace-nowrap'>
-                  <div className='text-sm text-gray-500 dark:text-slate-400'>
-                    {formatAlbumValue(album.albumGroup)}
-                  </div>
-                </td>
-                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
-                  {album.totalTracks}
-                </td>
-                <td className='px-6 py-4 whitespace-nowrap'>
-                  <span
-                    className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      album.downloaded
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}
-                  >
-                    {album.downloaded ? 'Yes' : 'No'}
-                  </span>
-                </td>
-                <td className='px-6 py-4 whitespace-nowrap'>
-                  <ToggleStatusButton
-                    variant='badge'
-                    enabled={album.wanted}
-                    onToggle={() => onToggleWanted(album.id, !album.wanted)}
-                    mutating={mutatingIds?.has(album.id)}
-                    pulse={pulseIds?.has(album.id)}
-                    labels={{ on: 'Yes', off: 'No' }}
-                    colors={{ on: 'blue', off: 'red' }}
-                  />
-                </td>
-                <td className='px-6 py-4 whitespace-nowrap text-sm font-medium'>
-                  <div className='flex items-center gap-3'>
-                    {onDownloadAlbum && (
-                      <button
-                        onClick={() => onDownloadAlbum(album.id)}
-                        disabled={mutatingIds?.has(album.id)}
-                        className='text-blue-600 dark:text-blue-400 hover:text-blue-900 disabled:text-gray-400 disabled:cursor-not-allowed'
-                        title='Download album'
-                      >
-                        <svg
-                          xmlns='http://www.w3.org/2000/svg'
-                          className='h-5 w-5'
-                          viewBox='0 0 20 20'
-                          fill='currentColor'
+                      {album.deezerId && album.spotifyGid && (
+                        <a
+                          href={`https://open.spotify.com/album/${album.spotifyGid}`}
+                          target='_blank'
+                          rel='noopener noreferrer'
+                          className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 hover:bg-green-100 transition-colors'
+                          title='Also available on Spotify'
                         >
-                          <path
-                            fillRule='evenodd'
-                            d='M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z'
-                            clipRule='evenodd'
-                          />
-                        </svg>
-                      </button>
-                    )}
-                    {onCheckMetadata && (
-                      <button
-                        onClick={() => onCheckMetadata(album.id)}
-                        disabled={checkingMetadataIds?.has(album.id)}
-                        className='text-orange-600 hover:text-orange-900 disabled:text-gray-400 disabled:cursor-not-allowed'
-                        title='Check for metadata changes'
-                      >
-                        <svg
-                          xmlns='http://www.w3.org/2000/svg'
-                          className='h-5 w-5'
-                          viewBox='0 0 20 20'
-                          fill='currentColor'
+                          Spotify
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                  <td className='px-6 py-4 whitespace-nowrap'>
+                    <div className='text-sm font-medium'>
+                      {album.artist && album.artistId ? (
+                        <Link
+                          to='/artists'
+                          search={{ tab: undefined }}
+                          className='text-blue-600 dark:text-blue-400 hover:text-blue-900 hover:underline'
                         >
-                          <path
-                            fillRule='evenodd'
-                            d='M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z'
-                            clipRule='evenodd'
-                          />
-                        </svg>
-                      </button>
-                    )}
-                    <Link
-                      to='/songs'
-                      search={{
-                        artistId: album.artistId || undefined,
-                        search: undefined,
-                      }}
-                      className='text-green-600 hover:text-green-900 underline'
+                          {album.artist}
+                        </Link>
+                      ) : (
+                        <span className='text-gray-500 dark:text-slate-400'>
+                          {album.artist || 'Unknown Artist'}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className='px-6 py-4 whitespace-nowrap'>
+                    <div className='text-sm text-gray-500 dark:text-slate-400'>
+                      {formatAlbumValue(album.albumType)}
+                    </div>
+                  </td>
+                  <td className='px-6 py-4 whitespace-nowrap'>
+                    <div className='text-sm text-gray-500 dark:text-slate-400'>
+                      {formatAlbumValue(album.albumGroup)}
+                    </div>
+                  </td>
+                  <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
+                    {album.totalTracks}
+                  </td>
+                  <td className='px-6 py-4 whitespace-nowrap'>
+                    <span
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        album.downloaded
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}
                     >
-                      View Songs
-                    </Link>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                      {album.downloaded ? 'Yes' : 'No'}
+                    </span>
+                  </td>
+                  <td className='px-6 py-4 whitespace-nowrap'>
+                    <ToggleStatusButton
+                      variant='badge'
+                      enabled={album.wanted}
+                      onToggle={() => onToggleWanted(album.id, !album.wanted)}
+                      mutating={mutatingIds?.has(album.id)}
+                      pulse={pulseIds?.has(album.id)}
+                      labels={{ on: 'Yes', off: 'No' }}
+                      colors={{ on: 'blue', off: 'red' }}
+                    />
+                  </td>
+                  <td className='px-6 py-4 whitespace-nowrap text-sm font-medium'>
+                    <div className='flex items-center gap-3'>
+                      {onDownloadAlbum && (
+                        <button
+                          onClick={() => onDownloadAlbum(album.id)}
+                          disabled={mutatingIds?.has(album.id)}
+                          className='text-blue-600 dark:text-blue-400 hover:text-blue-900 disabled:text-gray-400 disabled:cursor-not-allowed'
+                          title='Download album'
+                        >
+                          <svg
+                            xmlns='http://www.w3.org/2000/svg'
+                            className='h-5 w-5'
+                            viewBox='0 0 20 20'
+                            fill='currentColor'
+                          >
+                            <path
+                              fillRule='evenodd'
+                              d='M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z'
+                              clipRule='evenodd'
+                            />
+                          </svg>
+                        </button>
+                      )}
+                      {onCheckMetadata && (
+                        <button
+                          onClick={() => onCheckMetadata(album.id)}
+                          disabled={checkingMetadataIds?.has(album.id)}
+                          className='text-orange-600 hover:text-orange-900 disabled:text-gray-400 disabled:cursor-not-allowed'
+                          title='Check for metadata changes'
+                        >
+                          <svg
+                            xmlns='http://www.w3.org/2000/svg'
+                            className='h-5 w-5'
+                            viewBox='0 0 20 20'
+                            fill='currentColor'
+                          >
+                            <path
+                              fillRule='evenodd'
+                              d='M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z'
+                              clipRule='evenodd'
+                            />
+                          </svg>
+                        </button>
+                      )}
+                      <Link
+                        to='/songs'
+                        search={{
+                          artistId: album.artistId || undefined,
+                          search: undefined,
+                        }}
+                        className='text-green-600 hover:text-green-900 underline'
+                      >
+                        View Songs
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

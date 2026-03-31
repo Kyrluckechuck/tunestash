@@ -107,135 +107,189 @@ export const SongsTable: React.FC<SongsTableProps> = ({
   }
 
   return (
-    <div className='bg-white dark:bg-slate-800 shadow overflow-hidden sm:rounded-md overflow-x-auto'>
-      <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
-        <thead className='bg-gray-50 dark:bg-slate-900'>
-          <tr>
-            <SortableTableHeader
-              field='downloaded'
-              currentSortField={sortField}
-              currentSortDirection={sortDirection}
-              onSort={onSort}
-              className='w-24'
-            >
-              Status
-            </SortableTableHeader>
-            <SortableTableHeader
-              field='name'
-              currentSortField={sortField}
-              currentSortDirection={sortDirection}
-              onSort={onSort}
-            >
-              Song Name
-            </SortableTableHeader>
-            <SortableTableHeader
-              field='primaryArtist'
-              currentSortField={sortField}
-              currentSortDirection={sortDirection}
-              onSort={onSort}
-            >
-              Artist
-            </SortableTableHeader>
-            <SortableTableHeader
-              field='createdAt'
-              currentSortField={sortField}
-              currentSortDirection={sortDirection}
-              onSort={onSort}
-            >
-              Added
-            </SortableTableHeader>
-            <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
-              Bitrate
-            </th>
-            <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
-              File Path
-            </th>
-          </tr>
-        </thead>
-        <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
-          {songs.map(song => (
-            <tr
-              key={song.id}
-              className='hover:bg-gray-50 dark:hover:bg-slate-700'
-            >
-              <td className='px-6 py-4 whitespace-nowrap'>
-                <div className='flex items-center gap-2'>
-                  {getStatusIcon(song)}
-                  <span className='text-sm text-gray-900 dark:text-slate-100'>
-                    {getStatusText(song)}
-                  </span>
-                </div>
-              </td>
-              <td className='px-6 py-4 whitespace-nowrap'>
-                <div className='text-sm font-medium'>
-                  <a
-                    href={
-                      song.deezerId
-                        ? `https://www.deezer.com/track/${song.deezerId}`
-                        : (song.spotifyUri ?? '').replace(
-                            'spotify:track:',
-                            'https://open.spotify.com/track/'
-                          )
-                    }
-                    target='_blank'
-                    rel='noopener noreferrer'
-                    className='text-green-600 hover:text-green-800 hover:underline'
-                    title={`Open ${song.name} on ${song.deezerId ? 'Deezer' : 'Spotify'}`}
-                  >
-                    {song.name}
-                  </a>
-                  {song.deezerId && song.spotifyUri && (
-                    <a
-                      href={(song.spotifyUri ?? '').replace(
+    <>
+      {/* Mobile card view */}
+      <div className='md:hidden space-y-3'>
+        {songs.map(song => (
+          <div
+            key={song.id}
+            className='bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4'
+          >
+            <div className='flex items-center justify-between mb-1'>
+              <a
+                href={
+                  song.deezerId
+                    ? `https://www.deezer.com/track/${song.deezerId}`
+                    : (song.spotifyUri ?? '').replace(
                         'spotify:track:',
                         'https://open.spotify.com/track/'
-                      )}
+                      )
+                }
+                target='_blank'
+                rel='noopener noreferrer'
+                className='text-sm font-semibold text-green-600 hover:text-green-800 truncate mr-2'
+              >
+                {song.name}
+              </a>
+              <span className='shrink-0 flex items-center gap-1'>
+                {getStatusIcon(song)}
+                <span className='text-xs text-slate-500 dark:text-slate-400'>
+                  {getStatusText(song)}
+                </span>
+              </span>
+            </div>
+            <div className='text-xs text-slate-500 dark:text-slate-400'>
+              <Link
+                to='/albums'
+                search={{ artistId: song.primaryArtistId }}
+                className='text-blue-600 dark:text-blue-400 hover:text-blue-900'
+              >
+                {song.primaryArtist}
+              </Link>
+              <span className='mx-2'>·</span>
+              <span>{formatDate(song.createdAt)}</span>
+              {song.bitrate > 0 && (
+                <>
+                  <span className='mx-2'>·</span>
+                  <span>{formatBitrate(song.bitrate)}</span>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop table view */}
+      <div className='hidden md:block bg-white dark:bg-slate-800 shadow overflow-hidden sm:rounded-md overflow-x-auto'>
+        <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
+          <thead className='bg-gray-50 dark:bg-slate-900'>
+            <tr>
+              <SortableTableHeader
+                field='downloaded'
+                currentSortField={sortField}
+                currentSortDirection={sortDirection}
+                onSort={onSort}
+                className='w-24'
+              >
+                Status
+              </SortableTableHeader>
+              <SortableTableHeader
+                field='name'
+                currentSortField={sortField}
+                currentSortDirection={sortDirection}
+                onSort={onSort}
+              >
+                Song Name
+              </SortableTableHeader>
+              <SortableTableHeader
+                field='primaryArtist'
+                currentSortField={sortField}
+                currentSortDirection={sortDirection}
+                onSort={onSort}
+              >
+                Artist
+              </SortableTableHeader>
+              <SortableTableHeader
+                field='createdAt'
+                currentSortField={sortField}
+                currentSortDirection={sortDirection}
+                onSort={onSort}
+              >
+                Added
+              </SortableTableHeader>
+              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
+                Bitrate
+              </th>
+              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'>
+                File Path
+              </th>
+            </tr>
+          </thead>
+          <tbody className='bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700'>
+            {songs.map(song => (
+              <tr
+                key={song.id}
+                className='hover:bg-gray-50 dark:hover:bg-slate-700'
+              >
+                <td className='px-6 py-4 whitespace-nowrap'>
+                  <div className='flex items-center gap-2'>
+                    {getStatusIcon(song)}
+                    <span className='text-sm text-gray-900 dark:text-slate-100'>
+                      {getStatusText(song)}
+                    </span>
+                  </div>
+                </td>
+                <td className='px-6 py-4 whitespace-nowrap'>
+                  <div className='text-sm font-medium'>
+                    <a
+                      href={
+                        song.deezerId
+                          ? `https://www.deezer.com/track/${song.deezerId}`
+                          : (song.spotifyUri ?? '').replace(
+                              'spotify:track:',
+                              'https://open.spotify.com/track/'
+                            )
+                      }
                       target='_blank'
                       rel='noopener noreferrer'
-                      className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 hover:bg-green-100 transition-colors'
-                      title='Also available on Spotify'
+                      className='text-green-600 hover:text-green-800 hover:underline'
+                      title={`Open ${song.name} on ${song.deezerId ? 'Deezer' : 'Spotify'}`}
                     >
-                      Spotify
+                      {song.name}
                     </a>
-                  )}
-                </div>
-                <div className='text-sm text-gray-500 dark:text-slate-400'>
-                  ID: {song.id}
-                </div>
-              </td>
-              <td className='px-6 py-4 whitespace-nowrap'>
-                <Link
-                  to='/albums'
-                  search={{ artistId: song.primaryArtistId }}
-                  className='text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-900'
-                  title={`View albums by ${song.primaryArtist}`}
-                >
-                  {song.primaryArtist}
-                </Link>
-              </td>
-              <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
-                {formatDate(song.createdAt)}
-              </td>
-
-              <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
-                {formatBitrate(song.bitrate)}
-              </td>
-              <td className='px-6 py-4 text-sm text-gray-500 dark:text-slate-400 min-w-0'>
-                {song.filePath ? (
-                  <span
-                    className='truncate max-w-md block'
-                    title={song.filePath}
+                    {song.deezerId && song.spotifyUri && (
+                      <a
+                        href={(song.spotifyUri ?? '').replace(
+                          'spotify:track:',
+                          'https://open.spotify.com/track/'
+                        )}
+                        target='_blank'
+                        rel='noopener noreferrer'
+                        className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 hover:bg-green-100 transition-colors'
+                        title='Also available on Spotify'
+                      >
+                        Spotify
+                      </a>
+                    )}
+                  </div>
+                  <div className='text-sm text-gray-500 dark:text-slate-400'>
+                    ID: {song.id}
+                  </div>
+                </td>
+                <td className='px-6 py-4 whitespace-nowrap'>
+                  <Link
+                    to='/albums'
+                    search={{ artistId: song.primaryArtistId }}
+                    className='text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-900'
+                    title={`View albums by ${song.primaryArtist}`}
                   >
-                    {song.filePath}
-                  </span>
-                ) : (
-                  '-'
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+                    {song.primaryArtist}
+                  </Link>
+                </td>
+                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
+                  {formatDate(song.createdAt)}
+                </td>
+
+                <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
+                  {formatBitrate(song.bitrate)}
+                </td>
+                <td className='px-6 py-4 text-sm text-gray-500 dark:text-slate-400 min-w-0'>
+                  {song.filePath ? (
+                    <span
+                      className='truncate max-w-md block'
+                      title={song.filePath}
+                    >
+                      {song.filePath}
+                    </span>
+                  ) : (
+                    '-'
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 };

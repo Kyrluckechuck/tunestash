@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useTheme } from '../hooks/useTheme';
 import { useDownloadModal } from './ui/useDownloadModal';
@@ -21,41 +22,76 @@ const navLinks = [
 ];
 
 export const Navbar = () => {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const downloadModal = useDownloadModal();
   const search = useSearch();
   const { theme, cycle } = useTheme();
   const themeInfo = themeIcons[theme] ?? themeIcons.system;
 
   return (
-    <nav className='bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 sticky top-0 z-10'>
+    <nav className='bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 md:px-6 py-3 sticky top-0 z-10'>
       <div className='flex items-center justify-between w-full mx-auto'>
-        <Link
-          to='/'
-          className='font-extrabold text-2xl tracking-tight text-slate-800 dark:text-slate-100 hover:text-[var(--color-accent)]'
-          activeProps={{
-            className:
-              'font-extrabold text-2xl tracking-tight text-slate-800 dark:text-slate-100 hover:text-[var(--color-accent)]',
-          }}
-        >
-          TuneStash
-        </Link>
-        <div className='flex items-center gap-1'>
-          {navLinks.map(link => (
-            <Link
-              key={link.to}
-              to={link.to}
-              search={{} as Record<string, unknown>}
-              className='px-3 py-1.5 rounded-md transition-colors text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800'
-              activeProps={{
-                className:
-                  'px-3 py-1.5 rounded-md transition-colors text-sm font-medium text-[var(--color-accent)] bg-[var(--color-accent-light)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-light)]',
-              }}
-              activeOptions={{ exact: true }}
+        <div className='flex items-center gap-2'>
+          {/* Hamburger button — mobile only */}
+          <button
+            onClick={() => setMobileMenuOpen(prev => !prev)}
+            className='md:hidden p-1.5 text-slate-500 dark:text-slate-400 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800'
+            aria-label='Toggle menu'
+          >
+            <svg
+              className='w-5 h-5'
+              fill='none'
+              stroke='currentColor'
+              viewBox='0 0 24 24'
             >
-              {link.label}
-            </Link>
-          ))}
-          <div className='w-px h-5 bg-slate-200 dark:bg-slate-700 mx-2' />
+              {mobileMenuOpen ? (
+                <path
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  strokeWidth={2}
+                  d='M6 18L18 6M6 6l12 12'
+                />
+              ) : (
+                <path
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  strokeWidth={2}
+                  d='M4 6h16M4 12h16M4 18h16'
+                />
+              )}
+            </svg>
+          </button>
+          <Link
+            to='/'
+            className='font-extrabold text-xl md:text-2xl tracking-tight text-slate-800 dark:text-slate-100 hover:text-[var(--color-accent)]'
+            activeProps={{
+              className:
+                'font-extrabold text-xl md:text-2xl tracking-tight text-slate-800 dark:text-slate-100 hover:text-[var(--color-accent)]',
+            }}
+          >
+            TuneStash
+          </Link>
+        </div>
+        <div className='flex items-center gap-1'>
+          {/* Desktop nav links — hidden on mobile */}
+          <div className='hidden md:flex items-center gap-1'>
+            {navLinks.map(link => (
+              <Link
+                key={link.to}
+                to={link.to}
+                search={{} as Record<string, unknown>}
+                className='px-3 py-1.5 rounded-md transition-colors text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800'
+                activeProps={{
+                  className:
+                    'px-3 py-1.5 rounded-md transition-colors text-sm font-medium text-[var(--color-accent)] bg-[var(--color-accent-light)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-light)]',
+                }}
+                activeOptions={{ exact: true }}
+              >
+                {link.label}
+              </Link>
+            ))}
+            <div className='w-px h-5 bg-slate-200 dark:bg-slate-700 mx-2' />
+          </div>
           <button
             onClick={cycle}
             className='px-2 py-1.5 text-slate-500 dark:text-slate-400 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-colors text-base'
@@ -65,7 +101,7 @@ export const Navbar = () => {
           </button>
           <button
             onClick={search.open}
-            className='px-3 py-1.5 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 rounded-md hover:border-slate-400 dark:hover:border-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex items-center gap-2 text-sm'
+            className='px-2 md:px-3 py-1.5 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 rounded-md hover:border-slate-400 dark:hover:border-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex items-center gap-2 text-sm'
             title='Search (Ctrl+K)'
           >
             <svg
@@ -88,7 +124,7 @@ export const Navbar = () => {
           </button>
           <button
             onClick={downloadModal.open}
-            className='px-4 py-1.5 bg-[var(--color-accent)] text-white rounded-md hover:bg-[var(--color-accent-hover)] transition-colors font-medium flex items-center gap-2 text-sm'
+            className='px-3 md:px-4 py-1.5 bg-[var(--color-accent)] text-white rounded-md hover:bg-[var(--color-accent-hover)] transition-colors font-medium flex items-center gap-2 text-sm'
             title='Download music'
           >
             <svg
@@ -104,10 +140,32 @@ export const Navbar = () => {
                 d='M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
               />
             </svg>
-            Download
+            <span className='hidden sm:inline'>Download</span>
           </button>
         </div>
       </div>
+
+      {/* Mobile menu dropdown */}
+      {mobileMenuOpen && (
+        <div className='md:hidden border-t border-slate-200 dark:border-slate-700 mt-3 pt-2 pb-1 space-y-1'>
+          {navLinks.map(link => (
+            <Link
+              key={link.to}
+              to={link.to}
+              search={{} as Record<string, unknown>}
+              className='block px-3 py-2 rounded-md text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors'
+              activeProps={{
+                className:
+                  'block px-3 py-2 rounded-md text-sm font-medium text-[var(--color-accent)] bg-[var(--color-accent-light)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-light)]',
+              }}
+              activeOptions={{ exact: true }}
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </div>
+      )}
     </nav>
   );
 };
