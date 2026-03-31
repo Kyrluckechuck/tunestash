@@ -2,6 +2,7 @@ from typing import List, Optional
 
 import strawberry
 
+from ..graphql_types.cached_stat import CachedStatType
 from ..graphql_types.models import (
     Album,
     AlbumConnection,
@@ -755,3 +756,19 @@ class Query:  # pylint: disable=too-many-public-methods
     async def deezer_genres(self) -> List[DeezerGenreType]:
         """Get available Deezer editorial genres for new releases scanning."""
         return await services.settings.get_deezer_genres()
+
+    @strawberry.field
+    def cached_stats(self, category: Optional[str] = None) -> list[CachedStatType]:
+        from src.services.cached_stat import get_cached_stats
+
+        stats = get_cached_stats(category)
+        return [
+            CachedStatType(
+                key=s.key,
+                display_name=s.display_name,
+                value=s.value,
+                category=s.category,
+                updated_at=s.updated_at,
+            )
+            for s in stats
+        ]

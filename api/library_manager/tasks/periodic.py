@@ -958,3 +958,33 @@ def trigger_navidrome_rescan(self: Any) -> None:
         logger.info("Navidrome library rescan triggered successfully")
     else:
         logger.warning("Failed to trigger Navidrome library rescan")
+
+
+@celery_app.task(bind=True, name="library_manager.tasks.refresh_cached_stats")
+def refresh_cached_stats(self: Any) -> None:
+    """Refresh cached statistics. Fast stats every run, expensive stats every 3 hours."""
+    from datetime import timedelta
+
+    from library_manager.models import CachedStat
+    from src.services.cached_stat import (
+        EXPENSIVE_STATS,
+        refresh_expensive_stats,
+        refresh_fast_stats,
+    )
+
+    refresh_fast_stats()
+    logger.info("Refreshed fast stats")
+
+    oldest_expensive = (
+        CachedStat.objects.filter(key__in=EXPENSIVE_STATS.keys())
+        .order_by("updated_at")
+        .first()
+    )
+
+    needs_expensive = oldest_expensive is None or (
+        oldest_expensive.updated_at < timezone.now() - timedelta(hours=3)
+    )
+
+    if needs_expensive:
+        refresh_expensive_stats()
+        logger.info("Refreshed expensive stats")

@@ -1,0 +1,9 @@
+query GetCachedStats($category: String) {
+  cachedStats(category: $category) {
+    key
+    displayName
+    value
+    category
+    updatedAt
+  }
+}
