@@ -109,8 +109,8 @@ export function PlaylistsTable({
                 <span
                   className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
                     playlist.enabled
-                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400'
-                      : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400'
+                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                      : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
                   }`}
                 >
                   {playlist.enabled ? 'Enabled' : 'Disabled'}

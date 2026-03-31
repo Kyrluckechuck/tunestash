@@ -23,7 +23,7 @@ export function ProviderBadges({
           href={deezerUrl}
           target='_blank'
           rel='noopener noreferrer'
-          className={`inline-flex items-center ${padding} rounded ${textSize} font-medium bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900 transition-colors`}
+          className={`inline-flex items-center ${padding} rounded ${textSize} font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors`}
           title='Open on Deezer'
         >
           Deezer
@@ -34,7 +34,7 @@ export function ProviderBadges({
           href={spotifyUrl}
           target='_blank'
           rel='noopener noreferrer'
-          className={`inline-flex items-center ${padding} rounded ${textSize} font-medium bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900 transition-colors`}
+          className={`inline-flex items-center ${padding} rounded ${textSize} font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors`}
           title='Open on Spotify'
         >
           Spotify

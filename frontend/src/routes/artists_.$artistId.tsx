@@ -168,7 +168,7 @@ function ArtistDetail() {
               <span
                 className={`px-2 py-0.5 rounded text-xs font-medium ${
                   artist.isTracked
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400'
+                    ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
                     : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400'
                 }`}
               >
