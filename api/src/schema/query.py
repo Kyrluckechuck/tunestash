@@ -758,10 +758,14 @@ class Query:  # pylint: disable=too-many-public-methods
         return await services.settings.get_deezer_genres()
 
     @strawberry.field
-    def cached_stats(self, category: Optional[str] = None) -> list[CachedStatType]:
+    async def cached_stats(
+        self, category: Optional[str] = None
+    ) -> list[CachedStatType]:
+        from asgiref.sync import sync_to_async
+
         from src.services.cached_stat import get_cached_stats
 
-        stats = get_cached_stats(category)
+        stats = await sync_to_async(get_cached_stats)(category)
         return [
             CachedStatType(
                 key=s.key,
