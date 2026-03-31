@@ -1,6 +1,7 @@
 import type { Album } from '../../types/generated/graphql';
 import { SortableTableHeader } from '../ui/SortableTableHeader';
 import { ToggleStatusButton } from '../ui/ToggleStatusButton';
+import { ProviderBadges } from '../ui/ProviderBadges';
 import { Link } from '@tanstack/react-router';
 
 export type AlbumSortField =
@@ -66,23 +67,32 @@ export function AlbumsTable({
       {/* Mobile card view */}
       <div className='md:hidden space-y-3'>
         {albums.map(album => (
-          <div
+          <Link
             key={album.id}
-            className='bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4'
+            to='/albums/$albumId'
+            params={{ albumId: album.id.toString() }}
+            className='block bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4 hover:border-slate-300 dark:hover:border-slate-600 transition-colors'
           >
             <div className='flex items-center justify-between mb-2'>
-              <a
-                href={
-                  album.deezerId
-                    ? `https://www.deezer.com/album/${album.deezerId}`
-                    : `https://open.spotify.com/album/${album.spotifyGid}`
-                }
-                target='_blank'
-                rel='noopener noreferrer'
-                className='text-sm font-semibold text-green-600 hover:text-green-800 truncate mr-2'
-              >
-                {album.name}
-              </a>
+              <div className='flex items-center gap-2 truncate mr-2'>
+                <span className='text-sm font-semibold text-green-600 dark:text-green-400 truncate'>
+                  {album.name}
+                </span>
+                <ProviderBadges
+                  deezerId={album.deezerId}
+                  spotifyId={album.spotifyGid}
+                  deezerUrl={
+                    album.deezerId
+                      ? `https://www.deezer.com/album/${album.deezerId}`
+                      : undefined
+                  }
+                  spotifyUrl={
+                    album.spotifyGid
+                      ? `https://open.spotify.com/album/${album.spotifyGid}`
+                      : undefined
+                  }
+                />
+              </div>
               <span
                 className={`shrink-0 inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${
                   album.downloaded
@@ -127,7 +137,7 @@ export function AlbumsTable({
                 </button>
               )}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 
@@ -210,31 +220,29 @@ export function AlbumsTable({
                   className='hover:bg-gray-50 dark:hover:bg-slate-700'
                 >
                   <td className='px-6 py-4 whitespace-nowrap'>
-                    <div className='text-sm font-medium'>
-                      <a
-                        href={
-                          album.deezerId
-                            ? `https://www.deezer.com/album/${album.deezerId}`
-                            : `https://open.spotify.com/album/${album.spotifyGid}`
-                        }
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        className='text-green-600 hover:text-green-800 hover:underline'
-                        title={`Open ${album.name} on ${album.deezerId ? 'Deezer' : 'Spotify'}`}
+                    <div className='text-sm font-medium flex items-center gap-2'>
+                      <Link
+                        to='/albums/$albumId'
+                        params={{ albumId: album.id.toString() }}
+                        className='text-green-600 dark:text-green-400 hover:text-green-800 hover:underline'
+                        title={`View ${album.name} details`}
                       >
                         {album.name}
-                      </a>
-                      {album.deezerId && album.spotifyGid && (
-                        <a
-                          href={`https://open.spotify.com/album/${album.spotifyGid}`}
-                          target='_blank'
-                          rel='noopener noreferrer'
-                          className='ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 hover:bg-green-100 transition-colors'
-                          title='Also available on Spotify'
-                        >
-                          Spotify
-                        </a>
-                      )}
+                      </Link>
+                      <ProviderBadges
+                        deezerId={album.deezerId}
+                        spotifyId={album.spotifyGid}
+                        deezerUrl={
+                          album.deezerId
+                            ? `https://www.deezer.com/album/${album.deezerId}`
+                            : undefined
+                        }
+                        spotifyUrl={
+                          album.spotifyGid
+                            ? `https://open.spotify.com/album/${album.spotifyGid}`
+                            : undefined
+                        }
+                      />
                     </div>
                   </td>
                   <td className='px-6 py-4 whitespace-nowrap'>

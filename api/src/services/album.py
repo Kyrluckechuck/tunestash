@@ -108,6 +108,15 @@ class AlbumService(BaseService[Album]):
         except self.model.DoesNotExist:
             return None
 
+    async def get_by_db_id(self, id: int) -> Optional[Album]:
+        try:
+            django_album = await sync_to_async(
+                lambda: self.model.objects.select_related("artist").get(id=id)
+            )()
+            return await sync_to_async(self._to_graphql_type)(django_album)
+        except self.model.DoesNotExist:
+            return None
+
     async def get_connection(
         self,
         first: int = 20,
