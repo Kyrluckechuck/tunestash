@@ -71,71 +71,68 @@ EXPENSIVE_STATS: dict[str, dict[str, str]] = {
 }
 
 
+def _album_download_annotations() -> Any:
+    """Shared annotation for album download counts."""
+    return Album.objects.annotate(
+        dl=Count("songs", filter=Q(songs__downloaded=True)),
+        total=Count("songs"),
+    )
+
+
+def _pct(numerator: int, denominator: int) -> float:
+    return round(numerator / denominator * 100, 1) if denominator else 0.0
+
+
+def _total_songs() -> int:
+    return Song.objects.count()
+
+
+def _total_playlists() -> int:
+    return TrackedPlaylist.objects.count()
+
+
+def _total_albums() -> int:
+    return Album.objects.count()
+
+
+_STAT_COMPUTERS: dict[str, Any] = {
+    "tracked_artists": lambda: Artist.objects.filter(tracked=True).count(),
+    "total_songs": _total_songs,
+    "downloaded_songs": lambda: Song.objects.filter(downloaded=True).count(),
+    "total_playlists": _total_playlists,
+    "failed_songs": lambda: Song.objects.filter(
+        downloaded=False, failed_count__gt=0
+    ).count(),
+    "active_tasks": lambda: TaskHistory.objects.filter(status="IN_PROGRESS").count(),
+    "total_albums": _total_albums,
+    "downloaded_albums": lambda: (
+        _album_download_annotations().filter(dl=F("total"), total__gt=0).count()
+    ),
+    "partial_albums": lambda: (
+        _album_download_annotations()
+        .filter(dl__gt=0, total__gt=0)
+        .exclude(dl=F("total"))
+        .count()
+    ),
+    "missing_albums": lambda: (
+        _album_download_annotations().filter(dl=0, total__gt=0).count()
+    ),
+    "song_completion_pct": lambda: _pct(
+        Song.objects.filter(downloaded=True).count(), _total_songs()
+    ),
+    "album_completion_pct": lambda: _pct(
+        _album_download_annotations().filter(dl=F("total"), total__gt=0).count(),
+        _total_albums(),
+    ),
+}
+
+
 def _compute_stat(key: str) -> Any:
     """Compute a single stat value by key."""
-    if key == "tracked_artists":
-        return Artist.objects.filter(tracked=True).count()
-    if key == "total_songs":
-        return Song.objects.count()
-    if key == "downloaded_songs":
-        return Song.objects.filter(downloaded=True).count()
-    if key == "total_playlists":
-        return TrackedPlaylist.objects.count()
-    if key == "failed_songs":
-        return Song.objects.filter(downloaded=False, failed_count__gt=0).count()
-    if key == "active_tasks":
-        return TaskHistory.objects.filter(status="IN_PROGRESS").count()
-    if key == "total_albums":
-        return Album.objects.count()
-    if key == "downloaded_albums":
-        return (
-            Album.objects.annotate(
-                dl=Count("songs", filter=Q(songs__downloaded=True)),
-                total=Count("songs"),
-            )
-            .filter(dl=F("total"), total__gt=0)
-            .count()
-        )
-    if key == "partial_albums":
-        return (
-            Album.objects.annotate(
-                dl=Count("songs", filter=Q(songs__downloaded=True)),
-                total=Count("songs"),
-            )
-            .filter(dl__gt=0, total__gt=0)
-            .exclude(dl=F("total"))
-            .count()
-        )
-    if key == "missing_albums":
-        return (
-            Album.objects.annotate(
-                dl=Count("songs", filter=Q(songs__downloaded=True)),
-                total=Count("songs"),
-            )
-            .filter(dl=0, total__gt=0)
-            .count()
-        )
-    if key == "song_completion_pct":
-        total = Song.objects.count()
-        if total == 0:
-            return 0.0
-        downloaded = Song.objects.filter(downloaded=True).count()
-        return round(downloaded / total * 100, 1)
-    if key == "album_completion_pct":
-        total_albums = Album.objects.count()
-        if total_albums == 0:
-            return 0.0
-        complete = (
-            Album.objects.annotate(
-                dl=Count("songs", filter=Q(songs__downloaded=True)),
-                total=Count("songs"),
-            )
-            .filter(dl=F("total"), total__gt=0)
-            .count()
-        )
-        return round(complete / total_albums * 100, 1)
-
-    raise ValueError(f"Unknown stat key: {key}")
+    computer = _STAT_COMPUTERS.get(key)
+    if computer is None:
+        raise ValueError(f"Unknown stat key: {key}")
+    return computer()
 
 
 def refresh_fast_stats() -> None:
