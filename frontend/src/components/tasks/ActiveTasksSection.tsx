@@ -62,8 +62,7 @@ export function ActiveTasksSection({
       <div className='p-6'>
         {runningTasks.length === 0 ? (
           <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
-            <div className='text-4xl mb-4'>📋</div>
-            <p>No active tasks found</p>
+            <p className='font-medium'>No active tasks</p>
             <p className='text-sm'>
               Tasks will appear here when they start running
             </p>
