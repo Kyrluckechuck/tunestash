@@ -53,6 +53,9 @@ urls*.txt
 *.pem
 *.wvd
 
+# Spec/plan files (ephemeral working docs, not committed)
+docs/specs/
+
 # Project specific
 db/
 Spotify/
