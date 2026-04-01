@@ -24,7 +24,7 @@ CELERY_BEAT_SCHEDULE = {
     },
     "queue-missing-albums-for-tracked-artists": {
         "task": "library_manager.tasks.queue_missing_albums_for_tracked_artists",
-        "schedule": crontab(minute=0),  # Every hour
+        "schedule": crontab(minute="0,30"),  # Every 30 minutes
         "options": {"priority": TaskPriority.ARTIST_DOWNLOAD},
     },
     "sync-tracked-artists-metadata": {
