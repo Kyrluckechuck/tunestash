@@ -223,12 +223,12 @@ class TestPeriodicTasks(TestCase):
         assert self.untracked_album.id not in queued_album_ids
 
     @patch("library_manager.tasks.periodic.download_single_album")
-    def test_queue_missing_albums_respects_50_limit(self, mock_download):
-        """Test that periodic task respects the 50 album limit per run."""
+    def test_queue_missing_albums_respects_100_limit(self, mock_download):
+        """Test that periodic task respects the 100 album limit per run."""
         from library_manager.tasks import queue_missing_albums_for_tracked_artists
 
-        # Create 100 missing albums to test the limit
-        for i in range(100):
+        # Create 150 missing albums to test the limit
+        for i in range(150):
             Album.objects.create(
                 name=f"Test Album {i}",
                 spotify_gid=f"album_{i:04d}",
@@ -244,8 +244,8 @@ class TestPeriodicTasks(TestCase):
         # Run the periodic task
         queue_missing_albums_for_tracked_artists()
 
-        # Should only queue 50 albums (not all 102 = 100 + 2 from setUp)
-        assert mock_download.delay.call_count == 50
+        # Should only queue 100 albums (not all 152 = 150 + 2 from setUp)
+        assert mock_download.delay.call_count == 100
 
     @patch("library_manager.tasks.periodic.download_single_album")
     def test_queue_missing_albums_handles_no_albums(self, mock_download):

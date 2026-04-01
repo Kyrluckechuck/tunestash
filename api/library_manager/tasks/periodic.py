@@ -293,18 +293,21 @@ def _filter_changed_deezer_playlists(
 
 @celery_app.task(
     bind=True, name="library_manager.tasks.queue_missing_albums_for_tracked_artists"
-)  # Scheduled via Celery Beat - Every hour
+)  # Scheduled via Celery Beat - Every 30 minutes
 def queue_missing_albums_for_tracked_artists(self: Any) -> None:
     """
     Periodically find tracked artists with missing music and queue downloads.
 
-    Finds up to 50 albums that are marked as wanted but not yet downloaded
-    from tracked artists, and queues them for download. Runs hourly.
+    Finds up to 100 albums that are marked as wanted but not yet downloaded
+    from tracked artists, and queues them for download. Runs every 30 minutes.
+
+    Ordered by failed_count ascending (untried first), then newest first,
+    so fresh content gets priority and repeatedly-failing albums sink.
 
     Skips albums that already have pending/running download tasks to prevent
     duplicate task queuing. Works for both Spotify and Deezer-only albums.
     """
-    max_albums_per_run = 50
+    max_albums_per_run = 100
 
     try:
         logger.info("Starting periodic queue of missing albums for tracked artists")
@@ -325,7 +328,7 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
             )
             .exclude(album_group__in=get_album_groups_to_ignore())
             .exclude(unavailable=True)
-            .order_by("id")[:max_albums_per_run]
+            .order_by("failed_count", "-id")[:max_albums_per_run]
         )
 
         queued_count = 0

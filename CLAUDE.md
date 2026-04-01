@@ -261,7 +261,7 @@ The following tasks run automatically via Celery Beat (`api/celery_beat_schedule
 | `sync-all-playlists` | Every 8 hours | Syncs all tracked playlists to detect new songs |
 | `validate-undownloaded-songs` | Every 12 hours | Validates songs marked as undownloaded |
 | `retry-failed-songs` | Mon/Wed/Fri at 4 AM | Retries downloading songs that failed previously |
-| `queue-missing-albums-for-tracked-artists` | Hourly at :00 | Queues downloads for new albums from tracked artists |
+| `queue-missing-albums-for-tracked-artists` | Every 30 min at :00/:30 | Queues downloads for new albums from tracked artists |
 | `sync-tracked-artists-metadata` | Hourly at :30 | Updates metadata for tracked artists |
 | `scan-new-releases-for-tracked-artists` | Hourly at :00 | Checks for new releases from tracked artists |
 | `cleanup-celery-history` | Daily (6 AM) | Removes old task history records (older than 30 days) |
