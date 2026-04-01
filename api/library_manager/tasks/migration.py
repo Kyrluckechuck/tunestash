@@ -26,7 +26,7 @@ from .periodic import _try_link_artist_to_deezer
 def _find_matching_song(track: TrackResult, artist: Artist) -> Optional[Song]:
     """Find an existing Song that matches the given Deezer track.
 
-    Match priority: ISRC > deezer_id > normalized name.
+    Match priority: ISRC > deezer_id > best scored name match.
     """
     # Match 1: ISRC (most reliable)
     if track.isrc:
@@ -39,12 +39,27 @@ def _find_matching_song(track: TrackResult, artist: Artist) -> Optional[Song]:
     if match:
         return match
 
-    # Match 3: Fuzzy name match (for songs without ISRC)
-    normalized_track_name = normalize_name(track.name)
+    # Match 3: Scored name match — rank candidates and pick best
+    from downloader.track_matcher import score_track_match
+
     candidates = Song.objects.filter(primary_artist=artist, deezer_id__isnull=True)
+    best_song: Optional[Song] = None
+    best_score = 0.0
+    artist_name = artist.name or ""
+
     for candidate in candidates:
-        if normalize_name(candidate.name) == normalized_track_name:
-            return candidate
+        score = score_track_match(
+            search_title=track.name,
+            search_artist=track.artist_name or artist_name,
+            result_title=candidate.name,
+            result_artist=artist_name,
+        )
+        if score > best_score:
+            best_score = score
+            best_song = candidate
+
+    if best_song and best_score >= 0.7:
+        return best_song
 
     return None
 

@@ -118,9 +118,11 @@ def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Pat
         if isrc_match and isrc_match.file_path_ref:
             return Path(isrc_match.file_path_ref.path)
 
-    # Name+artist fallback
+    # Name+artist fallback — score candidates and pick best
     if song.primary_artist_id:
-        name_match = (
+        from downloader.track_matcher import score_track_match
+
+        candidates = (
             Song.objects.filter(
                 name__iexact=song.name,
                 primary_artist_id=song.primary_artist_id,
@@ -128,11 +130,29 @@ def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Pat
                 file_path_ref__isnull=False,
             )
             .exclude(id=song.id)
-            .select_related("file_path_ref")
-            .first()
+            .select_related("file_path_ref", "primary_artist")
         )
-        if name_match and name_match.file_path_ref:
-            return Path(name_match.file_path_ref.path)
+
+        best_path: Optional[Path] = None
+        best_score = 0.0
+        artist_name = song.primary_artist.name if song.primary_artist_id else ""
+
+        for candidate in candidates:
+            cand_artist = (
+                candidate.primary_artist.name if candidate.primary_artist_id else ""
+            )
+            score = score_track_match(
+                search_title=song.name,
+                search_artist=artist_name,
+                result_title=candidate.name,
+                result_artist=cand_artist,
+            )
+            if candidate.file_path_ref and score > best_score:
+                best_score = score
+                best_path = Path(candidate.file_path_ref.path)
+
+        if best_path and best_score >= 0.6:
+            return best_path
 
     return None
 

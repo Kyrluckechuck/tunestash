@@ -351,84 +351,37 @@ def calculate_match_confidence(
     result_isrc: Optional[str] = None,
     duration_tolerance_ms: int = 5000,
 ) -> float:
+    """Calculate confidence score for a track match.
+
+    Delegates to the shared track_matcher module.
     """
-    Calculate confidence score for a track match.
+    from downloader.track_matcher import score_track_match
 
-    Args:
-        search_title: Title we're searching for
-        search_artist: Artist we're searching for
-        result_title: Title from search result
-        result_artist: Artist from search result
-        search_duration_ms: Expected duration (optional)
-        result_duration_ms: Result duration (optional)
-        search_isrc: Expected ISRC (optional)
-        result_isrc: Result ISRC (optional)
-        duration_tolerance_ms: Acceptable duration difference
-
-    Returns:
-        Confidence score between 0.0 and 1.0
-    """
-    score = 0.0
-    weights_used = 0.0
-
-    # Title comparison (weight: 0.35)
-    title_weight = 0.35
-    title_similarity = _string_similarity(search_title, result_title)
-    score += title_similarity * title_weight
-    weights_used += title_weight
-
-    # Artist comparison (weight: 0.35)
-    artist_weight = 0.35
-    artist_similarity = _string_similarity(search_artist, result_artist)
-    score += artist_similarity * artist_weight
-    weights_used += artist_weight
-
-    # ISRC comparison (weight: 0.20 if available)
-    if search_isrc and result_isrc:
-        isrc_weight = 0.20
-        isrc_match = 1.0 if search_isrc.upper() == result_isrc.upper() else 0.0
-        score += isrc_match * isrc_weight
-        weights_used += isrc_weight
-
-    # Duration comparison (weight: 0.10 if available)
-    if search_duration_ms and result_duration_ms:
-        duration_weight = 0.10
-        duration_diff = abs(search_duration_ms - result_duration_ms)
-        if duration_diff <= duration_tolerance_ms:
-            duration_score = 1.0 - (duration_diff / duration_tolerance_ms)
-        else:
-            duration_score = 0.0
-        score += duration_score * duration_weight
-        weights_used += duration_weight
-
-    # Normalize to account for missing optional fields (ISRC, duration)
-    if weights_used > 0:
-        return score / weights_used
-
-    return score
+    return score_track_match(
+        search_title=search_title,
+        search_artist=search_artist,
+        result_title=result_title,
+        result_artist=result_artist,
+        search_isrc=search_isrc,
+        result_isrc=result_isrc,
+        search_duration_s=search_duration_ms / 1000.0 if search_duration_ms else None,
+        result_duration_s=result_duration_ms / 1000.0 if result_duration_ms else None,
+        duration_tolerance_s=duration_tolerance_ms / 1000.0,
+    )
 
 
 def _string_similarity(s1: str, s2: str) -> float:
+    """Calculate similarity between two strings.
+
+    Delegates to the shared track_matcher module.
+    Kept for backwards compatibility with tests.
     """
-    Calculate similarity between two strings.
+    from difflib import SequenceMatcher as SM
 
-    Uses a simple normalized approach - lowercase, strip punctuation,
-    and calculate word overlap.
-    """
-    import re
+    from downloader.track_matcher import normalize_for_matching
 
-    def normalize(s: str) -> set[str]:
-        s = s.lower()
-        s = re.sub(r"[^\w\s]", "", s)
-        return set(s.split())
-
-    words1 = normalize(s1)
-    words2 = normalize(s2)
-
-    if not words1 or not words2:
+    n1 = normalize_for_matching(s1)
+    n2 = normalize_for_matching(s2)
+    if not n1 or not n2:
         return 0.0
-
-    intersection = words1 & words2
-    union = words1 | words2
-
-    return len(intersection) / len(union) if union else 0.0
+    return SM(None, n1, n2).ratio()

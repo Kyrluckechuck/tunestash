@@ -318,7 +318,7 @@ class TestStringSimlarity:
     @pytest.mark.unit
     def test_no_overlap(self):
         """Test strings with no word overlap."""
-        assert _string_similarity("hello world", "foo bar") == 0.0
+        assert _string_similarity("hello world", "foo bar") < 0.4
 
     @pytest.mark.unit
     def test_empty_string(self):
