@@ -74,47 +74,45 @@ class TestNormalizeName:
         assert normalize_name("Too   Many   Spaces") == "too many spaces"
 
 
-class TestNormalizeNameForTrackMatching:
-    """Test the composed track-matching normalization that extends normalize_name."""
+class TestTrackMatcherNormalization:
+    """Test the shared track matcher normalization and tag extraction."""
 
-    def test_strips_feat_in_brackets(self):
-        from src.services.track_mapping import _normalize_name_for_track_matching
+    def test_extracts_feat_tag(self):
+        from downloader.track_matcher import extract_title_tags
 
-        result = _normalize_name_for_track_matching("Song Name (feat. Artist)")
-        assert "feat" not in result
-        assert "artist" not in result
+        core, tags = extract_title_tags("Song Name (feat. Artist)")
+        assert core == "Song Name"
+        assert any("feat" in t for t in tags)
 
-    def test_strips_ft_suffix(self):
-        from src.services.track_mapping import _normalize_name_for_track_matching
+    def test_extracts_remastered_tag(self):
+        from downloader.track_matcher import extract_title_tags
 
-        result = _normalize_name_for_track_matching("Song Name ft. Someone")
-        assert "someone" not in result
+        core, tags = extract_title_tags("Song Name (Remastered 2011)")
+        assert core == "Song Name"
+        assert tags == ["remastered 2011"]
 
-    def test_strips_remastered_tag_raw_input(self):
-        """Test with raw input (before base normalization strips brackets)."""
-        from src.services.track_mapping import _normalize_name_for_track_matching
+    def test_normalize_strips_accents(self):
+        from downloader.track_matcher import normalize_for_matching
 
-        # The base normalize_name strips brackets/punctuation before the regex runs,
-        # so the bracket-based regexes won't match. This tests the suffix-based feat regex.
-        result = _normalize_name_for_track_matching("Song Name ft. Someone Else")
-        assert "someone" not in result
-
-    def test_consistent_with_base_normalize(self):
-        """Track matching normalization should be a superset of base normalization."""
-        from src.services.track_mapping import _normalize_name_for_track_matching
-
-        base = normalize_name("Hello World (feat. Test)")
-        extended = _normalize_name_for_track_matching("Hello World (feat. Test)")
-        # Extended should strip more (the feat tag), so it should be shorter or equal
-        assert len(extended) <= len(base)
-
-    def test_inherits_base_normalization(self):
-        from src.services.track_mapping import _normalize_name_for_track_matching
-
-        result = _normalize_name_for_track_matching("Beyoncé & Jay-Z (feat. Someone)")
+        result = normalize_for_matching("Beyoncé & Jay-Z")
         assert "beyonce" in result
         assert "jay" in result
-        assert "someone" not in result
+        assert "and" in result
+
+    def test_consistent_with_base_normalize(self):
+        """Track matcher normalization should handle same cases as base normalize_name."""
+        from downloader.track_matcher import normalize_for_matching
+
+        base = normalize_name("Hello World")
+        matcher = normalize_for_matching("Hello World")
+        assert base == matcher
+
+    def test_normalize_handles_unicode(self):
+        from downloader.track_matcher import normalize_for_matching
+
+        result = normalize_for_matching("Versión En Español")
+        assert "version" in result
+        assert "espanol" in result
 
 
 class TestCheckApiRateLimit:

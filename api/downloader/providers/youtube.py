@@ -21,7 +21,6 @@ from .base import (
     QualityOption,
     QualityPreference,
     TrackMatch,
-    calculate_match_confidence,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,7 +122,7 @@ class YouTubeMusicProvider(DownloadProvider):
             ),
         )
 
-    def _search_track_sync(  # pylint: disable=too-many-return-statements
+    def _search_track_sync(
         self,
         title: str,
         artist: str,
@@ -133,8 +132,9 @@ class YouTubeMusicProvider(DownloadProvider):
     ) -> Optional[TrackMatch]:
         """Synchronous search implementation."""
         import yt_dlp
+        from downloader.track_matcher import score_track_match
 
-        search_query = f"ytsearch1:{artist} - {title}"
+        search_query = f"ytsearch5:{artist} - {title}"
         opts = _build_ydl_opts(self._cookies_path)
         opts["extract_flat"] = False
         opts["default_search"] = "ytsearch"
@@ -146,55 +146,66 @@ class YouTubeMusicProvider(DownloadProvider):
             if not info:
                 return None
 
-            # ytsearch returns entries list
             entries = info.get("entries", [info])
-            entry = entries[0] if entries else None
-            if not entry or not entry.get("id"):
+            if not entries:
                 return None
 
-            result_title = entry.get("title", "")
-            result_artist = entry.get("uploader", entry.get("channel", ""))
-            result_duration_ms = int(entry.get("duration", 0) * 1000)
-            video_id = entry["id"]
+            search_duration_s = duration_ms / 1000.0 if duration_ms else None
+            best_match: Optional[TrackMatch] = None
+            best_confidence = 0.0
 
-            # Duration validation
-            if duration_ms and result_duration_ms:
-                duration_diff = abs(duration_ms - result_duration_ms)
-                if duration_diff > DURATION_TOLERANCE_MS:
-                    logger.debug(
-                        f"[youtube] Duration mismatch for '{title}': "
-                        f"expected {duration_ms}ms, got {result_duration_ms}ms "
-                        f"(diff: {duration_diff}ms)"
-                    )
-                    return None
+            for entry in entries:
+                if not entry or not entry.get("id"):
+                    continue
 
-            confidence = calculate_match_confidence(
-                search_title=title,
-                search_artist=artist,
-                result_title=result_title,
-                result_artist=result_artist,
-                search_duration_ms=duration_ms,
-                result_duration_ms=result_duration_ms,
-                duration_tolerance_ms=DURATION_TOLERANCE_MS,
-            )
+                result_title = entry.get("title", "")
+                result_artist = entry.get("uploader", entry.get("channel", ""))
+                result_duration_ms = int(entry.get("duration", 0) * 1000)
+                result_duration_s = result_duration_ms / 1000.0
+                video_id = entry["id"]
 
-            if confidence < MIN_MATCH_CONFIDENCE:
-                logger.debug(
-                    f"[youtube] Low confidence ({confidence:.2f}) for "
-                    f"'{artist} - {title}' -> '{result_artist} - {result_title}'"
+                if duration_ms and result_duration_ms:
+                    duration_diff = abs(duration_ms - result_duration_ms)
+                    if duration_diff > DURATION_TOLERANCE_MS:
+                        logger.debug(
+                            f"[youtube] Duration mismatch for '{title}': "
+                            f"expected {duration_ms}ms, got {result_duration_ms}ms "
+                            f"(diff: {duration_diff}ms)"
+                        )
+                        continue
+
+                confidence = score_track_match(
+                    search_title=title,
+                    search_artist=artist,
+                    result_title=result_title,
+                    result_artist=result_artist,
+                    search_duration_s=search_duration_s,
+                    result_duration_s=result_duration_s,
+                    duration_tolerance_s=DURATION_TOLERANCE_MS / 1000.0,
                 )
-                return None
 
-            return TrackMatch(
-                provider="youtube",
-                provider_track_id=video_id,
-                title=result_title,
-                artist=result_artist,
-                album=album or "",
-                duration_ms=result_duration_ms,
-                confidence=confidence,
-                cover_url=entry.get("thumbnail"),
-            )
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_match = TrackMatch(
+                        provider="youtube",
+                        provider_track_id=video_id,
+                        title=result_title,
+                        artist=result_artist,
+                        album=album or "",
+                        duration_ms=result_duration_ms,
+                        confidence=confidence,
+                        cover_url=entry.get("thumbnail"),
+                    )
+
+            if best_match and best_confidence >= MIN_MATCH_CONFIDENCE:
+                return best_match
+
+            if best_confidence > 0:
+                logger.debug(
+                    f"[youtube] Best confidence ({best_confidence:.2f}) below "
+                    f"threshold for '{artist} - {title}'"
+                )
+            return None
 
         except Exception as e:
             logger.error(f"[youtube] Search failed for '{artist} - {title}': {e}")

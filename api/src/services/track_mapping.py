@@ -1,8 +1,6 @@
 """Track mapping service — resolves external tracks to Spotify IDs."""
 
 import logging
-import re
-from difflib import SequenceMatcher
 from typing import Optional
 
 import requests
@@ -11,7 +9,6 @@ from library_manager.models import (
     Song,
     TrackMappingCache,
 )
-from library_manager.tasks.core import normalize_name
 from src.providers.rate_limit import check_api_rate_limit
 
 logger = logging.getLogger(__name__)
@@ -21,29 +18,6 @@ MUSICBRAINZ_API_BASE = "https://musicbrainz.org/ws/2"
 MUSICBRAINZ_USER_AGENT = "TuneStash/1.0 (https://github.com/tunestash)"
 
 MIN_CONFIDENCE_THRESHOLD = 0.6
-
-# Compiled regexes for stripping feat/remix tags during track matching
-_FEAT_BRACKET_RE = re.compile(
-    r"\s*[\(\[](feat\.?|ft\.?|featuring)\s+[^\)\]]*[\)\]]", re.IGNORECASE
-)
-_FEAT_SUFFIX_RE = re.compile(r"\s*(feat\.?|ft\.?|featuring)\s+.*$", re.IGNORECASE)
-_REMASTER_RE = re.compile(
-    r"\s*[\(\[](remaster(ed)?|deluxe|bonus)[^\)\]]*[\)\]]", re.IGNORECASE
-)
-
-
-def _normalize_name_for_track_matching(name: str) -> str:
-    """Normalize a name for track matching, extending the base normalize_name.
-
-    In addition to accent/punctuation/case normalization, this strips
-    feat/ft/featuring tags and remaster/deluxe/bonus suffixes that are
-    irrelevant for matching tracks across providers.
-    """
-    name = normalize_name(name)
-    name = _FEAT_BRACKET_RE.sub("", name)
-    name = _FEAT_SUFFIX_RE.sub("", name)
-    name = _REMASTER_RE.sub("", name)
-    return name.strip()
 
 
 def _make_cache_key(artist: str, track: str) -> str:
@@ -186,6 +160,8 @@ def resolve_via_deezer_search(
         (deezer_track_id, confidence) — None and 0.0 if no match.
     """
     try:
+        from downloader.track_matcher import score_track_match
+
         from src.providers.deezer import DeezerMetadataProvider
 
         provider = DeezerMetadataProvider()
@@ -194,27 +170,16 @@ def resolve_via_deezer_search(
         if not results:
             return None, 0.0
 
-        norm_artist = _normalize_name_for_track_matching(artist_name)
-        norm_track = _normalize_name_for_track_matching(track_name)
-
         best_id: Optional[int] = None
         best_confidence = 0.0
 
         for item in results:
-            item_track = _normalize_name_for_track_matching(item.name)
-            item_artist = _normalize_name_for_track_matching(item.artist_name or "")
-
-            artist_sim = SequenceMatcher(None, norm_artist, item_artist).ratio()
-            track_sim = SequenceMatcher(None, norm_track, item_track).ratio()
-
-            if artist_sim >= 0.95 and track_sim >= 0.95:
-                confidence = 1.0
-            elif artist_sim >= 0.85 and track_sim >= 0.85:
-                confidence = 0.9
-            elif artist_sim >= 0.7 and track_sim >= 0.7:
-                confidence = 0.7
-            else:
-                confidence = (artist_sim + track_sim) / 2.0
+            confidence = score_track_match(
+                search_title=track_name,
+                search_artist=artist_name,
+                result_title=item.name,
+                result_artist=item.artist_name or "",
+            )
 
             if confidence > best_confidence:
                 best_confidence = confidence
