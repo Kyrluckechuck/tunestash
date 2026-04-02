@@ -352,6 +352,11 @@ def download_single_album(self: Any, album_id: int) -> None:
             )
     except CeleryRetry:
         raise
+    except ValueError as e:
+        error_msg = f"Content unavailable: {str(e)}"
+        logger.warning(error_msg)
+        if task_history:
+            complete_task(task_history, success=False, error_message=error_msg)
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
         logger.error(error_msg)
@@ -971,6 +976,11 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
             )
     except CeleryRetry:
         raise
+    except ValueError as e:
+        error_msg = f"Content unavailable: {str(e)}"
+        logger.warning(error_msg)
+        if task_history:
+            complete_task(task_history, success=False, error_message=error_msg)
     except Exception as e:
         error_msg = f"Error downloading album: {str(e)}"
         logger.error(error_msg)
@@ -1129,6 +1139,11 @@ def download_track_by_spotify_gid(self: Any, track_gid: str) -> None:
 
     except CeleryRetry:
         raise
+    except ValueError as e:
+        error_msg = f"Content unavailable: {str(e)}"
+        logger.warning(error_msg)
+        if task_history:
+            complete_task(task_history, success=False, error_message=error_msg)
     except Exception as e:
         error_msg = f"Error downloading track: {str(e)}"
         logger.error(error_msg)
