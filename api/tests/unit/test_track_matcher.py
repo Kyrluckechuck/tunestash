@@ -1,6 +1,7 @@
 """Tests for the shared track matching module."""
 
 from downloader.track_matcher import (
+    album_type_score,
     compute_tag_penalty,
     extract_title_tags,
     normalize_for_matching,
@@ -326,3 +327,22 @@ class TestM3UResolutionRanking:
             "Eagles",
         )
         assert score >= 0.7
+
+
+class TestAlbumTypeScore:
+    def test_single_ranks_highest(self) -> None:
+        assert album_type_score("single") > album_type_score("album")
+
+    def test_album_ranks_above_compilation(self) -> None:
+        assert album_type_score("album") > album_type_score("compilation")
+
+    def test_preference_order(self) -> None:
+        order = ["single", "album", "ep", "compilation"]
+        scores = [album_type_score(t) for t in order]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_none_ranks_lowest(self) -> None:
+        assert album_type_score(None) < album_type_score("compilation")
+
+    def test_unknown_type_ranks_lowest(self) -> None:
+        assert album_type_score("something_weird") < album_type_score("compilation")

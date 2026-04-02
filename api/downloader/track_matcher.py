@@ -252,3 +252,19 @@ def score_track_match(
     score -= tag_penalty
 
     return max(0.0, min(1.0, score))
+
+
+# Single > Album > EP > Compilation > Other
+_ALBUM_TYPE_RANK: dict[str, int] = {
+    "single": 5,
+    "album": 4,
+    "ep": 3,
+    "compilation": 2,
+}
+
+
+def album_type_score(album_type: Optional[str]) -> int:
+    """Return a preference rank for an album type. Higher is better."""
+    if not album_type:
+        return 1
+    return _ALBUM_TYPE_RANK.get(album_type.lower(), 1)
