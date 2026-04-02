@@ -103,24 +103,36 @@ def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Pat
     if song.downloaded and song.file_path_ref:
         return Path(song.file_path_ref.path)
 
-    # ISRC fallback
+    # ISRC fallback — prefer single > album > ep > compilation
     if song.isrc:
-        isrc_match = (
+        from downloader.track_matcher import album_type_score
+
+        isrc_matches = (
             Song.objects.filter(
                 isrc=song.isrc,
                 downloaded=True,
                 file_path_ref__isnull=False,
             )
             .exclude(id=song.id)
-            .select_related("file_path_ref")
-            .first()
+            .select_related("file_path_ref", "album")
         )
-        if isrc_match and isrc_match.file_path_ref:
-            return Path(isrc_match.file_path_ref.path)
 
-    # Name+artist fallback — score candidates and pick best
+        best_match = None
+        best_rank = -1
+        for candidate in isrc_matches:
+            rank = album_type_score(
+                candidate.album.album_type if candidate.album else None
+            )
+            if rank > best_rank:
+                best_rank = rank
+                best_match = candidate
+
+        if best_match and best_match.file_path_ref:
+            return Path(best_match.file_path_ref.path)
+
+    # Name+artist fallback — score candidates, use album type as tiebreaker
     if song.primary_artist_id:
-        from downloader.track_matcher import score_track_match
+        from downloader.track_matcher import album_type_score, score_track_match
 
         candidates = (
             Song.objects.filter(
@@ -130,11 +142,11 @@ def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Pat
                 file_path_ref__isnull=False,
             )
             .exclude(id=song.id)
-            .select_related("file_path_ref", "primary_artist")
+            .select_related("file_path_ref", "primary_artist", "album")
         )
 
         best_path: Optional[Path] = None
-        best_score = 0.0
+        best_key = (0.0, -1)
         artist_name = song.primary_artist.name if song.primary_artist_id else ""
 
         for candidate in candidates:
@@ -147,11 +159,15 @@ def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Pat
                 result_title=candidate.name,
                 result_artist=cand_artist,
             )
-            if candidate.file_path_ref and score > best_score:
-                best_score = score
+            rank = album_type_score(
+                candidate.album.album_type if candidate.album else None
+            )
+            key = (score, rank)
+            if candidate.file_path_ref and key > best_key:
+                best_key = key
                 best_path = Path(candidate.file_path_ref.path)
 
-        if best_path and best_score >= 0.6:
+        if best_path and best_key[0] >= 0.6:
             return best_path
 
     return None
