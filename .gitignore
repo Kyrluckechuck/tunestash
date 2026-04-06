@@ -55,6 +55,7 @@ urls*.txt
 
 # Spec/plan files (ephemeral working docs, not committed)
 docs/specs/
+docs/superpowers/
 
 # Project specific
 db/
