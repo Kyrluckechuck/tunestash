@@ -1090,19 +1090,24 @@ def cleanup_orphaned_albums(self: Any) -> None:
             task_history, 20.0, f"Unwanted {unwanted_count} compilations"
         )
 
-        # 3. Fix empty albums marked as downloaded
+        # 3. Fix empty albums marked as downloaded (ghost albums)
+        # Only reset Deezer albums — Spotify-only empties can't be
+        # downloaded via the Deezer pipeline.
         empty_downloaded = (
-            Album.objects.filter(downloaded=True)
+            Album.objects.filter(downloaded=True, deezer_id__isnull=False)
             .annotate(song_count=Count("songs"))
             .filter(song_count=0)
         )
-        reset_count = empty_downloaded.update(downloaded=False)
+        reset_count = empty_downloaded.update(downloaded=False, failed_count=0)
         stats["empty_downloaded_reset"] = reset_count
         if reset_count:
-            logger.info(f"Reset {reset_count} empty albums from downloaded=True")
+            logger.info(
+                f"Reset {reset_count} empty Deezer albums from "
+                f"downloaded=True for re-download"
+            )
 
         update_task_progress(
-            task_history, 30.0, f"Reset {reset_count} empty downloaded albums"
+            task_history, 30.0, f"Reset {reset_count} ghost albums for re-download"
         )
 
         # 4. Delete Spotify-only empty albums (no deezer_id, 0 songs)
