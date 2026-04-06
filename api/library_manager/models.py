@@ -291,7 +291,7 @@ class Song(models.Model):
         help_text="Spotify Track ID (22-char base62, e.g., '6rqhFgbbKwnb9MLmUQDhG6')",
     )
     deezer_id: models.BigIntegerField = models.BigIntegerField(
-        unique=True, null=True, blank=True, help_text="Deezer track ID"
+        null=True, blank=True, db_index=True, help_text="Deezer track ID"
     )
     youtube_id: models.CharField = models.CharField(
         max_length=120,
@@ -492,7 +492,6 @@ class Song(models.Model):
         db_table = "songs"
         indexes = [
             models.Index(fields=["gid"]),
-            models.Index(fields=["deezer_id"], name="idx_song_deezer_id"),
             models.Index(fields=["youtube_id"], name="idx_song_youtube_id"),
         ]
         constraints = [
@@ -503,6 +502,11 @@ class Song(models.Model):
                     & models.Q(youtube_id__isnull=True)
                 ),
                 name="song_has_at_least_one_external_id",
+            ),
+            models.UniqueConstraint(
+                fields=["deezer_id", "album"],
+                name="unique_song_per_album",
+                condition=models.Q(deezer_id__isnull=False, album__isnull=False),
             ),
         ]
 
