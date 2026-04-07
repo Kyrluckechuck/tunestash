@@ -223,12 +223,12 @@ class TestPeriodicTasks(TestCase):
         assert self.untracked_album.id not in queued_album_ids
 
     @patch("library_manager.tasks.periodic.download_single_album")
-    def test_queue_missing_albums_respects_100_limit(self, mock_download):
-        """Test that periodic task respects the 100 album limit per run."""
+    def test_queue_missing_albums_respects_150_limit(self, mock_download):
+        """Test that periodic task respects the 150 album limit per run."""
         from library_manager.tasks import queue_missing_albums_for_tracked_artists
 
-        # Create 150 missing albums to test the limit
-        for i in range(150):
+        # Create 200 missing albums to test the limit
+        for i in range(200):
             Album.objects.create(
                 name=f"Test Album {i}",
                 spotify_gid=f"album_{i:04d}",
@@ -244,8 +244,8 @@ class TestPeriodicTasks(TestCase):
         # Run the periodic task
         queue_missing_albums_for_tracked_artists()
 
-        # Should only queue 100 albums (not all 152 = 150 + 2 from setUp)
-        assert mock_download.delay.call_count == 100
+        # Should only queue 150 albums (not all 202 = 200 + 2 from setUp)
+        assert mock_download.delay.call_count == 150
 
     @patch("library_manager.tasks.periodic.download_single_album")
     def test_queue_missing_albums_handles_no_albums(self, mock_download):
@@ -1088,3 +1088,95 @@ class TestCleanupStuckTasksPeriodic(TestCase):
         # Verify both cleanups were attempted
         mock_task_history.cleanup_stuck_tasks.assert_called_once()
         mock_task_result.objects.filter.assert_called()
+
+
+class TestTieredDownloadQueue(TestCase):
+    """Test two-phase priority fill in queue_missing_albums_for_tracked_artists."""
+
+    def setUp(self):
+        from library_manager.models import TrackingTier
+
+        self.fav_artist = Artist.objects.create(
+            name="Fav Artist",
+            gid="FAV1cD2eF3gH4iJ5kL6mN7",
+            tracking_tier=TrackingTier.FAVOURITE,
+        )
+        self.tracked_artist = Artist.objects.create(
+            name="Tracked Artist",
+            gid="TRK1cD2eF3gH4iJ5kL6mN7",
+            tracking_tier=TrackingTier.TRACKED,
+        )
+
+        self.fav_album = Album.objects.create(
+            name="Fav Album",
+            artist=self.fav_artist,
+            deezer_id=100,
+            wanted=True,
+            downloaded=False,
+            album_type="album",
+            album_group="album",
+        )
+        self.tracked_album = Album.objects.create(
+            name="Tracked Album",
+            artist=self.tracked_artist,
+            deezer_id=200,
+            wanted=True,
+            downloaded=False,
+            album_type="album",
+            album_group="album",
+        )
+
+    @patch("library_manager.tasks.periodic.download_single_album")
+    def test_favourites_queued_before_tracked(self, mock_dl):
+        """FAVOURITE albums should be queued before TRACKED albums."""
+        from library_manager.tasks import queue_missing_albums_for_tracked_artists
+
+        queue_missing_albums_for_tracked_artists()
+
+        calls = [c.args[0] for c in mock_dl.delay.call_args_list]
+        assert self.fav_album.id in calls
+        assert self.tracked_album.id in calls
+        fav_idx = calls.index(self.fav_album.id)
+        tracked_idx = calls.index(self.tracked_album.id)
+        assert fav_idx < tracked_idx
+
+    @patch("library_manager.tasks.periodic.download_single_album")
+    def test_tracked_fills_remaining_when_favourites_done(self, mock_dl):
+        """When no FAVOURITE albums need downloading, TRACKED gets full batch."""
+        from library_manager.tasks import queue_missing_albums_for_tracked_artists
+
+        # Mark fav album as downloaded so only tracked remains
+        self.fav_album.downloaded = True
+        self.fav_album.save(update_fields=["downloaded"])
+
+        queue_missing_albums_for_tracked_artists()
+
+        assert mock_dl.delay.called
+        queued_ids = [c.args[0] for c in mock_dl.delay.call_args_list]
+        assert self.tracked_album.id in queued_ids
+        assert self.fav_album.id not in queued_ids
+
+    @patch("library_manager.tasks.periodic.download_single_album")
+    def test_favourites_fill_entire_batch_when_many_pending(self, mock_dl):
+        """When FAVOURITE albums exceed batch size, TRACKED gets no slots."""
+        from library_manager.tasks import queue_missing_albums_for_tracked_artists
+
+        # Create 160 favourite albums — more than the 150 batch limit
+        for i in range(160):
+            Album.objects.create(
+                name=f"Fav Album {i}",
+                artist=self.fav_artist,
+                deezer_id=1000 + i,
+                wanted=True,
+                downloaded=False,
+                album_type="album",
+                album_group="album",
+            )
+
+        queue_missing_albums_for_tracked_artists()
+
+        queued_ids = [c.args[0] for c in mock_dl.delay.call_args_list]
+        # Total must not exceed 150
+        assert len(queued_ids) <= 150
+        # The tracked album must not have been queued (favourites filled all slots)
+        assert self.tracked_album.id not in queued_ids
