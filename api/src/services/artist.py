@@ -438,9 +438,14 @@ class ArtistService(BaseService[Artist]):
         tracking_tier: Optional[int] = None,
         auto_download: Optional[bool] = None,
     ) -> Artist:
-        django_artist = await self.model.objects.aget(gid=artist_id)
+        artist_db_id = int(artist_id)
+        django_artist = await self.model.objects.aget(id=artist_db_id)
 
         if tracking_tier is not None:
+            if tracking_tier not in (0, 1, 2):
+                raise ValueError(
+                    "tracking_tier must be 0 (Untracked), 1 (Tracked), or 2 (Favourite)"
+                )
             django_artist.tracking_tier = tracking_tier
 
         if auto_download and django_artist.tracking_tier < TrackingTier.TRACKED:
