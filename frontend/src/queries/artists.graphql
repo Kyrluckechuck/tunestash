@@ -5,7 +5,7 @@ query GetArtist($id: String!) {
     gid
     spotifyUri
     deezerId
-    isTracked
+    trackingTier
     addedAt
     lastSynced
     lastDownloaded
@@ -51,7 +51,7 @@ query GetAlbumById($id: Int!) {
 }
 
 query GetArtists(
-  $isTracked: Boolean
+  $trackingTier: Int
   $hasUndownloaded: Boolean
   $first: Int = 20
   $after: String
@@ -60,7 +60,7 @@ query GetArtists(
   $search: String
 ) {
   artists(
-    isTracked: $isTracked
+    trackingTier: $trackingTier
     hasUndownloaded: $hasUndownloaded
     first: $first
     after: $after
@@ -81,7 +81,7 @@ query GetArtists(
       gid
       spotifyUri
       deezerId
-      isTracked
+      trackingTier
       addedAt
       lastSynced
       lastDownloaded
@@ -165,7 +165,7 @@ query GetPlaylists(
       status
       statusMessage
       enabled
-      autoTrackArtists
+      autoTrackTier
       m3uEnabled
       lastSyncedAt
       provider
@@ -179,7 +179,7 @@ mutation SyncArtist($artistId: String!) {
     name
     gid
     spotifyUri
-    isTracked
+    trackingTier
     addedAt
     lastSynced
     undownloadedCount
@@ -214,7 +214,7 @@ mutation TrackArtist($artistId: Int!) {
     artist {
       id
       name
-      isTracked
+      trackingTier
     }
   }
 }
@@ -226,8 +226,16 @@ mutation UntrackArtist($artistId: Int!) {
     artist {
       id
       name
-      isTracked
+      trackingTier
     }
+  }
+}
+
+mutation UpdateArtist($input: UpdateArtistInput!) {
+  updateArtist(input: $input) {
+    id
+    name
+    trackingTier
   }
 }
 
@@ -295,7 +303,7 @@ mutation TogglePlaylistAutoTrack($playlistId: Int!) {
     playlist {
       id
       name
-      autoTrackArtists
+      autoTrackTier
     }
   }
 }
@@ -316,13 +324,13 @@ mutation UpdatePlaylist(
   $playlistId: Int!
   $name: String!
   $url: String!
-  $autoTrackArtists: Boolean!
+  $autoTrackTier: Int
 ) {
   updatePlaylist(
     playlistId: $playlistId
     name: $name
     url: $url
-    autoTrackArtists: $autoTrackArtists
+    autoTrackTier: $autoTrackTier
   ) {
     success
     message
@@ -332,16 +340,16 @@ mutation UpdatePlaylist(
 mutation CreatePlaylist(
   $name: String!
   $url: String!
-  $autoTrackArtists: Boolean!
+  $autoTrackTier: Int
 ) {
-  createPlaylist(name: $name, url: $url, autoTrackArtists: $autoTrackArtists) {
+  createPlaylist(name: $name, url: $url, autoTrackTier: $autoTrackTier) {
     id
     name
     url
     status
     statusMessage
     enabled
-    autoTrackArtists
+    autoTrackTier
   }
 }
 
@@ -364,7 +372,7 @@ query GetUnlinkedArtists(
     edges {
       id
       name
-      isTracked
+      trackingTier
       songCount
       downloadedSongCount
     }

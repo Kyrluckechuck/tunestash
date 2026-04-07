@@ -1,11 +1,10 @@
 import type { Artist } from '../../types/generated/graphql';
 import { SortableTableHeader } from '../ui/SortableTableHeader';
-import { ToggleStatusButton } from '../ui/ToggleStatusButton';
 import { Link } from '@tanstack/react-router';
 
 export type SortField =
   | 'name'
-  | 'isTracked'
+  | 'trackingTier'
   | 'addedAt'
   | 'lastSynced'
   | 'lastDownloaded'
@@ -73,12 +72,18 @@ export function ArtistsTable({
               </span>
               <span
                 className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
-                  artist.isTracked
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                    : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400'
+                  artist.trackingTier === 2
+                    ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'
+                    : artist.trackingTier === 1
+                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                      : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400'
                 }`}
               >
-                {artist.isTracked ? 'Tracked' : 'Untracked'}
+                {artist.trackingTier === 2
+                  ? '\u2605 Favourite'
+                  : artist.trackingTier === 1
+                    ? '\u2713 Tracked'
+                    : 'Untracked'}
               </span>
             </div>
             <div className='grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400'>
@@ -111,7 +116,7 @@ export function ArtistsTable({
                   Artist
                 </SortableTableHeader>
                 <SortableTableHeader
-                  field='isTracked'
+                  field='trackingTier'
                   currentSortField={sortField}
                   currentSortDirection={sortDirection}
                   onSort={onSort}
@@ -163,29 +168,30 @@ export function ArtistsTable({
                     </div>
                   </td>
                   <td className='px-6 py-4 whitespace-nowrap'>
-                    <ToggleStatusButton
-                      variant='switch'
-                      enabled={artist.isTracked}
-                      onToggle={() => onTrackToggle(artist)}
-                      mutating={mutatingIds?.has(artist.id)}
-                      pulse={pulseIds?.has(artist.id)}
-                      labels={{ on: 'Tracked', off: 'Not Tracked' }}
-                      ariaLabel={
-                        artist.isTracked ? 'Untrack artist' : 'Track artist'
+                    <button
+                      onClick={() => onTrackToggle(artist)}
+                      disabled={mutatingIds?.has(artist.id)}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                        pulseIds?.has(artist.id) ? 'animate-pulse' : ''
+                      } ${
+                        artist.trackingTier === 2
+                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                          : artist.trackingTier === 1
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
+                            : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-600'
+                      } disabled:opacity-50`}
+                      aria-label={
+                        artist.trackingTier >= 1
+                          ? 'Untrack artist'
+                          : 'Track artist'
                       }
-                    />
-                    <ToggleStatusButton
-                      variant='badge'
-                      enabled={artist.isTracked}
-                      onToggle={() => onTrackToggle(artist)}
-                      mutating={mutatingIds?.has(artist.id)}
-                      pulse={pulseIds?.has(artist.id)}
-                      labels={{ on: 'Tracked', off: 'Not Tracked' }}
-                      colors={{ on: 'green', off: 'red' }}
-                      ariaLabel={
-                        artist.isTracked ? 'Untrack artist' : 'Track artist'
-                      }
-                    />
+                    >
+                      {artist.trackingTier === 2
+                        ? '\u2605 Favourite'
+                        : artist.trackingTier === 1
+                          ? '\u2713 Tracked'
+                          : 'Not Tracked'}
+                    </button>
                   </td>
                   <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
                     {artist.lastSynced

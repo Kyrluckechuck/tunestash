@@ -9,7 +9,7 @@ interface DeezerLinkRowProps {
   artist: {
     id: number;
     name: string;
-    isTracked: boolean;
+    trackingTier: number;
     songCount: number;
     downloadedSongCount: number;
   };
@@ -104,7 +104,7 @@ export function DeezerLinkRow({ artist, onLink }: DeezerLinkRowProps) {
             <span className='text-sm font-medium text-gray-900 dark:text-slate-100'>
               {artist.name}
             </span>
-            {artist.isTracked && (
+            {artist.trackingTier >= 1 && (
               <span className='px-1.5 py-0.5 text-xs rounded-full bg-green-100 text-green-800'>
                 Tracked
               </span>

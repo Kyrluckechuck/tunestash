@@ -556,7 +556,7 @@ const ArtistResult: React.FC<ArtistResultProps> = ({
       </div>
     </div>
     <div className='flex items-center gap-2'>
-      {artist.inLibrary && !artist.isTracked && (
+      {artist.inLibrary && artist.trackingTier === 0 && (
         <span className='px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded'>
           In Library
         </span>
@@ -580,7 +580,7 @@ const ArtistResult: React.FC<ArtistResultProps> = ({
           View
         </button>
       )}
-      {artist.isTracked && onUntrack ? (
+      {artist.trackingTier >= 1 && onUntrack ? (
         <button
           onClick={onUntrack}
           disabled={isLoading}

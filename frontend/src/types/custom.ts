@@ -8,7 +8,7 @@ export interface Artist {
   id: number;
   name: string;
   gid: string;
-  tracked: boolean;
+  trackingTier: number;
   addedAt?: string | null;
   lastSyncedAt?: string | null;
 }
@@ -81,7 +81,7 @@ export interface Playlist {
   name: string;
   url: string;
   enabled: boolean;
-  autoTrackArtists: boolean;
+  autoTrackTier: number | null;
   lastSyncedAt?: string | null;
 }
 
@@ -152,7 +152,7 @@ export interface SearchFilters {
 }
 
 export interface ArtistFilters extends SearchFilters {
-  filter?: 'all' | 'tracked' | 'untracked';
+  filter?: 'all' | 'favourite' | 'tracked' | 'untracked';
 }
 
 export interface AlbumFilters extends SearchFilters {

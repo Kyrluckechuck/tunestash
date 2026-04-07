@@ -20,7 +20,7 @@ interface ExternalListItem {
   listIdentifier?: string | null;
   status: string;
   statusMessage?: string | null;
-  autoTrackArtists: boolean;
+  autoTrackTier: number | null;
   lastSyncedAt?: string | null;
   totalTracks: number;
   mappedTracks: number;
@@ -339,17 +339,23 @@ export function ExternalListsTable({
                   <button
                     onClick={() => onToggleAutoTrack(list)}
                     className={`text-xs px-2 py-1 rounded border ${
-                      list.autoTrackArtists
-                        ? 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 border-green-200'
+                      list.autoTrackTier != null
+                        ? list.autoTrackTier === 2
+                          ? 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border-amber-200'
+                          : 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 border-green-200'
                         : 'text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'
                     }`}
                     title={
-                      list.autoTrackArtists
-                        ? 'Auto-track enabled'
+                      list.autoTrackTier != null
+                        ? `Auto-track: ${list.autoTrackTier === 2 ? 'Favourite' : 'Tracked'}`
                         : 'Auto-track disabled'
                     }
                   >
-                    {list.autoTrackArtists ? 'Tracking' : 'Track'}
+                    {list.autoTrackTier === 2
+                      ? '\u2605 Favourite'
+                      : list.autoTrackTier === 1
+                        ? '\u2713 Tracking'
+                        : 'Track'}
                   </button>
                   <button
                     onClick={() => onDeleteList(list.id, list.name)}

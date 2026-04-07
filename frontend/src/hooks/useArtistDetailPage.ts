@@ -4,8 +4,7 @@ import {
   GetArtistDocument,
   GetAlbumsDocument,
   GetSongsDocument,
-  TrackArtistDocument,
-  UntrackArtistDocument,
+  UpdateArtistDocument,
   SyncArtistDocument,
   DownloadArtistDocument,
   SetAlbumWantedDocument,
@@ -140,8 +139,7 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
   });
 
   // Mutations
-  const [trackArtist] = useMutation(TrackArtistDocument);
-  const [untrackArtist] = useMutation(UntrackArtistDocument);
+  const [updateArtist] = useMutation(UpdateArtistDocument);
   const [syncArtist] = useMutation(SyncArtistDocument);
   const [downloadArtist] = useMutation(DownloadArtistDocument);
   const [setAlbumWanted] = useMutation(SetAlbumWantedDocument);
@@ -172,18 +170,19 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
   } = useMutationLoadingState();
 
   // Artist action handlers
-  const handleTrackToggle = async () => {
+  const handleTrackingTierChange = async (tier: number) => {
     const artist = artistData?.artist;
     if (!artist) return;
 
     try {
-      if (artist.isTracked) {
-        await untrackArtist({ variables: { artistId: artist.id } });
-        toast.success('Artist untracked');
-      } else {
-        await trackArtist({ variables: { artistId: artist.id } });
-        toast.success('Artist tracked');
-      }
+      await updateArtist({
+        variables: {
+          input: { artistId: artist.id.toString(), trackingTier: tier },
+        },
+      });
+      const tierLabel =
+        tier === 2 ? 'Favourite' : tier === 1 ? 'Tracked' : 'Untracked';
+      toast.success(`Artist set to ${tierLabel}`);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Failed to update tracking'
@@ -386,7 +385,7 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     artistInitialLoading,
 
     // Artist actions
-    handleTrackToggle,
+    handleTrackingTierChange,
     handleSyncArtist,
     handleDownloadArtist,
     handleCheckArtistMetadata,

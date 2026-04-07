@@ -18,7 +18,7 @@ interface DownloadModalProps {
 
 const STORAGE_KEYS = {
   SAVE_PLAYLISTS: 'download-modal-save-playlists',
-  AUTO_TRACK_ARTISTS: 'download-modal-auto-track-artists',
+  AUTO_TRACK_TIER: 'download-modal-auto-track-tier',
 } as const;
 
 export const DownloadModal: React.FC<DownloadModalProps> = ({
@@ -28,7 +28,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
 }) => {
   const toast = useToast();
   const [url, setUrl] = useState('');
-  const [autoTrackArtists, setAutoTrackArtists] = useState(false);
+  const [autoTrackTier, setAutoTrackTier] = useState<number | null>(null);
   const [savePlaylists, setSavePlaylists] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -37,15 +37,16 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
     const savedSavePlaylists = localStorage.getItem(
       STORAGE_KEYS.SAVE_PLAYLISTS
     );
-    const savedAutoTrackArtists = localStorage.getItem(
-      STORAGE_KEYS.AUTO_TRACK_ARTISTS
+    const savedAutoTrackTier = localStorage.getItem(
+      STORAGE_KEYS.AUTO_TRACK_TIER
     );
 
     if (savedSavePlaylists !== null) {
       setSavePlaylists(savedSavePlaylists === 'true');
     }
-    if (savedAutoTrackArtists !== null) {
-      setAutoTrackArtists(savedAutoTrackArtists === 'true');
+    if (savedAutoTrackTier !== null) {
+      const parsed = parseInt(savedAutoTrackTier);
+      setAutoTrackTier(isNaN(parsed) ? null : parsed);
     }
   }, []);
 
@@ -56,10 +57,10 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
 
   useEffect(() => {
     localStorage.setItem(
-      STORAGE_KEYS.AUTO_TRACK_ARTISTS,
-      autoTrackArtists.toString()
+      STORAGE_KEYS.AUTO_TRACK_TIER,
+      autoTrackTier === null ? '' : autoTrackTier.toString()
     );
-  }, [autoTrackArtists]);
+  }, [autoTrackTier]);
 
   const [downloadUrl, { loading: downloadLoading }] =
     useMutation(DownloadUrlDocument);
@@ -102,7 +103,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
           variables: {
             name: playlistName,
             url: url.trim(),
-            autoTrackArtists,
+            autoTrackTier: autoTrackTier,
           },
         });
 
@@ -117,7 +118,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
       const downloadResult = await downloadUrl({
         variables: {
           url: url.trim(),
-          autoTrackArtists,
+          autoTrackTier: autoTrackTier,
         },
       });
 
@@ -211,18 +212,28 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
           </div>
 
           <div className='mb-4 space-y-3'>
-            <label className='flex items-center'>
-              <input
-                type='checkbox'
-                checked={autoTrackArtists}
-                onChange={e => setAutoTrackArtists(e.target.checked)}
-                className='mr-2'
+            <div>
+              <label
+                htmlFor='autoTrackTier'
+                className='block text-sm text-gray-700 dark:text-slate-300 mb-1'
+              >
+                Auto-track artists
+              </label>
+              <select
+                id='autoTrackTier'
+                value={autoTrackTier ?? ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setAutoTrackTier(val === '' ? null : parseInt(val));
+                }}
+                className='w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-slate-100 text-sm'
                 disabled={isLoading}
-              />
-              <span className='text-sm text-gray-700 dark:text-slate-300'>
-                Track artists found in this content
-              </span>
-            </label>
+              >
+                <option value=''>Off</option>
+                <option value={1}>Tracked</option>
+                <option value={2}>Favourite</option>
+              </select>
+            </div>
 
             {isPlaylist && (
               <label className='flex items-center'>

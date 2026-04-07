@@ -43,7 +43,7 @@ type Artist {
   name: String!
   gid: String
   spotifyUri: String
-  isTracked: Boolean!
+  trackingTier: Int!
   lastSynced: DateTime
   lastDownloaded: DateTime
   addedAt: DateTime
@@ -107,7 +107,7 @@ type CatalogSearchArtist {
   externalUrl: String
   inLibrary: Boolean!
   localId: Int
-  isTracked: Boolean!
+  trackingTier: Int!
 }
 
 type CatalogSearchResults {
@@ -206,7 +206,7 @@ type ExternalListType {
   listIdentifier: String
   status: String!
   statusMessage: String
-  autoTrackArtists: Boolean!
+  autoTrackTier: Int
   lastSyncedAt: DateTime
   createdAt: DateTime
   totalTracks: Int!
@@ -337,15 +337,15 @@ type Mutation {
   togglePlaylistM3u(playlistId: Int!): MutationResult!
   deletePlaylist(playlistId: Int!): MutationResult!
   trackPlaylist(input: TrackPlaylistInput!): Playlist!
-  updatePlaylist(playlistId: Int!, name: String!, url: String!, autoTrackArtists: Boolean!): MutationResult!
+  updatePlaylist(playlistId: Int!, name: String!, url: String!, autoTrackTier: Int = null): MutationResult!
   syncArtist(artistId: String!): Artist!
   downloadArtist(artistId: String!): MutationResult!
   retryFailedSongs(artistId: String!): MutationResult!
   syncPlaylist(playlistId: Int!, force: Boolean! = false, recheck: Boolean! = false): MutationResult!
   downloadAlbum(albumId: String!): Album!
-  downloadUrl(url: String!, autoTrackArtists: Boolean! = false): MutationResult!
-  createPlaylist(name: String!, url: String!, autoTrackArtists: Boolean! = false): Playlist!
-  saveDeezerPlaylist(deezerId: String!, autoTrackArtists: Boolean! = false): Playlist!
+  downloadUrl(url: String!, autoTrackTier: Int = null): MutationResult!
+  createPlaylist(name: String!, url: String!, autoTrackTier: Int = null): Playlist!
+  saveDeezerPlaylist(deezerId: String!, autoTrackTier: Int = null): Playlist!
   cancelAllPendingTasks: MutationResult!
   cancelTasksByName(taskName: String!): MutationResult!
   cancelRunningTasksByName(taskName: String!): MutationResult!
@@ -364,7 +364,7 @@ type Mutation {
   applyAllMetadataUpdates: MutationResult!
   checkArtistMetadata(artistId: Int!): MetadataCheckResult!
   checkAlbumMetadata(albumId: Int!): MetadataCheckResult!
-  createExternalList(source: String!, listType: String!, username: String!, period: String = null, listIdentifier: String = null, autoTrackArtists: Boolean! = false): ExternalListType!
+  createExternalList(source: String!, listType: String!, username: String!, period: String = null, listIdentifier: String = null, autoTrackTier: Int = null): ExternalListType!
   updateExternalList(listId: Int!, name: String = null, username: String = null, period: String = null, listIdentifier: String = null): MutationResult!
   deleteExternalList(listId: Int!): MutationResult!
   toggleExternalList(listId: Int!): MutationResult!
@@ -430,7 +430,7 @@ type Playlist {
   status: String!
   statusMessage: String
   enabled: Boolean!
-  autoTrackArtists: Boolean!
+  autoTrackTier: Int
   m3uEnabled: Boolean!
   lastSyncedAt: DateTime
   provider: String!
@@ -451,7 +451,7 @@ type PlaylistInfo {
 }
 
 type Query {
-  artists(first: Int = 20, after: String = null, isTracked: Boolean = null, hasUndownloaded: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null): ArtistConnection!
+  artists(first: Int = 20, after: String = null, trackingTier: Int = null, hasUndownloaded: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null): ArtistConnection!
   unlinkedArtists(first: Int = 20, after: String = null, search: String = null, hasDownloads: Boolean = null, sortBy: String = null, sortDirection: String = null): ArtistConnection!
   previewDeezerArtist(deezerId: Int!): DeezerArtistPreview
   artist(id: String!): Artist
@@ -609,7 +609,7 @@ enum TaskType {
 
 input TrackPlaylistInput {
   playlistId: String!
-  autoTrackArtists: Boolean! = false
+  autoTrackTier: Int = null
 }
 
 input UpdateAlbumInput {
@@ -619,7 +619,7 @@ input UpdateAlbumInput {
 
 input UpdateArtistInput {
   artistId: String!
-  isTracked: Boolean = null
+  trackingTier: Int = null
   autoDownload: Boolean = null
 }
 

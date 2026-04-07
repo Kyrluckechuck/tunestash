@@ -35,7 +35,7 @@ query GetExternalLists(
       listIdentifier
       status
       statusMessage
-      autoTrackArtists
+      autoTrackTier
       lastSyncedAt
       createdAt
       totalTracks
@@ -56,7 +56,7 @@ query GetExternalList($id: String!) {
     listIdentifier
     status
     statusMessage
-    autoTrackArtists
+    autoTrackTier
     lastSyncedAt
     createdAt
     totalTracks
@@ -71,7 +71,7 @@ mutation CreateExternalList(
   $username: String!
   $period: String
   $listIdentifier: String
-  $autoTrackArtists: Boolean
+  $autoTrackTier: Int
 ) {
   createExternalList(
     source: $source
@@ -79,7 +79,7 @@ mutation CreateExternalList(
     username: $username
     period: $period
     listIdentifier: $listIdentifier
-    autoTrackArtists: $autoTrackArtists
+    autoTrackTier: $autoTrackTier
   ) {
     id
     name

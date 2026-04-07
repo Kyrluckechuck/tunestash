@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { NetworkStatus } from '@apollo/client';
 import { useMutation, useQuery, useApolloClient } from '@apollo/client/react';
 import {
   GetArtistsDocument,
@@ -17,6 +18,7 @@ import { useDataTable } from './useDataTable';
 import { useMutationState, useMutationLoadingState } from './useMutationState';
 import { useRequestState } from './useRequestState';
 import type { SortField } from '../components/artists/ArtistsTable';
+import type { TrackingFilter } from '../components/artists/ArtistFilters';
 
 export function useArtistsPage() {
   const toast = useToast();
@@ -39,9 +41,7 @@ export function useArtistsPage() {
     initialSearchQuery: '',
   });
 
-  const [filter, setFilter] = useState<'all' | 'tracked' | 'untracked'>(
-    'tracked'
-  );
+  const [filter, setFilter] = useState<TrackingFilter>('tracked');
   const [hasUndownloadedFilter, setHasUndownloadedFilter] = useState<
     boolean | undefined
   >(undefined);
@@ -50,7 +50,14 @@ export function useArtistsPage() {
   const queryVariablesWithFilter = useMemo(
     () => ({
       ...queryVariables,
-      isTracked: filter === 'all' ? undefined : filter === 'tracked',
+      trackingTier:
+        filter === 'favourite'
+          ? 2
+          : filter === 'tracked'
+            ? 1
+            : filter === 'untracked'
+              ? 0
+              : undefined,
       hasUndownloaded: hasUndownloadedFilter,
     }),
     [queryVariables, filter, hasUndownloadedFilter]
@@ -94,28 +101,32 @@ export function useArtistsPage() {
     }
   );
 
-  // Pre-fetch other filter combinations to eliminate jitter
+  const hasPrefetched = useRef(false);
+
+  // Pre-fetch other filter combinations once after initial data loads to eliminate jitter
   useEffect(() => {
-    if (data && networkStatus !== 3) {
-      const baseVariables = { ...queryVariables };
+    if (!data || networkStatus !== NetworkStatus.ready || hasPrefetched.current)
+      return;
+    hasPrefetched.current = true;
 
-      ['tracked', 'untracked'].forEach(trackedFilter => {
-        const variables = {
-          ...baseVariables,
-          isTracked: trackedFilter === 'tracked',
-        };
+    const baseVariables = { ...queryVariables };
 
-        client
-          .query({
-            query: GetArtistsDocument,
-            variables,
-            fetchPolicy: 'cache-first',
-          })
-          .catch(() => {
-            // Silently handle pre-fetch errors
-          });
-      });
-    }
+    [0, 1, 2].forEach(tier => {
+      const variables = {
+        ...baseVariables,
+        trackingTier: tier,
+      };
+
+      client
+        .query({
+          query: GetArtistsDocument,
+          variables,
+          fetchPolicy: 'cache-first',
+        })
+        .catch(() => {
+          // Silently handle pre-fetch errors
+        });
+    });
   }, [data, networkStatus, queryVariables, client]);
 
   // Mutations
@@ -152,13 +163,21 @@ export function useArtistsPage() {
   } = useMutationLoadingState();
 
   // Handlers
-  const handleFilterChange = (newFilter: 'all' | 'tracked' | 'untracked') => {
+  const handleFilterChange = (newFilter: TrackingFilter) => {
     setFilter(newFilter);
 
-    // Pre-fetch data for the new filter
+    const newTrackingTier =
+      newFilter === 'favourite'
+        ? 2
+        : newFilter === 'tracked'
+          ? 1
+          : newFilter === 'untracked'
+            ? 0
+            : undefined;
+
     const newVariables = {
       ...queryVariablesWithFilter,
-      isTracked: newFilter === 'all' ? undefined : newFilter === 'tracked',
+      trackingTier: newTrackingTier,
     };
 
     client
@@ -174,12 +193,12 @@ export function useArtistsPage() {
 
   const handleTrackToggle = async (artist: {
     id: number;
-    isTracked: boolean;
+    trackingTier: number;
   }) => {
     await handleMutation(
       artist.id,
       async () => {
-        if (artist.isTracked) {
+        if (artist.trackingTier >= 1) {
           await untrackArtist({ variables: { artistId: artist.id } });
           toast.success('Artist untracked');
         } else {

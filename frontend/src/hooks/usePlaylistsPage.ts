@@ -290,7 +290,7 @@ export function usePlaylistsPage() {
           variables: { playlistId: playlist.id },
         });
         toast.success(
-          `Track Artists ${playlist.autoTrackArtists ? 'disabled' : 'enabled'}`
+          `Track Artists ${playlist.autoTrackTier != null ? 'disabled' : 'enabled'}`
         );
       },
       { withPulse: true }

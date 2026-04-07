@@ -124,7 +124,7 @@ async function testGraphQLOperations() {
               id
               name
               gid
-              isTracked
+              trackingTier
               addedAt
               lastSynced
             }
@@ -273,7 +273,6 @@ function validateQueries(queries, _schema) {
 
       // Check for common field name mismatches
       const fieldMismatches = [
-        { pattern: /tracked\b/g, suggestion: 'isTracked' },
         { pattern: /sort_by\b/g, suggestion: 'sortBy' },
         { pattern: /sort_direction\b/g, suggestion: 'sortDirection' },
       ];

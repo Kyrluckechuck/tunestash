@@ -6,7 +6,7 @@ export interface CreateExternalListFormData {
   username: string;
   period?: string;
   listIdentifier?: string;
-  autoTrackArtists: boolean;
+  autoTrackTier: number | null;
 }
 
 export interface EditExternalListFields {
@@ -101,7 +101,7 @@ export function ExternalListModal({
   const [username, setUsername] = useState('');
   const [period, setPeriod] = useState('');
   const [listIdentifier, setListIdentifier] = useState('');
-  const [autoTrackArtists, setAutoTrackArtists] = useState(false);
+  const [autoTrackTier, setAutoTrackTier] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -160,7 +160,7 @@ export function ExternalListModal({
       setUsername('');
       setPeriod('');
       setListIdentifier('');
-      setAutoTrackArtists(false);
+      setAutoTrackTier(null);
     }
   }, [isOpen, editingList]);
 
@@ -240,7 +240,7 @@ export function ExternalListModal({
           listIdentifier: showListIdentifier
             ? listIdentifier.trim()
             : undefined,
-          autoTrackArtists,
+          autoTrackTier,
         });
       }
 
@@ -429,21 +429,29 @@ export function ExternalListModal({
 
           {!isEditMode && (
             <div className='mb-6'>
-              <label className='flex items-center'>
-                <input
-                  type='checkbox'
-                  checked={autoTrackArtists}
-                  onChange={e => setAutoTrackArtists(e.target.checked)}
-                  className='h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-slate-600 rounded'
-                  disabled={isSubmitting}
-                />
-                <span className='ml-2 text-sm text-gray-700 dark:text-slate-300'>
-                  Auto-track artists from this list
-                </span>
+              <label
+                htmlFor='el-autoTrackTier'
+                className='block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2'
+              >
+                Auto-track artists
               </label>
+              <select
+                id='el-autoTrackTier'
+                value={autoTrackTier ?? ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setAutoTrackTier(val === '' ? null : parseInt(val));
+                }}
+                className='w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
+                disabled={isSubmitting}
+              >
+                <option value=''>Off</option>
+                <option value={1}>Tracked</option>
+                <option value={2}>Favourite</option>
+              </select>
               <p className='text-xs text-gray-500 dark:text-slate-400 mt-1'>
-                Automatically track all artists found in this list for future
-                releases
+                Automatically set this tracking tier for all artists found in
+                this list
               </p>
             </div>
           )}

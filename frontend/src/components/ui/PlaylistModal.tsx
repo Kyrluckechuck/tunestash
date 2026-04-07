@@ -29,7 +29,7 @@ export function PlaylistModal({
 }: PlaylistModalProps) {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [autoTrackArtists, setAutoTrackArtists] = useState(false);
+  const [autoTrackTier, setAutoTrackTier] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Track whether user has manually edited the name field
@@ -65,12 +65,12 @@ export function PlaylistModal({
     if (playlist && mode === 'edit') {
       setName(playlist.name);
       setUrl(playlist.url);
-      setAutoTrackArtists(playlist.autoTrackArtists);
+      setAutoTrackTier(playlist.autoTrackTier ?? null);
       setNameManuallyEdited(true); // Don't overwrite existing playlist names
     } else {
       setName('');
       setUrl('');
-      setAutoTrackArtists(false);
+      setAutoTrackTier(null);
       setNameManuallyEdited(false);
       lastFetchedUrlRef.current = '';
     }
@@ -121,14 +121,14 @@ export function PlaylistModal({
           variables: {
             name: name.trim(),
             url: url.trim(),
-            autoTrackArtists,
+            autoTrackTier: autoTrackTier,
           },
         });
 
         if (result.data?.createPlaylist) {
           setName('');
           setUrl('');
-          setAutoTrackArtists(false);
+          setAutoTrackTier(null);
           onClose();
         } else {
           setError('Failed to create playlist');
@@ -139,14 +139,14 @@ export function PlaylistModal({
             playlistId: playlist?.id ?? 0,
             name: name.trim(),
             url: url.trim(),
-            autoTrackArtists,
+            autoTrackTier: autoTrackTier,
           },
         });
 
         if (result.data?.updatePlaylist?.success) {
           setName('');
           setUrl('');
-          setAutoTrackArtists(false);
+          setAutoTrackTier(null);
           onClose();
         } else {
           setError(
@@ -165,7 +165,7 @@ export function PlaylistModal({
     if (!isSubmitting) {
       setName('');
       setUrl('');
-      setAutoTrackArtists(false);
+      setAutoTrackTier(null);
       setError(null);
       setNameManuallyEdited(false);
       lastFetchedUrlRef.current = '';
@@ -247,26 +247,32 @@ export function PlaylistModal({
             />
           </div>
 
-          {mode === 'create' && (
-            <div className='mb-6'>
-              <label className='flex items-center'>
-                <input
-                  type='checkbox'
-                  checked={autoTrackArtists}
-                  onChange={e => setAutoTrackArtists(e.target.checked)}
-                  className='h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-slate-600 rounded'
-                  disabled={isSubmitting}
-                />
-                <span className='ml-2 text-sm text-gray-700 dark:text-slate-300'>
-                  Track artists found in this playlist
-                </span>
-              </label>
-              <p className='text-xs text-gray-500 dark:text-slate-400 mt-1'>
-                When enabled, all artists from the playlist will be
-                automatically tracked for future releases
-              </p>
-            </div>
-          )}
+          <div className='mb-6'>
+            <label
+              htmlFor='autoTrackTier'
+              className='block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2'
+            >
+              Auto-track artists
+            </label>
+            <select
+              id='autoTrackTier'
+              value={autoTrackTier ?? ''}
+              onChange={e => {
+                const val = e.target.value;
+                setAutoTrackTier(val === '' ? null : parseInt(val));
+              }}
+              className='w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-slate-700 dark:text-slate-100'
+              disabled={isSubmitting}
+            >
+              <option value=''>Off</option>
+              <option value={1}>Tracked</option>
+              <option value={2}>Favourite</option>
+            </select>
+            <p className='text-xs text-gray-500 dark:text-slate-400 mt-1'>
+              Automatically set this tracking tier for all artists found in this
+              playlist
+            </p>
+          </div>
 
           {error && (
             <div className='mb-4 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md'>

@@ -7,7 +7,7 @@ query CatalogSearch($query: String!, $types: [String!], $limit: Int) {
       externalUrl
       inLibrary
       localId
-      isTracked
+      trackingTier
     }
     albums {
       providerId
@@ -44,7 +44,7 @@ mutation ImportArtist($deezerId: Int!, $name: String!) {
     artist {
       id
       name
-      isTracked
+      trackingTier
     }
   }
 }

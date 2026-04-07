@@ -76,10 +76,10 @@ const TestArtistsComponent = () => {
 
   const handleTrackToggle = async (artist: {
     id: number;
-    isTracked: boolean;
+    trackingTier: number;
   }) => {
     try {
-      if (artist.isTracked) {
+      if (artist.trackingTier >= 1) {
         await untrackArtist({ variables: { artistId: artist.id } });
       } else {
         await trackArtist({ variables: { artistId: artist.id } });
@@ -106,11 +106,11 @@ const TestArtistsComponent = () => {
     (artist: {
       id: number;
       name: string;
-      isTracked: boolean;
+      trackingTier: number;
       lastSynced: string;
     }) => {
-      if (filter === 'tracked') return artist.isTracked;
-      if (filter === 'untracked') return !artist.isTracked;
+      if (filter === 'tracked') return artist.trackingTier >= 1;
+      if (filter === 'untracked') return artist.trackingTier === 0;
       return true;
     }
   );
@@ -144,18 +144,20 @@ const TestArtistsComponent = () => {
           (artist: {
             id: number;
             name: string;
-            isTracked: boolean;
+            trackingTier: number;
             lastSynced: string;
           }) => (
             <div key={artist.id} data-testid={`artist-${artist.id}`}>
               <span>{artist.name}</span>
-              <span>{artist.isTracked ? 'Tracked' : 'Not Tracked'}</span>
+              <span>
+                {artist.trackingTier >= 1 ? 'Tracked' : 'Not Tracked'}
+              </span>
               <span>Last synced: {artist.lastSynced}</span>
               <button
                 onClick={() => handleTrackToggle(artist)}
                 data-testid={`toggle-${artist.id}`}
               >
-                {artist.isTracked ? 'Untrack' : 'Track'}
+                {artist.trackingTier >= 1 ? 'Untrack' : 'Track'}
               </button>
               <button
                 onClick={() => handleSyncArtist(artist.id)}
