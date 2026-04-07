@@ -189,7 +189,7 @@ def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> N
         Song.objects.filter(bitrate=0, unavailable=False)
         .order_by("created_at")
         .select_related("primary_artist")
-        .filter(primary_artist__tracked=True)[:100]
+        .filter(primary_artist__tracking_tier__gte=1)[:100]
     )
     failed_known_songs_list = Song.objects.filter(
         failed_count__gt=0, bitrate=0, unavailable=False
@@ -1526,7 +1526,7 @@ def backfill_lyrics_status(self: Any, batch_size: int = 500) -> None:
             )
             .exclude(lyrics_status__isnull=False)
             .select_related("file_path_ref", "primary_artist")
-            .order_by("-primary_artist__tracked", "id")[:batch_size]
+            .order_by("-primary_artist__tracking_tier", "id")[:batch_size]
         )
 
         total_remaining = (

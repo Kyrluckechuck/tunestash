@@ -21,6 +21,7 @@ from ..models import DownloadProvider as DownloadProviderEnum
 from ..models import (
     Song,
     TaskHistory,
+    TrackingTier,
     get_album_groups_to_ignore,
     get_album_types_to_download,
 )
@@ -681,7 +682,12 @@ def _match_or_create_song_from_spotify_track(
     if not artist:
         artist, _ = Artist.objects.get_or_create(
             gid=artist_gid or f"unknown-{gid}",
-            defaults={"name": artist_name, "tracked": track_artists},
+            defaults={
+                "name": artist_name,
+                "tracking_tier": (
+                    TrackingTier.TRACKED if track_artists else TrackingTier.UNTRACKED
+                ),
+            },
         )
 
     song = Song.objects.create(

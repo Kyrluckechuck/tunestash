@@ -28,7 +28,7 @@ class ArtistFactory(DjangoModelFactory):
 
     name = Faker("name")
     gid = Sequence(lambda n: f"{n:032x}")  # Generate proper hexadecimal GIDs
-    tracked = Faker("boolean")
+    tracking_tier = 0
     added_at = Faker("date_time", tzinfo=timezone.utc)
     last_synced_at = Faker("date_time", tzinfo=timezone.utc)
 
@@ -124,13 +124,13 @@ class DownloadHistoryFactory(DjangoModelFactory):
 class TrackedArtistFactory(ArtistFactory):
     """Factory for creating tracked artists."""
 
-    tracked = True
+    tracking_tier = 1
 
 
 class UntrackedArtistFactory(ArtistFactory):
     """Factory for creating untracked artists."""
 
-    tracked = False
+    tracking_tier = 0
 
 
 class DownloadedAlbumFactory(AlbumFactory):

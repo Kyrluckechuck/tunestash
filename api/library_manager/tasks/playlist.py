@@ -7,7 +7,7 @@ from django.utils import timezone
 from celery_app import app as celery_app
 
 from .. import helpers
-from ..models import Artist, PlaylistSong, Song, TrackedPlaylist
+from ..models import Artist, PlaylistSong, Song, TrackedPlaylist, TrackingTier
 from .core import (
     complete_task,
     create_task_history,
@@ -298,8 +298,8 @@ def sync_deezer_playlist(
             if artist_deezer_ids:
                 artists_to_track = Artist.objects.filter(
                     deezer_id__in=artist_deezer_ids
-                ).exclude(tracked=True)
-                updated = artists_to_track.update(tracked=True)
+                ).exclude(tracking_tier__gte=TrackingTier.TRACKED)
+                updated = artists_to_track.update(tracking_tier=TrackingTier.TRACKED)
                 if updated:
                     logger.info(
                         f"Marked {updated} artists as tracked from "
@@ -350,18 +350,18 @@ def _track_artists_in_deezer_playlist(playlist: TrackedPlaylist) -> None:
     for deezer_id, name in artists_data:
         _, created = Artist.objects.get_or_create(
             deezer_id=deezer_id,
-            defaults={"name": name, "tracked": True},
+            defaults={"name": name, "tracking_tier": TrackingTier.TRACKED},
         )
         if created:
             tracked_count += 1
         else:
-            Artist.objects.filter(deezer_id=deezer_id, tracked=False).update(
-                tracked=True
-            )
+            Artist.objects.filter(
+                deezer_id=deezer_id, tracking_tier=TrackingTier.UNTRACKED
+            ).update(tracking_tier=TrackingTier.TRACKED)
 
     # Count how many were updated (not just created)
     total_tracked = Artist.objects.filter(
-        deezer_id__in=list(seen_artist_ids), tracked=True
+        deezer_id__in=list(seen_artist_ids), tracking_tier__gte=1
     ).count()
     logger.info(
         f"Tracked {total_tracked} artists from Deezer playlist '{playlist.name}' "

@@ -29,7 +29,7 @@ class TestSimpleIntegration:
                 edges {
                     id
                     name
-                    isTracked
+                    trackingTier
                 }
             }
         }

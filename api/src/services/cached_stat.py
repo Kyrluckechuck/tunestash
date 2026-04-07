@@ -96,7 +96,7 @@ def _total_albums() -> int:
 
 
 _STAT_COMPUTERS: dict[str, Any] = {
-    "tracked_artists": lambda: Artist.objects.filter(tracked=True).count(),
+    "tracked_artists": lambda: Artist.objects.filter(tracking_tier__gte=1).count(),
     "total_songs": _total_songs,
     "downloaded_songs": lambda: Song.objects.filter(downloaded=True).count(),
     "total_playlists": _total_playlists,

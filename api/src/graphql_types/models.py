@@ -60,7 +60,7 @@ class Artist:
     name: str
     gid: Optional[str]
     spotify_uri: Optional[str]
-    is_tracked: bool
+    tracking_tier: int
     last_synced: Optional[DateTime]
     last_downloaded: Optional[DateTime] = None
     added_at: Optional[DateTime] = None
@@ -255,7 +255,7 @@ class TrackPlaylistInput:
 @strawberry.input
 class UpdateArtistInput:
     artist_id: str
-    is_tracked: Optional[bool] = None
+    tracking_tier: Optional[int] = None
     auto_download: Optional[bool] = None
 
 
@@ -446,7 +446,7 @@ class CatalogSearchArtist:
     external_url: Optional[str]
     in_library: bool
     local_id: Optional[int]
-    is_tracked: bool
+    tracking_tier: int
 
 
 @strawberry.type

@@ -105,15 +105,15 @@ class TestPeriodicTasks(TestCase):
         """Set up test data."""
         # Create tracked artist with missing albums
         self.tracked_artist1 = Artist.objects.create(
-            name="Tracked Artist 1", gid="tracked_123", tracked=True
+            name="Tracked Artist 1", gid="tracked_123", tracking_tier=1
         )
         self.tracked_artist2 = Artist.objects.create(
-            name="Tracked Artist 2", gid="tracked_456", tracked=True
+            name="Tracked Artist 2", gid="tracked_456", tracking_tier=1
         )
 
         # Create untracked artist (should be ignored)
         self.untracked_artist = Artist.objects.create(
-            name="Untracked Artist", gid="untracked_789", tracked=False
+            name="Untracked Artist", gid="untracked_789", tracking_tier=0
         )
 
         # Create albums for tracked artists
@@ -254,7 +254,7 @@ class TestPeriodicTasks(TestCase):
 
         # Mark all albums as downloaded or unwanted
         Album.objects.filter(
-            artist__tracked=True, wanted=True, downloaded=False
+            artist__tracking_tier__gte=1, wanted=True, downloaded=False
         ).update(downloaded=True)
 
         # Run the periodic task
@@ -329,7 +329,7 @@ class TestRetryFailedSongsTask(TestCase):
 
         # Create test artist
         self.artist = Artist.objects.create(
-            name="Test Artist", gid="artist_test", tracked=True
+            name="Test Artist", gid="artist_test", tracking_tier=1
         )
 
         # Create songs with various failure states
@@ -542,12 +542,12 @@ class TestBackfillAlbumMetadata(TestCase):
         """Set up test data with albums missing metadata."""
         # Create tracked artist
         self.tracked_artist = Artist.objects.create(
-            name="Tracked Artist", gid="tracked_bf_123", tracked=True
+            name="Tracked Artist", gid="tracked_bf_123", tracking_tier=1
         )
 
         # Create untracked artist
         self.untracked_artist = Artist.objects.create(
-            name="Untracked Artist", gid="untracked_bf_456", tracked=False
+            name="Untracked Artist", gid="untracked_bf_456", tracking_tier=0
         )
 
         # Album missing metadata with deezer_id (should be backfilled)
@@ -758,7 +758,7 @@ class TestSongFailureBackoff(TestCase):
         from library_manager.models import FailureReason, Song
 
         self.artist = Artist.objects.create(
-            name="Test Artist", gid="artist_backoff", tracked=True
+            name="Test Artist", gid="artist_backoff", tracking_tier=1
         )
 
         # Song with temporary error - should have short backoff

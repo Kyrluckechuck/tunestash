@@ -50,7 +50,7 @@ class TestArtistService:
             mock_artist = Mock()
             mock_artist.gid = "test123"
             mock_artist.name = "Test Artist"
-            mock_artist.tracked = True
+            mock_artist.tracking_tier = 1
             mock_artist.last_synced_at = datetime.now()
             mock_artist.id = 1  # Set the Django model ID
             mock_artist.spotify_uri = "spotify:artist:test123"
@@ -67,7 +67,7 @@ class TestArtistService:
             assert result is not None
             assert result.id == 1  # GraphQL type uses Django model ID
             assert result.name == "Test Artist"
-            assert result.is_tracked is True
+            assert result.tracking_tier >= 1
             assert result.album_count == 10
             assert result.downloaded_album_count == 8
             assert result.song_count == 50
@@ -107,7 +107,7 @@ class TestArtistService:
                 mock_artist = Mock()
                 mock_artist.gid = f"artist{i}"
                 mock_artist.name = f"Artist {i}"
-                mock_artist.tracked = True
+                mock_artist.tracking_tier = 1
                 mock_artist.spotify_uri = f"spotify:artist:artist{i}"
                 mock_artists.append(mock_artist)
 
@@ -120,7 +120,7 @@ class TestArtistService:
             mock_failed_song_count.return_value = 0
 
             items, has_next, total = await artist_service.get_connection(
-                first=3, is_tracked=True, search="Artist"
+                first=3, tracking_tier=1, search="Artist"
             )
 
             assert len(items) == 3
@@ -145,7 +145,7 @@ class TestArtistService:
             mock_artist.id = 1
             mock_artist.gid = "test_id"
             mock_artist.name = "Test Artist"
-            mock_artist.tracked = True
+            mock_artist.tracking_tier = 1
             mock_artist.last_synced_at = datetime.now()
             mock_artist.last_downloaded_at = datetime.now()
             mock_artist.added_at = datetime.now()
@@ -165,7 +165,7 @@ class TestArtistService:
         mock_artist.id = 1
         mock_artist.gid = "test_id"
         mock_artist.name = "Never Synced Artist"
-        mock_artist.tracked = False
+        mock_artist.tracking_tier = 0
         mock_artist.last_synced_at = None
         mock_artist.last_downloaded_at = None
         mock_artist.added_at = datetime.now()

@@ -17,7 +17,7 @@ class TestIsolatedIntegration:
 
         # Create artist in isolated transaction
         artist = await sync_to_async(Artist.objects.create)(
-            name="Test Artist", gid="test123", tracked=False
+            name="Test Artist", gid="test123", tracking_tier=0
         )
 
         mutation = f"""
@@ -28,7 +28,7 @@ class TestIsolatedIntegration:
                 artist {{
                     id
                     name
-                    isTracked
+                    trackingTier
                 }}
             }}
         }}
@@ -39,11 +39,11 @@ class TestIsolatedIntegration:
         assert result.errors is None
         assert result.data is not None
         assert result.data["trackArtist"]["success"] is True
-        assert result.data["trackArtist"]["artist"]["isTracked"] is True
+        assert result.data["trackArtist"]["artist"]["trackingTier"] >= 1
 
         # Verify in database
         await sync_to_async(artist.refresh_from_db)()
-        assert artist.tracked is True
+        assert artist.tracking_tier >= 1
 
     @pytest.mark.asyncio
     async def test_set_album_wanted_isolated(self, transactional_db):
@@ -52,7 +52,7 @@ class TestIsolatedIntegration:
 
         # Create artist and album in isolated transaction
         artist = await sync_to_async(Artist.objects.create)(
-            name="Test Artist", gid="artist123", tracked=True
+            name="Test Artist", gid="artist123", tracking_tier=1
         )
 
         album = await sync_to_async(Album.objects.create)(
@@ -137,7 +137,9 @@ class TestIsolatedIntegration:
         artists = []
         for i in range(3):
             artist = await sync_to_async(Artist.objects.create)(
-                name=f"Artist {i}", gid=f"artist{i}", tracked=i % 2 == 0
+                name=f"Artist {i}",
+                gid=f"artist{i}",
+                tracking_tier=1 if i % 2 == 0 else 0,
             )
             artists.append(artist)
 
@@ -148,7 +150,7 @@ class TestIsolatedIntegration:
                 edges {
                     id
                     name
-                    isTracked
+                    trackingTier
                 }
             }
         }
@@ -168,7 +170,7 @@ class TestIsolatedIntegration:
 
         # Create artist and albums in isolated transaction
         artist = await sync_to_async(Artist.objects.create)(
-            name="Test Artist", gid="artist123", tracked=True
+            name="Test Artist", gid="artist123", tracking_tier=1
         )
 
         albums = []

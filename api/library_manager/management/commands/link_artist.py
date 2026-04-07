@@ -82,7 +82,7 @@ class Command(BaseCommand):
         for a in rows:
             self.stdout.write(
                 f"{a.id:>6}  {a.name[:40]:<40}  {a.dl_count:>8}  "
-                f"{a.album_count:>6}  {'Yes' if a.tracked else 'No':>7}"
+                f"{a.album_count:>6}  {'Yes' if a.tracking_tier >= 1 else 'No':>7}"
             )
 
         self.stdout.write(f"\nTotal: {len(rows)} artist(s)")

@@ -15,7 +15,7 @@ class TestArtistQueries(TransactionTestCase):
         """Test artists query with data."""
         # Create test data
         await sync_to_async(Artist.objects.create)(
-            name="Test Artist", gid="test123", tracked=True
+            name="Test Artist", gid="test123", tracking_tier=1
         )
 
         query = """
@@ -24,7 +24,7 @@ class TestArtistQueries(TransactionTestCase):
                 edges {
                     id
                     name
-                    isTracked
+                    trackingTier
                 }
                 totalCount
             }
@@ -41,39 +41,39 @@ class TestArtistQueries(TransactionTestCase):
         """Test artists query with filtering."""
         # Create test data
         await sync_to_async(Artist.objects.create)(
-            name="Tracked Artist", gid="tracked123", tracked=True
+            name="Tracked Artist", gid="tracked123", tracking_tier=1
         )
         await sync_to_async(Artist.objects.create)(
-            name="Untracked Artist", gid="untracked123", tracked=False
+            name="Untracked Artist", gid="untracked123", tracking_tier=0
         )
 
         query = """
-        query Artists($isTracked: Boolean) {
-            artists(isTracked: $isTracked) {
+        query Artists($trackingTier: Int) {
+            artists(trackingTier: $trackingTier) {
                 edges {
                     id
                     name
-                    isTracked
+                    trackingTier
                 }
                 totalCount
             }
         }
         """
 
-        variables = {"isTracked": True}
+        variables = {"trackingTier": 1}
         result = await schema.execute(query, variable_values=variables)
 
         assert result.errors is None
         # Should only return tracked artists
         for artist in result.data["artists"]["edges"]:
-            assert artist["isTracked"] is True
+            assert artist["trackingTier"] == 1
 
     async def test_artists_query_with_pagination(self):
         """Test artists query with pagination."""
         # Create test data
         for i in range(3):
             await sync_to_async(Artist.objects.create)(
-                name=f"Artist {i}", gid=f"artist{i}", tracked=True
+                name=f"Artist {i}", gid=f"artist{i}", tracking_tier=1
             )
 
         query = """
@@ -103,10 +103,10 @@ class TestArtistQueries(TransactionTestCase):
         """Test artists query with search."""
         # Create test data
         await sync_to_async(Artist.objects.create)(
-            name="Zebra Artist", gid="zebra123", tracked=True
+            name="Zebra Artist", gid="zebra123", tracking_tier=1
         )
         await sync_to_async(Artist.objects.create)(
-            name="Alpha Artist", gid="alpha123", tracked=True
+            name="Alpha Artist", gid="alpha123", tracking_tier=1
         )
 
         query = """
@@ -131,7 +131,7 @@ class TestArtistQueries(TransactionTestCase):
         """Test single artist query returns zero counts when no albums/songs."""
         # Create test artist with no albums or songs
         artist = await sync_to_async(Artist.objects.create)(
-            name="Empty Artist", gid="emptyartist123", tracked=True
+            name="Empty Artist", gid="emptyartist123", tracking_tier=1
         )
 
         query = """
@@ -161,7 +161,7 @@ class TestArtistQueries(TransactionTestCase):
         """Test single artist query returns album and song counts."""
         # Create test artist
         artist = await sync_to_async(Artist.objects.create)(
-            name="Count Test Artist", gid="counttest123", tracked=True
+            name="Count Test Artist", gid="counttest123", tracking_tier=1
         )
 
         # Create albums (2 total, 1 downloaded)
@@ -230,7 +230,7 @@ class TestArtistHasUndownloadedFilter(TransactionTestCase):
         """Test hasUndownloaded=true returns artists with undownloaded wanted albums."""
         # Artist WITH undownloaded albums (should be included)
         artist_with_undownloaded = await sync_to_async(Artist.objects.create)(
-            name="Has Undownloaded", gid="hasundownloaded123", tracked=True
+            name="Has Undownloaded", gid="hasundownloaded123", tracking_tier=1
         )
         await sync_to_async(Album.objects.create)(
             name="Pending Album",
@@ -245,7 +245,7 @@ class TestArtistHasUndownloadedFilter(TransactionTestCase):
 
         # Artist WITHOUT undownloaded albums (should be excluded)
         artist_all_downloaded = await sync_to_async(Artist.objects.create)(
-            name="All Downloaded", gid="alldownloaded123", tracked=True
+            name="All Downloaded", gid="alldownloaded123", tracking_tier=1
         )
         await sync_to_async(Album.objects.create)(
             name="Downloaded Album",
@@ -282,7 +282,7 @@ class TestArtistHasUndownloadedFilter(TransactionTestCase):
         """Test hasUndownloaded filter respects album_group exclusions (appears_on)."""
         # Artist with ONLY "appears_on" albums (should be excluded from hasUndownloaded)
         artist_appears_on = await sync_to_async(Artist.objects.create)(
-            name="Only Appears On", gid="appearson123", tracked=True
+            name="Only Appears On", gid="appearson123", tracking_tier=1
         )
         await sync_to_async(Album.objects.create)(
             name="Compilation Appearance",
@@ -319,7 +319,7 @@ class TestArtistHasUndownloadedFilter(TransactionTestCase):
         """Test hasUndownloaded=true includes artists with failed (retryable) songs."""
         # Artist with failed songs but no undownloaded albums
         artist_failed_songs = await sync_to_async(Artist.objects.create)(
-            name="Has Failed Songs", gid="failedsongs123", tracked=True
+            name="Has Failed Songs", gid="failedsongs123", tracking_tier=1
         )
         await sync_to_async(Song.objects.create)(
             name="Failed Song",
@@ -355,7 +355,7 @@ class TestArtistHasUndownloadedFilter(TransactionTestCase):
         """Test hasUndownloaded filter excludes permanently unavailable songs."""
         # Artist with unavailable (not retryable) songs
         artist_unavailable = await sync_to_async(Artist.objects.create)(
-            name="Has Unavailable Songs", gid="unavailable123", tracked=True
+            name="Has Unavailable Songs", gid="unavailable123", tracking_tier=1
         )
         await sync_to_async(Song.objects.create)(
             name="Unavailable Song",
@@ -390,7 +390,7 @@ class TestArtistHasUndownloadedFilter(TransactionTestCase):
         # Create multiple artists with various states
         for i in range(3):
             artist = await sync_to_async(Artist.objects.create)(
-                name=f"Artist With Albums {i}", gid=f"withalbums{i}", tracked=True
+                name=f"Artist With Albums {i}", gid=f"withalbums{i}", tracking_tier=1
             )
             await sync_to_async(Album.objects.create)(
                 name=f"Undownloaded Album {i}",
@@ -405,7 +405,7 @@ class TestArtistHasUndownloadedFilter(TransactionTestCase):
 
         # Artist without undownloaded content
         await sync_to_async(Artist.objects.create)(
-            name="No Undownloaded", gid="noundownloaded123", tracked=True
+            name="No Undownloaded", gid="noundownloaded123", tracking_tier=1
         )
 
         query = """
@@ -436,7 +436,7 @@ class TestAlbumQueries(TransactionTestCase):
         """Test albums query."""
         # Create test data
         artist = await sync_to_async(Artist.objects.create)(
-            name="Test Artist", gid="test123", tracked=True
+            name="Test Artist", gid="test123", tracking_tier=1
         )
         await sync_to_async(Album.objects.create)(
             name="Test Album",

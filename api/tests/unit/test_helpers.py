@@ -28,13 +28,13 @@ class TestHelpers(TestCase):
     def setUp(self):
         """Set up test data."""
         self.artist1 = Artist.objects.create(
-            name="Test Artist 1", gid="artist_123", tracked=True
+            name="Test Artist 1", gid="artist_123", tracking_tier=1
         )
         self.artist2 = Artist.objects.create(
-            name="Test Artist 2", gid="artist_456", tracked=True
+            name="Test Artist 2", gid="artist_456", tracking_tier=1
         )
         self.artist3 = Artist.objects.create(
-            name="Test Artist 3", gid="artist_789", tracked=False
+            name="Test Artist 3", gid="artist_789", tracking_tier=0
         )
 
     @patch("library_manager.tasks.fetch_all_albums_for_artist")
@@ -42,7 +42,7 @@ class TestHelpers(TestCase):
         """Test that enqueue_fetch_all_albums_for_artists uses database IDs."""
         from unittest.mock import call
 
-        artists = Artist.objects.filter(tracked=True)
+        artists = Artist.objects.filter(tracking_tier=1)
 
         enqueue_fetch_all_albums_for_artists(artists)
 
@@ -61,7 +61,7 @@ class TestHelpers(TestCase):
         """Test that enqueue_download_missing_albums_for_artists uses database IDs."""
         from unittest.mock import call
 
-        artists = Artist.objects.filter(tracked=True)
+        artists = Artist.objects.filter(tracking_tier=1)
 
         enqueue_download_missing_albums_for_artists(artists)
 
@@ -131,7 +131,7 @@ class TestHelpers(TestCase):
         """Test enqueue_fetch_all_albums_for_artists ignores extra args."""
         from unittest.mock import call
 
-        artists = Artist.objects.filter(tracked=True)
+        artists = Artist.objects.filter(tracking_tier=1)
         extra_args = {"priority": 10}
 
         enqueue_fetch_all_albums_for_artists(artists, extra_args)
@@ -149,7 +149,7 @@ class TestHelpers(TestCase):
     ):
         """Test that enqueue_fetch_all_albums_for_artists prevents duplicates."""
         # Create a queryset with duplicate artists
-        artists = Artist.objects.filter(tracked=True)
+        artists = Artist.objects.filter(tracking_tier=1)
 
         enqueue_fetch_all_albums_for_artists(artists)
 
@@ -185,7 +185,7 @@ class TestHelpers(TestCase):
         """Test that enqueue_batch_artist_operations uses database IDs."""
         from unittest.mock import call
 
-        artists = Artist.objects.filter(tracked=True)
+        artists = Artist.objects.filter(tracking_tier=1)
 
         operation_counts = enqueue_batch_artist_operations(
             artists, operations=["fetch", "download"]
@@ -214,7 +214,7 @@ class TestHelpers(TestCase):
         self, mock_download, mock_fetch
     ):
         """Test that enqueue_priority_artist_operations respects concurrency limits."""
-        artists = Artist.objects.filter(tracked=True)
+        artists = Artist.objects.filter(tracking_tier=1)
 
         operation_counts = enqueue_priority_artist_operations(artists, max_concurrent=1)
 
@@ -234,7 +234,7 @@ class TestHelpers(TestCase):
         """Test that enqueue_artist_sync_with_download uses database IDs."""
         from unittest.mock import call
 
-        artists = Artist.objects.filter(tracked=True)
+        artists = Artist.objects.filter(tracking_tier=1)
 
         operation_counts = enqueue_artist_sync_with_download(
             artists, auto_download=True
@@ -262,7 +262,7 @@ class TestHelpers(TestCase):
     @patch("library_manager.tasks.fetch_all_albums_for_artist")
     def test_enqueue_artist_sync_without_download(self, mock_fetch):
         """Test that enqueue_artist_sync_with_download can skip downloads."""
-        artists = Artist.objects.filter(tracked=True)
+        artists = Artist.objects.filter(tracking_tier=1)
 
         operation_counts = enqueue_artist_sync_with_download(
             artists, auto_download=False
@@ -290,7 +290,7 @@ class TestTaskDeduplication(TestCase):
         fake_task_id = generate_task_id(
             "library_manager.tasks.download_playlist",
             playlist_url="spotify:playlist:nonexistent123",
-            tracked=False,
+            tracking_tier=0,
         )
 
         # Should return (False, "") since task doesn't exist
@@ -309,7 +309,7 @@ class TestTaskDeduplication(TestCase):
         task_id = generate_task_id(
             "library_manager.tasks.download_playlist",
             playlist_url="spotify:playlist:test123",
-            tracked=False,
+            tracking_tier=0,
         )
 
         TaskResult.objects.create(
@@ -333,7 +333,7 @@ class TestTaskDeduplication(TestCase):
         task_id = generate_task_id(
             "library_manager.tasks.download_playlist",
             playlist_url="spotify:playlist:test456",
-            tracked=False,
+            tracking_tier=0,
         )
 
         TaskResult.objects.create(
@@ -358,7 +358,7 @@ class TestTaskDeduplication(TestCase):
         task_id = generate_task_id(
             "library_manager.tasks.download_playlist",
             playlist_url="spotify:playlist:test789",
-            tracked=False,
+            tracking_tier=0,
         )
 
         TaskHistory.objects.create(
@@ -382,7 +382,7 @@ class TestTaskDeduplication(TestCase):
         task_id = generate_task_id(
             "library_manager.tasks.download_playlist",
             playlist_url="spotify:playlist:testfailed",
-            tracked=False,
+            tracking_tier=0,
         )
 
         TaskHistory.objects.create(

@@ -9,7 +9,7 @@ class ArtistDTO(Protocol):
     id: int
     name: str
     gid: str
-    is_tracked: bool
+    tracking_tier: int
     last_synced: Optional[str]
     added_at: Optional[str]
 
