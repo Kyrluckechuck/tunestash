@@ -14,6 +14,7 @@ from library_manager.models import (
     ExternalListSource,
     ExternalListStatus,
     ExternalListType,
+    TrackingTier,
 )
 
 from ..graphql_types.models import ExternalListType as GQLExternalList
@@ -191,7 +192,7 @@ class ExternalListService(BaseService["GQLExternalList"]):
         username: str,
         period: Optional[str] = None,
         list_identifier: Optional[str] = None,
-        auto_track_artists: bool = False,
+        auto_track_tier: Optional[int] = None,
     ) -> "GQLExternalList":
         """Create a new external list after validating the user."""
         # Parse URL input to extract username/identifier
@@ -257,7 +258,7 @@ class ExternalListService(BaseService["GQLExternalList"]):
             period=period,
             list_identifier=list_identifier,
             status=ExternalListStatus.ACTIVE,
-            auto_track_artists=auto_track_artists,
+            auto_track_tier=auto_track_tier,
         )
         await obj.asave()
 
@@ -356,11 +357,14 @@ class ExternalListService(BaseService["GQLExternalList"]):
     async def toggle_auto_track(self, list_id: int) -> MutationResult:
         try:
             obj = await self.model.objects.aget(id=list_id)
-            obj.auto_track_artists = not obj.auto_track_artists
+            if obj.auto_track_tier is not None:
+                obj.auto_track_tier = None
+            else:
+                obj.auto_track_tier = TrackingTier.TRACKED
             await obj.asave()
             return MutationResult(
                 success=True,
-                message=f"Auto-track {'enabled' if obj.auto_track_artists else 'disabled'}",
+                message=f"Auto-track {'enabled' if obj.auto_track_tier is not None else 'disabled'}",
             )
         except self.model.DoesNotExist:
             return MutationResult(success=False, message="External list not found")
@@ -400,7 +404,7 @@ class ExternalListService(BaseService["GQLExternalList"]):
             list_identifier=obj.list_identifier,
             status=obj.status,
             status_message=obj.status_message,
-            auto_track_artists=obj.auto_track_artists,
+            auto_track_tier=obj.auto_track_tier,
             last_synced_at=obj.last_synced_at,
             created_at=obj.created_at,
             total_tracks=obj.total_tracks,

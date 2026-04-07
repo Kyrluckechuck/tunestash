@@ -64,5 +64,5 @@ def sample_playlist():
         name="Test Playlist",
         url="https://open.spotify.com/playlist/test123",
         status=PlaylistStatus.ACTIVE,
-        auto_track_artists=True,
+        auto_track_tier=1,
     )

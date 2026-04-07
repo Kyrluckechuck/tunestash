@@ -1,8 +1,9 @@
 """Factory Boy factories for test data creation."""
 
+import random
 from datetime import timezone
 
-from factory import Faker, Sequence, SubFactory
+from factory import Faker, LazyFunction, Sequence, SubFactory
 from factory.django import DjangoModelFactory
 
 from library_manager.models import (
@@ -82,7 +83,7 @@ class TrackedPlaylistFactory(DjangoModelFactory):
             PlaylistStatus.DISABLED_BY_USER,
         ],
     )
-    auto_track_artists = Faker("boolean")
+    auto_track_tier = LazyFunction(lambda: random.choice([None, 1, 2]))
     last_synced_at = Faker("date_time", tzinfo=timezone.utc)
 
 
@@ -151,7 +152,7 @@ class EnabledPlaylistFactory(TrackedPlaylistFactory):
     """Factory for creating enabled (active) playlists."""
 
     status = PlaylistStatus.ACTIVE
-    auto_track_artists = True
+    auto_track_tier = 1
 
 
 class DisabledPlaylistFactory(TrackedPlaylistFactory):

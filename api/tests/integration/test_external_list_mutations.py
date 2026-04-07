@@ -87,7 +87,7 @@ mutation CreateExternalList(
     $username: String!
     $period: String
     $listIdentifier: String
-    $autoTrackArtists: Boolean
+    $autoTrackTier: Int
 ) {
     createExternalList(
         source: $source
@@ -95,7 +95,7 @@ mutation CreateExternalList(
         username: $username
         period: $period
         listIdentifier: $listIdentifier
-        autoTrackArtists: $autoTrackArtists
+        autoTrackTier: $autoTrackTier
     ) {
         id
         name

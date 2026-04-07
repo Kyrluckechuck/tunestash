@@ -8,6 +8,7 @@ from downloader.utils import normalize_spotify_url
 
 from library_manager.models import PlaylistStatus
 from library_manager.models import TrackedPlaylist as DjangoPlaylist
+from library_manager.models import TrackingTier
 from library_manager.tasks.core import extract_deezer_playlist_id
 from library_manager.validators import is_spotify_owned_playlist
 
@@ -134,7 +135,7 @@ class PlaylistService(BaseService[Playlist]):
             "name": "name",
             "status": "status",
             "enabled": "status",  # Backwards compatibility
-            "autoTrackArtists": "auto_track_artists",
+            "autoTrackTier": "auto_track_tier",
             "lastSyncedAt": "last_synced_at",
         }
 
@@ -169,12 +170,12 @@ class PlaylistService(BaseService[Playlist]):
         )
 
     async def track_playlist(
-        self, playlist_id: str, auto_track_artists: bool = False
+        self, playlist_id: str, auto_track_tier: Optional[int] = None
     ) -> Playlist:
         django_playlist = await self.model.objects.aget(url__contains=playlist_id)
         django_playlist.status = PlaylistStatus.ACTIVE
         django_playlist.status_message = None
-        django_playlist.auto_track_artists = auto_track_artists
+        django_playlist.auto_track_tier = auto_track_tier
         await django_playlist.asave()
 
         # Queue tasks - local imports to avoid circular import during module initialization
@@ -184,13 +185,13 @@ class PlaylistService(BaseService[Playlist]):
         )
 
         await sync_to_async(sync_tracked_playlist.delay)(django_playlist.id)
-        if auto_track_artists:
+        if auto_track_tier is not None:
             await sync_to_async(sync_tracked_playlist_artists.delay)(django_playlist.id)
 
         return self._to_graphql_type(django_playlist)
 
     async def save_playlist_by_spotify_id(
-        self, spotify_id: str, auto_track_artists: bool = False
+        self, spotify_id: str, auto_track_tier: Optional[int] = None
     ) -> Playlist:
         """
         Save a playlist by its Spotify ID, fetching the name from Spotify.
@@ -218,7 +219,7 @@ class PlaylistService(BaseService[Playlist]):
             if not existing_playlist.enabled:
                 existing_playlist.status = PlaylistStatus.ACTIVE
                 existing_playlist.status_message = None
-                existing_playlist.auto_track_artists = auto_track_artists
+                existing_playlist.auto_track_tier = auto_track_tier
                 await existing_playlist.asave()
 
                 # Queue sync tasks
@@ -228,7 +229,7 @@ class PlaylistService(BaseService[Playlist]):
                 )
 
                 await sync_to_async(sync_tracked_playlist.delay)(existing_playlist.id)
-                if auto_track_artists:
+                if auto_track_tier is not None:
                     await sync_to_async(sync_tracked_playlist_artists.delay)(
                         existing_playlist.id
                     )
@@ -251,11 +252,11 @@ class PlaylistService(BaseService[Playlist]):
         return await self.create_playlist(
             name=playlist_name,
             url=spotify_uri,
-            auto_track_artists=auto_track_artists,
+            auto_track_tier=auto_track_tier,
         )
 
     async def create_playlist(
-        self, name: str, url: str, auto_track_artists: bool = False
+        self, name: str, url: str, auto_track_tier: Optional[int] = None
     ) -> Playlist:
         """Create a new playlist, checking for duplicates using normalized URLs.
 
@@ -290,7 +291,7 @@ class PlaylistService(BaseService[Playlist]):
             name=name,
             url=normalized_url,
             status=PlaylistStatus.ACTIVE,
-            auto_track_artists=auto_track_artists,
+            auto_track_tier=auto_track_tier,
             provider="deezer" if is_deezer else "spotify",
         )
         await django_playlist.asave()
@@ -306,7 +307,7 @@ class PlaylistService(BaseService[Playlist]):
             )
 
             await sync_to_async(sync_tracked_playlist.delay)(django_playlist.id)
-            if auto_track_artists:
+            if auto_track_tier is not None:
                 await sync_to_async(sync_tracked_playlist_artists.delay)(
                     django_playlist.id
                 )
@@ -318,7 +319,7 @@ class PlaylistService(BaseService[Playlist]):
         playlist_id: int,
         name: str,
         url: str,
-        auto_track_artists: bool,
+        auto_track_tier: Optional[int] = None,
     ) -> MutationResult:
         try:
             django_playlist = await self.model.objects.aget(id=playlist_id)
@@ -344,7 +345,7 @@ class PlaylistService(BaseService[Playlist]):
 
             django_playlist.name = name
             django_playlist.url = normalized_url
-            django_playlist.auto_track_artists = auto_track_artists
+            django_playlist.auto_track_tier = auto_track_tier
 
             await django_playlist.asave()
 
@@ -404,7 +405,10 @@ class PlaylistService(BaseService[Playlist]):
     async def toggle_playlist_auto_track(self, playlist_id: int) -> MutationResult:
         try:
             django_playlist = await self.model.objects.aget(id=playlist_id)
-            django_playlist.auto_track_artists = not django_playlist.auto_track_artists
+            if django_playlist.auto_track_tier is not None:
+                django_playlist.auto_track_tier = None
+            else:
+                django_playlist.auto_track_tier = TrackingTier.TRACKED
             await django_playlist.asave()
 
             return MutationResult(
@@ -593,7 +597,7 @@ class PlaylistService(BaseService[Playlist]):
         return result
 
     async def save_playlist_by_deezer_id(
-        self, deezer_id: str, auto_track_artists: bool = False
+        self, deezer_id: str, auto_track_tier: Optional[int] = None
     ) -> Playlist:
         """Save a playlist by its Deezer ID, fetching name from Deezer API."""
         deezer_url = f"https://www.deezer.com/playlist/{deezer_id}"
@@ -606,7 +610,7 @@ class PlaylistService(BaseService[Playlist]):
             if not existing.enabled:
                 existing.status = PlaylistStatus.ACTIVE
                 existing.status_message = None
-                existing.auto_track_artists = auto_track_artists
+                existing.auto_track_tier = auto_track_tier
                 await existing.asave()
 
                 from library_manager.tasks import sync_deezer_playlist
@@ -627,7 +631,7 @@ class PlaylistService(BaseService[Playlist]):
         return await self.create_playlist(
             name=playlist_name,
             url=deezer_url,
-            auto_track_artists=auto_track_artists,
+            auto_track_tier=auto_track_tier,
         )
 
     async def sync_playlist(
@@ -655,7 +659,7 @@ class PlaylistService(BaseService[Playlist]):
 
                 await sync_to_async(download_playlist.delay)(
                     playlist_url=django_playlist.url,
-                    tracked=django_playlist.auto_track_artists,
+                    tracking_tier=django_playlist.auto_track_tier,
                     force_playlist_resync=True,
                 )
                 message = (
@@ -693,7 +697,7 @@ class PlaylistService(BaseService[Playlist]):
             status=django_playlist.status,
             status_message=django_playlist.status_message,
             enabled=django_playlist.enabled,
-            auto_track_artists=django_playlist.auto_track_artists,
+            auto_track_tier=django_playlist.auto_track_tier,
             m3u_enabled=django_playlist.m3u_enabled,
             last_synced_at=django_playlist.last_synced_at,
             provider=django_playlist.provider,

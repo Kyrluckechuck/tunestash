@@ -351,7 +351,7 @@ class TestPlaylistService:
             mock_playlist.status = "active"
             mock_playlist.status_message = None
             mock_playlist.enabled = True
-            mock_playlist.auto_track_artists = True
+            mock_playlist.auto_track_tier = 1
             mock_playlist.last_synced_at = None
             mock_get.return_value = mock_playlist
 
@@ -361,7 +361,7 @@ class TestPlaylistService:
             assert result.id == 1
             assert result.name == "Test Playlist"
             assert result.url == "https://open.spotify.com/playlist/test123"
-            assert result.auto_track_artists is True
+            assert result.auto_track_tier == 1
 
     @pytest.mark.asyncio
     async def test_update_playlist_with_url(self, playlist_service):
@@ -371,7 +371,7 @@ class TestPlaylistService:
         mock_playlist.id = 1
         mock_playlist.name = "Original Name"
         mock_playlist.url = "https://open.spotify.com/playlist/original"
-        mock_playlist.auto_track_artists = False
+        mock_playlist.auto_track_tier = None
         mock_playlist.asave = AsyncMock()
 
         with (
@@ -394,7 +394,7 @@ class TestPlaylistService:
                 playlist_id=1,
                 name="Updated Name",
                 url="https://open.spotify.com/playlist/updated",
-                auto_track_artists=True,
+                auto_track_tier=1,
             )
 
             # Verify the playlist was updated
@@ -402,7 +402,7 @@ class TestPlaylistService:
             assert (
                 mock_playlist.url == "spotify:playlist:updated"
             )  # URL should be normalized
-            assert mock_playlist.auto_track_artists is True
+            assert mock_playlist.auto_track_tier == 1
             assert result.success is True
             assert result.message == "Playlist updated successfully"
 
@@ -428,7 +428,7 @@ class TestPlaylistService:
             result = await playlist_service.create_playlist(
                 name="New Playlist",
                 url="https://open.spotify.com/playlist/12345?si=tracking_param",
-                auto_track_artists=False,
+                auto_track_tier=None,
             )
 
             # Should return existing playlist, not create new one
@@ -469,7 +469,7 @@ class TestPlaylistService:
                 playlist_id=1,
                 name="Updated Name",
                 url="https://open.spotify.com/playlist/duplicate?si=param",
-                auto_track_artists=False,
+                auto_track_tier=None,
             )
 
             # Should fail due to duplicate
@@ -525,7 +525,7 @@ class TestPlaylistService:
             result = await playlist_service.create_playlist(
                 name="New Playlist",
                 url="https://open.spotify.com/playlist/12345?si=new_param",
-                auto_track_artists=False,
+                auto_track_tier=None,
             )
 
             # Should return existing playlist
@@ -587,7 +587,7 @@ class TestPlaylistService:
                 mock_playlist.status = "active"
                 mock_playlist.status_message = None
                 mock_playlist.enabled = True
-                mock_playlist.auto_track_artists = False
+                mock_playlist.auto_track_tier = None
                 mock_playlist.last_synced_at = datetime.now()
                 mock_playlists.append(mock_playlist)
 

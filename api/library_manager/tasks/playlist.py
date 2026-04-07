@@ -290,20 +290,21 @@ def sync_deezer_playlist(
         _update_playlist_songs(playlist, ordered_songs)
         _generate_m3u_if_enabled(playlist)
 
-        # Mark artists as tracked if auto_track_artists is enabled
-        if playlist.auto_track_artists:
+        if playlist.auto_track_tier is not None:
             artist_deezer_ids = [
                 t.artist_deezer_id for t in tracks if t.artist_deezer_id
             ]
             if artist_deezer_ids:
                 artists_to_track = Artist.objects.filter(
                     deezer_id__in=artist_deezer_ids
-                ).exclude(tracking_tier__gte=TrackingTier.TRACKED)
-                updated = artists_to_track.update(tracking_tier=TrackingTier.TRACKED)
+                ).exclude(tracking_tier__gte=playlist.auto_track_tier)
+                updated = artists_to_track.update(
+                    tracking_tier=playlist.auto_track_tier
+                )
                 if updated:
                     logger.info(
-                        f"Marked {updated} artists as tracked from "
-                        f"playlist '{playlist.name}'"
+                        f"Marked {updated} artists at tier {playlist.auto_track_tier} "
+                        f"from playlist '{playlist.name}'"
                     )
 
         playlist.last_synced_at = timezone.now()
@@ -337,6 +338,8 @@ def _track_artists_in_deezer_playlist(playlist: TrackedPlaylist) -> None:
     provider = DeezerMetadataProvider()
     tracks = provider.get_playlist_tracks(deezer_playlist_id)
 
+    tier = playlist.auto_track_tier or TrackingTier.TRACKED
+
     seen_artist_ids: set[int] = set()
     artists_data: list[tuple[int, str]] = []
     for track in tracks:
@@ -350,14 +353,14 @@ def _track_artists_in_deezer_playlist(playlist: TrackedPlaylist) -> None:
     for deezer_id, name in artists_data:
         _, created = Artist.objects.get_or_create(
             deezer_id=deezer_id,
-            defaults={"name": name, "tracking_tier": TrackingTier.TRACKED},
+            defaults={"name": name, "tracking_tier": tier},
         )
         if created:
             tracked_count += 1
         else:
             Artist.objects.filter(
                 deezer_id=deezer_id, tracking_tier=TrackingTier.UNTRACKED
-            ).update(tracking_tier=TrackingTier.TRACKED)
+            ).update(tracking_tier=tier)
 
     # Count how many were updated (not just created)
     total_tracked = Artist.objects.filter(

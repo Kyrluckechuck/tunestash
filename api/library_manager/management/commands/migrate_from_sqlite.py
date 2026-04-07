@@ -494,10 +494,7 @@ class Command(BaseCommand):
                     # Convert boolean fields properly for PostgreSQL
                     converted_row = []
                     for i, value in enumerate(row):
-                        if (
-                            column_names[i] in ["enabled", "auto_track_artists"]
-                            and value is not None
-                        ):
+                        if column_names[i] in ["enabled"] and value is not None:
                             # Convert integer to boolean for these specific fields
                             converted_row.append(bool(value))
                         else:

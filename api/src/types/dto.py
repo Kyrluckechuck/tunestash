@@ -47,7 +47,7 @@ class PlaylistDTO(Protocol):
     name: str
     url: str
     enabled: bool
-    auto_track_artists: bool
+    auto_track_tier: Optional[int]
     last_synced_at: Optional[str]
 
 
