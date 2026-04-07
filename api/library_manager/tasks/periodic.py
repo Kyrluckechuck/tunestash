@@ -17,6 +17,7 @@ from ..models import (
     PlaylistStatus,
     TaskHistory,
     TrackedPlaylist,
+    TrackingTier,
     get_album_groups_to_ignore,
     get_album_types_to_download,
 )
@@ -298,8 +299,9 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
     """
     Periodically find tracked artists with missing music and queue downloads.
 
-    Finds up to 100 albums that are marked as wanted but not yet downloaded
-    from tracked artists, and queues them for download. Runs every 30 minutes.
+    Uses a two-phase fill so FAVOURITE artists (tier=2) always get first dibs:
+    Phase 1: fill up to 150 slots with FAVOURITE artist albums.
+    Phase 2: fill any remaining slots with TRACKED artist albums.
 
     Ordered by failed_count ascending (untried first), then newest first,
     so fresh content gets priority and repeatedly-failing albums sink.
@@ -307,61 +309,87 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
     Skips albums that already have pending/running download tasks to prevent
     duplicate task queuing. Works for both Spotify and Deezer-only albums.
     """
-    max_albums_per_run = 100
+    max_albums_per_run = 150
+
+    def _queue_albums(queryset: Any, pending_tasks: Set[str]) -> tuple[int, int]:
+        """Queue albums from queryset, respecting pending-task and retry checks.
+
+        Returns (queued_count, skipped_count).
+        """
+        queued = 0
+        skipped = 0
+        for album in queryset.iterator():
+            if str(album.id) in pending_tasks:
+                skipped += 1
+                continue
+            if not album.is_ready_for_retry():
+                skipped += 1
+                continue
+            try:
+                download_single_album.delay(album.id)
+                queued += 1
+            except Exception as e:
+                logger.warning(f"Failed to queue album {album.name} ({album.id}): {e}")
+        return queued, skipped
 
     try:
         logger.info("Starting periodic queue of missing albums for tracked artists")
 
-        # Get albums that already have pending/running tasks (uses DB IDs)
         albums_with_pending_tasks = get_albums_with_pending_tasks()
         if albums_with_pending_tasks:
             logger.info(
                 f"Found {len(albums_with_pending_tasks)} albums with pending/running tasks, will skip"
             )
 
-        missing_albums = (
+        base_filters = {
+            "downloaded": False,
+            "wanted": True,
+            "album_type__in": get_album_types_to_download(),
+        }
+
+        # Phase 1: FAVOURITE artists (tier=2) — fill up to the full batch
+        favourite_albums = (
             Album.objects.filter(
-                artist__tracking_tier__gte=1,
-                downloaded=False,
-                wanted=True,
-                album_type__in=get_album_types_to_download(),
+                artist__tracking_tier=TrackingTier.FAVOURITE,
+                **base_filters,
             )
             .exclude(album_group__in=get_album_groups_to_ignore())
             .exclude(unavailable=True)
             .order_by("failed_count", "-id")[:max_albums_per_run]
         )
+        fav_queued, fav_skipped = _queue_albums(
+            favourite_albums, albums_with_pending_tasks
+        )
 
-        queued_count = 0
-        skipped_count = 0
-        for album in missing_albums.iterator():
-            # Compare using album DB ID (entity_id is now str(album.id))
-            if str(album.id) in albums_with_pending_tasks:
-                skipped_count += 1
-                continue
+        # Phase 2: TRACKED artists (tier=1) — fill remaining slots
+        remaining = max_albums_per_run - fav_queued
+        tracked_queued = 0
+        tracked_skipped = 0
+        if remaining > 0:
+            tracked_albums = (
+                Album.objects.filter(
+                    artist__tracking_tier=TrackingTier.TRACKED,
+                    **base_filters,
+                )
+                .exclude(album_group__in=get_album_groups_to_ignore())
+                .exclude(unavailable=True)
+                .order_by("failed_count", "-id")[:remaining]
+            )
+            tracked_queued, tracked_skipped = _queue_albums(
+                tracked_albums, albums_with_pending_tasks
+            )
 
-            if not album.is_ready_for_retry():
-                skipped_count += 1
-                continue
-
-            try:
-                download_single_album.delay(album.id)
-                queued_count += 1
-            except Exception as e:
-                logger.warning(f"Failed to queue album {album.name} ({album.id}): {e}")
+        queued_count = fav_queued + tracked_queued
+        skipped_count = fav_skipped + tracked_skipped
 
         if queued_count > 0:
-            if skipped_count:
-                logger.info(
-                    "Queued %d missing albums from tracked artists for download "
-                    "(skipped %d with pending tasks)",
-                    queued_count,
-                    skipped_count,
-                )
-            else:
-                logger.info(
-                    "Queued %d missing albums from tracked artists for download",
-                    queued_count,
-                )
+            logger.info(
+                "Queued %d albums (%d favourite, %d tracked, skipped %d)",
+                queued_count,
+                fav_queued,
+                tracked_queued,
+                skipped_count,
+            )
 
         # Use remaining capacity to backfill metadata for albums with type=None
         remaining_capacity = max_albums_per_run - queued_count
@@ -599,9 +627,9 @@ def _try_link_artist_to_deezer(
 
 @celery_app.task(
     bind=True, name="library_manager.tasks.sync_tracked_artists_metadata"
-)  # Scheduled via Celery Beat - Every hour at :30
+)  # Scheduled via Celery Beat — :00 syncs all tracked, :30 syncs favourites only
 def sync_tracked_artists_metadata(
-    self: Any, batch_size: int = _DEEZER_ARTIST_CHECK_BATCH_SIZE
+    self: Any, batch_size: int = _DEEZER_ARTIST_CHECK_BATCH_SIZE, sync_all: bool = True
 ) -> None:
     """
     Periodically sync metadata for tracked artists to discover new releases.
@@ -634,17 +662,31 @@ def sync_tracked_artists_metadata(
             )
             return
 
-        artists_to_check = Artist.objects.filter(tracking_tier__gte=1).order_by(
-            "last_synced_at", "id"
-        )[:batch_size]
+        if sync_all:
+            artists_to_check = Artist.objects.filter(
+                tracking_tier__gte=TrackingTier.TRACKED
+            ).order_by("last_synced_at", "id")[:batch_size]
+            tier_label = "all tracked"
+        else:
+            artists_to_check = Artist.objects.filter(
+                tracking_tier=TrackingTier.FAVOURITE
+            ).order_by("last_synced_at", "id")[:batch_size]
+            tier_label = "favourites only"
 
         if not artists_to_check.exists():
-            logger.info("No tracked artists found to sync")
+            logger.info(f"No {tier_label} artists found to sync")
             return
 
-        total_count = Artist.objects.filter(tracking_tier__gte=1).count()
+        if sync_all:
+            total_count = Artist.objects.filter(
+                tracking_tier__gte=TrackingTier.TRACKED
+            ).count()
+        else:
+            total_count = Artist.objects.filter(
+                tracking_tier=TrackingTier.FAVOURITE
+            ).count()
         logger.info(
-            f"Starting Deezer-based artist metadata sync: "
+            f"Starting Deezer-based artist metadata sync ({tier_label}): "
             f"checking {len(artists_to_check)} of {total_count} tracked artists"
         )
 
@@ -755,7 +797,7 @@ def sync_tracked_artists_metadata(
                 skipped_unchanged += 1
 
         logger.info(
-            f"Artist metadata sync complete: "
+            f"Artist metadata sync complete ({tier_label}): "
             f"checked {checked_count} artists, "
             f"queued {queued_count} for Deezer sync, "
             f"linked {linked_count} new Deezer IDs, "

@@ -27,9 +27,16 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="0,30"),  # Every 30 minutes
         "options": {"priority": TaskPriority.ARTIST_DOWNLOAD},
     },
-    "sync-tracked-artists-metadata": {
+    "sync-tracked-artists-metadata-all": {
         "task": "library_manager.tasks.sync_tracked_artists_metadata",
-        "schedule": crontab(minute=30),  # Every hour at :30
+        "schedule": crontab(minute=0),  # Hourly at :00 — syncs all tracked artists
+        "args": [50, True],  # batch_size, sync_all
+        "options": {"priority": TaskPriority.ARTIST_SYNC},
+    },
+    "sync-tracked-artists-metadata-favourites": {
+        "task": "library_manager.tasks.sync_tracked_artists_metadata",
+        "schedule": crontab(minute=30),  # Hourly at :30 — syncs favourites only
+        "args": [50, False],  # batch_size, sync_all
         "options": {"priority": TaskPriority.ARTIST_SYNC},
     },
     "scan-new-releases-for-tracked-artists": {
