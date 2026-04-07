@@ -35,7 +35,7 @@ class TestGidValidationRegression:
         artist = Artist.objects.create(
             name="Valid Artist",
             gid="4iV5W9uYEdYUVa79Axb7Rh",  # Valid 22-char Spotify ID
-            tracked=True,
+            tracking_tier=1,
         )
 
         # Mock the Deezer album fetch to avoid actual API calls
@@ -100,7 +100,7 @@ class TestGidValidationRegression:
         artist = Artist.objects.create(
             name="Test Artist",
             gid="4iV5W9uYEdYUVa79Axb7Rh",  # Start with valid, then update
-            tracked=True,
+            tracking_tier=1,
         )
 
         # Update to invalid GID

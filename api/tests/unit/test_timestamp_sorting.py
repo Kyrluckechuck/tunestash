@@ -32,7 +32,7 @@ def create_mock_artist(
     mock.id = artist_id
     mock.name = name
     mock.gid = f"artist_{artist_id}"
-    mock.tracked = True
+    mock.tracking_tier = 1
     mock.added_at = timezone.now()
     mock.last_synced_at = last_synced_at
     mock.last_downloaded_at = last_downloaded_at

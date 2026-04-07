@@ -54,7 +54,9 @@ class ArtistInput(BaseModel):
     gid: str = Field(
         ..., min_length=1, max_length=100, description="Spotify artist GID"
     )
-    tracked: bool = Field(default=False, description="Whether artist is tracked")
+    tracking_tier: int = Field(
+        default=0, description="Tracking tier (0=untracked, 1=tracked, 2=favourite)"
+    )
     added_at: Optional[datetime] = Field(None, description="When artist was added")
     last_synced_at: Optional[datetime] = Field(None, description="Last sync timestamp")
 
@@ -241,7 +243,7 @@ class QueryInput(BaseModel):
 class ArtistsQueryInput(QueryInput):
     """Validation schema for artists query."""
 
-    tracked: Optional[bool] = Field(None, description="Filter by tracked status")
+    tracking_tier: Optional[int] = Field(None, description="Filter by tracking tier")
     first: int = Field(default=20, ge=1, le=100, description="Number of items to fetch")
     after: Optional[str] = Field(None, description="Cursor for pagination")
     sort_by: Optional[str] = Field(None, max_length=50, description="Sort field")

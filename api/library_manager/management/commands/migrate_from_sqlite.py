@@ -253,7 +253,7 @@ class Command(BaseCommand):
                 try:
                     # Insert with original SQLite ID
                     insert_sql = """
-                        INSERT INTO artists (id, name, gid, tracked, added_at, last_synced_at)
+                        INSERT INTO artists (id, name, gid, tracking_tier, added_at, last_synced_at)
                         VALUES (%s, %s, %s, %s, %s, %s)
                     """
                     pg_cursor.execute(
@@ -264,11 +264,7 @@ class Command(BaseCommand):
                                 row["name"], 500, f"Artist name '{row['gid']}'"
                             ),
                             self._clean_text_field(row["gid"], 120, "Artist GID"),
-                            (
-                                bool(row["tracked"])
-                                if row["tracked"] is not None
-                                else False
-                            ),
+                            1 if row.get("tracked") else 0,
                             row["added_at"],
                             row["last_synced_at"],
                         ),

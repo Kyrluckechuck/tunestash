@@ -346,7 +346,7 @@ def resolve_all_artists_to_deezer(
         ).order_by("id")
 
         if tracked_only:
-            queryset = queryset.filter(tracked=True)
+            queryset = queryset.filter(tracking_tier__gte=1)
 
         artists = list(queryset[:batch_size])
 
@@ -354,7 +354,7 @@ def resolve_all_artists_to_deezer(
             if tracked_only:
                 # Tracked pass done — continue with untracked artists
                 untracked_remaining = Artist.objects.filter(
-                    deezer_id__isnull=True, tracked=False
+                    deezer_id__isnull=True, tracking_tier=0
                 ).count()
                 if untracked_remaining > 0:
                     msg = (
@@ -390,7 +390,7 @@ def resolve_all_artists_to_deezer(
         total_remaining = Artist.objects.filter(
             deezer_id__isnull=True,
             id__gt=last_artist_id,
-            **({"tracked": True} if tracked_only else {}),
+            **({"tracking_tier__gte": 1} if tracked_only else {}),
         ).count()
 
         update_task_progress(
@@ -434,7 +434,7 @@ def resolve_all_artists_to_deezer(
         next_remaining = Artist.objects.filter(
             deezer_id__isnull=True,
             id__gt=max_artist_id,
-            **({"tracked": True} if tracked_only else {}),
+            **({"tracking_tier__gte": 1} if tracked_only else {}),
         ).count()
 
         if next_remaining > 0:
@@ -452,7 +452,7 @@ def resolve_all_artists_to_deezer(
         elif tracked_only:
             # Tracked pass complete — transition to untracked artists
             untracked_remaining = Artist.objects.filter(
-                deezer_id__isnull=True, tracked=False
+                deezer_id__isnull=True, tracking_tier=0
             ).count()
             if untracked_remaining > 0:
                 logger.info(

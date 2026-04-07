@@ -9,7 +9,7 @@ from spotipy.cache_handler import MemoryCacheHandler
 from spotipy.oauth2 import SpotifyClientCredentials
 from urllib3.util.retry import Retry
 
-from library_manager.models import Artist
+from library_manager.models import Artist, TrackingTier
 
 from .downloader import SpotifyPlaylistClient
 from .spotify_auth_helper import get_spotify_oauth_credentials
@@ -369,7 +369,7 @@ def track_artists_in_playlist(playlist_url: str, task_id: Optional[str] = None) 
         primary_artist_info = {
             "name": primary_artist["name"],
             "gid": primary_artist_gid,
-            "tracked": True,
+            "tracking_tier": TrackingTier.TRACKED,
         }
         if primary_artist_info not in artists_to_track:
             artists_to_track.append(primary_artist_info)
@@ -381,7 +381,9 @@ def track_artists_in_playlist(playlist_url: str, task_id: Optional[str] = None) 
             artist = Artist.objects.get(gid=artist_gid)
             # Update existing artist
             artist.name = artist_info["name"]
-            artist.tracked = artist_info["tracked"]
+            artist.tracking_tier = max(
+                artist.tracking_tier, artist_info["tracking_tier"]
+            )
             artist.save()
         except Artist.DoesNotExist:
             Artist.objects.create(**artist_info)

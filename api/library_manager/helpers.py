@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 from django.db.models import QuerySet
 
-from .models import Artist, TrackedPlaylist
+from .models import Artist, TrackedPlaylist, TrackingTier
 from .tasks.core import TaskPriority
 
 logger = logging.getLogger(__name__)
@@ -371,7 +371,7 @@ def enqueue_batch_artist_operations(
             fetch_all_albums_for_artist.delay(artist.id)
             operation_counts["fetch"] = operation_counts.get("fetch", 0) + 1
 
-        if "download" in operations and artist.tracked:
+        if "download" in operations and artist.tracking_tier >= TrackingTier.TRACKED:
             from .tasks import download_missing_albums_for_artist
 
             # Only download task accepts the delay parameter

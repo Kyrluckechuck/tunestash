@@ -123,7 +123,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
     async def update_artist(self, input: UpdateArtistInput) -> Artist:
         return await services.artist.update_artist(
             artist_id=input.artist_id,
-            is_tracked=input.is_tracked,
+            tracking_tier=input.tracking_tier,
             auto_download=input.auto_download,
         )
 
@@ -291,7 +291,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
             from library_manager.models import Artist
 
             tracked_artists: list = await sync_to_async(list)(
-                Artist.objects.filter(tracked=True)
+                Artist.objects.filter(tracking_tier__gte=1)
             )
 
             if not tracked_artists:
@@ -301,7 +301,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
 
             # Use database IDs for batch operations with sync_to_async
             operation_counts = await sync_to_async(enqueue_artist_sync_with_download)(
-                Artist.objects.filter(tracked=True),
+                Artist.objects.filter(tracking_tier__gte=1),
                 auto_download=False,  # Only sync album info, no downloads
                 delay_seconds=0,
             )
@@ -365,7 +365,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
             from library_manager.models import Artist
 
             tracked_artists: list = await sync_to_async(list)(
-                Artist.objects.filter(tracked=True)
+                Artist.objects.filter(tracking_tier__gte=1)
             )
 
             if not tracked_artists:

@@ -61,7 +61,7 @@ class Query:  # pylint: disable=too-many-public-methods
         self,
         first: Optional[int] = 20,
         after: Optional[str] = None,
-        is_tracked: Optional[bool] = None,
+        tracking_tier: Optional[int] = None,
         has_undownloaded: Optional[bool] = None,
         sort_by: Optional[str] = None,
         sort_direction: Optional[str] = None,
@@ -73,7 +73,7 @@ class Query:  # pylint: disable=too-many-public-methods
         result = await services.artist.get_connection(
             first=first_int,
             after=after,
-            is_tracked=is_tracked,
+            tracking_tier=tracking_tier,
             has_undownloaded=has_undownloaded,
             sort_by=sort_by,
             sort_direction=sort_direction,
@@ -540,7 +540,7 @@ class Query:  # pylint: disable=too-many-public-methods
                     external_url=a.external_url,
                     in_library=a.in_library,
                     local_id=a.local_id,
-                    is_tracked=a.is_tracked,
+                    tracking_tier=a.tracking_tier,
                 )
                 for a in results.artists
             ],

@@ -6,14 +6,14 @@ from library_manager.models import Album, Artist, PlaylistStatus, Song, TrackedP
 @pytest.fixture
 def sample_artist():
     """Create a sample artist for testing."""
-    return Artist.objects.create(name="Test Artist", gid="test123", tracked=True)
+    return Artist.objects.create(name="Test Artist", gid="test123", tracking_tier=1)
 
 
 @pytest.fixture
 def untracked_artist():
     """Create an untracked artist for testing."""
     return Artist.objects.create(
-        name="Untracked Artist", gid="untracked123", tracked=False
+        name="Untracked Artist", gid="untracked123", tracking_tier=0
     )
 
 
@@ -25,7 +25,7 @@ def multiple_artists():
         artist = Artist.objects.create(
             name=f"Artist {i}",
             gid=f"artist{i}",
-            tracked=i % 2 == 0,  # Alternate tracked/untracked
+            tracking_tier=1 if i % 2 == 0 else 0,
         )
         artists.append(artist)
     return artists

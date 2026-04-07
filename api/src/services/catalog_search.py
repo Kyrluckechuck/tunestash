@@ -22,7 +22,7 @@ class CatalogSearchArtist:
     external_url: Optional[str]
     in_library: bool = False
     local_id: Optional[int] = None
-    is_tracked: bool = False
+    tracking_tier: int = 0
 
 
 @dataclass
@@ -113,7 +113,7 @@ class CatalogSearchService:
 
             in_library = False
             local_id: Optional[int] = None
-            is_tracked = False
+            tracking_tier = 0
 
             match = await sync_to_async(
                 lambda did=deezer_id, name=a.name: Artist.objects.filter(
@@ -124,7 +124,7 @@ class CatalogSearchService:
             if match:
                 in_library = True
                 local_id = match.id
-                is_tracked = match.tracked
+                tracking_tier = match.tracking_tier
 
             results.append(
                 CatalogSearchArtist(
@@ -134,7 +134,7 @@ class CatalogSearchService:
                     external_url=f"https://www.deezer.com/artist/{deezer_id}",
                     in_library=in_library,
                     local_id=local_id,
-                    is_tracked=is_tracked,
+                    tracking_tier=tracking_tier,
                 )
             )
         return results

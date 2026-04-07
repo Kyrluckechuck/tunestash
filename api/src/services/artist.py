@@ -13,6 +13,7 @@ from library_manager.models import (
 from library_manager.models import Artist as DjangoArtist
 from library_manager.models import (
     Song,
+    TrackingTier,
     get_album_groups_to_ignore,
     get_album_types_to_download,
 )
@@ -63,7 +64,7 @@ class ArtistService(BaseService[Artist]):
         after: Optional[str] = None,
         **filters: Any,
     ) -> Union[Tuple[List[Artist], bool, int], ArtistConnectionResult]:
-        is_tracked: Optional[bool] = filters.get("is_tracked")
+        tracking_tier: Optional[int] = filters.get("tracking_tier")
         search: Optional[str] = filters.get("search")
         has_undownloaded: Optional[bool] = filters.get("has_undownloaded")
         sort_by = (
@@ -77,8 +78,8 @@ class ArtistService(BaseService[Artist]):
         queryset = self.model.objects.all()
 
         # Apply filters
-        if is_tracked is not None:
-            queryset = queryset.filter(tracked=is_tracked)
+        if tracking_tier is not None:
+            queryset = queryset.filter(tracking_tier=tracking_tier)
 
         if search:
             queryset = queryset.filter(
@@ -118,7 +119,7 @@ class ArtistService(BaseService[Artist]):
         # Apply sorting
         sort_field_map: dict[str, str] = {
             "name": "name",
-            "isTracked": "tracked",
+            "trackingTier": "tracking_tier",
             "addedAt": "added_at",
             "lastSynced": "last_synced_at",
             "lastDownloaded": "last_downloaded_at",
@@ -236,9 +237,9 @@ class ArtistService(BaseService[Artist]):
             else:
                 queryset = queryset.filter(_downloaded_song_count=0)
 
-        # Default sort: tracked first, then most downloads, then ID
+        # Default sort: highest tracking tier first, then most downloads, then ID
         order_expressions: List[Any] = [
-            "-tracked",
+            "-tracking_tier",
             "-_downloaded_song_count",
             "id",
         ]
@@ -354,9 +355,9 @@ class ArtistService(BaseService[Artist]):
                 if not existing.deezer_id:
                     existing.deezer_id = deezer_id
                     updated_fields.append("deezer_id")
-                if not existing.tracked:
-                    existing.tracked = True
-                    updated_fields.append("tracked")
+                if existing.tracking_tier < TrackingTier.TRACKED:
+                    existing.tracking_tier = TrackingTier.TRACKED
+                    updated_fields.append("tracking_tier")
                 if updated_fields:
                     await existing.asave(update_fields=updated_fields)
 
@@ -373,7 +374,7 @@ class ArtistService(BaseService[Artist]):
             django_artist = await sync_to_async(self.model.objects.create)(
                 name=name,
                 deezer_id=deezer_id,
-                tracked=True,
+                tracking_tier=TrackingTier.TRACKED,
             )
 
             from library_manager.tasks import fetch_artist_albums_from_deezer
@@ -394,7 +395,7 @@ class ArtistService(BaseService[Artist]):
     async def track_artist(self, artist_id: int) -> MutationResult:
         try:
             django_artist = await self.model.objects.aget(id=artist_id)
-            django_artist.tracked = True
+            django_artist.tracking_tier = TrackingTier.TRACKED
             await django_artist.asave()
 
             return MutationResult(
@@ -414,7 +415,7 @@ class ArtistService(BaseService[Artist]):
     async def untrack_artist(self, artist_id: int) -> MutationResult:
         try:
             django_artist = await self.model.objects.aget(id=artist_id)
-            django_artist.tracked = False
+            django_artist.tracking_tier = TrackingTier.UNTRACKED
             await django_artist.asave()
 
             return MutationResult(
@@ -434,16 +435,16 @@ class ArtistService(BaseService[Artist]):
     async def update_artist(
         self,
         artist_id: str,
-        is_tracked: Optional[bool] = None,
+        tracking_tier: Optional[int] = None,
         auto_download: Optional[bool] = None,
     ) -> Artist:
         django_artist = await self.model.objects.aget(gid=artist_id)
 
-        if is_tracked is not None:
-            django_artist.tracked = is_tracked
+        if tracking_tier is not None:
+            django_artist.tracking_tier = tracking_tier
 
-        if auto_download and not django_artist.tracked:
-            django_artist.tracked = True
+        if auto_download and django_artist.tracking_tier < TrackingTier.TRACKED:
+            django_artist.tracking_tier = TrackingTier.TRACKED
 
         await django_artist.asave()
 
@@ -618,7 +619,7 @@ class ArtistService(BaseService[Artist]):
             name=django_artist.name,
             gid=django_artist.gid,
             spotify_uri=spotify_uri,
-            is_tracked=django_artist.tracked,
+            tracking_tier=django_artist.tracking_tier,
             last_synced=django_artist.last_synced_at,
             last_downloaded=django_artist.last_downloaded_at,
             added_at=(
@@ -645,7 +646,7 @@ class ArtistService(BaseService[Artist]):
             name=django_artist.name,
             gid=django_artist.gid,
             spotify_uri=spotify_uri,
-            is_tracked=django_artist.tracked,
+            tracking_tier=django_artist.tracking_tier,
             last_synced=django_artist.last_synced_at,
             last_downloaded=django_artist.last_downloaded_at,
             added_at=(

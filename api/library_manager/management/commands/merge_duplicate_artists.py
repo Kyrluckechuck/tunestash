@@ -239,7 +239,7 @@ def _merge_artist(source: Artist, target: Artist, stdout: object) -> dict:
         carry_deezer = source.deezer_id if not target.deezer_id else None
         carry_gid = source.gid if not target.gid else None
         carry_youtube = source.youtube_id if not target.youtube_id else None
-        carry_tracked = source.tracked and not target.tracked
+        carry_tracked = source.tracking_tier > target.tracking_tier
         carry_synced = (
             source.last_synced_at
             if source.last_synced_at
@@ -269,8 +269,8 @@ def _merge_artist(source: Artist, target: Artist, stdout: object) -> dict:
             target.youtube_id = carry_youtube
             updated_fields.append("youtube_id")
         if carry_tracked:
-            target.tracked = True
-            updated_fields.append("tracked")
+            target.tracking_tier = source.tracking_tier
+            updated_fields.append("tracking_tier")
         if carry_synced:
             target.last_synced_at = carry_synced
             updated_fields.append("last_synced_at")

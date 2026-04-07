@@ -82,14 +82,16 @@ class LibraryStatsService:
         # Artist statistics
         artist_stats = Artist.objects.aggregate(
             total=Count("id"),
-            tracked=Count("id", filter=Q(tracked=True)),
+            tracked=Count("id", filter=Q(tracking_tier__gte=1)),
         )
 
         total_artists = artist_stats["total"] or 0
         tracked_artists = artist_stats["tracked"] or 0
 
         # "Desired" songs: songs from tracked artists
-        desired_stats = Song.objects.filter(primary_artist__tracked=True).aggregate(
+        desired_stats = Song.objects.filter(
+            primary_artist__tracking_tier__gte=1
+        ).aggregate(
             total_count=Count("id"),
             downloaded_count=Count("id", filter=Q(downloaded=True)),
             failed_count=Count("id", filter=Q(failed_count__gt=0, downloaded=False)),
@@ -167,7 +169,7 @@ class LibraryStatsService:
         # Start with base queryset, optionally filtering by tracked artists
         queryset = Album.objects.all()
         if tracked_only:
-            queryset = queryset.filter(artist__tracked=True)
+            queryset = queryset.filter(artist__tracking_tier__gte=1)
 
         # Annotate albums with song download counts
         albums_with_counts = queryset.annotate(

@@ -20,10 +20,12 @@ class TestArtistModel:
 
     def test_artist_creation(self):
         """Test basic artist creation."""
-        artist = Artist.objects.create(name="Test Artist", gid="test123", tracked=True)
+        artist = Artist.objects.create(
+            name="Test Artist", gid="test123", tracking_tier=1
+        )
         assert artist.name == "Test Artist"
         assert artist.gid == "test123"
-        assert artist.tracked is True
+        assert artist.tracking_tier == 1
         assert artist.id is not None
 
     def test_artist_str_representation(self):
@@ -44,14 +46,16 @@ class TestArtistModel:
             pytest.skip("spotify_uri property not implemented")
 
     def test_artist_tracking_toggle(self):
-        """Test toggling artist tracking status."""
-        artist = Artist.objects.create(name="Test Artist", gid="test123", tracked=False)
-        assert artist.tracked is False
+        """Test toggling artist tracking tier."""
+        artist = Artist.objects.create(
+            name="Test Artist", gid="test123", tracking_tier=0
+        )
+        assert artist.tracking_tier == 0
 
-        artist.tracked = True
+        artist.tracking_tier = 1
         artist.save()
         artist.refresh_from_db()
-        assert artist.tracked is True
+        assert artist.tracking_tier == 1
 
 
 @pytest.mark.django_db

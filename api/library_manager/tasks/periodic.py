@@ -47,7 +47,7 @@ def backfill_album_metadata(limit: int = _MAX_METADATA_BACKFILL_PER_RUN) -> int:
     from src.providers.deezer import DeezerMetadataProvider
 
     albums_needing_metadata = Album.objects.filter(
-        artist__tracked=True,
+        artist__tracking_tier__gte=1,
         downloaded=False,
         wanted=True,
         album_type__isnull=True,
@@ -321,7 +321,7 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
 
         missing_albums = (
             Album.objects.filter(
-                artist__tracked=True,
+                artist__tracking_tier__gte=1,
                 downloaded=False,
                 wanted=True,
                 album_type__in=get_album_types_to_download(),
@@ -392,7 +392,7 @@ def _find_best_artist_for_deezer_id(
     candidates = (
         Artist.objects.filter(deezer_id__isnull=True, name__iexact=artist_name)
         .annotate(song_count=Count("song"))
-        .order_by("-tracked", "-song_count", "id")
+        .order_by("-tracking_tier", "-song_count", "id")
     )
     # Verify with normalized comparison (whitespace-tolerant)
     compact_name = normalized_name.replace(" ", "")
@@ -634,7 +634,7 @@ def sync_tracked_artists_metadata(
             )
             return
 
-        artists_to_check = Artist.objects.filter(tracked=True).order_by(
+        artists_to_check = Artist.objects.filter(tracking_tier__gte=1).order_by(
             "last_synced_at", "id"
         )[:batch_size]
 
@@ -642,7 +642,7 @@ def sync_tracked_artists_metadata(
             logger.info("No tracked artists found to sync")
             return
 
-        total_count = Artist.objects.filter(tracked=True).count()
+        total_count = Artist.objects.filter(tracking_tier__gte=1).count()
         logger.info(
             f"Starting Deezer-based artist metadata sync: "
             f"checking {len(artists_to_check)} of {total_count} tracked artists"
@@ -789,9 +789,9 @@ def scan_new_releases_for_tracked_artists(self: Any) -> None:
     genre_ids = get_setting_with_default("new_releases_genre_ids", [0])
 
     tracked_deezer_ids = set(
-        Artist.objects.filter(tracked=True, deezer_id__isnull=False).values_list(
-            "deezer_id", flat=True
-        )
+        Artist.objects.filter(
+            tracking_tier__gte=1, deezer_id__isnull=False
+        ).values_list("deezer_id", flat=True)
     )
     if not tracked_deezer_ids:
         logger.info("[NEW RELEASES] No tracked artists with Deezer IDs")
@@ -887,7 +887,9 @@ def retry_missing_lyrics(self: Any) -> None:
     candidates = (
         SongLyricsStatus.objects.filter(has_lyrics=False)
         .select_related("song", "song__file_path_ref", "song__primary_artist")
-        .order_by("attempt_count", "-song__primary_artist__tracked", "id")[:batch_size]
+        .order_by("attempt_count", "-song__primary_artist__tracking_tier", "id")[
+            :batch_size
+        ]
     )
 
     ready = [c for c in candidates if c.is_ready_for_retry()]

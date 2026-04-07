@@ -14,7 +14,7 @@ class TestArtistMutations(TransactionTestCase):
     async def test_track_artist_mutation_success(self):
         """Test successful artist tracking."""
         untracked_artist = await sync_to_async(Artist.objects.create)(
-            name="Untracked Artist", gid="untracked123", tracked=False
+            name="Untracked Artist", gid="untracked123", tracking_tier=0
         )
 
         mutation = """
@@ -25,7 +25,7 @@ class TestArtistMutations(TransactionTestCase):
                 artist {
                     id
                     name
-                    isTracked
+                    trackingTier
                 }
             }
         }
@@ -36,7 +36,7 @@ class TestArtistMutations(TransactionTestCase):
 
         assert result.errors is None
         assert result.data["trackArtist"]["success"] is True
-        assert result.data["trackArtist"]["artist"]["isTracked"] is True
+        assert result.data["trackArtist"]["artist"]["trackingTier"] >= 1
 
     async def test_track_nonexistent_artist(self):
         """Test tracking a non-existent artist."""
@@ -48,7 +48,7 @@ class TestArtistMutations(TransactionTestCase):
                 artist {
                     id
                     name
-                    isTracked
+                    trackingTier
                 }
             }
         }
@@ -64,7 +64,7 @@ class TestArtistMutations(TransactionTestCase):
     async def test_untrack_artist_mutation_success(self):
         """Test successful artist untracking."""
         tracked_artist = await sync_to_async(Artist.objects.create)(
-            name="Tracked Artist", gid="tracked123", tracked=True
+            name="Tracked Artist", gid="tracked123", tracking_tier=1
         )
 
         mutation = """
@@ -75,7 +75,7 @@ class TestArtistMutations(TransactionTestCase):
                 artist {
                     id
                     name
-                    isTracked
+                    trackingTier
                 }
             }
         }
@@ -86,7 +86,7 @@ class TestArtistMutations(TransactionTestCase):
 
         assert result.errors is None
         assert result.data["untrackArtist"]["success"] is True
-        assert result.data["untrackArtist"]["artist"]["isTracked"] is False
+        assert result.data["untrackArtist"]["artist"]["trackingTier"] == 0
 
 
 class TestAlbumMutations(TransactionTestCase):
@@ -95,7 +95,7 @@ class TestAlbumMutations(TransactionTestCase):
     async def test_mark_album_wanted(self):
         """Test marking an album as wanted."""
         artist = await sync_to_async(Artist.objects.create)(
-            name="Test Artist", gid="test123", tracked=True
+            name="Test Artist", gid="test123", tracking_tier=1
         )
         album = await sync_to_async(Album.objects.create)(
             name="Test Album",
@@ -130,7 +130,7 @@ class TestAlbumMutations(TransactionTestCase):
     async def test_mark_album_unwanted(self):
         """Test marking an album as unwanted."""
         artist = await sync_to_async(Artist.objects.create)(
-            name="Test Artist", gid="test123", tracked=True
+            name="Test Artist", gid="test123", tracking_tier=1
         )
         album = await sync_to_async(Album.objects.create)(
             name="Test Album",
