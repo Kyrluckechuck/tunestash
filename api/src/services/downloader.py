@@ -1,6 +1,7 @@
 # pylint: disable=R1705  # allow explicit elif after return for clarity
 # pylint: disable=R0911  # allow many return statements for routing logic
 import re
+from typing import Optional
 
 from downloader.utils import normalize_spotify_url
 
@@ -22,7 +23,7 @@ class DownloaderService:
         self.album_service = AlbumService()
 
     async def download_url(
-        self, url: str, auto_track_artists: bool = False
+        self, url: str, auto_track_tier: Optional[int] = None
     ) -> MutationResult:
         """
         Download content from a Spotify or Deezer URL.
@@ -31,7 +32,7 @@ class DownloaderService:
         try:
             # Check for Deezer URLs first
             if "deezer.com" in url:
-                return await self._handle_deezer_url(url, auto_track_artists)
+                return await self._handle_deezer_url(url, auto_track_tier)
 
             normalized_url = self._normalize_spotify_url(url)
 
@@ -46,7 +47,7 @@ class DownloaderService:
 
             if content_type == "playlist":
                 return await self._handle_playlist_download(
-                    normalized_url, auto_track_artists, validation.resource_name
+                    normalized_url, auto_track_tier, validation.resource_name
                 )
             elif content_type == "artist":
                 return await self._handle_artist_download(normalized_url)
@@ -70,7 +71,7 @@ class DownloaderService:
             )
 
     async def _handle_deezer_url(
-        self, url: str, auto_track_artists: bool
+        self, url: str, auto_track_tier: Optional[int]
     ) -> MutationResult:
         """Route Deezer URLs to the appropriate handler."""
         match = _DEEZER_URL_REGEX.search(url)
@@ -84,7 +85,7 @@ class DownloaderService:
 
         if content_type == "playlist":
             playlist = await self.playlist_service.save_playlist_by_deezer_id(
-                deezer_id=deezer_id, auto_track_artists=auto_track_artists
+                deezer_id=deezer_id, auto_track_tier=auto_track_tier
             )
             return MutationResult(
                 success=True,
@@ -175,7 +176,7 @@ class DownloaderService:
     async def _handle_playlist_download(
         self,
         playlist_url: str,
-        auto_track_artists: bool,
+        auto_track_tier: Optional[int],
         playlist_name: str | None = None,
     ) -> MutationResult:
         """Handle one-time playlist download (without tracking)."""
@@ -187,7 +188,7 @@ class DownloaderService:
             # Queue the download task directly - no need to save playlist to DB
             await sync_to_async(download_playlist.delay)(
                 playlist_url=playlist_url,
-                tracked=auto_track_artists,  # Whether to track artists found in playlist
+                tracking_tier=auto_track_tier,
                 force_playlist_resync=False,
             )
 

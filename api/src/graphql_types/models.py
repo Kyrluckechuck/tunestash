@@ -137,7 +137,7 @@ class Playlist:
     status: str
     status_message: Optional[str]
     enabled: bool  # Computed from status for backwards compatibility
-    auto_track_artists: bool
+    auto_track_tier: Optional[int] = None
     m3u_enabled: bool
     last_synced_at: Optional[DateTime]
     provider: str = "spotify"
@@ -249,7 +249,7 @@ class TrackArtistInput:
 @strawberry.input
 class TrackPlaylistInput:
     playlist_id: str
-    auto_track_artists: bool = False
+    auto_track_tier: Optional[int] = None
 
 
 @strawberry.input
@@ -278,7 +278,7 @@ class MutationResult:
 class UpdatePlaylistInput:
     playlist_id: str
     is_tracked: Optional[bool] = None
-    auto_track_artists: Optional[bool] = None
+    auto_track_tier: Optional[int] = None
 
 
 @strawberry.type
@@ -684,7 +684,7 @@ class ExternalListType:
     list_identifier: Optional[str]
     status: str
     status_message: Optional[str]
-    auto_track_artists: bool
+    auto_track_tier: Optional[int] = None
     last_synced_at: Optional[DateTime]
     created_at: Optional[DateTime]
     total_tracks: int

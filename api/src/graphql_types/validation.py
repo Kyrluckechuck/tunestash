@@ -68,6 +68,15 @@ class ArtistInput(BaseModel):
             raise ValueError("GID must be a valid Spotify artist URI")
         return v
 
+    @field_validator("tracking_tier")
+    @classmethod
+    def validate_tracking_tier(cls, v: int) -> int:
+        if v not in (0, 1, 2):
+            raise ValueError(
+                "tracking_tier must be 0 (Untracked), 1 (Tracked), or 2 (Favourite)"
+            )
+        return v
+
 
 class AlbumInput(BaseModel):
     """Validation schema for album input data."""
@@ -132,7 +141,7 @@ class PlaylistInput(BaseModel):
     name: str = Field(..., min_length=1, max_length=500, description="Playlist name")
     url: str = Field(..., min_length=1, max_length=1000, description="Playlist URL")
     enabled: bool = Field(default=False, description="Whether playlist is enabled")
-    auto_track_artists: bool = Field(default=False, description="Auto-track artists")
+    auto_track_tier: Optional[int] = Field(default=None, description="Auto-track tier")
     last_synced_at: Optional[datetime] = Field(None, description="Last sync timestamp")
 
     @field_validator("url")
@@ -141,6 +150,15 @@ class PlaylistInput(BaseModel):
         """Validate playlist URL format."""
         if not v.startswith("https://open.spotify.com/playlist/"):
             raise ValueError("URL must be a valid Spotify playlist URL")
+        return v
+
+    @field_validator("auto_track_tier")
+    @classmethod
+    def validate_auto_track_tier(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (1, 2):
+            raise ValueError(
+                "auto_track_tier must be None, 1 (Tracked), or 2 (Favourite)"
+            )
         return v
 
 
@@ -215,7 +233,16 @@ class DownloadUrlInput(MutationInput):
     """Validation schema for download URL mutation."""
 
     url: str = Field(..., min_length=1, max_length=1000, description="URL to download")
-    auto_track_artists: bool = Field(default=False, description="Auto-track artists")
+    auto_track_tier: Optional[int] = Field(default=None, description="Auto-track tier")
+
+    @field_validator("auto_track_tier")
+    @classmethod
+    def validate_auto_track_tier(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (1, 2):
+            raise ValueError(
+                "auto_track_tier must be None, 1 (Tracked), or 2 (Favourite)"
+            )
+        return v
 
 
 class CreatePlaylistInput(MutationInput):
@@ -223,7 +250,16 @@ class CreatePlaylistInput(MutationInput):
 
     url: str = Field(..., min_length=1, max_length=1000, description="Playlist URL")
     name: str = Field(..., min_length=1, max_length=500, description="Playlist name")
-    auto_track_artists: bool = Field(default=False, description="Auto-track artists")
+    auto_track_tier: Optional[int] = Field(default=None, description="Auto-track tier")
+
+    @field_validator("auto_track_tier")
+    @classmethod
+    def validate_auto_track_tier(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (1, 2):
+            raise ValueError(
+                "auto_track_tier must be None, 1 (Tracked), or 2 (Favourite)"
+            )
+        return v
 
 
 class UpdatePlaylistInput(MutationInput):
@@ -233,7 +269,16 @@ class UpdatePlaylistInput(MutationInput):
     name: Optional[str] = Field(
         None, min_length=1, max_length=500, description="Playlist name"
     )
-    auto_track_artists: Optional[bool] = Field(None, description="Auto-track artists")
+    auto_track_tier: Optional[int] = Field(None, description="Auto-track tier")
+
+    @field_validator("auto_track_tier")
+    @classmethod
+    def validate_auto_track_tier(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (1, 2):
+            raise ValueError(
+                "auto_track_tier must be None, 1 (Tracked), or 2 (Favourite)"
+            )
+        return v
 
 
 class QueryInput(BaseModel):
@@ -251,6 +296,15 @@ class ArtistsQueryInput(QueryInput):
         None, pattern="^(asc|desc)$", description="Sort direction"
     )
     search: Optional[str] = Field(None, max_length=200, description="Search query")
+
+    @field_validator("tracking_tier")
+    @classmethod
+    def validate_tracking_tier(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (0, 1, 2):
+            raise ValueError(
+                "tracking_tier must be 0 (Untracked), 1 (Tracked), or 2 (Favourite)"
+            )
+        return v
 
     @field_validator("sort_direction")
     @classmethod

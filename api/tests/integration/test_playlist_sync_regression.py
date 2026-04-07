@@ -45,7 +45,7 @@ class TestPlaylistSyncRegression:
             name="Test Playlist",
             url="spotify:playlist:test123",
             status=PlaylistStatus.ACTIVE,
-            auto_track_artists=False,
+            auto_track_tier=None,
         )
 
         # Mock the download_playlist task to prevent actual execution
@@ -68,7 +68,7 @@ class TestPlaylistSyncRegression:
             call_kwargs = mock_download_playlist.apply_async.call_args[1]
             assert "kwargs" in call_kwargs
             assert call_kwargs["kwargs"]["playlist_url"] == playlist.url
-            assert call_kwargs["kwargs"]["tracked"] == playlist.auto_track_artists
+            assert call_kwargs["kwargs"]["tracking_tier"] == playlist.auto_track_tier
 
     # NOTE: Removed test_sync_tracked_playlist_does_not_queue_duplicate_pending_tasks
     # because testing deduplication of PENDING tasks is complex and would require
@@ -92,14 +92,14 @@ class TestPlaylistSyncRegression:
             name="Test Playlist",
             url="spotify:playlist:test789",
             status=PlaylistStatus.ACTIVE,
-            auto_track_artists=False,
+            auto_track_tier=None,
         )
 
         # Create a COMPLETED download_playlist task for this playlist
         task_id = generate_task_id(
             "library_manager.tasks.download_playlist",
             playlist_url=playlist.url,
-            tracked=playlist.auto_track_artists,
+            tracking_tier=playlist.auto_track_tier,
         )
 
         TaskResult.objects.create(

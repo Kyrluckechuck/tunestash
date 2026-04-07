@@ -598,7 +598,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
 
 
 def _handle_deezer_playlist_download(
-    playlist_url: str, tracked: bool, task_id: str
+    playlist_url: str, tracking_tier: Optional[int], task_id: str
 ) -> None:
     """Handle a Deezer playlist URL by routing to the Deezer sync pipeline."""
     from ..models import PlaylistStatus, TrackedPlaylist
@@ -616,13 +616,13 @@ def _handle_deezer_playlist_download(
             "name": f"Deezer Playlist {deezer_playlist_id}",
             "provider": "deezer",
             "status": PlaylistStatus.ACTIVE,
-            "auto_track_artists": tracked,
+            "auto_track_tier": tracking_tier,
         },
     )
 
-    if not created and tracked and not playlist.auto_track_artists:
-        playlist.auto_track_artists = True
-        playlist.save(update_fields=["auto_track_artists"])
+    if not created and tracking_tier is not None and playlist.auto_track_tier is None:
+        playlist.auto_track_tier = tracking_tier
+        playlist.save(update_fields=["auto_track_tier"])
 
     from src.providers.deezer import DeezerMetadataProvider
 
@@ -639,7 +639,7 @@ def _handle_deezer_playlist_download(
 
 
 def _match_or_create_song_from_spotify_track(
-    track_data: dict, track_artists: bool = False
+    track_data: dict, tracking_tier: Optional[int] = None
 ) -> Optional[Song]:
     """Match or create a Song from a Spotify track dict.
 
@@ -685,7 +685,9 @@ def _match_or_create_song_from_spotify_track(
             defaults={
                 "name": artist_name,
                 "tracking_tier": (
-                    TrackingTier.TRACKED if track_artists else TrackingTier.UNTRACKED
+                    tracking_tier
+                    if tracking_tier is not None
+                    else TrackingTier.UNTRACKED
                 ),
             },
         )
@@ -703,13 +705,13 @@ def _match_or_create_song_from_spotify_track(
 def download_playlist(
     self: Any,
     playlist_url: str,
-    tracked: bool = True,
+    tracking_tier: Optional[int] = None,
     force_playlist_resync: bool = False,
     task_id: Optional[str] = None,
 ) -> None:
     if "deezer.com" in playlist_url:
         _handle_deezer_playlist_download(
-            playlist_url, tracked, task_id or self.request.id
+            playlist_url, tracking_tier, task_id or self.request.id
         )
         return
 
@@ -806,7 +808,7 @@ def download_playlist(
             if not track or track.get("is_local"):
                 continue
 
-            song = _match_or_create_song_from_spotify_track(track, tracked)
+            song = _match_or_create_song_from_spotify_track(track, tracking_tier)
             if song:
                 ordered_songs.append(song)
                 if not song.downloaded:

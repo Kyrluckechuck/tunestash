@@ -258,7 +258,7 @@ def download_non_enqueued_playlists(
             task_id = generate_task_id(
                 "library_manager.tasks.download_playlist",
                 playlist.url,
-                tracked=playlist.auto_track_artists,
+                tracking_tier=playlist.auto_track_tier,
             )
 
             is_pending, reason = is_task_pending_or_running(task_id)
@@ -272,7 +272,7 @@ def download_non_enqueued_playlists(
             download_playlist.apply_async(
                 kwargs={
                     "playlist_url": playlist.url,
-                    "tracked": playlist.auto_track_artists,
+                    "tracking_tier": playlist.auto_track_tier,
                 },
                 task_id=task_id,
                 priority=effective_priority,

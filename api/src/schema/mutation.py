@@ -159,12 +159,16 @@ class Mutation:  # pylint: disable=too-many-public-methods
     @strawberry.mutation
     async def track_playlist(self, input: TrackPlaylistInput) -> Playlist:
         return await services.playlist.track_playlist(
-            playlist_id=input.playlist_id, auto_track_artists=input.auto_track_artists
+            playlist_id=input.playlist_id, auto_track_tier=input.auto_track_tier
         )
 
     @strawberry.mutation
     async def update_playlist(
-        self, playlist_id: int, name: str, url: str, auto_track_artists: bool
+        self,
+        playlist_id: int,
+        name: str,
+        url: str,
+        auto_track_tier: Optional[int] = None,
     ) -> "MutationResult":
         name_validation = validate_name(name, "Playlist name")
         if not name_validation.success:
@@ -178,7 +182,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
             playlist_id=playlist_id,
             name=name.strip(),
             url=url.strip(),
-            auto_track_artists=auto_track_artists,
+            auto_track_tier=auto_track_tier,
         )
 
     @strawberry.mutation
@@ -208,19 +212,19 @@ class Mutation:  # pylint: disable=too-many-public-methods
 
     @strawberry.mutation
     async def download_url(
-        self, url: str, auto_track_artists: bool = False
+        self, url: str, auto_track_tier: Optional[int] = None
     ) -> "MutationResult":
         validation_result = validate_url(url)
         if not validation_result.success:
             return validation_result
 
         return await services.downloader.download_url(
-            url=url.strip(), auto_track_artists=auto_track_artists
+            url=url.strip(), auto_track_tier=auto_track_tier
         )
 
     @strawberry.mutation
     async def create_playlist(
-        self, name: str, url: str, auto_track_artists: bool = False
+        self, name: str, url: str, auto_track_tier: Optional[int] = None
     ) -> Playlist:
         name_validation = validate_name(name, "Playlist name")
         if not name_validation.success:
@@ -232,16 +236,16 @@ class Mutation:  # pylint: disable=too-many-public-methods
             raise ValueError(url_validation.message)
 
         return await services.playlist.create_playlist(
-            name=name.strip(), url=url.strip(), auto_track_artists=auto_track_artists
+            name=name.strip(), url=url.strip(), auto_track_tier=auto_track_tier
         )
 
     @strawberry.mutation
     async def save_deezer_playlist(
-        self, deezer_id: str, auto_track_artists: bool = False
+        self, deezer_id: str, auto_track_tier: Optional[int] = None
     ) -> Playlist:
         """Save a playlist by its Deezer ID for ongoing tracking."""
         return await services.playlist.save_playlist_by_deezer_id(
-            deezer_id=deezer_id.strip(), auto_track_artists=auto_track_artists
+            deezer_id=deezer_id.strip(), auto_track_tier=auto_track_tier
         )
 
     @strawberry.mutation
@@ -540,7 +544,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
         username: str,
         period: Optional[str] = None,
         list_identifier: Optional[str] = None,
-        auto_track_artists: bool = False,
+        auto_track_tier: Optional[int] = None,
     ) -> ExternalListType:
         """Create a new external music list (Last.fm or ListenBrainz)."""
         return await services.external_list.create_external_list(
@@ -549,7 +553,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
             username=username.strip(),
             period=period,
             list_identifier=list_identifier,
-            auto_track_artists=auto_track_artists,
+            auto_track_tier=auto_track_tier,
         )
 
     @strawberry.mutation

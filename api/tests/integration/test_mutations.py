@@ -172,7 +172,7 @@ class TestPlaylistMutations(TransactionTestCase):
             name="Test Playlist",
             url="https://open.spotify.com/playlist/test123",
             status=PlaylistStatus.DISABLED_BY_USER,
-            auto_track_artists=True,
+            auto_track_tier=1,
         )
 
         mutation = """
@@ -203,7 +203,7 @@ class TestPlaylistMutations(TransactionTestCase):
             name="Test Playlist",
             url="https://open.spotify.com/playlist/test123",
             status=PlaylistStatus.ACTIVE,
-            auto_track_artists=True,
+            auto_track_tier=1,
         )
 
         mutation = """
@@ -236,7 +236,7 @@ class TestPlaylistMutations(TransactionTestCase):
             url="https://open.spotify.com/playlist/notfound123",
             status=PlaylistStatus.NOT_FOUND,
             status_message="Playlist not found - may have been deleted or made private",
-            auto_track_artists=False,
+            auto_track_tier=None,
         )
 
         mutation = """
