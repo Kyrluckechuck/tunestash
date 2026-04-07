@@ -338,11 +338,12 @@ def _track_artists_in_deezer_playlist(playlist: TrackedPlaylist) -> None:
     provider = DeezerMetadataProvider()
     tracks = provider.get_playlist_tracks(deezer_playlist_id)
 
-    tier = (
-        playlist.auto_track_tier
-        if playlist.auto_track_tier is not None
-        else TrackingTier.TRACKED
-    )
+    if playlist.auto_track_tier is None:
+        logger.info(
+            f"Auto-track disabled for '{playlist.name}', skipping artist tracking"
+        )
+        return
+    tier = playlist.auto_track_tier
 
     seen_artist_ids: set[int] = set()
     artists_data: list[tuple[int, str]] = []
