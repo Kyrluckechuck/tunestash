@@ -16,12 +16,12 @@ class ArtistAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "gid",
-        "tracked",
+        "tracking_tier",
         "number_songs",
         "added_at",
         "last_synced_at",
     )
-    list_filter = ("tracked", "added_at", "last_synced_at")
+    list_filter = ("tracking_tier", "added_at", "last_synced_at")
     search_fields = ("name", "gid")
     readonly_fields = ("number_songs", "albums")
     ordering = ("name",)
@@ -86,10 +86,10 @@ class TrackedPlaylistAdmin(admin.ModelAdmin):
         "url",
         "status",
         "status_message",
-        "auto_track_artists",
+        "auto_track_tier",
         "last_synced_at",
     )
-    list_filter = ("status", "auto_track_artists", "last_synced_at")
+    list_filter = ("status", "auto_track_tier", "last_synced_at")
     search_fields = ("name", "url")
     ordering = ("name",)
 
