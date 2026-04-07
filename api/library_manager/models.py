@@ -63,6 +63,12 @@ def truncate_name(name: str, max_length: int = 500) -> str:
     return name[:prefix_len] + separator + name[-suffix_len:]
 
 
+class TrackingTier(models.IntegerChoices):
+    UNTRACKED = 0, "Untracked"
+    TRACKED = 1, "Tracked"
+    FAVOURITE = 2, "Favourite"
+
+
 # Create your models here.
 class FilePath(models.Model):
     """Deduplicated file paths to save storage space."""
@@ -92,7 +98,7 @@ class Artist(models.Model):
         gid: Spotify Artist ID (22-character base62 string, e.g., "4iV5W9uYEdYUVa79Axb7Rh")
              IMPORTANT: This MUST be a valid Spotify ID, not a UUID or other identifier.
              Use this field for all Spotify API calls.
-        tracked: Whether to automatically sync new releases for this artist
+        tracking_tier: Tier for this artist (0=Untracked, 1=Tracked, 2=Favourite)
         added_at: Timestamp when artist was first added to library
         last_synced_at: Last time artist's albums were synced from Spotify
         last_downloaded_at: Last time any content was downloaded for this artist
@@ -117,7 +123,12 @@ class Artist(models.Model):
         blank=True,
         help_text="YouTube Music channel ID",
     )
-    tracked: models.BooleanField = models.BooleanField(default=False)
+    tracking_tier: models.SmallIntegerField = models.SmallIntegerField(
+        choices=TrackingTier.choices,
+        default=TrackingTier.UNTRACKED,
+        db_index=True,
+        help_text="0=Untracked, 1=Tracked, 2=Favourite",
+    )
     added_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
     last_synced_at: models.DateTimeField = models.DateTimeField(default=None, null=True)
     last_downloaded_at: models.DateTimeField = models.DateTimeField(
@@ -179,7 +190,6 @@ class Artist(models.Model):
         db_table = "artists"
         indexes = [
             models.Index(fields=["gid"]),
-            models.Index(fields=["tracked"]),
             models.Index(fields=["deezer_id"], name="idx_artist_deezer_id"),
             models.Index(fields=["youtube_id"], name="idx_artist_youtube_id"),
         ]
@@ -196,7 +206,7 @@ class Artist(models.Model):
 
     def __str__(self) -> str:
         gid_display = self.gid or "no-spotify-id"
-        return f"name: {self.name} | gid: {gid_display} | tracked: {self.tracked}"
+        return f"name: {self.name} | gid: {gid_display} | tier: {self.get_tracking_tier_display()}"
 
 
 class FailureReason(TextChoices):
@@ -959,7 +969,13 @@ class TrackedPlaylist(models.Model):
         choices=[("spotify", "Spotify"), ("deezer", "Deezer")],
         default="spotify",
     )
-    auto_track_artists: models.BooleanField = models.BooleanField(default=False)
+    auto_track_tier: models.SmallIntegerField = models.SmallIntegerField(
+        choices=TrackingTier.choices,
+        null=True,
+        blank=True,
+        default=None,
+        help_text="None=off, 1=Tracked, 2=Favourite. Tier assigned to auto-discovered artists.",
+    )
     m3u_enabled: models.BooleanField = models.BooleanField(
         default=False,
         help_text="Generate .m3u playlist file for media server import",
@@ -1730,7 +1746,13 @@ class ExternalList(models.Model):
     status_message: models.CharField = models.CharField(
         max_length=255, null=True, blank=True
     )
-    auto_track_artists: models.BooleanField = models.BooleanField(default=False)
+    auto_track_tier: models.SmallIntegerField = models.SmallIntegerField(
+        choices=TrackingTier.choices,
+        null=True,
+        blank=True,
+        default=None,
+        help_text="None=off, 1=Tracked, 2=Favourite. Tier assigned to auto-discovered artists.",
+    )
     content_hash: models.CharField = models.CharField(
         max_length=64, null=True, blank=True
     )
