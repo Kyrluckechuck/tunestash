@@ -176,7 +176,7 @@ export function useExternalListsPage() {
           username: formData.username,
           period: formData.period,
           listIdentifier: formData.listIdentifier,
-          autoTrackArtists: formData.autoTrackArtists,
+          autoTrackTier: formData.autoTrackTier,
         },
         refetchQueries: [
           { query: GetExternalListsDocument, variables: queryVariables },
@@ -258,7 +258,7 @@ export function useExternalListsPage() {
 
   const handleToggleAutoTrack = async (list: {
     id: number;
-    autoTrackArtists: boolean;
+    autoTrackTier: number | null;
   }) => {
     try {
       startEnabled(list.id);
@@ -270,7 +270,9 @@ export function useExternalListsPage() {
       });
       if (result.data?.toggleExternalListAutoTrack?.success) {
         toast.success(
-          list.autoTrackArtists ? 'Auto-track disabled' : 'Auto-track enabled'
+          list.autoTrackTier != null
+            ? 'Auto-track disabled'
+            : 'Auto-track enabled'
         );
       } else {
         toast.error(

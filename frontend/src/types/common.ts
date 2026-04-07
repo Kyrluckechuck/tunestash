@@ -12,7 +12,7 @@ export interface Album {
 export interface Artist {
   id: number;
   name: string;
-  isTracked: boolean;
+  trackingTier: number;
   lastSynced: string;
 }
 

@@ -1,17 +1,20 @@
 import { FilterButtonGroup, type FilterOption } from '../ui/FilterButtonGroup';
 
+export type TrackingFilter = 'all' | 'favourite' | 'tracked' | 'untracked';
+
 interface ArtistFiltersProps {
-  currentFilter: 'all' | 'tracked' | 'untracked';
-  onFilterChange: (filter: 'all' | 'tracked' | 'untracked') => void;
-  onFilterHover?: (filter: 'all' | 'tracked' | 'untracked') => void;
+  currentFilter: TrackingFilter;
+  onFilterChange: (filter: TrackingFilter) => void;
+  onFilterHover?: (filter: TrackingFilter) => void;
   hasUndownloadedFilter?: boolean;
   onHasUndownloadedChange?: (value: boolean | undefined) => void;
 }
 
-const filterOptions: FilterOption<'all' | 'tracked' | 'untracked'>[] = [
+const filterOptions: FilterOption<TrackingFilter>[] = [
   { value: 'all', label: 'Show All', color: 'indigo' },
-  { value: 'tracked', label: 'Tracked Only', color: 'green' },
-  { value: 'untracked', label: 'Untracked Only', color: 'orange' },
+  { value: 'favourite', label: 'Favourites', color: 'amber' },
+  { value: 'tracked', label: 'Tracked', color: 'green' },
+  { value: 'untracked', label: 'Untracked', color: 'orange' },
 ];
 
 export function ArtistFilters({

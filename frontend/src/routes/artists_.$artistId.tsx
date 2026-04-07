@@ -29,7 +29,7 @@ function ArtistDetail() {
     artistInitialLoading,
 
     // Artist actions
-    handleTrackToggle,
+    handleTrackingTierChange,
     handleSyncArtist,
     handleDownloadArtist,
     handleCheckArtistMetadata,
@@ -167,26 +167,31 @@ function ArtistDetail() {
               )}
               <span
                 className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  artist.isTracked
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                    : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400'
+                  artist.trackingTier === 2
+                    ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'
+                    : artist.trackingTier === 1
+                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                      : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400'
                 }`}
               >
-                {artist.isTracked ? 'Tracked' : 'Not Tracked'}
+                {artist.trackingTier === 2
+                  ? '\u2605 Favourite'
+                  : artist.trackingTier === 1
+                    ? '\u2713 Tracked'
+                    : 'Not Tracked'}
               </span>
             </div>
           </div>
           <div className='flex items-center gap-2'>
-            <button
-              onClick={handleTrackToggle}
-              className={`px-4 py-2 rounded-md transition-colors ${
-                artist.isTracked
-                  ? 'bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-300'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
-              }`}
+            <select
+              value={artist.trackingTier}
+              onChange={e => handleTrackingTierChange(parseInt(e.target.value))}
+              className='px-3 py-2 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm text-gray-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500'
             >
-              {artist.isTracked ? 'Untrack' : 'Track'}
-            </button>
+              <option value={0}>Untracked</option>
+              <option value={1}>Tracked</option>
+              <option value={2}>Favourite</option>
+            </select>
             <button
               onClick={handleSyncArtist}
               disabled={isSyncing}

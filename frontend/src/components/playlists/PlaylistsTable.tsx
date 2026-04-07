@@ -10,7 +10,7 @@ function isRestrictedStatus(status: string): boolean {
 export type PlaylistSortField =
   | 'name'
   | 'enabled'
-  | 'autoTrackArtists'
+  | 'autoTrackTier'
   | 'lastSyncedAt'
   | null;
 
@@ -119,7 +119,12 @@ export function PlaylistsTable({
             </div>
             <div className='grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400'>
               <span>
-                Track Artists: {playlist.autoTrackArtists ? 'Yes' : 'No'}
+                Track Artists:{' '}
+                {playlist.autoTrackTier === 2
+                  ? 'Favourite'
+                  : playlist.autoTrackTier === 1
+                    ? 'Tracked'
+                    : 'Off'}
               </span>
               <span>M3U: {playlist.m3uEnabled ? 'Yes' : 'No'}</span>
               <span>
@@ -178,7 +183,7 @@ export function PlaylistsTable({
                   Status
                 </SortableTableHeader>
                 <SortableTableHeader
-                  field='autoTrackArtists'
+                  field='autoTrackTier'
                   currentSortField={sortField}
                   currentSortDirection={sortDirection}
                   onSort={onSort}
@@ -270,33 +275,30 @@ export function PlaylistsTable({
                     )}
                   </td>
                   <td className='px-6 py-4 whitespace-nowrap'>
-                    <ToggleStatusButton
-                      variant='switch'
-                      enabled={playlist.autoTrackArtists}
-                      onToggle={() => onToggleAutoTrack(playlist)}
-                      mutating={autoMutatingIds?.has(playlist.id)}
-                      pulse={autoPulseIds?.has(playlist.id)}
-                      labels={{ on: 'Yes', off: 'No' }}
-                      ariaLabel={
-                        playlist.autoTrackArtists
-                          ? 'Disable tracking artists'
-                          : 'Enable tracking artists'
+                    <button
+                      onClick={() => onToggleAutoTrack(playlist)}
+                      disabled={autoMutatingIds?.has(playlist.id)}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                        autoPulseIds?.has(playlist.id) ? 'animate-pulse' : ''
+                      } ${
+                        playlist.autoTrackTier === 2
+                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                          : playlist.autoTrackTier === 1
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
+                            : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-600'
+                      } disabled:opacity-50`}
+                      aria-label={
+                        playlist.autoTrackTier != null
+                          ? 'Disable auto-track'
+                          : 'Enable auto-track'
                       }
-                    />
-                    <ToggleStatusButton
-                      variant='badge'
-                      enabled={playlist.autoTrackArtists}
-                      onToggle={() => onToggleAutoTrack(playlist)}
-                      mutating={autoMutatingIds?.has(playlist.id)}
-                      pulse={autoPulseIds?.has(playlist.id)}
-                      labels={{ on: 'Yes', off: 'No' }}
-                      colors={{ on: 'blue', off: 'red' }}
-                      ariaLabel={
-                        playlist.autoTrackArtists
-                          ? 'Disable tracking artists'
-                          : 'Enable tracking artists'
-                      }
-                    />
+                    >
+                      {playlist.autoTrackTier === 2
+                        ? '\u2605 Favourite'
+                        : playlist.autoTrackTier === 1
+                          ? '\u2713 Tracked'
+                          : 'Off'}
+                    </button>
                   </td>
                   <td className='px-6 py-4 whitespace-nowrap'>
                     <ToggleStatusButton

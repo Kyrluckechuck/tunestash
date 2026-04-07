@@ -23,7 +23,7 @@ export const createMockArtist = (overrides = {}) => ({
   gid: 'test-gid-123',
   spotifyUri: 'test-spotify-uri-123',
   deezerId: null,
-  isTracked: true,
+  trackingTier: 1,
   addedAt: '2024-01-01T00:00:00Z',
   lastSynced: '2024-01-01T00:00:00Z',
   lastDownloaded: '2024-01-01T00:00:00Z',
@@ -55,7 +55,7 @@ export const createMockPlaylist = (overrides = {}) => ({
   status: 'active',
   statusMessage: null,
   enabled: true,
-  autoTrackArtists: true,
+  autoTrackTier: 1,
   m3uEnabled: false,
   lastSyncedAt: '2024-01-01T00:00:00Z',
   provider: 'spotify',
@@ -108,7 +108,7 @@ export const mockGetArtistsResponse: GetArtistsQuery = {
     },
     edges: [
       createMockArtist({ id: 1, name: 'Artist 1' }),
-      createMockArtist({ id: 2, name: 'Artist 2', isTracked: false }),
+      createMockArtist({ id: 2, name: 'Artist 2', trackingTier: 0 }),
     ],
   },
 };
@@ -230,7 +230,7 @@ export const mockTrackArtistResponse: TrackArtistMutation = {
   trackArtist: {
     success: true,
     message: 'Artist tracked successfully',
-    artist: createMockArtist({ id: 1, isTracked: true }),
+    artist: createMockArtist({ id: 1, trackingTier: 1 }),
   },
 };
 
@@ -238,7 +238,7 @@ export const mockUntrackArtistResponse: UntrackArtistMutation = {
   untrackArtist: {
     success: true,
     message: 'Artist untracked successfully',
-    artist: createMockArtist({ id: 1, isTracked: false }),
+    artist: createMockArtist({ id: 1, trackingTier: 0 }),
   },
 };
 

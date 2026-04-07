@@ -10,14 +10,14 @@ describe('ArtistsTable', () => {
       id: 1,
       gid: 'artist1',
       name: 'Artist 1',
-      isTracked: true,
+      trackingTier: 1,
       lastSynced: '2024-01-01T00:00:00Z',
     },
     {
       id: 2,
       gid: 'artist2',
       name: 'Artist 2',
-      isTracked: false,
+      trackingTier: 0,
       lastSynced: null,
     },
   ];
@@ -35,6 +35,8 @@ describe('ArtistsTable', () => {
         onSort={mockOnSort}
         onTrackToggle={mockOnTrackToggle}
         onSyncArtist={mockOnSyncArtist}
+        onDownloadArtist={vi.fn()}
+        onRetryFailedSongs={vi.fn()}
         loading={false}
       />
     );
@@ -52,11 +54,13 @@ describe('ArtistsTable', () => {
         onSort={mockOnSort}
         onTrackToggle={mockOnTrackToggle}
         onSyncArtist={mockOnSyncArtist}
+        onDownloadArtist={vi.fn()}
+        onRetryFailedSongs={vi.fn()}
         loading={false}
       />
     );
 
-    expect(screen.getAllByText('Tracked').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('\u2713 Tracked').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Not Tracked').length).toBeGreaterThan(0);
   });
 
@@ -69,6 +73,8 @@ describe('ArtistsTable', () => {
         onSort={mockOnSort}
         onTrackToggle={mockOnTrackToggle}
         onSyncArtist={mockOnSyncArtist}
+        onDownloadArtist={vi.fn()}
+        onRetryFailedSongs={vi.fn()}
         loading={false}
       />
     );
@@ -88,6 +94,8 @@ describe('ArtistsTable', () => {
         onSort={mockOnSort}
         onTrackToggle={mockOnTrackToggle}
         onSyncArtist={mockOnSyncArtist}
+        onDownloadArtist={vi.fn()}
+        onRetryFailedSongs={vi.fn()}
         loading={false}
       />
     );
@@ -123,6 +131,8 @@ describe('ArtistsTable', () => {
         onSort={mockOnSort}
         onTrackToggle={mockOnTrackToggle}
         onSyncArtist={mockOnSyncArtist}
+        onDownloadArtist={vi.fn()}
+        onRetryFailedSongs={vi.fn()}
         loading={false}
       />
     );

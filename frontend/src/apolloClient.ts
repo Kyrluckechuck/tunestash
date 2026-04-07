@@ -41,7 +41,7 @@ export const apolloClient = new ApolloClient({
         fields: {
           artists: {
             keyArgs: [
-              'isTracked',
+              'trackingTier',
               'hasUndownloaded',
               'search',
               'sortBy',

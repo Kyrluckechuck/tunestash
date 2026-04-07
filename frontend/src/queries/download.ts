@@ -1,15 +1,15 @@
 import { gql } from '@apollo/client';
 
 export const DOWNLOAD_URL = gql`
-  mutation DownloadUrl($url: String!, $autoTrackArtists: Boolean) {
-    downloadUrl(url: $url, autoTrackArtists: $autoTrackArtists) {
+  mutation DownloadUrl($url: String!, $autoTrackTier: Int) {
+    downloadUrl(url: $url, autoTrackTier: $autoTrackTier) {
       success
       message
       artist {
         id
         name
         gid
-        isTracked
+        trackingTier
         addedAt
         lastSynced
       }
@@ -31,7 +31,7 @@ export const DOWNLOAD_URL = gql`
         name
         url
         enabled
-        autoTrackArtists
+        autoTrackTier
         lastSyncedAt
       }
     }
@@ -42,18 +42,14 @@ export const CREATE_PLAYLIST = gql`
   mutation CreatePlaylistFromDownload(
     $name: String!
     $url: String!
-    $autoTrackArtists: Boolean!
+    $autoTrackTier: Int
   ) {
-    createPlaylist(
-      name: $name
-      url: $url
-      autoTrackArtists: $autoTrackArtists
-    ) {
+    createPlaylist(name: $name, url: $url, autoTrackTier: $autoTrackTier) {
       id
       name
       url
       enabled
-      autoTrackArtists
+      autoTrackTier
       lastSyncedAt
     }
   }
@@ -64,13 +60,13 @@ export const UPDATE_PLAYLIST = gql`
     $playlistId: Int!
     $name: String!
     $url: String!
-    $autoTrackArtists: Boolean!
+    $autoTrackTier: Int
   ) {
     updatePlaylist(
       playlistId: $playlistId
       name: $name
       url: $url
-      autoTrackArtists: $autoTrackArtists
+      autoTrackTier: $autoTrackTier
     ) {
       success
       message

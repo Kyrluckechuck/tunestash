@@ -40,13 +40,13 @@ const testQueries = [
     name: 'GetArtists',
     query: gql`
       query GetArtistsTest(
-        $isTracked: Boolean
+        $trackingTier: Int
         $first: Int = 20
         $after: String
         $search: String
       ) {
         artists(
-          isTracked: $isTracked
+          trackingTier: $trackingTier
           first: $first
           after: $after
           search: $search
@@ -63,7 +63,7 @@ const testQueries = [
             name
             gid
             deezerId
-            isTracked
+            trackingTier
             addedAt
             lastSynced
           }
@@ -153,7 +153,7 @@ const testQueries = [
             status
             statusMessage
             enabled
-            autoTrackArtists
+            autoTrackTier
             lastSyncedAt
           }
         }
@@ -271,7 +271,7 @@ const testMutations = [
           artist {
             id
             name
-            isTracked
+            trackingTier
           }
         }
       }
@@ -288,7 +288,7 @@ const testMutations = [
           artist {
             id
             name
-            isTracked
+            trackingTier
           }
         }
       }
@@ -303,7 +303,7 @@ const testMutations = [
           id
           name
           gid
-          isTracked
+          trackingTier
           addedAt
           lastSynced
         }
