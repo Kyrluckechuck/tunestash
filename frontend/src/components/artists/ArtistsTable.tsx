@@ -15,7 +15,7 @@ interface ArtistsTableProps {
   sortField: SortField;
   sortDirection: 'asc' | 'desc';
   onSort: (field: SortField) => void;
-  onTrackToggle: (artist: Artist) => void;
+  onTierChange: (artist: Artist, tier: number) => void;
   onSyncArtist: (artistId: number) => void;
   onDownloadArtist: (artistId: number) => void;
   onRetryFailedSongs: (artistId: number) => void;
@@ -33,7 +33,7 @@ export function ArtistsTable({
   sortField,
   sortDirection,
   onSort,
-  onTrackToggle,
+  onTierChange,
   onSyncArtist,
   onDownloadArtist,
   onRetryFailedSongs,
@@ -168,30 +168,27 @@ export function ArtistsTable({
                     </div>
                   </td>
                   <td className='px-6 py-4 whitespace-nowrap'>
-                    <button
-                      onClick={() => onTrackToggle(artist)}
+                    <select
+                      value={artist.trackingTier}
+                      onChange={e =>
+                        onTierChange(artist, parseInt(e.target.value))
+                      }
                       disabled={mutatingIds?.has(artist.id)}
-                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                      className={`px-2 py-1 rounded text-xs font-medium transition-colors border-0 cursor-pointer ${
                         pulseIds?.has(artist.id) ? 'animate-pulse' : ''
                       } ${
                         artist.trackingTier === 2
-                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'
                           : artist.trackingTier === 1
-                            ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
-                            : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-600'
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                            : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400'
                       } disabled:opacity-50`}
-                      aria-label={
-                        artist.trackingTier >= 1
-                          ? 'Untrack artist'
-                          : 'Track artist'
-                      }
+                      aria-label='Set tracking tier'
                     >
-                      {artist.trackingTier === 2
-                        ? '\u2605 Favourite'
-                        : artist.trackingTier === 1
-                          ? '\u2713 Tracked'
-                          : 'Not Tracked'}
-                    </button>
+                      <option value={0}>Untracked</option>
+                      <option value={1}>Tracked</option>
+                      <option value={2}>Favourite</option>
+                    </select>
                   </td>
                   <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
                     {artist.lastSynced

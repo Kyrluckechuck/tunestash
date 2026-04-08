@@ -4,8 +4,7 @@ import { useMutation, useQuery, useApolloClient } from '@apollo/client/react';
 import {
   GetArtistsDocument,
   GetTaskHistoryDocument,
-  TrackArtistDocument,
-  UntrackArtistDocument,
+  UpdateArtistDocument,
   SyncArtistDocument,
   DownloadArtistDocument,
   RetryFailedSongsDocument,
@@ -130,8 +129,7 @@ export function useArtistsPage() {
   }, [data, networkStatus, queryVariables, client]);
 
   // Mutations
-  const [trackArtist] = useMutation(TrackArtistDocument);
-  const [untrackArtist] = useMutation(UntrackArtistDocument);
+  const [updateArtist] = useMutation(UpdateArtistDocument);
   const [syncArtist] = useMutation(SyncArtistDocument);
   const [downloadArtist] = useMutation(DownloadArtistDocument);
   const [retryFailedSongs] = useMutation(RetryFailedSongsDocument);
@@ -191,20 +189,25 @@ export function useArtistsPage() {
       });
   };
 
-  const handleTrackToggle = async (artist: {
-    id: number;
-    trackingTier: number;
-  }) => {
+  const tierLabels = ['Untracked', 'Tracked', 'Favourite'] as const;
+
+  const handleTierChange = async (
+    artist: { id: number; trackingTier: number },
+    newTier: number
+  ) => {
+    if (newTier === artist.trackingTier) return;
     await handleMutation(
       artist.id,
       async () => {
-        if (artist.trackingTier >= 1) {
-          await untrackArtist({ variables: { artistId: artist.id } });
-          toast.success('Artist untracked');
-        } else {
-          await trackArtist({ variables: { artistId: artist.id } });
-          toast.success('Artist tracked');
-        }
+        await updateArtist({
+          variables: {
+            input: {
+              artistId: artist.id.toString(),
+              trackingTier: newTier,
+            },
+          },
+        });
+        toast.success(`Artist set to ${tierLabels[newTier]}`);
       },
       { withPulse: true }
     );
@@ -363,7 +366,7 @@ export function useArtistsPage() {
     setSearchQuery,
     setPageSize,
     handleSort,
-    handleTrackToggle,
+    handleTierChange,
     handleSyncArtist,
     handleDownloadArtist,
     handleRetryFailedSongs,

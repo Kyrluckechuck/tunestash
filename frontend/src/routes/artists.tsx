@@ -58,7 +58,7 @@ function Artists() {
     setSearchQuery,
     setPageSize,
     handleSort,
-    handleTrackToggle,
+    handleTierChange,
     handleSyncArtist,
     handleDownloadArtist,
     handleRetryFailedSongs,
@@ -151,7 +151,7 @@ function Artists() {
               sortField={sortField}
               sortDirection={sortDirection}
               onSort={handleSort}
-              onTrackToggle={handleTrackToggle}
+              onTierChange={handleTierChange}
               onSyncArtist={handleSyncArtist}
               onDownloadArtist={handleDownloadArtist}
               onRetryFailedSongs={handleRetryFailedSongs}
