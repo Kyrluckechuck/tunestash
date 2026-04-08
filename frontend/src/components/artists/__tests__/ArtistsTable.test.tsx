@@ -22,7 +22,7 @@ describe('ArtistsTable', () => {
     },
   ];
 
-  const mockOnTrackToggle = vi.fn();
+  const mockOnTierChange = vi.fn();
   const mockOnSyncArtist = vi.fn();
   const mockOnSort = vi.fn();
 
@@ -33,7 +33,7 @@ describe('ArtistsTable', () => {
         sortField={null}
         sortDirection='asc'
         onSort={mockOnSort}
-        onTrackToggle={mockOnTrackToggle}
+        onTierChange={mockOnTierChange}
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}
@@ -52,7 +52,7 @@ describe('ArtistsTable', () => {
         sortField={null}
         sortDirection='asc'
         onSort={mockOnSort}
-        onTrackToggle={mockOnTrackToggle}
+        onTierChange={mockOnTierChange}
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}
@@ -60,18 +60,18 @@ describe('ArtistsTable', () => {
       />
     );
 
-    expect(screen.getAllByText('\u2713 Tracked').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Not Tracked').length).toBeGreaterThan(0);
+    const selects = screen.getAllByRole('combobox', { name: /tracking tier/i });
+    expect(selects.length).toBeGreaterThan(0);
   });
 
-  it('calls onTrackToggle when track button is clicked', () => {
+  it('calls onTierChange when tier is changed', () => {
     render(
       <ArtistsTable
         artists={mockArtists}
         sortField={null}
         sortDirection='asc'
         onSort={mockOnSort}
-        onTrackToggle={mockOnTrackToggle}
+        onTierChange={mockOnTierChange}
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}
@@ -79,10 +79,10 @@ describe('ArtistsTable', () => {
       />
     );
 
-    const trackButtons = screen.getAllByRole('button', { name: /track/i });
-    fireEvent.click(trackButtons[0]);
+    const selects = screen.getAllByRole('combobox', { name: /tracking tier/i });
+    fireEvent.change(selects[0], { target: { value: '2' } });
 
-    expect(mockOnTrackToggle).toHaveBeenCalledWith(mockArtists[0]);
+    expect(mockOnTierChange).toHaveBeenCalledWith(mockArtists[0], 2);
   });
 
   it('calls onSyncArtist when sync button is clicked', () => {
@@ -92,7 +92,7 @@ describe('ArtistsTable', () => {
         sortField={null}
         sortDirection='asc'
         onSort={mockOnSort}
-        onTrackToggle={mockOnTrackToggle}
+        onTierChange={mockOnTierChange}
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}
@@ -113,7 +113,7 @@ describe('ArtistsTable', () => {
         sortField={null}
         sortDirection='asc'
         onSort={mockOnSort}
-        onTrackToggle={mockOnTrackToggle}
+        onTierChange={mockOnTierChange}
         onSyncArtist={mockOnSyncArtist}
         loading={true}
       />
@@ -129,7 +129,7 @@ describe('ArtistsTable', () => {
         sortField={null}
         sortDirection='asc'
         onSort={mockOnSort}
-        onTrackToggle={mockOnTrackToggle}
+        onTierChange={mockOnTierChange}
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}

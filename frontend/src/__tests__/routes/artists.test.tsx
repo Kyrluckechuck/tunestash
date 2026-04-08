@@ -45,11 +45,7 @@ const mockUseMutation = useMutation as MockedUseMutation;
 // Create a test component that simulates the Artists route
 const TestArtistsComponent = () => {
   const { data, loading, error, fetchMore } = mockUseQuery();
-  const [trackArtist] = mockUseMutation() as [
-    MockedFunction<() => void>,
-    { loading: boolean; error?: Error },
-  ];
-  const [untrackArtist] = mockUseMutation() as [
+  const [updateArtist] = mockUseMutation() as [
     MockedFunction<() => void>,
     { loading: boolean; error?: Error },
   ];
@@ -58,9 +54,9 @@ const TestArtistsComponent = () => {
     { loading: boolean; error?: Error },
   ];
 
-  const [filter, setFilter] = React.useState<'all' | 'tracked' | 'untracked'>(
-    'all'
-  );
+  const [filter, setFilter] = React.useState<
+    'all' | 'favourite' | 'tracked' | 'untracked'
+  >('all');
 
   if (loading) {
     return <div>Loading artists...</div>;
@@ -74,18 +70,16 @@ const TestArtistsComponent = () => {
     return <div>No artists found</div>;
   }
 
-  const handleTrackToggle = async (artist: {
-    id: number;
-    trackingTier: number;
-  }) => {
+  const handleTierChange = async (
+    artist: { id: number; trackingTier: number },
+    newTier: number
+  ) => {
     try {
-      if (artist.trackingTier >= 1) {
-        await untrackArtist({ variables: { artistId: artist.id } });
-      } else {
-        await trackArtist({ variables: { artistId: artist.id } });
-      }
+      await updateArtist({
+        variables: { artistId: artist.id.toString(), trackingTier: newTier },
+      });
     } catch (err) {
-      console.error('Failed to toggle artist tracking:', err);
+      console.error('Failed to update artist tier:', err);
     }
   };
 
@@ -150,15 +144,24 @@ const TestArtistsComponent = () => {
             <div key={artist.id} data-testid={`artist-${artist.id}`}>
               <span>{artist.name}</span>
               <span>
-                {artist.trackingTier >= 1 ? 'Tracked' : 'Not Tracked'}
+                {artist.trackingTier === 2
+                  ? 'Favourite'
+                  : artist.trackingTier === 1
+                    ? 'Tracked'
+                    : 'Not Tracked'}
               </span>
               <span>Last synced: {artist.lastSynced}</span>
-              <button
-                onClick={() => handleTrackToggle(artist)}
-                data-testid={`toggle-${artist.id}`}
+              <select
+                value={artist.trackingTier}
+                onChange={e =>
+                  handleTierChange(artist, parseInt(e.target.value))
+                }
+                data-testid={`tier-${artist.id}`}
               >
-                {artist.trackingTier >= 1 ? 'Untrack' : 'Track'}
-              </button>
+                <option value={0}>Untracked</option>
+                <option value={1}>Tracked</option>
+                <option value={2}>Favourite</option>
+              </select>
               <button
                 onClick={() => handleSyncArtist(artist.id)}
                 data-testid={`sync-${artist.id}`}
@@ -322,15 +325,15 @@ describe('Artists Route', () => {
 
       render(<TestArtistsComponent />);
 
-      const trackButton = screen.getByTestId('toggle-2'); // Artist 2 is not tracked
-      fireEvent.click(trackButton);
+      const tierSelect = screen.getByTestId('tier-2'); // Artist 2 is not tracked
+      fireEvent.change(tierSelect, { target: { value: '1' } });
 
       await waitFor(() => {
         expect(mockUseMutation).toHaveBeenCalled();
       });
     });
 
-    it('handles untrack artist mutation successfully', async () => {
+    it('handles tier change mutation successfully', async () => {
       mockUseQuery.mockReturnValue(createMockUseQuery(mockGetArtistsResponse));
       mockUseMutation.mockReturnValue(
         createMockUseMutation(mockUntrackArtistResponse)
@@ -338,8 +341,8 @@ describe('Artists Route', () => {
 
       render(<TestArtistsComponent />);
 
-      const untrackButton = screen.getByTestId('toggle-1'); // Artist 1 is tracked
-      fireEvent.click(untrackButton);
+      const tierSelect = screen.getByTestId('tier-1'); // Artist 1 is tracked
+      fireEvent.change(tierSelect, { target: { value: '2' } });
 
       await waitFor(() => {
         expect(mockUseMutation).toHaveBeenCalled();
@@ -376,8 +379,8 @@ describe('Artists Route', () => {
 
       render(<TestArtistsComponent />);
 
-      const trackButton = screen.getByTestId('toggle-2');
-      fireEvent.click(trackButton);
+      const tierSelect = screen.getByTestId('tier-2');
+      fireEvent.change(tierSelect, { target: { value: '1' } });
 
       await waitFor(() => {
         expect(consoleSpy).toHaveBeenCalled();
@@ -396,7 +399,7 @@ describe('Artists Route', () => {
 
       expect(screen.getByText('Artist 1')).toBeInTheDocument();
       expect(screen.getByText('Artist 2')).toBeInTheDocument();
-      expect(screen.getAllByText('Tracked')).toHaveLength(2);
+      // Artist 1 is tier 1 (Tracked), Artist 2 is tier 0 (Not Tracked)
       expect(screen.getByText('Not Tracked')).toBeInTheDocument();
       // Multiple artists show "Last synced:"; ensure at least one is present
       expect(screen.getAllByText(/last synced:/i).length).toBeGreaterThan(0);
@@ -417,9 +420,11 @@ describe('Artists Route', () => {
 
       render(<TestArtistsComponent />);
 
-      // Check that track/untrack buttons are displayed correctly
-      expect(screen.getByTestId('toggle-1')).toHaveTextContent('Untrack');
-      expect(screen.getByTestId('toggle-2')).toHaveTextContent('Track');
+      // Check that tier selects are displayed correctly
+      const tier1 = screen.getByTestId('tier-1') as HTMLSelectElement;
+      const tier2 = screen.getByTestId('tier-2') as HTMLSelectElement;
+      expect(tier1.value).toBe('1'); // Artist 1 is tracked
+      expect(tier2.value).toBe('0'); // Artist 2 is untracked
     });
   });
 });
