@@ -144,3 +144,6 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 .playwright-mcp/
+
+# Git worktrees
+.worktrees/
