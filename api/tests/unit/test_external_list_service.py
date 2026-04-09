@@ -2,12 +2,15 @@
 
 Tests the service layer in isolation with mocked ORM calls,
 focusing on business logic: partial updates, re-sync decisions,
-and edge cases.
+and edge cases. Also tests get_page against a real DB for pagination
+and filter correctness.
 """
 
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from asgiref.sync import sync_to_async
+from tests.factories import ExternalListFactory
 
 from library_manager.models import (
     ExternalListSource,
@@ -257,3 +260,122 @@ class TestGenerateListName:
     def test_youtube_music_liked(self):
         name = _generate_list_name("youtube_music", "loved", "")
         assert "YouTube Music Liked Songs" == name
+
+
+@pytest.mark.django_db
+@pytest.mark.asyncio
+class TestGetPage:
+    """Test ExternalListService.get_page with a real DB."""
+
+    @pytest.fixture(autouse=True)
+    def service(self) -> ExternalListService:
+        return ExternalListService()
+
+    async def test_basic_pagination_page1_returns_correct_count(
+        self, service: ExternalListService
+    ) -> None:
+        """Page 1 with page_size=3 returns exactly 3 items when 5 exist."""
+        for _ in range(5):
+            await sync_to_async(ExternalListFactory)()
+
+        result = await service.get_page(page=1, page_size=3)
+
+        assert len(result.items) == 3
+        assert result.page == 1
+        assert result.page_size == 3
+
+    async def test_page2_returns_different_items(
+        self, service: ExternalListService
+    ) -> None:
+        """Page 2 returns items that don't overlap with page 1."""
+        for _ in range(5):
+            await sync_to_async(ExternalListFactory)()
+
+        page1 = await service.get_page(page=1, page_size=2)
+        page2 = await service.get_page(page=2, page_size=2)
+
+        ids_page1 = {item.id for item in page1.items}
+        ids_page2 = {item.id for item in page2.items}
+        assert ids_page1.isdisjoint(ids_page2)
+
+    async def test_total_count_is_correct_across_pages(
+        self, service: ExternalListService
+    ) -> None:
+        """total_count reflects total DB rows, not just the current page."""
+        for _ in range(6):
+            await sync_to_async(ExternalListFactory)()
+
+        page1 = await service.get_page(page=1, page_size=4)
+        page2 = await service.get_page(page=2, page_size=4)
+
+        assert page1.total_count == page2.total_count
+        assert page1.total_count >= 6
+
+    async def test_filter_by_source(self, service: ExternalListService) -> None:
+        """Only items matching the requested source are returned."""
+        import uuid
+
+        suffix = uuid.uuid4().hex[:8]
+        await sync_to_async(ExternalListFactory)(
+            source=ExternalListSource.LASTFM, username=f"lastfm_only_{suffix}_1"
+        )
+        await sync_to_async(ExternalListFactory)(
+            source=ExternalListSource.LASTFM, username=f"lastfm_only_{suffix}_2"
+        )
+        await sync_to_async(ExternalListFactory)(
+            source=ExternalListSource.LISTENBRAINZ,
+            username=f"lb_only_{suffix}",
+        )
+
+        result = await service.get_page(
+            page=1, page_size=50, source=ExternalListSource.LASTFM
+        )
+
+        assert all(item.source == ExternalListSource.LASTFM for item in result.items)
+        assert result.total_count >= 2
+
+    async def test_filter_by_search_matches_name(
+        self, service: ExternalListService
+    ) -> None:
+        """Search filter matches against the list name."""
+        await sync_to_async(ExternalListFactory)(name="My Favourite Shoegaze")
+        await sync_to_async(ExternalListFactory)(name="Top 50 Hip-Hop")
+
+        result = await service.get_page(page=1, page_size=50, search="Shoegaze")
+
+        assert result.total_count == 1
+        assert result.items[0].name == "My Favourite Shoegaze"
+
+    async def test_filter_by_search_matches_username(
+        self, service: ExternalListService
+    ) -> None:
+        """Search filter also matches against username."""
+        await sync_to_async(ExternalListFactory)(username="uniqueuser99")
+        await sync_to_async(ExternalListFactory)(username="anotheruser")
+
+        result = await service.get_page(page=1, page_size=50, search="uniqueuser99")
+
+        assert result.total_count == 1
+        assert result.items[0].username == "uniqueuser99"
+
+    async def test_empty_results_when_no_match(
+        self, service: ExternalListService
+    ) -> None:
+        """Search that matches nothing returns empty items and zero total_count."""
+        result = await service.get_page(
+            page=1, page_size=50, search="xyzzy_no_such_list_should_ever_exist_abc123"
+        )
+
+        assert result.items == []
+        assert result.total_count == 0
+
+    async def test_page_beyond_last_returns_empty(
+        self, service: ExternalListService
+    ) -> None:
+        """Requesting a page past the last one returns empty items."""
+        await sync_to_async(ExternalListFactory)()
+
+        result = await service.get_page(page=999, page_size=50)
+
+        assert result.items == []
+        assert result.total_count >= 1
