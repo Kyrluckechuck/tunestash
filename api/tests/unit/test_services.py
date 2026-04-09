@@ -620,9 +620,7 @@ class TestDownloadHistoryService:
                 mock_history.progress = 100 if i % 2 == 0 else 0
                 mock_histories.append(mock_history)
 
-            mock_slice = Mock()
-            mock_slice.all = AsyncMock(return_value=mock_histories)
-            mock_queryset.__getitem__ = Mock(return_value=mock_slice)
+            mock_queryset.__getitem__ = Mock(return_value=mock_histories)
             mock_all.return_value = mock_queryset
 
             result = await history_service.get_page(

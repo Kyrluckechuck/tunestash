@@ -55,6 +55,7 @@ def downloader(tmp_path):
     return FallbackDownloader(
         quality_preference=QualityPreference.HIGH,
         output_dir=tmp_path,
+        provider_order=["tidal", "qobuz", "youtube", "monochrome"],
     )
 
 
