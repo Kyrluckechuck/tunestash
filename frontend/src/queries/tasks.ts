@@ -2,43 +2,39 @@ import { gql } from '@apollo/client';
 
 export const GetTaskHistoryDocument = gql`
   query GetTaskHistory(
-    $first: Int = 20
-    $after: String
+    $page: Int = 1
+    $pageSize: Int = 50
     $status: String
     $type: String
     $entityType: String
     $search: String
   ) {
     taskHistory(
-      first: $first
-      after: $after
+      page: $page
+      pageSize: $pageSize
       status: $status
       type: $type
       entityType: $entityType
       search: $search
     ) {
-      totalCount
       pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
+        page
+        pageSize
+        totalPages
+        totalCount
       }
-      edges {
-        node {
-          id
-          taskId
-          type
-          entityId
-          entityType
-          status
-          startedAt
-          completedAt
-          durationSeconds
-          progressPercentage
-          logMessages
-        }
-        cursor
+      items {
+        id
+        taskId
+        type
+        entityId
+        entityType
+        status
+        startedAt
+        completedAt
+        durationSeconds
+        progressPercentage
+        logMessages
       }
     }
   }

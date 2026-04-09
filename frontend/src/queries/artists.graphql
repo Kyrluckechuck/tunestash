@@ -53,8 +53,8 @@ query GetAlbumById($id: Int!) {
 query GetArtists(
   $trackingTier: Int
   $hasUndownloaded: Boolean
-  $first: Int = 20
-  $after: String
+  $page: Int = 1
+  $pageSize: Int = 50
   $sortBy: String
   $sortDirection: String
   $search: String
@@ -62,20 +62,19 @@ query GetArtists(
   artists(
     trackingTier: $trackingTier
     hasUndownloaded: $hasUndownloaded
-    first: $first
-    after: $after
+    page: $page
+    pageSize: $pageSize
     sortBy: $sortBy
     sortDirection: $sortDirection
     search: $search
   ) {
-    totalCount
     pageInfo {
-      hasNextPage
-      hasPreviousPage
-      startCursor
-      endCursor
+      page
+      pageSize
+      totalPages
+      totalCount
     }
-    edges {
+    items {
       id
       name
       gid
@@ -87,6 +86,10 @@ query GetArtists(
       lastDownloaded
       undownloadedCount
       failedSongCount
+      albumCount
+      downloadedAlbumCount
+      songCount
+      downloadedSongCount
     }
   }
 }
@@ -95,8 +98,8 @@ query GetAlbums(
   $artistId: Int
   $wanted: Boolean
   $downloaded: Boolean
-  $first: Int = 20
-  $after: String
+  $page: Int = 1
+  $pageSize: Int = 50
   $sortBy: String
   $sortDirection: String
   $search: String
@@ -105,20 +108,19 @@ query GetAlbums(
     artistId: $artistId
     wanted: $wanted
     downloaded: $downloaded
-    first: $first
-    after: $after
+    page: $page
+    pageSize: $pageSize
     sortBy: $sortBy
     sortDirection: $sortDirection
     search: $search
   ) {
-    totalCount
     pageInfo {
-      hasNextPage
-      hasPreviousPage
-      startCursor
-      endCursor
+      page
+      pageSize
+      totalPages
+      totalCount
     }
-    edges {
+    items {
       id
       name
       spotifyGid
@@ -137,28 +139,27 @@ query GetAlbums(
 
 query GetPlaylists(
   $enabled: Boolean
-  $first: Int = 20
-  $after: String
+  $page: Int = 1
+  $pageSize: Int = 50
   $sortBy: String
   $sortDirection: String
   $search: String
 ) {
   playlists(
     enabled: $enabled
-    first: $first
-    after: $after
+    page: $page
+    pageSize: $pageSize
     sortBy: $sortBy
     sortDirection: $sortDirection
     search: $search
   ) {
-    totalCount
     pageInfo {
-      hasNextPage
-      hasPreviousPage
-      startCursor
-      endCursor
+      page
+      pageSize
+      totalPages
+      totalCount
     }
-    edges {
+    items {
       id
       name
       url
@@ -354,22 +355,22 @@ mutation CreatePlaylist(
 }
 
 query GetUnlinkedArtists(
-  $first: Int
-  $after: String
+  $page: Int = 1
+  $pageSize: Int = 50
   $search: String
   $hasDownloads: Boolean
   $sortBy: String
   $sortDirection: String
 ) {
   unlinkedArtists(
-    first: $first
-    after: $after
+    page: $page
+    pageSize: $pageSize
     search: $search
     hasDownloads: $hasDownloads
     sortBy: $sortBy
     sortDirection: $sortDirection
   ) {
-    edges {
+    items {
       id
       name
       trackingTier
@@ -377,10 +378,11 @@ query GetUnlinkedArtists(
       downloadedSongCount
     }
     pageInfo {
-      hasNextPage
-      endCursor
+      page
+      pageSize
+      totalPages
+      totalCount
     }
-    totalCount
   }
 }
 

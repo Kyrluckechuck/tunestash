@@ -20,10 +20,9 @@ type Album {
   deezerId: String
 }
 
-type AlbumConnection {
-  edges: [Album!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
+type AlbumPage {
+  items: [Album!]!
+  pageInfo: OffsetPageInfo!
 }
 
 type AppSettingType {
@@ -56,10 +55,9 @@ type Artist {
   deezerId: String
 }
 
-type ArtistConnection {
-  edges: [Artist!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
+type ArtistPage {
+  items: [Artist!]!
+  pageInfo: OffsetPageInfo!
 }
 
 type AuthenticationStatus {
@@ -190,10 +188,9 @@ enum EntityType {
   TRACK
 }
 
-type ExternalListConnection {
-  edges: [ExternalListType!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
+type ExternalListPage {
+  items: [ExternalListType!]!
+  pageInfo: OffsetPageInfo!
 }
 
 type ExternalListType {
@@ -228,15 +225,9 @@ type FallbackMetrics {
   failureReasons: [FailureReasonCount!]!
 }
 
-type HistoryConnection {
-  edges: [HistoryEdge!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
-}
-
-type HistoryEdge {
-  node: DownloadHistory!
-  cursor: String!
+type HistoryPage {
+  items: [DownloadHistory!]!
+  pageInfo: OffsetPageInfo!
 }
 
 """
@@ -386,18 +377,18 @@ type MutationResult {
   playlist: Playlist
 }
 
+type OffsetPageInfo {
+  page: Int!
+  pageSize: Int!
+  totalPages: Int!
+  totalCount: Int!
+}
+
 type OneOffTask {
   id: String!
   name: String!
   description: String!
   category: String!
-}
-
-type PageInfo {
-  hasNextPage: Boolean!
-  hasPreviousPage: Boolean!
-  startCursor: String
-  endCursor: String
 }
 
 type PendingTask {
@@ -436,12 +427,6 @@ type Playlist {
   provider: String!
 }
 
-type PlaylistConnection {
-  edges: [Playlist!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
-}
-
 type PlaylistInfo {
   name: String!
   ownerName: String
@@ -450,20 +435,25 @@ type PlaylistInfo {
   provider: String!
 }
 
+type PlaylistPage {
+  items: [Playlist!]!
+  pageInfo: OffsetPageInfo!
+}
+
 type Query {
-  artists(first: Int = 20, after: String = null, trackingTier: Int = null, hasUndownloaded: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null): ArtistConnection!
-  unlinkedArtists(first: Int = 20, after: String = null, search: String = null, hasDownloads: Boolean = null, sortBy: String = null, sortDirection: String = null): ArtistConnection!
+  artists(page: Int! = 1, pageSize: Int! = 50, trackingTier: Int = null, hasUndownloaded: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null): ArtistPage!
+  unlinkedArtists(page: Int! = 1, pageSize: Int! = 50, search: String = null, hasDownloads: Boolean = null, sortBy: String = null, sortDirection: String = null): ArtistPage!
   previewDeezerArtist(deezerId: Int!): DeezerArtistPreview
   artist(id: String!): Artist
-  albums(first: Int = 20, after: String = null, artistId: Int = null, downloaded: Boolean = null, wanted: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null): AlbumConnection!
+  albums(page: Int! = 1, pageSize: Int! = 50, artistId: Int = null, downloaded: Boolean = null, wanted: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null): AlbumPage!
   album(id: String!): Album
   albumById(id: Int!): Album
-  songs(first: Int = 20, after: String = null, artistId: Int = null, albumId: Int = null, downloaded: Boolean = null, unavailable: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null, maxBitrate: Int = null): SongConnection!
+  songs(page: Int! = 1, pageSize: Int! = 50, artistId: Int = null, albumId: Int = null, downloaded: Boolean = null, unavailable: Boolean = null, sortBy: String = null, sortDirection: String = null, search: String = null, maxBitrate: Int = null): SongPage!
   song(id: String!): Song
-  playlists(first: Int = 20, after: String = null, enabled: Boolean = null, status: String = null, sortBy: String = null, sortDirection: String = null, search: String = null): PlaylistConnection!
+  playlists(page: Int! = 1, pageSize: Int! = 50, enabled: Boolean = null, status: String = null, sortBy: String = null, sortDirection: String = null, search: String = null): PlaylistPage!
   playlist(id: String!): Playlist
-  downloadHistory(first: Int = 20, after: String = null, entityType: String = null, status: String = null): HistoryConnection!
-  taskHistory(first: Int = 20, after: String = null, status: String = null, type: String = null, entityType: String = null, search: String = null): TaskHistoryConnection!
+  downloadHistory(page: Int! = 1, pageSize: Int! = 50, entityType: String = null, status: String = null): HistoryPage!
+  taskHistory(page: Int! = 1, pageSize: Int! = 50, status: String = null, type: String = null, entityType: String = null, search: String = null): TaskHistoryPage!
   queueStatus: QueueStatus!
   periodicTasks(enabledOnly: Boolean = false): [PeriodicTask!]!
   oneOffTasks: [OneOffTask!]!
@@ -473,7 +463,7 @@ type Query {
   playlistInfo(url: String!): PlaylistInfo
   libraryStats: LibraryStats!
   pendingMetadataUpdates(entityType: MetadataEntityType = null, status: MetadataUpdateStatus = null, includeResolved: Boolean! = false): MetadataUpdateConnection!
-  externalLists(first: Int = 20, after: String = null, source: String = null, listType: String = null, status: String = null, search: String = null, sortBy: String = null, sortDirection: String = null): ExternalListConnection!
+  externalLists(page: Int! = 1, pageSize: Int! = 50, source: String = null, listType: String = null, status: String = null, search: String = null, sortBy: String = null, sortDirection: String = null): ExternalListPage!
   externalList(id: String!): ExternalListType
   fallbackMetrics(days: Int = 7): FallbackMetrics!
   appSettings: [SettingsCategoryType!]!
@@ -513,10 +503,9 @@ type Song {
   deezerId: String
 }
 
-type SongConnection {
-  edges: [Song!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
+type SongPage {
+  items: [Song!]!
+  pageInfo: OffsetPageInfo!
 }
 
 type SpotifyRateLimitStatus {
@@ -582,15 +571,9 @@ type TaskHistory {
   logMessages: [String!]!
 }
 
-type TaskHistoryConnection {
-  edges: [TaskHistoryEdge!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
-}
-
-type TaskHistoryEdge {
-  node: TaskHistory!
-  cursor: String!
+type TaskHistoryPage {
+  items: [TaskHistory!]!
+  pageInfo: OffsetPageInfo!
 }
 
 enum TaskStatus {
