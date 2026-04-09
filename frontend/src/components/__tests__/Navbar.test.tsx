@@ -28,7 +28,16 @@ describe('Navbar', () => {
   it('renders all navigation links and download button', () => {
     renderNavbar();
 
-    const expectedLinks = ['Home', 'Artists', 'Albums', 'Playlists', 'Tasks'];
+    const expectedLinks = [
+      'Home',
+      'Dashboard',
+      'Artists',
+      'Albums',
+      'Playlists',
+      'Songs',
+      'Tasks',
+      'Settings',
+    ];
 
     expectedLinks.forEach(linkText => {
       expect(screen.getByText(linkText)).toBeInTheDocument();

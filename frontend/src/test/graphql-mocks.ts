@@ -11,9 +11,6 @@ import type {
   SyncPlaylistMutation,
   SetAlbumWantedMutation,
   TogglePlaylistMutation,
-  DownloadUrlMutation,
-  CreatePlaylistMutation,
-  UpdatePlaylistMutation,
 } from '../types/generated/graphql';
 
 // Mock data generators
@@ -258,27 +255,6 @@ export const mockTogglePlaylistResponse: TogglePlaylistMutation = {
     success: true,
     message: 'Playlist toggled successfully',
     playlist: createMockPlaylist({ id: 1, enabled: true }),
-  },
-};
-
-export const mockDownloadUrlResponse: DownloadUrlMutation = {
-  downloadUrl: {
-    success: true,
-    message: 'Download started successfully',
-    artist: createMockArtist(),
-    album: createMockAlbum(),
-    playlist: createMockPlaylist(),
-  },
-};
-
-export const mockCreatePlaylistResponse: CreatePlaylistMutation = {
-  createPlaylist: createMockPlaylist({ id: 3, name: 'New Playlist' }),
-};
-
-export const mockUpdatePlaylistResponse: UpdatePlaylistMutation = {
-  updatePlaylist: {
-    success: true,
-    message: 'Playlist updated successfully',
   },
 };
 
