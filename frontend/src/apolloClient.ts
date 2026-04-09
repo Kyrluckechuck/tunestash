@@ -46,28 +46,19 @@ export const apolloClient = new ApolloClient({
               'search',
               'sortBy',
               'sortDirection',
+              'page',
+              'pageSize',
             ],
-            merge(existing, incoming, { args }) {
-              if (!existing) return incoming;
-              if (!args?.after) return incoming;
-
-              return {
-                ...incoming,
-                edges: [...existing.edges, ...incoming.edges],
-              };
-            },
           },
           unlinkedArtists: {
-            keyArgs: ['search', 'hasDownloads', 'sortBy', 'sortDirection'],
-            merge(existing, incoming, { args }) {
-              if (!existing) return incoming;
-              if (!args?.after) return incoming;
-
-              return {
-                ...incoming,
-                edges: [...existing.edges, ...incoming.edges],
-              };
-            },
+            keyArgs: [
+              'search',
+              'hasDownloads',
+              'sortBy',
+              'sortDirection',
+              'page',
+              'pageSize',
+            ],
           },
           albums: {
             keyArgs: [
@@ -77,18 +68,9 @@ export const apolloClient = new ApolloClient({
               'search',
               'sortBy',
               'sortDirection',
+              'page',
+              'pageSize',
             ],
-            merge(existing, incoming, { args }) {
-              if (!existing) return incoming;
-              // Only merge for pagination requests (when 'after' cursor is present)
-              // Fresh queries (filter/sort changes) should replace the cache
-              if (!args?.after) return incoming;
-
-              return {
-                ...incoming,
-                edges: [...existing.edges, ...incoming.edges],
-              };
-            },
           },
           songs: {
             keyArgs: [
@@ -100,30 +82,19 @@ export const apolloClient = new ApolloClient({
               'sortBy',
               'sortDirection',
               'maxBitrate',
+              'page',
+              'pageSize',
             ],
-            merge(existing, incoming, { args }) {
-              if (!existing) return incoming;
-              // Only merge for pagination requests (when 'after' cursor is present)
-              // Fresh queries (filter/sort changes) should replace the cache
-              if (!args?.after) return incoming;
-
-              return {
-                ...incoming,
-                edges: [...existing.edges, ...incoming.edges],
-              };
-            },
           },
           playlists: {
-            keyArgs: ['enabled', 'search'],
-            merge(existing, incoming, { args }) {
-              if (!existing) return incoming;
-              if (!args?.after) return incoming;
-
-              return {
-                ...incoming,
-                edges: [...existing.edges, ...incoming.edges],
-              };
-            },
+            keyArgs: [
+              'enabled',
+              'search',
+              'sortBy',
+              'sortDirection',
+              'page',
+              'pageSize',
+            ],
           },
           externalLists: {
             keyArgs: [
@@ -133,16 +104,23 @@ export const apolloClient = new ApolloClient({
               'search',
               'sortBy',
               'sortDirection',
+              'page',
+              'pageSize',
             ],
-            merge(existing, incoming, { args }) {
-              if (!existing) return incoming;
-              if (!args?.after) return incoming;
-
-              return {
-                ...incoming,
-                edges: [...existing.edges, ...incoming.edges],
-              };
-            },
+          },
+          taskHistory: {
+            keyArgs: [
+              'status',
+              'type',
+              'entityType',
+              'search',
+              'daysLookback',
+              'page',
+              'pageSize',
+            ],
+          },
+          downloadHistory: {
+            keyArgs: ['entityType', 'status', 'page', 'pageSize'],
           },
         },
       },
