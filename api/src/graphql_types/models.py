@@ -697,3 +697,53 @@ class ExternalListConnection:
     edges: List[ExternalListType]
     page_info: PageInfo
     total_count: int
+
+
+@strawberry.type
+class OffsetPageInfo:
+    page: int
+    page_size: int
+    total_pages: int
+    total_count: int
+
+
+@strawberry.type
+class ArtistPage:
+    items: List[Artist]
+    page_info: OffsetPageInfo
+
+
+@strawberry.type
+class AlbumPage:
+    items: List[Album]
+    page_info: OffsetPageInfo
+
+
+@strawberry.type
+class SongPage:
+    items: List[Song]
+    page_info: OffsetPageInfo
+
+
+@strawberry.type
+class PlaylistPage:
+    items: List[Playlist]
+    page_info: OffsetPageInfo
+
+
+@strawberry.type
+class HistoryPage:
+    items: List[DownloadHistory]
+    page_info: OffsetPageInfo
+
+
+@strawberry.type
+class TaskHistoryPage:
+    items: List[TaskHistory]
+    page_info: OffsetPageInfo
+
+
+@strawberry.type
+class ExternalListPage:
+    items: List[ExternalListType]
+    page_info: OffsetPageInfo
