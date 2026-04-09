@@ -35,7 +35,8 @@ const mockUseQuery = useQuery as MockedUseQuery;
 
 // Create a test component that simulates the Songs route
 const TestSongsComponent = () => {
-  const { data, loading, error, fetchMore } = mockUseQuery();
+  const { data, loading, error } = mockUseQuery();
+  const [page, setPage] = React.useState(1);
 
   const [filters, setFilters] = React.useState({
     downloaded: 'all',
@@ -169,8 +170,8 @@ const TestSongsComponent = () => {
       </div>
 
       {data.songs.pageInfo.totalPages > 1 && (
-        <button onClick={() => fetchMore()} data-testid='load-more'>
-          Load More
+        <button onClick={() => setPage(p => p + 1)} data-testid='next-page'>
+          Next Page ({page})
         </button>
       )}
     </div>
@@ -255,19 +256,15 @@ describe('Songs Route', () => {
         },
       };
 
-      const mockFetchMore = vi.fn();
-      mockUseQuery.mockReturnValue({
-        ...createMockUseQuery(responseWithNextPage),
-        fetchMore: mockFetchMore,
-      });
+      mockUseQuery.mockReturnValue(createMockUseQuery(responseWithNextPage));
 
       render(<TestSongsComponent />);
 
-      const loadMoreButton = screen.getByTestId('load-more');
-      expect(loadMoreButton).toBeInTheDocument();
+      const nextPageButton = screen.getByTestId('next-page');
+      expect(nextPageButton).toBeInTheDocument();
 
-      fireEvent.click(loadMoreButton);
-      expect(mockFetchMore).toHaveBeenCalled();
+      fireEvent.click(nextPageButton);
+      expect(screen.getByText(/next page \(2\)/i)).toBeInTheDocument();
     });
   });
 

@@ -81,19 +81,6 @@ export interface SortField {
   direction: 'asc' | 'desc';
 }
 
-export interface PageInfo {
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
-  startCursor?: string | null;
-  endCursor?: string | null;
-}
-
-export interface Connection<T> {
-  edges: T[];
-  pageInfo: PageInfo;
-  totalCount: number;
-}
-
 export interface GraphQLError {
   message: string;
   extensions?: { code?: string };
