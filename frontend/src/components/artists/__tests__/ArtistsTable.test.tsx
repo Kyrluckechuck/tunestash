@@ -12,6 +12,14 @@ describe('ArtistsTable', () => {
       name: 'Artist 1',
       trackingTier: 1,
       lastSynced: '2024-01-01T00:00:00Z',
+      lastDownloaded: null,
+      addedAt: null,
+      albumCount: 5,
+      downloadedAlbumCount: 3,
+      songCount: 20,
+      downloadedSongCount: 15,
+      undownloadedCount: 2,
+      failedSongCount: 0,
     },
     {
       id: 2,
@@ -19,12 +27,22 @@ describe('ArtistsTable', () => {
       name: 'Artist 2',
       trackingTier: 0,
       lastSynced: null,
+      lastDownloaded: null,
+      addedAt: null,
+      albumCount: 0,
+      downloadedAlbumCount: 0,
+      songCount: 0,
+      downloadedSongCount: 0,
+      undownloadedCount: 0,
+      failedSongCount: 0,
     },
   ];
 
   const mockOnTierChange = vi.fn();
   const mockOnSyncArtist = vi.fn();
   const mockOnSort = vi.fn();
+  const mockOnToggleColumn = vi.fn();
+  const defaultVisibleColumns = ['lastSynced', 'lastDownloaded'];
 
   it('renders artists in table', () => {
     render(
@@ -37,6 +55,8 @@ describe('ArtistsTable', () => {
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}
+        visibleColumns={defaultVisibleColumns}
+        onToggleColumn={mockOnToggleColumn}
         loading={false}
       />
     );
@@ -56,6 +76,8 @@ describe('ArtistsTable', () => {
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}
+        visibleColumns={defaultVisibleColumns}
+        onToggleColumn={mockOnToggleColumn}
         loading={false}
       />
     );
@@ -75,6 +97,8 @@ describe('ArtistsTable', () => {
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}
+        visibleColumns={defaultVisibleColumns}
+        onToggleColumn={mockOnToggleColumn}
         loading={false}
       />
     );
@@ -96,6 +120,8 @@ describe('ArtistsTable', () => {
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}
+        visibleColumns={defaultVisibleColumns}
+        onToggleColumn={mockOnToggleColumn}
         loading={false}
       />
     );
@@ -115,6 +141,8 @@ describe('ArtistsTable', () => {
         onSort={mockOnSort}
         onTierChange={mockOnTierChange}
         onSyncArtist={mockOnSyncArtist}
+        visibleColumns={defaultVisibleColumns}
+        onToggleColumn={mockOnToggleColumn}
         loading={true}
       />
     );
@@ -133,10 +161,76 @@ describe('ArtistsTable', () => {
         onSyncArtist={mockOnSyncArtist}
         onDownloadArtist={vi.fn()}
         onRetryFailedSongs={vi.fn()}
+        visibleColumns={defaultVisibleColumns}
+        onToggleColumn={mockOnToggleColumn}
         loading={false}
       />
     );
 
     expect(screen.getByText(/no artists found/i)).toBeInTheDocument();
+  });
+
+  it('renders optional columns when they are visible', () => {
+    render(
+      <ArtistsTable
+        artists={mockArtists}
+        sortField={null}
+        sortDirection='asc'
+        onSort={mockOnSort}
+        onTierChange={mockOnTierChange}
+        onSyncArtist={mockOnSyncArtist}
+        onDownloadArtist={vi.fn()}
+        onRetryFailedSongs={vi.fn()}
+        visibleColumns={['albumCount', 'songCount']}
+        onToggleColumn={mockOnToggleColumn}
+        loading={false}
+      />
+    );
+
+    expect(screen.getByText('Albums')).toBeInTheDocument();
+    expect(screen.getByText('Songs')).toBeInTheDocument();
+  });
+
+  it('does not render optional columns when they are hidden', () => {
+    render(
+      <ArtistsTable
+        artists={mockArtists}
+        sortField={null}
+        sortDirection='asc'
+        onSort={mockOnSort}
+        onTierChange={mockOnTierChange}
+        onSyncArtist={mockOnSyncArtist}
+        onDownloadArtist={vi.fn()}
+        onRetryFailedSongs={vi.fn()}
+        visibleColumns={[]}
+        onToggleColumn={mockOnToggleColumn}
+        loading={false}
+      />
+    );
+
+    expect(screen.queryByText('Albums')).not.toBeInTheDocument();
+    expect(screen.queryByText('Last Synced')).not.toBeInTheDocument();
+  });
+
+  it('renders Columns toggle button in desktop view', () => {
+    render(
+      <ArtistsTable
+        artists={mockArtists}
+        sortField={null}
+        sortDirection='asc'
+        onSort={mockOnSort}
+        onTierChange={mockOnTierChange}
+        onSyncArtist={mockOnSyncArtist}
+        onDownloadArtist={vi.fn()}
+        onRetryFailedSongs={vi.fn()}
+        visibleColumns={defaultVisibleColumns}
+        onToggleColumn={mockOnToggleColumn}
+        loading={false}
+      />
+    );
+
+    expect(
+      screen.getByRole('button', { name: /toggle columns/i })
+    ).toBeInTheDocument();
   });
 });
