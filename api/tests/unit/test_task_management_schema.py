@@ -310,25 +310,16 @@ class TestTaskManagementGraphQL:
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
-    async def test_task_history_query_with_fixed_cursor(self):
-        """Test task history query with the fixed cursor implementation."""
-        # Create some test task history records (let factory generate unique task_ids)
+    async def test_task_history_query_with_offset_pagination(self):
+        """Test task history query with offset pagination."""
         await sync_to_async(TaskHistoryFactory)()
         await sync_to_async(TaskHistoryFactory)()
 
         query = """
         query {
-            taskHistory(first: 5) {
-                totalCount
-                edges {
-                    node {
-                        id
-                        taskId
-                        type
-                        status
-                    }
-                    cursor
-                }
+            taskHistory(pageSize: 5) {
+                pageInfo { totalCount totalPages page pageSize }
+                items { id taskId type status }
             }
         }
         """
@@ -339,18 +330,14 @@ class TestTaskManagementGraphQL:
         assert result.data is not None
 
         task_history = result.data["taskHistory"]
-        assert task_history["totalCount"] >= 2
+        assert task_history["pageInfo"]["totalCount"] >= 2
 
-        edges = task_history["edges"]
-        assert len(edges) >= 2
+        items = task_history["items"]
+        assert len(items) >= 2
 
-        # Verify each edge has proper structure
-        for edge in edges:
-            assert "node" in edge
-            assert "cursor" in edge
-            assert edge["cursor"] is not None
-            assert edge["node"]["id"] is not None
-            assert edge["node"]["taskId"] is not None
+        for item in items:
+            assert item["id"] is not None
+            assert item["taskId"] is not None
 
     @pytest.mark.django_db
     @pytest.mark.asyncio

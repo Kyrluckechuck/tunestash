@@ -5,43 +5,41 @@ import strawberry
 from ..graphql_types.cached_stat import CachedStatType
 from ..graphql_types.models import (
     Album,
-    AlbumConnection,
+    AlbumPage,
     APIRateLimitInfo,
     Artist,
-    ArtistConnection,
+    ArtistPage,
     AuthenticationStatus,
     CatalogSearchAlbum,
     CatalogSearchArtist,
     CatalogSearchResults,
     CatalogSearchTrack,
     DeezerArtistPreview,
-    ExternalListConnection,
+    ExternalListPage,
     ExternalListType,
     FailureReasonCount,
     FallbackMetrics,
-    HistoryConnection,
-    HistoryEdge,
+    HistoryPage,
     LibraryStats,
     MetadataEntityType,
     MetadataUpdateConnection,
     MetadataUpdateStatus,
     MetricTimePoint,
+    OffsetPageInfo,
     OneOffTask,
-    PageInfo,
     PendingTask,
     PeriodicTask,
     Playlist,
-    PlaylistConnection,
     PlaylistInfo,
+    PlaylistPage,
     QueueStatus,
     Song,
-    SongConnection,
+    SongPage,
     SpotifyRateLimitStatus,
     StorageStatus,
     SystemHealth,
     TaskCount,
-    TaskHistoryConnection,
-    TaskHistoryEdge,
+    TaskHistoryPage,
     UpgradeStats,
 )
 from ..graphql_types.settings import (
@@ -59,98 +57,59 @@ class Query:  # pylint: disable=too-many-public-methods
     @strawberry.field
     async def artists(
         self,
-        first: Optional[int] = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         tracking_tier: Optional[int] = None,
         has_undownloaded: Optional[bool] = None,
         sort_by: Optional[str] = None,
         sort_direction: Optional[str] = None,
         search: Optional[str] = None,
-    ) -> ArtistConnection:
-        from ..services.artist import ArtistConnectionResult
-
-        first_int: int = int(first or 20)
-        result = await services.artist.get_connection(
-            first=first_int,
-            after=after,
+    ) -> ArtistPage:
+        result = await services.artist.get_page(
+            page=page,
+            page_size=page_size,
             tracking_tier=tracking_tier,
             has_undownloaded=has_undownloaded,
             sort_by=sort_by,
             sort_direction=sort_direction,
             search=search,
         )
-
-        # Handle both return types (tuple for ID sorting, dataclass for custom)
-        end_cursor: Optional[str] = None
-        if isinstance(result, ArtistConnectionResult):
-            edges = result.items
-            has_next_page = result.has_next_page
-            total_count = result.total_count
-            # For offset-based pagination, encode the offset as the cursor
-            if result.end_cursor_offset is not None:
-                end_cursor = services.artist.create_cursor_from_offset(
-                    result.end_cursor_offset
-                )
-            elif edges:
-                end_cursor = services.artist.create_cursor(edges[-1])
-        else:
-            edges, has_next_page, total_count = result
-            end_cursor = services.artist.create_cursor(edges[-1]) if edges else None
-
-        page_info = PageInfo(
-            has_next_page=has_next_page,
-            has_previous_page=after is not None,
-            start_cursor=services.artist.create_cursor(edges[0]) if edges else None,
-            end_cursor=end_cursor,
-        )
-
-        return ArtistConnection(
-            edges=edges, page_info=page_info, total_count=total_count
+        return ArtistPage(
+            items=result.items,
+            page_info=OffsetPageInfo(
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+                total_count=result.total_count,
+            ),
         )
 
     @strawberry.field
     async def unlinked_artists(
         self,
-        first: Optional[int] = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         search: Optional[str] = None,
         has_downloads: Optional[bool] = None,
         sort_by: Optional[str] = None,
         sort_direction: Optional[str] = None,
-    ) -> ArtistConnection:
-        from ..services.artist import ArtistConnectionResult
-
-        first_int: int = int(first or 20)
-        result: ArtistConnectionResult = await services.artist.get_unlinked_connection(
-            first=first_int,
-            after=after,
+    ) -> ArtistPage:
+        result = await services.artist.get_unlinked_page(
+            page=page,
+            page_size=page_size,
             search=search,
             has_downloads=has_downloads,
             sort_by=sort_by,
             sort_direction=sort_direction,
         )
-
-        end_cursor: Optional[str] = None
-        if result.end_cursor_offset is not None:
-            end_cursor = services.artist.create_cursor_from_offset(
-                result.end_cursor_offset
-            )
-        elif result.items:
-            end_cursor = services.artist.create_cursor(result.items[-1])
-
-        page_info = PageInfo(
-            has_next_page=result.has_next_page,
-            has_previous_page=after is not None,
-            start_cursor=(
-                services.artist.create_cursor(result.items[0]) if result.items else None
+        return ArtistPage(
+            items=result.items,
+            page_info=OffsetPageInfo(
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+                total_count=result.total_count,
             ),
-            end_cursor=end_cursor,
-        )
-
-        return ArtistConnection(
-            edges=result.items,
-            page_info=page_info,
-            total_count=result.total_count,
         )
 
     @strawberry.field
@@ -166,19 +125,18 @@ class Query:  # pylint: disable=too-many-public-methods
     @strawberry.field
     async def albums(
         self,
-        first: Optional[int] = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         artist_id: Optional[int] = None,
         downloaded: Optional[bool] = None,
         wanted: Optional[bool] = None,
         sort_by: Optional[str] = None,
         sort_direction: Optional[str] = None,
         search: Optional[str] = None,
-    ) -> AlbumConnection:
-        first_int: int = int(first or 20)
-        items, has_next_page, total_count = await services.album.get_connection(
-            first=first_int,
-            after=after,
+    ) -> AlbumPage:
+        result = await services.album.get_page(
+            page=page,
+            page_size=page_size,
             artist_id=artist_id,
             downloaded=downloaded,
             wanted=wanted,
@@ -186,18 +144,14 @@ class Query:  # pylint: disable=too-many-public-methods
             sort_direction=sort_direction,
             search=search,
         )
-
-        edges = items
-
-        page_info = PageInfo(
-            has_next_page=has_next_page,
-            has_previous_page=after is not None,
-            start_cursor=services.album.create_cursor(edges[0]) if edges else None,
-            end_cursor=services.album.create_cursor(edges[-1]) if edges else None,
-        )
-
-        return AlbumConnection(
-            edges=edges, page_info=page_info, total_count=total_count
+        return AlbumPage(
+            items=result.items,
+            page_info=OffsetPageInfo(
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+                total_count=result.total_count,
+            ),
         )
 
     @strawberry.field
@@ -211,8 +165,8 @@ class Query:  # pylint: disable=too-many-public-methods
     @strawberry.field
     async def songs(
         self,
-        first: Optional[int] = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         artist_id: Optional[int] = None,
         album_id: Optional[int] = None,
         downloaded: Optional[bool] = None,
@@ -221,11 +175,10 @@ class Query:  # pylint: disable=too-many-public-methods
         sort_direction: Optional[str] = None,
         search: Optional[str] = None,
         max_bitrate: Optional[int] = None,
-    ) -> SongConnection:
-        first_int: int = int(first or 20)
-        items, has_next_page, total_count = await services.song.get_connection(
-            first=first_int,
-            after=after,
+    ) -> SongPage:
+        result = await services.song.get_page(
+            page=page,
+            page_size=page_size,
             artist_id=artist_id,
             album_id=album_id,
             downloaded=downloaded,
@@ -235,17 +188,15 @@ class Query:  # pylint: disable=too-many-public-methods
             search=search,
             max_bitrate=max_bitrate,
         )
-
-        edges = items
-
-        page_info = PageInfo(
-            has_next_page=has_next_page,
-            has_previous_page=after is not None,
-            start_cursor=services.song.create_cursor(edges[0]) if edges else None,
-            end_cursor=services.song.create_cursor(edges[-1]) if edges else None,
+        return SongPage(
+            items=result.items,
+            page_info=OffsetPageInfo(
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+                total_count=result.total_count,
+            ),
         )
-
-        return SongConnection(edges=edges, page_info=page_info, total_count=total_count)
 
     @strawberry.field
     async def song(self, id: str) -> Optional[Song]:
@@ -254,36 +205,31 @@ class Query:  # pylint: disable=too-many-public-methods
     @strawberry.field
     async def playlists(
         self,
-        first: Optional[int] = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         enabled: Optional[bool] = None,
         status: Optional[str] = None,
         sort_by: Optional[str] = None,
         sort_direction: Optional[str] = None,
         search: Optional[str] = None,
-    ) -> PlaylistConnection:
-        first_int: int = int(first or 20)
-        items, has_next_page, total_count = await services.playlist.get_connection(
-            first=first_int,
-            after=after,
+    ) -> PlaylistPage:
+        result = await services.playlist.get_page(
+            page=page,
+            page_size=page_size,
             enabled=enabled,
             status=status,
             sort_by=sort_by,
             sort_direction=sort_direction,
             search=search,
         )
-
-        edges = items
-
-        page_info = PageInfo(
-            has_next_page=has_next_page,
-            has_previous_page=after is not None,
-            start_cursor=(services.playlist.create_cursor(edges[0]) if edges else None),
-            end_cursor=(services.playlist.create_cursor(edges[-1]) if edges else None),
-        )
-
-        return PlaylistConnection(
-            edges=edges, page_info=page_info, total_count=total_count
+        return PlaylistPage(
+            items=result.items,
+            page_info=OffsetPageInfo(
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+                total_count=result.total_count,
+            ),
         )
 
     @strawberry.field
@@ -293,66 +239,53 @@ class Query:  # pylint: disable=too-many-public-methods
     @strawberry.field
     async def download_history(
         self,
-        first: Optional[int] = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         entity_type: Optional[str] = None,
         status: Optional[str] = None,
-    ) -> HistoryConnection:
-        first_int: int = int(first or 20)
-        items, has_next_page, total_count = await services.history.get_connection(
-            first=first_int, after=after, entity_type=entity_type, status=status
+    ) -> HistoryPage:
+        result = await services.history.get_page(
+            page=page,
+            page_size=page_size,
+            entity_type=entity_type,
+            status=status,
         )
-
-        edges: list[HistoryEdge] = [
-            HistoryEdge(node=item, cursor=services.history.create_cursor(item))
-            for item in items
-        ]
-
-        page_info = PageInfo(
-            has_next_page=has_next_page,
-            has_previous_page=after is not None,
-            start_cursor=edges[0].cursor if edges else None,
-            end_cursor=edges[-1].cursor if edges else None,
-        )
-
-        return HistoryConnection(
-            edges=edges, page_info=page_info, total_count=total_count
+        return HistoryPage(
+            items=result.items,
+            page_info=OffsetPageInfo(
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+                total_count=result.total_count,
+            ),
         )
 
     @strawberry.field
     async def task_history(
         self,
-        first: Optional[int] = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         status: Optional[str] = None,
         type: Optional[str] = None,
         entity_type: Optional[str] = None,
         search: Optional[str] = None,
-    ) -> TaskHistoryConnection:
-        first_int: int = int(first or 20)
-        items, has_next_page, total_count = await services.task_history.get_connection(
-            first=first_int,
-            after=after,
+    ) -> TaskHistoryPage:
+        result = await services.task_history.get_page(
+            page=page,
+            page_size=page_size,
             status=status,
             type=type,
             entity_type=entity_type,
             search=search,
         )
-
-        edges = [
-            TaskHistoryEdge(node=item, cursor=services.task_history.create_cursor(item))
-            for item in items
-        ]
-
-        page_info = PageInfo(
-            has_next_page=has_next_page,
-            has_previous_page=after is not None,
-            start_cursor=edges[0].cursor if edges else None,
-            end_cursor=edges[-1].cursor if edges else None,
-        )
-
-        return TaskHistoryConnection(
-            edges=edges, page_info=page_info, total_count=total_count
+        return TaskHistoryPage(
+            items=result.items,
+            page_info=OffsetPageInfo(
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+                total_count=result.total_count,
+            ),
         )
 
     @strawberry.field
@@ -667,19 +600,18 @@ class Query:  # pylint: disable=too-many-public-methods
     @strawberry.field
     async def external_lists(
         self,
-        first: Optional[int] = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         source: Optional[str] = None,
         list_type: Optional[str] = None,
         status: Optional[str] = None,
         search: Optional[str] = None,
         sort_by: Optional[str] = None,
         sort_direction: Optional[str] = None,
-    ) -> ExternalListConnection:
-        first_int: int = int(first or 20)
-        items, has_next_page, total_count = await services.external_list.get_connection(
-            first=first_int,
-            after=after,
+    ) -> ExternalListPage:
+        result = await services.external_list.get_page(
+            page=page,
+            page_size=page_size,
             source=source,
             list_type=list_type,
             status=status,
@@ -687,20 +619,14 @@ class Query:  # pylint: disable=too-many-public-methods
             sort_by=sort_by,
             sort_direction=sort_direction,
         )
-
-        page_info = PageInfo(
-            has_next_page=has_next_page,
-            has_previous_page=after is not None,
-            start_cursor=(
-                services.external_list.create_cursor(items[0]) if items else None
+        return ExternalListPage(
+            items=result.items,
+            page_info=OffsetPageInfo(
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+                total_count=result.total_count,
             ),
-            end_cursor=(
-                services.external_list.create_cursor(items[-1]) if items else None
-            ),
-        )
-
-        return ExternalListConnection(
-            edges=items, page_info=page_info, total_count=total_count
         )
 
     @strawberry.field

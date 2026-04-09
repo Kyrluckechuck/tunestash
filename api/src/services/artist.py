@@ -1,7 +1,6 @@
 # mypy: disable-error-code=attr-defined
 import logging
-from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Optional
 
 from django.db.models import Count, Exists, F, OuterRef, Q
 
@@ -19,21 +18,9 @@ from library_manager.models import (
 )
 
 from ..graphql_types.models import Artist, MutationResult
-from .base import BaseService
+from .base import BaseService, PageResult
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ArtistConnectionResult:
-    """Result of get_connection with cursor info for pagination."""
-
-    items: List[Artist]
-    has_next_page: bool
-    total_count: int
-    # For offset-based pagination (custom sorting), this is the next offset
-    # For cursor-based (ID sorting), this is None and item IDs are used
-    end_cursor_offset: Optional[int] = None
 
 
 class ArtistService(BaseService[Artist]):
@@ -58,12 +45,12 @@ class ArtistService(BaseService[Artist]):
             except (self.model.DoesNotExist, ValueError):
                 return None
 
-    async def get_connection(
+    async def get_page(
         self,
-        first: int = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         **filters: Any,
-    ) -> Union[Tuple[List[Artist], bool, int], ArtistConnectionResult]:
+    ) -> PageResult[Artist]:
         tracking_tier: Optional[int] = filters.get("tracking_tier")
         search: Optional[str] = filters.get("search")
         has_undownloaded: Optional[bool] = filters.get("has_undownloaded")
@@ -75,9 +62,9 @@ class ArtistService(BaseService[Artist]):
             if isinstance(filters.get("sort_direction"), str)
             else None
         )
+        page, page_size = self.validate_page_params(page, page_size)
         queryset = self.model.objects.all()
 
-        # Apply filters
         if tracking_tier is not None:
             queryset = queryset.filter(tracking_tier=tracking_tier)
 
@@ -86,8 +73,6 @@ class ArtistService(BaseService[Artist]):
                 Q(name__icontains=search) | Q(gid__icontains=search)
             )
 
-        # Apply has_undownloaded filter at database level using subqueries
-        # This ensures proper pagination counts
         if has_undownloaded is not None:
             album_types_to_download = get_album_types_to_download()
             album_groups_to_ignore = get_album_groups_to_ignore()
@@ -110,13 +95,10 @@ class ArtistService(BaseService[Artist]):
             )
 
             if has_undownloaded:
-                # Filter to artists with undownloaded albums OR failed songs
                 queryset = queryset.filter(has_undownloaded_album | has_failed_song)
             else:
-                # Filter to artists with NO undownloaded albums AND NO failed songs
                 queryset = queryset.exclude(has_undownloaded_album | has_failed_song)
 
-        # Apply sorting
         sort_field_map: dict[str, str] = {
             "name": "name",
             "trackingTier": "tracking_tier",
@@ -125,31 +107,25 @@ class ArtistService(BaseService[Artist]):
             "lastDownloaded": "last_downloaded_at",
         }
 
-        # Timestamp fields where null = "earliest" (never synced/downloaded)
         timestamp_fields = {"last_synced_at", "last_downloaded_at", "added_at"}
 
-        order_expressions: List[Any] = ["id"]  # default
-        uses_custom_sort = sort_by is not None and sort_by != "id"
+        order_expressions: List[Any] = ["id"]
 
         if isinstance(sort_by, str):
             mapped_field = sort_field_map.get(sort_by)
             if mapped_field is not None:
-                # For timestamp fields, nulls should be treated as earliest
                 if mapped_field in timestamp_fields:
                     if sort_direction == "desc":
-                        # Descending: newest first, nulls last (never = earliest)
                         order_expressions = [
                             F(mapped_field).desc(nulls_last=True),
                             "id",
                         ]
                     else:
-                        # Ascending: oldest first, nulls first (never = earliest)
                         order_expressions = [
                             F(mapped_field).asc(nulls_first=True),
                             "id",
                         ]
                 else:
-                    # Non-timestamp fields use standard sorting
                     order_field = mapped_field
                     if sort_direction == "desc":
                         order_expressions = [f"-{order_field}", "id"]
@@ -157,75 +133,43 @@ class ArtistService(BaseService[Artist]):
                         order_expressions = [order_field, "id"]
 
         total_count = await queryset.acount()
+        offset = (page - 1) * page_size
 
-        # Apply pagination - use offset for custom sorting, cursor for ID sorting
-        # Cursor-based pagination (id__gt) only works when sorting by ID
-        offset = 0
-        if after:
-            if uses_custom_sort:
-                # Custom sorting: decode cursor as offset
-                decoded = self.decode_cursor(after)
-                offset = int(decoded) if isinstance(decoded, (int, str)) else 0
-            else:
-                # ID sorting: use cursor-based filtering
-                id_after = self.decode_cursor(after)
-                queryset = queryset.filter(id__gt=id_after)
-
-        # Get one extra item to determine if there are more pages
         def fetch_items() -> List[DjangoArtist]:
-            if uses_custom_sort:
-                # Offset-based: skip `offset` items, take `first + 1`
-                return list(
-                    queryset.order_by(*order_expressions)[offset : offset + first + 1]
-                )
-            return list(queryset.order_by(*order_expressions)[: first + 1])
+            return list(
+                queryset.order_by(*order_expressions)[offset : offset + page_size]
+            )
 
         items: List[DjangoArtist] = await sync_to_async(fetch_items)()
 
-        has_next_page = len(items) > first
-        items = items[:first]  # Remove the extra item
-
-        # Convert items to GraphQL types with async undownloaded counts
         graphql_items: List[Artist] = []
         for item in items:
             graphql_item = await self._to_graphql_type_async(item)
             graphql_items.append(graphql_item)
 
-        # Note: has_undownloaded filtering is now done at database level (above)
-        # using Exists subqueries for proper pagination
-
-        # For custom sorting, return the next offset as cursor info
-        if uses_custom_sort:
-            next_offset = offset + len(items) if has_next_page else None
-            return ArtistConnectionResult(
-                items=graphql_items,
-                has_next_page=has_next_page,
-                total_count=total_count,
-                end_cursor_offset=next_offset,
-            )
-
-        return (
-            graphql_items,
-            has_next_page,
-            total_count,
+        return PageResult(
+            items=graphql_items,
+            page=page,
+            page_size=page_size,
+            total_count=total_count,
         )
 
-    async def get_unlinked_connection(
+    async def get_unlinked_page(
         self,
-        first: int = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         search: Optional[str] = None,
         has_downloads: Optional[bool] = None,
         sort_by: Optional[str] = None,
         sort_direction: Optional[str] = None,
-    ) -> ArtistConnectionResult:
+    ) -> PageResult[Artist]:
         """Get paginated artists without a deezer_id."""
+        page, page_size = self.validate_page_params(page, page_size)
         queryset = self.model.objects.filter(deezer_id__isnull=True)
 
         if search:
             queryset = queryset.filter(name__icontains=search)
 
-        # Annotate with song counts (Song.primary_artist → queryset lookup is "song")
         queryset = queryset.annotate(
             _downloaded_song_count=Count("song", filter=Q(song__downloaded=True)),
             _total_song_count=Count("song"),
@@ -237,7 +181,6 @@ class ArtistService(BaseService[Artist]):
             else:
                 queryset = queryset.filter(_downloaded_song_count=0)
 
-        # Default sort: highest tracking tier first, then most downloads, then ID
         order_expressions: List[Any] = [
             "-tracking_tier",
             "-_downloaded_song_count",
@@ -257,39 +200,29 @@ class ArtistService(BaseService[Artist]):
                 order_expressions = [mapped, "id"]
 
         total_count = await queryset.acount()
-
-        # Always use offset-based pagination (custom sort fields)
-        offset = 0
-        if after:
-            decoded = self.decode_cursor(after)
-            offset = int(decoded) if isinstance(decoded, (int, str)) else 0
+        offset = (page - 1) * page_size
 
         def fetch_items() -> List[DjangoArtist]:
             return list(
-                queryset.order_by(*order_expressions)[offset : offset + first + 1]
+                queryset.order_by(*order_expressions)[offset : offset + page_size]
             )
 
         items: List[DjangoArtist] = await sync_to_async(fetch_items)()
 
-        has_next_page = len(items) > first
-        items = items[:first]
-
         graphql_items: List[Artist] = []
         for item in items:
             gql_artist = await self._to_graphql_type_async(item)
-            # Override with annotated values
             gql_artist.downloaded_song_count = getattr(
                 item, "_downloaded_song_count", 0
             )
             gql_artist.song_count = getattr(item, "_total_song_count", 0)
             graphql_items.append(gql_artist)
 
-        next_offset = offset + len(items) if has_next_page else None
-        return ArtistConnectionResult(
+        return PageResult(
             items=graphql_items,
-            has_next_page=has_next_page,
+            page=page,
+            page_size=page_size,
             total_count=total_count,
-            end_cursor_offset=next_offset,
         )
 
     async def link_to_deezer(self, artist_id: int, deezer_id: int) -> MutationResult:
