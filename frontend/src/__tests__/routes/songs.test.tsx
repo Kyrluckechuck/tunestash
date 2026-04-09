@@ -53,7 +53,7 @@ const TestSongsComponent = () => {
     return <div>Error loading songs: {error.message}</div>;
   }
 
-  if (!data?.songs?.edges?.length) {
+  if (!data?.songs?.items?.length) {
     return <div>No songs found</div>;
   }
 
@@ -66,7 +66,7 @@ const TestSongsComponent = () => {
   };
 
   // Filter songs based on current filters
-  const filteredSongs = data.songs.edges.filter((song: TestSong) => {
+  const filteredSongs = data.songs.items.filter((song: TestSong) => {
     if (filters.downloaded !== 'all') {
       const isDownloaded = song.downloaded;
       if (filters.downloaded === 'downloaded' && !isDownloaded) return false;
@@ -92,7 +92,7 @@ const TestSongsComponent = () => {
   return (
     <div>
       <h1>
-        Songs ({filteredSongs.length} of {data.songs.totalCount})
+        Songs ({filteredSongs.length} of {data.songs.pageInfo.totalCount})
       </h1>
 
       {/* Filter controls */}
@@ -168,7 +168,7 @@ const TestSongsComponent = () => {
         ))}
       </div>
 
-      {data.songs.pageInfo.hasNextPage && (
+      {data.songs.pageInfo.totalPages > 1 && (
         <button onClick={() => fetchMore()} data-testid='load-more'>
           Load More
         </button>
@@ -226,14 +226,13 @@ describe('Songs Route', () => {
     it('renders empty state when no songs', () => {
       const emptyResponse = {
         songs: {
-          totalCount: 0,
           pageInfo: {
-            hasNextPage: false,
-            hasPreviousPage: false,
-            startCursor: null,
-            endCursor: null,
+            page: 1,
+            pageSize: 50,
+            totalPages: 0,
+            totalCount: 0,
           },
-          edges: [],
+          items: [],
         },
       };
 
@@ -251,7 +250,7 @@ describe('Songs Route', () => {
           ...mockGetSongsResponse.songs,
           pageInfo: {
             ...mockGetSongsResponse.songs.pageInfo,
-            hasNextPage: true,
+            totalPages: 2,
           },
         },
       };

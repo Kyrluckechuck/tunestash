@@ -37,6 +37,7 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     useState<WantedFilter>('all');
   const [albumDownloadFilter, setAlbumDownloadFilter] =
     useState<DownloadFilter>('all');
+  const [albumPage, setAlbumPage] = useState(1);
   const [albumPageSize, setAlbumPageSize] = useState(50);
   const [albumSortField, setAlbumSortField] = useState<AlbumSortField>(null);
   const [albumSortDirection, setAlbumSortDirection] =
@@ -46,6 +47,7 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
   // Songs state
   const [songDownloadFilter, setSongDownloadFilter] =
     useState<DownloadFilter>('all');
+  const [songPage, setSongPage] = useState(1);
   const [songPageSize, setSongPageSize] = useState(50);
   const [songSortField, setSongSortField] = useState<SongSortField>(null);
   const [songSortDirection, setSongSortDirection] =
@@ -75,7 +77,8 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
         albumDownloadFilter === 'all'
           ? undefined
           : albumDownloadFilter === 'downloaded',
-      first: albumPageSize,
+      page: albumPage,
+      pageSize: albumPageSize,
       sortBy: albumSortField,
       sortDirection: albumSortDirection,
       search: albumSearchQuery || undefined,
@@ -84,6 +87,7 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
       artistId,
       albumWantedFilter,
       albumDownloadFilter,
+      albumPage,
       albumPageSize,
       albumSortField,
       albumSortDirection,
@@ -95,7 +99,6 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
   const {
     data: albumsData,
     loading: albumsLoading,
-    fetchMore: fetchMoreAlbums,
     networkStatus: albumsNetworkStatus,
   } = useQuery(GetAlbumsDocument, {
     variables: albumQueryVariables,
@@ -111,7 +114,8 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
         songDownloadFilter === 'all'
           ? undefined
           : songDownloadFilter === 'downloaded',
-      first: songPageSize,
+      page: songPage,
+      pageSize: songPageSize,
       sortBy: songSortField,
       sortDirection: songSortDirection,
       search: songSearchQuery || undefined,
@@ -119,6 +123,7 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     [
       artistId,
       songDownloadFilter,
+      songPage,
       songPageSize,
       songSortField,
       songSortDirection,
@@ -130,7 +135,6 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
   const {
     data: songsData,
     loading: songsLoading,
-    fetchMore: fetchMoreSongs,
     networkStatus: songsNetworkStatus,
   } = useQuery(GetSongsDocument, {
     variables: songQueryVariables,
@@ -284,21 +288,29 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
   };
 
   // Album handlers
-  const handleAlbumWantedFilterChange = (filter: WantedFilter) =>
+  const handleAlbumWantedFilterChange = (filter: WantedFilter) => {
     setAlbumWantedFilter(filter);
-  const handleAlbumDownloadFilterChange = (filter: DownloadFilter) =>
+    setAlbumPage(1);
+  };
+  const handleAlbumDownloadFilterChange = (filter: DownloadFilter) => {
     setAlbumDownloadFilter(filter);
-  const handleAlbumPageSizeChange = (size: number) => setAlbumPageSize(size);
-  const handleAlbumSearch = useCallback(
-    (query: string) => setAlbumSearchQuery(query),
-    []
-  );
+    setAlbumPage(1);
+  };
+  const handleAlbumPageSizeChange = (size: number) => {
+    setAlbumPageSize(size);
+    setAlbumPage(1);
+  };
+  const handleAlbumSearch = useCallback((query: string) => {
+    setAlbumSearchQuery(query);
+    setAlbumPage(1);
+  }, []);
 
   const handleAlbumSort = (field: AlbumSortField) => {
     const newDirection: SortDirection =
       albumSortField === field && albumSortDirection === 'asc' ? 'desc' : 'asc';
     setAlbumSortField(field);
     setAlbumSortDirection(newDirection);
+    setAlbumPage(1);
   };
 
   const handleAlbumWantedToggle = async (albumId: number, wanted: boolean) => {
@@ -323,53 +335,37 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     );
   };
 
-  const handleLoadMoreAlbums = () => {
-    if (albumsData?.albums.pageInfo.hasNextPage) {
-      fetchMoreAlbums({
-        variables: {
-          ...albumQueryVariables,
-          after: albumsData.albums.pageInfo.endCursor,
-        },
-      });
-    }
-  };
-
   // Song handlers
-  const handleSongDownloadFilterChange = (filter: DownloadFilter) =>
+  const handleSongDownloadFilterChange = (filter: DownloadFilter) => {
     setSongDownloadFilter(filter);
-  const handleSongPageSizeChange = (size: number) => setSongPageSize(size);
-  const handleSongSearch = useCallback(
-    (query: string) => setSongSearchQuery(query),
-    []
-  );
+    setSongPage(1);
+  };
+  const handleSongPageSizeChange = (size: number) => {
+    setSongPageSize(size);
+    setSongPage(1);
+  };
+  const handleSongSearch = useCallback((query: string) => {
+    setSongSearchQuery(query);
+    setSongPage(1);
+  }, []);
 
   const handleSongSort = (field: SongSortField) => {
     const newDirection: SortDirection =
       songSortField === field && songSortDirection === 'asc' ? 'desc' : 'asc';
     setSongSortField(field);
     setSongSortDirection(newDirection);
-  };
-
-  const handleLoadMoreSongs = () => {
-    if (songsData?.songs.pageInfo.hasNextPage) {
-      fetchMoreSongs({
-        variables: {
-          ...songQueryVariables,
-          after: songsData.songs.pageInfo.endCursor,
-        },
-      });
-    }
+    setSongPage(1);
   };
 
   // Derived state
   const artist = artistData?.artist;
-  const albums = (albumsData?.albums.edges as Album[]) || [];
-  const albumsTotalCount = albumsData?.albums.totalCount || 0;
-  const albumsPageInfo = albumsData?.albums.pageInfo;
+  const albums = (albumsData?.albums.items as Album[]) || [];
+  const albumsTotalCount = albumsData?.albums.pageInfo?.totalCount || 0;
+  const albumsTotalPages = albumsData?.albums.pageInfo?.totalPages || 1;
 
-  const songs = (songsData?.songs.edges as Song[]) || [];
-  const songsTotalCount = songsData?.songs.totalCount || 0;
-  const songsPageInfo = songsData?.songs.pageInfo;
+  const songs = (songsData?.songs.items as Song[]) || [];
+  const songsTotalCount = songsData?.songs.pageInfo?.totalCount || 0;
+  const songsTotalPages = songsData?.songs.pageInfo?.totalPages || 1;
 
   const { isRefreshing: artistRefreshing, isInitial: artistInitialLoading } =
     useRequestState(artistNetworkStatus);
@@ -396,9 +392,13 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     // Albums data
     albums,
     albumsTotalCount,
-    albumsPageInfo,
+    albumsTotalPages,
     albumsLoading,
     albumsRefreshing,
+
+    // Albums pagination
+    albumPage,
+    setAlbumPage,
 
     // Albums filters & sorting
     albumWantedFilter,
@@ -420,14 +420,17 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     handleAlbumWantedToggle,
     handleDownloadAlbum,
     handleCheckAlbumMetadata,
-    handleLoadMoreAlbums,
 
     // Songs data
     songs,
     songsTotalCount,
-    songsPageInfo,
+    songsTotalPages,
     songsLoading,
     songsRefreshing,
+
+    // Songs pagination
+    songPage,
+    setSongPage,
 
     // Songs filters & sorting
     songDownloadFilter,
@@ -440,6 +443,5 @@ export function useArtistDetailPage({ artistId }: UseArtistDetailPageOptions) {
     handleSongPageSizeChange,
     handleSongSort,
     handleSongSearch,
-    handleLoadMoreSongs,
   };
 }

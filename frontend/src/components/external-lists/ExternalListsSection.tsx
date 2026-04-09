@@ -5,7 +5,7 @@ import { PageSizeSelector } from '../ui/PageSizeSelector';
 import { InlineSpinner } from '../ui/InlineSpinner';
 import { PageSpinner } from '../ui/PageSpinner';
 import { ErrorBanner } from '../ui/ErrorBanner';
-import { LoadMoreButton } from '../ui/LoadMoreButton';
+import { PaginationBar } from '../ui/PaginationBar';
 import { SearchInput } from '../ui/SearchInput';
 import { useExternalListsPage } from '../../hooks/useExternalListsPage';
 
@@ -14,11 +14,15 @@ export function ExternalListsSection() {
     // Data
     lists,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
     isRefreshing,
     isInitialLoading,
+
+    // Pagination
+    page,
+    setPage,
 
     // Filters & sorting
     sourceFilter,
@@ -52,7 +56,6 @@ export function ExternalListsSection() {
     handleOpenCreateModal,
     handleOpenEditModal,
     handleCloseCreateModal,
-    handleLoadMore,
   } = useExternalListsPage();
 
   if (isInitialLoading && !lists.length) {
@@ -73,7 +76,7 @@ export function ExternalListsSection() {
       <div className='flex items-center justify-between mb-4'>
         <div className='flex items-center gap-3'>
           <h2 className='text-lg font-medium text-gray-700 dark:text-slate-300'>
-            External Lists ({lists.length} of {totalCount})
+            External Lists ({totalCount})
           </h2>
           {isRefreshing && <InlineSpinner label='Updating...' />}
         </div>
@@ -128,12 +131,16 @@ export function ExternalListsSection() {
         />
       </div>
 
-      <LoadMoreButton
-        hasNextPage={!!pageInfo?.hasNextPage}
-        loading={loading}
-        remainingCount={totalCount - lists.length}
-        onLoadMore={handleLoadMore}
-      />
+      {totalPages > 1 && (
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          loading={loading}
+        />
+      )}
 
       <ExternalListModal
         isOpen={showCreateModal}

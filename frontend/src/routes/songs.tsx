@@ -34,6 +34,7 @@ function Songs() {
   const { artistId: artistIdFromSearch, search: initialSearch } =
     Route.useSearch() as { artistId?: number; search?: string };
   // State management
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -45,13 +46,14 @@ function Songs() {
   // Memoize query variables to prevent unnecessary re-renders
   const queryVariables = useMemo(
     () => ({
-      first: pageSize,
+      page,
+      pageSize,
       artistId: artistIdFromSearch || undefined,
       sortBy: sortField,
       sortDirection: sortDirection,
       search: searchQuery || undefined,
     }),
-    [pageSize, sortField, sortDirection, searchQuery, artistIdFromSearch]
+    [page, pageSize, sortField, sortDirection, searchQuery, artistIdFromSearch]
   );
 
   const queryVariablesWithFilter = useMemo(
@@ -67,21 +69,19 @@ function Songs() {
     [queryVariables, filter]
   );
 
-  const { data, loading, error, fetchMore, networkStatus } = useQuery(
-    GetSongsDocument,
-    {
-      variables: queryVariablesWithFilter,
-      fetchPolicy: 'cache-and-network',
-      notifyOnNetworkStatusChange: true,
-      pollInterval: 0,
-      errorPolicy: 'all',
-    }
-  );
+  const { data, loading, error, networkStatus } = useQuery(GetSongsDocument, {
+    variables: queryVariablesWithFilter,
+    fetchPolicy: 'cache-and-network',
+    notifyOnNetworkStatusChange: true,
+    pollInterval: 0,
+    errorPolicy: 'all',
+  });
 
   const handleFilterChange = (
     newFilter: 'all' | 'downloaded' | 'failed' | 'unavailable' | 'lowQuality'
   ) => {
     setFilter(newFilter);
+    setPage(1);
   };
 
   const handleSort = (field: SortField) => {
@@ -91,29 +91,29 @@ function Songs() {
       setSortField(field);
       setSortDirection('asc');
     }
+    setPage(1);
   };
 
-  const handleLoadMore = () => {
-    if (data?.songs?.pageInfo?.hasNextPage) {
-      fetchMore({
-        variables: {
-          ...queryVariablesWithFilter,
-          after: data.songs.pageInfo.endCursor,
-        },
-      });
-    }
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    setPage(1);
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setPage(1);
   };
 
   // Apply frontend filtering for failed songs
   const songs = useMemo(() => {
-    const allSongs = data?.songs?.edges || [];
+    const allSongs = data?.songs?.items || [];
     if (filter === 'failed') {
       return allSongs.filter(song => (song?.failedCount ?? 0) > 0);
     }
     return allSongs;
-  }, [data?.songs?.edges, filter]);
-  const totalCount = data?.songs?.totalCount || 0;
-  const pageInfo = data?.songs?.pageInfo;
+  }, [data?.songs?.items, filter]);
+  const totalCount = data?.songs?.pageInfo?.totalCount || 0;
+  const totalPages = data?.songs?.pageInfo?.totalPages || 1;
   const { isRefreshing: isRefetching, isInitial: isInitialLoading } =
     useRequestState(networkStatus);
 
@@ -141,9 +141,9 @@ function Songs() {
 
       <FilterBar
         searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
+        onSearchChange={handleSearchChange}
         pageSize={pageSize}
-        onPageSizeChange={setPageSize}
+        onPageSizeChange={handlePageSizeChange}
         totalCount={totalCount}
         currentCount={songs.length}
         searchPlaceholder='Search songs...'
@@ -162,8 +162,9 @@ function Songs() {
         error={error}
         totalCount={totalCount}
         pageSize={pageSize}
-        hasNextPage={!!pageInfo?.hasNextPage}
-        onLoadMore={handleLoadMore}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
         emptyMessage='No songs found'
         loadingMessage='Loading songs...'
         errorMessage='Error loading songs'

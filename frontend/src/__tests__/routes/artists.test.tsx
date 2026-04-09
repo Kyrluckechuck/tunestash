@@ -66,7 +66,7 @@ const TestArtistsComponent = () => {
     return <div>Error loading artists: {error.message}</div>;
   }
 
-  if (!data?.artists?.edges?.length) {
+  if (!data?.artists?.items?.length) {
     return <div>No artists found</div>;
   }
 
@@ -96,7 +96,7 @@ const TestArtistsComponent = () => {
   };
 
   // Filter artists based on current filter
-  const filteredArtists = data.artists.edges.filter(
+  const filteredArtists = data.artists.items.filter(
     (artist: {
       id: number;
       name: string;
@@ -112,7 +112,7 @@ const TestArtistsComponent = () => {
   return (
     <div>
       <h1>
-        Artists ({filteredArtists.length} of {data.artists.totalCount})
+        Artists ({filteredArtists.length} of {data.artists.pageInfo.totalCount})
       </h1>
 
       {/* Filter controls */}
@@ -173,7 +173,7 @@ const TestArtistsComponent = () => {
         )}
       </div>
 
-      {data.artists.pageInfo.hasNextPage && (
+      {data.artists.pageInfo.totalPages > 1 && (
         <button onClick={() => fetchMore()} data-testid='load-more'>
           Load More
         </button>
@@ -235,14 +235,13 @@ describe('Artists Route', () => {
     it('renders empty state when no artists', () => {
       const emptyResponse = {
         artists: {
-          totalCount: 0,
           pageInfo: {
-            hasNextPage: false,
-            hasPreviousPage: false,
-            startCursor: null,
-            endCursor: null,
+            page: 1,
+            pageSize: 50,
+            totalPages: 0,
+            totalCount: 0,
           },
-          edges: [],
+          items: [],
         },
       };
 
@@ -261,7 +260,7 @@ describe('Artists Route', () => {
           ...mockGetArtistsResponse.artists,
           pageInfo: {
             ...mockGetArtistsResponse.artists.pageInfo,
-            hasNextPage: true,
+            totalPages: 2,
           },
         },
       };

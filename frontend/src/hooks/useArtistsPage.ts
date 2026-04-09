@@ -1,6 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { NetworkStatus } from '@apollo/client';
-import { useMutation, useQuery, useApolloClient } from '@apollo/client/react';
+import { useState, useMemo } from 'react';
+import { useMutation, useQuery } from '@apollo/client/react';
 import {
   GetArtistsDocument,
   GetTaskHistoryDocument,
@@ -10,7 +9,6 @@ import {
   RetryFailedSongsDocument,
   SyncAllTrackedArtistsDocument,
   DownloadAllTrackedArtistsDocument,
-  type Artist,
 } from '../types/generated/graphql';
 import { useToast } from '../components/ui/useToast';
 import { useDataTable } from './useDataTable';
@@ -21,14 +19,15 @@ import type { TrackingFilter } from '../components/artists/ArtistFilters';
 
 export function useArtistsPage() {
   const toast = useToast();
-  const client = useApolloClient();
 
   // Table state management
   const {
+    page,
     pageSize,
     sortField,
     sortDirection,
     searchQuery,
+    setPage,
     setPageSize,
     setSearchQuery,
     queryVariables,
@@ -66,17 +65,16 @@ export function useArtistsPage() {
   const { data: taskData } = useQuery(GetTaskHistoryDocument, {
     variables: {
       status: 'RUNNING',
-      first: 100,
+      pageSize: 100,
     },
     fetchPolicy: 'cache-first',
-    pollInterval: 5000, // Poll every 5 seconds to detect active tasks
+    pollInterval: 5000,
   });
 
   // Compute whether there are active artist-related tasks
   const hasActiveArtistTasks = useMemo(() => {
-    const edges = taskData?.taskHistory?.edges || [];
-    return edges.some(edge => {
-      const task = edge.node;
+    const items = taskData?.taskHistory?.items || [];
+    return items.some(task => {
       return (
         task.status === 'RUNNING' &&
         task.entityType === 'ARTIST' &&
@@ -89,44 +87,13 @@ export function useArtistsPage() {
   const artistsPollInterval = hasActiveArtistTasks ? 5000 : 0;
 
   // Data fetching
-  const { data, loading, error, fetchMore, networkStatus } = useQuery(
-    GetArtistsDocument,
-    {
-      variables: queryVariablesWithFilter,
-      fetchPolicy: 'cache-and-network',
-      notifyOnNetworkStatusChange: true,
-      pollInterval: artistsPollInterval,
-      errorPolicy: 'all',
-    }
-  );
-
-  const hasPrefetched = useRef(false);
-
-  // Pre-fetch other filter combinations once after initial data loads to eliminate jitter
-  useEffect(() => {
-    if (!data || networkStatus !== NetworkStatus.ready || hasPrefetched.current)
-      return;
-    hasPrefetched.current = true;
-
-    const baseVariables = { ...queryVariables };
-
-    [0, 1, 2].forEach(tier => {
-      const variables = {
-        ...baseVariables,
-        trackingTier: tier,
-      };
-
-      client
-        .query({
-          query: GetArtistsDocument,
-          variables,
-          fetchPolicy: 'cache-first',
-        })
-        .catch(() => {
-          // Silently handle pre-fetch errors
-        });
-    });
-  }, [data, networkStatus, queryVariables, client]);
+  const { data, loading, error, networkStatus } = useQuery(GetArtistsDocument, {
+    variables: queryVariablesWithFilter,
+    fetchPolicy: 'cache-and-network',
+    notifyOnNetworkStatusChange: true,
+    pollInterval: artistsPollInterval,
+    errorPolicy: 'all',
+  });
 
   // Mutations
   const [updateArtist] = useMutation(UpdateArtistDocument);
@@ -163,30 +130,7 @@ export function useArtistsPage() {
   // Handlers
   const handleFilterChange = (newFilter: TrackingFilter) => {
     setFilter(newFilter);
-
-    const newTrackingTier =
-      newFilter === 'favourite'
-        ? 2
-        : newFilter === 'tracked'
-          ? 1
-          : newFilter === 'untracked'
-            ? 0
-            : undefined;
-
-    const newVariables = {
-      ...queryVariablesWithFilter,
-      trackingTier: newTrackingTier,
-    };
-
-    client
-      .query({
-        query: GetArtistsDocument,
-        variables: newVariables,
-        fetchPolicy: 'cache-first',
-      })
-      .catch(() => {
-        // Silently handle pre-fetch errors
-      });
+    setPage(1);
   };
 
   const tierLabels = ['Untracked', 'Tracked', 'Favourite'] as const;
@@ -316,21 +260,10 @@ export function useArtistsPage() {
     }
   };
 
-  const handleLoadMore = () => {
-    if (data?.artists?.pageInfo?.hasNextPage) {
-      fetchMore({
-        variables: {
-          ...queryVariablesWithFilter,
-          after: data.artists.pageInfo.endCursor,
-        },
-      });
-    }
-  };
-
   // Derived state
-  const artists = (data?.artists?.edges as Artist[]) || [];
-  const totalCount = data?.artists?.totalCount || 0;
-  const pageInfo = data?.artists?.pageInfo;
+  const artists = data?.artists?.items || [];
+  const totalCount = data?.artists?.pageInfo?.totalCount || 0;
+  const totalPages = data?.artists?.pageInfo?.totalPages || 1;
   const { isRefreshing, isInitial: isInitialLoading } =
     useRequestState(networkStatus);
 
@@ -338,11 +271,15 @@ export function useArtistsPage() {
     // Data
     artists,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
     isRefreshing,
     isInitialLoading,
+
+    // Pagination
+    page,
+    setPage,
 
     // Filters & sorting
     filter,
@@ -372,6 +309,5 @@ export function useArtistsPage() {
     handleRetryFailedSongs,
     handleSyncAllTrackedArtists,
     handleDownloadAllTrackedArtists,
-    handleLoadMore,
   };
 }

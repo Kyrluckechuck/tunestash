@@ -58,7 +58,7 @@ const TestPlaylistsComponent = () => {
     return <div>Error loading playlists: {error.message}</div>;
   }
 
-  if (!data?.playlists?.edges?.length) {
+  if (!data?.playlists?.items?.length) {
     return <div>No playlists found</div>;
   }
 
@@ -99,10 +99,11 @@ const TestPlaylistsComponent = () => {
   return (
     <div>
       <h1>
-        Playlists ({data.playlists.edges.length} of {data.playlists.totalCount})
+        Playlists ({data.playlists.items.length} of{' '}
+        {data.playlists.pageInfo.totalCount})
       </h1>
       <div>
-        {data.playlists.edges.map((playlist: TestPlaylist) => (
+        {data.playlists.items.map((playlist: TestPlaylist) => (
           <div key={playlist.id} data-testid={`playlist-${playlist.id}`}>
             <span>{playlist.name}</span>
             <span data-testid={`status-${playlist.id}`}>
@@ -135,7 +136,7 @@ const TestPlaylistsComponent = () => {
           </div>
         ))}
       </div>
-      {data.playlists.pageInfo.hasNextPage && (
+      {data.playlists.pageInfo.totalPages > 1 && (
         <button onClick={() => fetchMore()} data-testid='load-more'>
           Load More
         </button>
@@ -199,14 +200,13 @@ describe('Playlists Route', () => {
     it('renders empty state when no playlists', () => {
       const emptyResponse = {
         playlists: {
-          totalCount: 0,
           pageInfo: {
-            hasNextPage: false,
-            hasPreviousPage: false,
-            startCursor: null,
-            endCursor: null,
+            page: 1,
+            pageSize: 50,
+            totalPages: 0,
+            totalCount: 0,
           },
-          edges: [],
+          items: [],
         },
       };
 
@@ -225,7 +225,7 @@ describe('Playlists Route', () => {
           ...mockGetPlaylistsResponse.playlists,
           pageInfo: {
             ...mockGetPlaylistsResponse.playlists.pageInfo,
-            hasNextPage: true,
+            totalPages: 2,
           },
         },
       };

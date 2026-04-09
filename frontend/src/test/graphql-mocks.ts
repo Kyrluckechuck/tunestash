@@ -29,6 +29,10 @@ export const createMockArtist = (overrides = {}) => ({
   lastDownloaded: '2024-01-01T00:00:00Z',
   undownloadedCount: 0,
   failedSongCount: 0,
+  albumCount: 5,
+  downloadedAlbumCount: 3,
+  songCount: 50,
+  downloadedSongCount: 40,
   ...overrides,
 });
 
@@ -99,14 +103,13 @@ export const createMockTaskHistory = (overrides = {}) => ({
 // Mock query responses
 export const mockGetArtistsResponse: GetArtistsQuery = {
   artists: {
-    totalCount: 2,
     pageInfo: {
-      hasNextPage: false,
-      hasPreviousPage: false,
-      startCursor: 'cursor1',
-      endCursor: 'cursor2',
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+      totalCount: 2,
     },
-    edges: [
+    items: [
       createMockArtist({ id: 1, name: 'Artist 1' }),
       createMockArtist({ id: 2, name: 'Artist 2', trackingTier: 0 }),
     ],
@@ -115,14 +118,13 @@ export const mockGetArtistsResponse: GetArtistsQuery = {
 
 export const mockGetAlbumsResponse: GetAlbumsQuery = {
   albums: {
-    totalCount: 2,
     pageInfo: {
-      hasNextPage: false,
-      hasPreviousPage: false,
-      startCursor: 'cursor1',
-      endCursor: 'cursor2',
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+      totalCount: 2,
     },
-    edges: [
+    items: [
       createMockAlbum({ id: 1, name: 'Album 1' }),
       createMockAlbum({ id: 2, name: 'Album 2', wanted: false }),
     ],
@@ -131,14 +133,13 @@ export const mockGetAlbumsResponse: GetAlbumsQuery = {
 
 export const mockGetPlaylistsResponse: GetPlaylistsQuery = {
   playlists: {
-    totalCount: 2,
     pageInfo: {
-      hasNextPage: false,
-      hasPreviousPage: false,
-      startCursor: 'cursor1',
-      endCursor: 'cursor2',
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+      totalCount: 2,
     },
-    edges: [
+    items: [
       createMockPlaylist({ id: 1, name: 'Playlist 1' }),
       createMockPlaylist({
         id: 2,
@@ -152,14 +153,13 @@ export const mockGetPlaylistsResponse: GetPlaylistsQuery = {
 
 export const mockGetPlaylistsWithRestrictedResponse: GetPlaylistsQuery = {
   playlists: {
-    totalCount: 3,
     pageInfo: {
-      hasNextPage: false,
-      hasPreviousPage: false,
-      startCursor: 'cursor1',
-      endCursor: 'cursor3',
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+      totalCount: 3,
     },
-    edges: [
+    items: [
       createMockPlaylist({ id: 1, name: 'Playlist 1' }),
       createMockPlaylist({
         id: 2,
@@ -183,14 +183,13 @@ export const mockGetPlaylistsWithRestrictedResponse: GetPlaylistsQuery = {
 
 export const mockGetSongsResponse: GetSongsQuery = {
   songs: {
-    totalCount: 2,
     pageInfo: {
-      hasNextPage: false,
-      hasPreviousPage: false,
-      startCursor: 'cursor1',
-      endCursor: 'cursor2',
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+      totalCount: 2,
     },
-    edges: [
+    items: [
       createMockSong({ id: 1, name: 'Song 1' }),
       createMockSong({ id: 2, name: 'Song 2', downloaded: false }),
     ],
@@ -199,28 +198,21 @@ export const mockGetSongsResponse: GetSongsQuery = {
 
 export const mockGetTaskHistoryResponse: GetTaskHistoryQuery = {
   taskHistory: {
-    totalCount: 2,
     pageInfo: {
-      hasNextPage: false,
-      hasPreviousPage: false,
-      startCursor: 'cursor1',
-      endCursor: 'cursor2',
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+      totalCount: 2,
     },
-    edges: [
-      {
-        node: createMockTaskHistory({ id: '1', status: 'COMPLETED' as const }),
-        cursor: 'cursor1',
-      },
-      {
-        node: createMockTaskHistory({
-          id: '2',
-          taskId: 'task-123-2',
-          status: 'RUNNING' as const,
-          durationSeconds: 1800,
-          logMessages: ['Task 2 started'],
-        }),
-        cursor: 'cursor2',
-      },
+    items: [
+      createMockTaskHistory({ id: '1', status: 'COMPLETED' as const }),
+      createMockTaskHistory({
+        id: '2',
+        taskId: 'task-123-2',
+        status: 'RUNNING' as const,
+        durationSeconds: 1800,
+        logMessages: ['Task 2 started'],
+      }),
     ],
   },
 };
@@ -325,9 +317,6 @@ export const createMockUseQuery = (
     data,
     loading,
     error,
-    fetchMore: () => {
-      // Mock implementation
-    },
     networkStatus: loading ? 1 : 7,
     refetch: () => {
       // Mock implementation

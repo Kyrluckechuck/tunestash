@@ -2,14 +2,18 @@ import React from 'react';
 import { useDeezerLinkingSection } from '../../hooks/useDeezerLinkingSection';
 import { DeezerLinkRow } from './DeezerLinkRow';
 import { SearchInput } from '../ui/SearchInput';
+import { PaginationBar } from '../ui/PaginationBar';
 
 export function DeezerLinkingSection() {
   const {
     artists,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
+
+    page,
+    setPage,
 
     searchTerm,
     handleSearchChange,
@@ -17,7 +21,6 @@ export function DeezerLinkingSection() {
     setHasDownloadsFilter,
 
     handleLink,
-    handleLoadMore,
   } = useDeezerLinkingSection();
 
   return (
@@ -102,6 +105,17 @@ export function DeezerLinkingSection() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={50}
+            onPageChange={setPage}
+            loading={loading}
+          />
+        )}
       </div>
 
       {/* Empty state */}
@@ -115,21 +129,6 @@ export function DeezerLinkingSection() {
       {loading && artists.length === 0 && (
         <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
           Loading artists...
-        </div>
-      )}
-
-      {/* Load more */}
-      {pageInfo?.hasNextPage && (
-        <div className='p-4 text-center border-t border-gray-200'>
-          <button
-            onClick={handleLoadMore}
-            disabled={loading}
-            className='px-6 py-3 rounded font-medium transition-colors bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed'
-          >
-            {loading
-              ? 'Loading...'
-              : `Load More (${artists.length} of ${totalCount})`}
-          </button>
         </div>
       )}
     </div>

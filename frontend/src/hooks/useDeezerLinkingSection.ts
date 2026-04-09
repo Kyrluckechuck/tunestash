@@ -12,6 +12,7 @@ export function useDeezerLinkingSection() {
   const [hasDownloadsFilter, setHasDownloadsFilter] = useState<
     boolean | undefined
   >(undefined);
+  const [page, setPage] = useState(1);
   const pageSize = 50;
 
   const { debouncedTerm, handleSearchChange, searchTerm } =
@@ -21,21 +22,21 @@ export function useDeezerLinkingSection() {
 
   const variables = useMemo(
     () => ({
-      first: pageSize,
+      page,
+      pageSize,
       search: debouncedTerm || undefined,
       hasDownloads: hasDownloadsFilter,
     }),
-    [pageSize, debouncedTerm, hasDownloadsFilter]
+    [page, pageSize, debouncedTerm, hasDownloadsFilter]
   );
 
-  const { data, loading, error, fetchMore } = useQuery(
-    GetUnlinkedArtistsDocument,
-    { variables }
-  );
+  const { data, loading, error } = useQuery(GetUnlinkedArtistsDocument, {
+    variables,
+  });
 
-  const artists = data?.unlinkedArtists?.edges ?? [];
-  const pageInfo = data?.unlinkedArtists?.pageInfo;
-  const totalCount = data?.unlinkedArtists?.totalCount ?? 0;
+  const artists = data?.unlinkedArtists?.items ?? [];
+  const totalCount = data?.unlinkedArtists?.pageInfo?.totalCount ?? 0;
+  const totalPages = data?.unlinkedArtists?.pageInfo?.totalPages ?? 1;
 
   const [linkMutation] = useMutation(LinkArtistToDeezerDocument, {
     refetchQueries: [{ query: GetUnlinkedArtistsDocument, variables }],
@@ -63,27 +64,38 @@ export function useDeezerLinkingSection() {
     [linkMutation, toast]
   );
 
-  const handleLoadMore = useCallback(() => {
-    if (!pageInfo?.hasNextPage || !pageInfo.endCursor) return;
-    fetchMore({
-      variables: { ...variables, after: pageInfo.endCursor },
-    });
-  }, [fetchMore, pageInfo, variables]);
+  const handleSearchWithReset = useCallback(
+    (query: string) => {
+      handleSearchChange(query);
+      setPage(1);
+    },
+    [handleSearchChange]
+  );
+
+  const handleHasDownloadsFilterChange = useCallback(
+    (value: boolean | undefined) => {
+      setHasDownloadsFilter(value);
+      setPage(1);
+    },
+    []
+  );
 
   return {
     artists,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
 
+    page,
+    setPage,
+
     searchTerm,
     searchQuery,
-    handleSearchChange,
+    handleSearchChange: handleSearchWithReset,
     hasDownloadsFilter,
-    setHasDownloadsFilter,
+    setHasDownloadsFilter: handleHasDownloadsFilterChange,
 
     handleLink,
-    handleLoadMore,
   };
 }

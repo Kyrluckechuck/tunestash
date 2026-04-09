@@ -9,7 +9,7 @@ import { PageSizeSelector } from '../components/ui/PageSizeSelector';
 import { InlineSpinner } from '../components/ui/InlineSpinner';
 import { PageSpinner } from '../components/ui/PageSpinner';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
-import { LoadMoreButton } from '../components/ui/LoadMoreButton';
+import { PaginationBar } from '../components/ui/PaginationBar';
 import { SearchInput } from '../components/ui/SearchInput';
 
 // Hooks
@@ -40,9 +40,13 @@ function ArtistDetail() {
     // Albums data
     albums,
     albumsTotalCount,
-    albumsPageInfo,
+    albumsTotalPages,
     albumsLoading,
     albumsRefreshing,
+
+    // Albums pagination
+    albumPage,
+    setAlbumPage,
 
     // Albums filters & sorting
     albumWantedFilter,
@@ -64,14 +68,17 @@ function ArtistDetail() {
     handleAlbumWantedToggle,
     handleDownloadAlbum,
     handleCheckAlbumMetadata,
-    handleLoadMoreAlbums,
 
     // Songs data
     songs,
     songsTotalCount,
-    songsPageInfo,
+    songsTotalPages,
     songsLoading,
     songsRefreshing,
+
+    // Songs pagination
+    songPage,
+    setSongPage,
 
     // Songs filters & sorting
     songDownloadFilter,
@@ -84,7 +91,6 @@ function ArtistDetail() {
     handleSongPageSizeChange,
     handleSongSort,
     handleSongSearch,
-    handleLoadMoreSongs,
   } = useArtistDetailPage({ artistId });
 
   if (artistInitialLoading) {
@@ -277,7 +283,7 @@ function ArtistDetail() {
         <div className='flex items-center justify-between mb-4'>
           <div className='flex items-center gap-3'>
             <h2 className='text-xl font-semibold'>
-              Albums ({albums.length} of {albumsTotalCount})
+              Albums ({albumsTotalCount})
             </h2>
             {albumsRefreshing && <InlineSpinner label='Updating...' />}
           </div>
@@ -315,21 +321,23 @@ function ArtistDetail() {
           checkingMetadataIds={checkMetadataMutatingIds}
         />
 
-        <LoadMoreButton
-          hasNextPage={!!albumsPageInfo?.hasNextPage}
-          loading={albumsLoading}
-          remainingCount={albumsTotalCount - albums.length}
-          onLoadMore={handleLoadMoreAlbums}
-        />
+        {albumsTotalPages > 1 && (
+          <PaginationBar
+            page={albumPage}
+            totalPages={albumsTotalPages}
+            totalCount={albumsTotalCount}
+            pageSize={albumPageSize}
+            onPageChange={setAlbumPage}
+            loading={albumsLoading}
+          />
+        )}
       </section>
 
       {/* Songs Section */}
       <section>
         <div className='flex items-center justify-between mb-4'>
           <div className='flex items-center gap-3'>
-            <h2 className='text-xl font-semibold'>
-              Songs ({songs.length} of {songsTotalCount})
-            </h2>
+            <h2 className='text-xl font-semibold'>Songs ({songsTotalCount})</h2>
             {songsRefreshing && <InlineSpinner label='Updating...' />}
           </div>
           <div className='flex items-center gap-4'>
@@ -376,12 +384,16 @@ function ArtistDetail() {
           loading={songsLoading}
         />
 
-        <LoadMoreButton
-          hasNextPage={!!songsPageInfo?.hasNextPage}
-          loading={songsLoading}
-          remainingCount={songsTotalCount - songs.length}
-          onLoadMore={handleLoadMoreSongs}
-        />
+        {songsTotalPages > 1 && (
+          <PaginationBar
+            page={songPage}
+            totalPages={songsTotalPages}
+            totalCount={songsTotalCount}
+            pageSize={songPageSize}
+            onPageChange={setSongPage}
+            loading={songsLoading}
+          />
+        )}
       </section>
     </PageContainer>
   );

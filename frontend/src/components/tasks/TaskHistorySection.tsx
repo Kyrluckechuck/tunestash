@@ -1,22 +1,21 @@
 import { useState } from 'react';
-import type { TaskHistoryEdge } from '../../types/generated/graphql';
+import type { TaskHistory } from '../../types/generated/graphql';
 import type { TaskStatus, TaskType, EntityType } from '../../types/shared';
 import { SearchInput } from '../ui/SearchInput';
 import { PageSizeSelector } from '../ui/PageSizeSelector';
-import { LoadMoreButton } from '../ui/LoadMoreButton';
+import { PaginationBar } from '../ui/PaginationBar';
 import EnhancedEntityDisplay from '../EnhancedEntityDisplay';
 import { useRelativeTime } from '../../hooks/useRelativeTime';
 
-interface TaskHistoryPageInfo {
-  hasNextPage: boolean;
-  endCursor: string | null;
-}
-
 interface TaskHistoryData {
   taskHistory: {
-    edges: TaskHistoryEdge[];
-    totalCount: number;
-    pageInfo: TaskHistoryPageInfo;
+    items: TaskHistory[];
+    pageInfo: {
+      page: number;
+      pageSize: number;
+      totalPages: number;
+      totalCount: number;
+    };
   };
 }
 
@@ -35,15 +34,17 @@ interface TaskHistorySectionProps {
   searchQuery: string;
   pageSize: number;
 
+  // Pagination
+  page: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+
   // Filter handlers
   onStatusFilterChange: (status: TaskStatus) => void;
   onTypeFilterChange: (type: TaskType) => void;
   onEntityFilterChange: (entity: EntityType) => void;
   onSearchChange: (query: string) => void;
   onPageSizeChange: (size: number) => void;
-
-  // Actions
-  onLoadMore: () => void;
 }
 
 export function TaskHistorySection({
@@ -57,15 +58,20 @@ export function TaskHistorySection({
   entityFilter,
   searchQuery,
   pageSize,
+  page,
+  totalPages,
+  onPageChange,
   onStatusFilterChange,
   onTypeFilterChange,
   onEntityFilterChange,
   onSearchChange,
   onPageSizeChange,
-  onLoadMore,
 }: TaskHistorySectionProps) {
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
   const relativeTime = useRelativeTime(lastUpdated);
+
+  const items = data?.taskHistory?.items ?? [];
+  const totalCount = data?.taskHistory?.pageInfo?.totalCount ?? 0;
 
   return (
     <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
@@ -165,7 +171,7 @@ export function TaskHistorySection({
           <div className='text-center py-8 text-red-600 dark:text-red-400'>
             <p>Error loading task history: {error.message}</p>
           </div>
-        ) : data?.taskHistory?.edges?.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
             <p className='font-medium'>No task history found</p>
             <p className='text-sm'>
@@ -208,8 +214,7 @@ export function TaskHistorySection({
                   </tr>
                 </thead>
                 <tbody className='divide-y divide-gray-100 dark:divide-slate-700'>
-                  {data?.taskHistory?.edges?.map((edge: TaskHistoryEdge) => {
-                    const task = edge.node;
+                  {items.map((task: TaskHistory) => {
                     const isLogsOpen = !!expandedLogs[task.id];
                     return (
                       <>
@@ -328,14 +333,14 @@ export function TaskHistorySection({
                 </tbody>
               </table>
             </div>
-            {data?.taskHistory?.pageInfo?.hasNextPage && (
-              <LoadMoreButton
-                hasNextPage={data.taskHistory.pageInfo.hasNextPage}
+            {totalPages > 1 && (
+              <PaginationBar
+                page={page}
+                totalPages={totalPages}
+                totalCount={totalCount}
+                pageSize={pageSize}
+                onPageChange={onPageChange}
                 loading={loading}
-                remainingCount={
-                  data.taskHistory.totalCount - data.taskHistory.edges.length
-                }
-                onLoadMore={onLoadMore}
               />
             )}
           </div>
