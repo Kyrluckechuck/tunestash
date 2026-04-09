@@ -52,12 +52,12 @@ describe('PageSizeSelector', () => {
   it('displays current page size as selected', () => {
     render(
       <PageSizeSelector
-        pageSize={200}
+        pageSize={100}
         onPageSizeChange={mockOnPageSizeChange}
       />
     );
 
-    expect(screen.getByDisplayValue('200')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('100')).toBeInTheDocument();
   });
 
   it('has correct styling classes', () => {
@@ -87,9 +87,9 @@ describe('PageSizeSelector', () => {
     );
 
     const select = screen.getByRole('combobox');
-    fireEvent.change(select, { target: { value: '200' } });
+    fireEvent.change(select, { target: { value: '100' } });
 
-    expect(mockOnPageSizeChange).toHaveBeenCalledWith(200);
+    expect(mockOnPageSizeChange).toHaveBeenCalledWith(100);
     expect(typeof mockOnPageSizeChange.mock.calls[0][0]).toBe('number');
   });
 });

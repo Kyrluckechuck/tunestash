@@ -7,7 +7,7 @@ interface PageSizeSelectorProps {
 export function PageSizeSelector({
   pageSize,
   onPageSizeChange,
-  options = [20, 50, 100, 200],
+  options = [25, 50, 100],
 }: PageSizeSelectorProps) {
   return (
     <div className='flex items-center gap-2'>

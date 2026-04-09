@@ -1,9 +1,7 @@
 import React from 'react';
-import { LoadMoreButton } from '../ui/LoadMoreButton';
-// import { PageSpinner } from '../ui/PageSpinner';
+import { PaginationBar } from '../ui/PaginationBar';
 import { ErrorBanner } from '../ui/ErrorBanner';
 import { EmptyState } from '../ui/EmptyState';
-// import { RetryButton } from '../ui/RetryButton';
 import { SkeletonTable } from '../ui/SkeletonTable';
 
 interface DataTableProps<T> {
@@ -12,8 +10,13 @@ interface DataTableProps<T> {
   error?: Error | null;
   totalCount: number;
   pageSize: number;
-  hasNextPage: boolean;
-  onLoadMore: () => void;
+  page?: number;
+  totalPages?: number;
+  onPageChange?: (page: number) => void;
+  /** @deprecated Use page/totalPages/onPageChange instead */
+  hasNextPage?: boolean;
+  /** @deprecated Use page/totalPages/onPageChange instead */
+  onLoadMore?: () => void;
   children: React.ReactNode;
   emptyMessage?: string;
   loadingMessage?: string;
@@ -25,8 +28,10 @@ export function DataTable<T>({
   loading,
   error,
   totalCount,
-  hasNextPage,
-  onLoadMore,
+  pageSize,
+  page = 1,
+  totalPages = 1,
+  onPageChange,
   children,
   emptyMessage = 'No data found',
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -43,7 +48,7 @@ export function DataTable<T>({
       <ErrorBanner
         title={errorMessage}
         message={error.message}
-        onRetry={onLoadMore}
+        onRetry={onPageChange ? () => onPageChange(page) : undefined}
       />
     );
   }
@@ -54,16 +59,22 @@ export function DataTable<T>({
 
   return (
     <div className='space-y-4'>
+      <div className='text-sm text-gray-500 dark:text-slate-400'>
+        Page {page} of {totalPages} — {totalCount.toLocaleString()} total items
+      </div>
       <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
         {children}
+        {onPageChange && (
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={pageSize}
+            onPageChange={onPageChange}
+            loading={loading}
+          />
+        )}
       </div>
-
-      <LoadMoreButton
-        hasNextPage={hasNextPage}
-        loading={loading}
-        remainingCount={totalCount - data.length}
-        onLoadMore={onLoadMore}
-      />
     </div>
   );
 }
