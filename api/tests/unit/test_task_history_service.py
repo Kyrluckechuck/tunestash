@@ -40,7 +40,7 @@ class TestTaskHistoryService:
         """Test TaskHistoryService can be initialized."""
         assert task_history_service is not None
         assert hasattr(task_history_service, "create_task")
-        assert hasattr(task_history_service, "get_connection")
+        assert hasattr(task_history_service, "get_page")
         assert hasattr(task_history_service, "_to_graphql_type")
 
     @pytest.mark.django_db
@@ -66,50 +66,46 @@ class TestTaskHistoryService:
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
-    async def test_get_connection_with_filters(self, task_history_service):
-        """Test getting task connection with filters."""
+    async def test_get_page_with_filters(self, task_history_service):
+        """Test getting task page with filters."""
         import uuid
 
         suffix = uuid.uuid4().hex[:8]
-        # Create some test tasks with unique IDs
         await sync_to_async(CompletedTaskFactory)(task_id=f"completed_task_{suffix}")
         await sync_to_async(FailedTaskFactory)(task_id=f"failed_task_{suffix}")
 
-        items, has_next, total = await task_history_service.get_connection(
-            first=10, status=TaskStatus.COMPLETED
+        result = await task_history_service.get_page(
+            page=1, page_size=10, status=TaskStatus.COMPLETED
         )
 
-        assert len(items) >= 1
-        assert total >= 1
-        assert not has_next  # Should be False for small dataset
+        assert len(result.items) >= 1
+        assert result.total_count >= 1
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
-    async def test_get_connection_with_pagination(self, task_history_service):
-        """Test getting task connection with pagination."""
+    async def test_get_page_with_pagination(self, task_history_service):
+        """Test getting task page with pagination."""
         import uuid
 
         suffix = uuid.uuid4().hex[:8]
-        # Create multiple tasks with unique IDs
         for i in range(5):
             await sync_to_async(TaskHistoryFactory)(
                 task_id=f"paginated_task_{suffix}_{i}"
             )
 
-        items, has_next, total = await task_history_service.get_connection(first=3)
+        result = await task_history_service.get_page(page=1, page_size=3)
 
-        assert len(items) == 3
-        assert total >= 5
-        assert has_next  # Should be True since we have more items
+        assert len(result.items) == 3
+        assert result.total_count >= 5
+        assert result.total_pages >= 2
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
-    async def test_get_connection_with_sorting(self, task_history_service):
-        """Test getting task connection with sorting."""
+    async def test_get_page_with_sorting(self, task_history_service):
+        """Test getting task page with sorting."""
         import uuid
 
         suffix = uuid.uuid4().hex[:8]
-        # Create tasks with different timestamps and unique IDs
         await sync_to_async(TaskHistoryFactory)(
             started_at=datetime.now() - timedelta(hours=2), task_id=f"old_task_{suffix}"
         )
@@ -117,11 +113,10 @@ class TestTaskHistoryService:
             started_at=datetime.now(), task_id=f"new_task_{suffix}"
         )
 
-        items, has_next, total = await task_history_service.get_connection(first=10)
+        result = await task_history_service.get_page(page=1, page_size=10)
 
-        assert len(items) >= 2
-        # Should be sorted by started_at descending (newest first)
-        assert items[0].started_at >= items[1].started_at
+        assert len(result.items) >= 2
+        assert result.items[0].started_at >= result.items[1].started_at
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
@@ -160,22 +155,19 @@ class TestTaskHistoryService:
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
-    async def test_get_connection_empty_result(self, task_history_service):
-        """Test getting connection with no matching tasks."""
-        items, has_next, total = await task_history_service.get_connection(
-            first=10, status=TaskStatus.FAILED  # Filter by FAILED status
+    async def test_get_page_empty_result(self, task_history_service):
+        """Test getting page with no matching tasks."""
+        result = await task_history_service.get_page(
+            page=1, page_size=10, status=TaskStatus.FAILED
         )
 
-        # Check that we get failed tasks (which should exist from other tests)
-        assert len(items) >= 0  # May have failed tasks from other tests
-        assert total >= 0
-        # Don't assert has_next since we don't know the exact count
+        assert len(result.items) >= 0
+        assert result.total_count >= 0
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
-    async def test_get_connection_with_search(self, task_history_service):
-        """Test getting connection with search filter."""
-        # Create a task with specific task_id
+    async def test_get_page_with_search(self, task_history_service):
+        """Test getting page with search filter."""
         await task_history_service.create_task(
             task_id="unique_search_task_456",
             task_type=TaskType.SYNC,
@@ -183,45 +175,32 @@ class TestTaskHistoryService:
             entity_type=EntityType.ARTIST,
         )
 
-        items, has_next, total = await task_history_service.get_connection(
-            first=10, search="unique_search_task_456"
+        result = await task_history_service.get_page(
+            page=1, page_size=10, search="unique_search_task_456"
         )
 
-        assert len(items) >= 1
-        assert total >= 1
-        # Should find the task with matching task_id
+        assert len(result.items) >= 1
+        assert result.total_count >= 1
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
-    async def test_get_connection_with_cursor_pagination(self, task_history_service):
-        """Test getting connection with cursor-based pagination."""
-        # Create multiple tasks with unique IDs
-        tasks = []
+    async def test_get_page_second_page(self, task_history_service):
+        """Test getting second page of results."""
         for i in range(5):
-            task = await task_history_service.create_task(
-                task_id=f"cursor_task_{i}",
+            await task_history_service.create_task(
+                task_id=f"page_task_{i}",
                 task_type=TaskType.SYNC,
                 entity_id=f"entity_{i}",
                 entity_type=EntityType.ARTIST,
             )
-            tasks.append(task)
 
-        # Get first page
-        items1, has_next1, total1 = await task_history_service.get_connection(first=2)
+        result1 = await task_history_service.get_page(page=1, page_size=2)
+        assert len(result1.items) == 2
+        assert result1.total_count >= 5
 
-        assert len(items1) == 2
-        assert has_next1 is True
-        assert total1 >= 5
-
-        # Get second page using cursor
-        if items1:
-            cursor = task_history_service.create_cursor(items1[-1])
-            items2, has_next2, total2 = await task_history_service.get_connection(
-                first=2, after=cursor
-            )
-
-            assert len(items2) >= 0  # May be empty if no more items
-            assert total2 >= 0  # Total should be non-negative
+        result2 = await task_history_service.get_page(page=2, page_size=2)
+        assert len(result2.items) >= 0
+        assert result2.page == 2
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
@@ -265,9 +244,8 @@ class TestTaskHistoryService:
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
-    async def test_get_connection_with_type_filter(self, task_history_service):
-        """Test getting connection with type filter."""
-        # Create tasks with different types and unique IDs
+    async def test_get_page_with_type_filter(self, task_history_service):
+        """Test getting page with type filter."""
         await task_history_service.create_task(
             task_id="sync_task_filter_1",
             task_type=TaskType.SYNC,
@@ -282,13 +260,12 @@ class TestTaskHistoryService:
             entity_type=EntityType.ALBUM,
         )
 
-        # Filter by SYNC type
-        items, has_next, total = await task_history_service.get_connection(
-            first=10, type=TaskType.SYNC
+        result = await task_history_service.get_page(
+            page=1, page_size=10, type=TaskType.SYNC
         )
 
-        assert len(items) >= 1
-        assert all(item.type == TaskType.SYNC for item in items)
+        assert len(result.items) >= 1
+        assert all(item.type == TaskType.SYNC for item in result.items)
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
@@ -320,9 +297,8 @@ class TestTaskHistoryService:
 
     @pytest.mark.django_db
     @pytest.mark.asyncio
-    async def test_get_connection_filters_cancelled_tasks(self, task_history_service):
+    async def test_get_page_filters_cancelled_tasks(self, task_history_service):
         """Test that cancelled tasks can be filtered in queries."""
-        # Create a running task and a cancelled task
         running_task = await task_history_service.create_task(
             task_id="running_task_filter",
             task_type=TaskType.DOWNLOAD,
@@ -341,22 +317,18 @@ class TestTaskHistoryService:
         cancelled_task.status = "CANCELLED"
         await sync_to_async(cancelled_task.save)()
 
-        # Query for RUNNING tasks only
-        running_items, _, _ = await task_history_service.get_connection(
-            first=10, status=TaskStatus.RUNNING
+        running_result = await task_history_service.get_page(
+            page=1, page_size=10, status=TaskStatus.RUNNING
         )
 
-        # Verify cancelled task is not in RUNNING results
-        running_task_ids = [item.task_id for item in running_items]
+        running_task_ids = [item.task_id for item in running_result.items]
         assert "running_task_filter" in running_task_ids
         assert "cancelled_task_filter" not in running_task_ids
 
-        # Query for CANCELLED tasks only
-        cancelled_items, _, _ = await task_history_service.get_connection(
-            first=10, status=TaskStatus.CANCELLED
+        cancelled_result = await task_history_service.get_page(
+            page=1, page_size=10, status=TaskStatus.CANCELLED
         )
 
-        # Verify only cancelled tasks are returned
-        cancelled_task_ids = [item.task_id for item in cancelled_items]
+        cancelled_task_ids = [item.task_id for item in cancelled_result.items]
         assert "cancelled_task_filter" in cancelled_task_ids
         assert "running_task_filter" not in cancelled_task_ids

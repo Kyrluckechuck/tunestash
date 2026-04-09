@@ -12,7 +12,7 @@ class TestSimpleIntegration:
     @pytest.mark.asyncio
     async def test_artists_query_basic(self):
         """Test the artists query."""
-        query = "{ artists { totalCount edges { id name } } }"
+        query = "{ artists { pageInfo { totalCount } items { id name } } }"
         result = await schema.execute(query)
 
         assert result.errors is None
@@ -24,13 +24,9 @@ class TestSimpleIntegration:
         """Test artists query with no data."""
         query = """
         {
-            artists(first: 10) {
-                totalCount
-                edges {
-                    id
-                    name
-                    trackingTier
-                }
+            artists(pageSize: 10) {
+                pageInfo { totalCount }
+                items { id name trackingTier }
             }
         }
         """
@@ -38,21 +34,17 @@ class TestSimpleIntegration:
 
         assert result.errors is None
         assert result.data is not None
-        assert result.data["artists"]["totalCount"] == 0
-        assert result.data["artists"]["edges"] == []
+        assert result.data["artists"]["pageInfo"]["totalCount"] == 0
+        assert result.data["artists"]["items"] == []
 
     @pytest.mark.asyncio
     async def test_albums_query_empty(self):
         """Test albums query with no data."""
         query = """
         {
-            albums(first: 10) {
-                totalCount
-                edges {
-                    id
-                    name
-                    wanted
-                }
+            albums(pageSize: 10) {
+                pageInfo { totalCount }
+                items { id name wanted }
             }
         }
         """
@@ -60,21 +52,17 @@ class TestSimpleIntegration:
 
         assert result.errors is None
         assert result.data is not None
-        assert result.data["albums"]["totalCount"] == 0
-        assert result.data["albums"]["edges"] == []
+        assert result.data["albums"]["pageInfo"]["totalCount"] == 0
+        assert result.data["albums"]["items"] == []
 
     @pytest.mark.asyncio
     async def test_playlists_query_empty(self):
         """Test playlists query with no data."""
         query = """
         {
-            playlists(first: 10) {
-                totalCount
-                edges {
-                    id
-                    name
-                    enabled
-                }
+            playlists(pageSize: 10) {
+                pageInfo { totalCount }
+                items { id name enabled }
             }
         }
         """
@@ -82,8 +70,8 @@ class TestSimpleIntegration:
 
         assert result.errors is None
         assert result.data is not None
-        assert result.data["playlists"]["totalCount"] == 0
-        assert result.data["playlists"]["edges"] == []
+        assert result.data["playlists"]["pageInfo"]["totalCount"] == 0
+        assert result.data["playlists"]["items"] == []
 
     @pytest.mark.asyncio
     async def test_cancel_all_tasks_mutation(self):

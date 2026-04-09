@@ -2,7 +2,7 @@
 """Service for managing external music lists (Last.fm, ListenBrainz, YouTube Music)."""
 
 import logging
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from django.db.models import Q
@@ -19,7 +19,7 @@ from library_manager.models import (
 
 from ..graphql_types.models import ExternalListType as GQLExternalList
 from ..graphql_types.models import MutationResult
-from .base import BaseService
+from .base import BaseService, PageResult
 
 logger = logging.getLogger(__name__)
 
@@ -111,12 +111,12 @@ class ExternalListService(BaseService["GQLExternalList"]):
         except (self.model.DoesNotExist, ValueError):
             return None
 
-    async def get_connection(
+    async def get_page(
         self,
-        first: int = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         **filters: Any,
-    ) -> Tuple[List["GQLExternalList"], bool, int]:
+    ) -> PageResult["GQLExternalList"]:
         source = filters.get("source")
         list_type = filters.get("list_type")
         status = filters.get("status")
@@ -129,6 +129,7 @@ class ExternalListService(BaseService["GQLExternalList"]):
             if isinstance(filters.get("sort_direction"), str)
             else None
         )
+        page, page_size = self.validate_page_params(page, page_size)
 
         queryset = self.model.objects.all()
 
@@ -163,26 +164,23 @@ class ExternalListService(BaseService["GQLExternalList"]):
                     order_field = f"-{order_field}"
 
         total_count = await queryset.acount()
-
-        if after:
-            id_after = self.decode_cursor(after)
-            queryset = queryset.filter(id__gt=id_after)
+        offset = (page - 1) * page_size
 
         def fetch_items() -> List[DjangoExternalList]:
-            return list(queryset.order_by(order_field, "id")[: first + 1])
+            return list(
+                queryset.order_by(order_field, "id")[offset : offset + page_size]
+            )
 
         items: List[DjangoExternalList] = await sync_to_async(fetch_items)()
-
-        has_next_page = len(items) > first
-        items = items[:first]
 
         def convert_items() -> List["GQLExternalList"]:
             return [self._to_graphql_type(item) for item in items]
 
-        return (
-            await sync_to_async(convert_items)(),
-            has_next_page,
-            total_count,
+        return PageResult(
+            items=await sync_to_async(convert_items)(),
+            page=page,
+            page_size=page_size,
+            total_count=total_count,
         )
 
     async def create_external_list(

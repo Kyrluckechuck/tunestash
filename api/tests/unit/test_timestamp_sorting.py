@@ -82,14 +82,12 @@ async def test_artist_sorting_last_synced_ascending_nulls_first(
         mock_queryset.order_by = order_by_mock
         mock_all.return_value = mock_queryset
 
-        result = await artist_service.get_connection(
-            first=10, sort_by="lastSynced", sort_direction="asc"
+        result = await artist_service.get_page(
+            page=1, page_size=10, sort_by="lastSynced", sort_direction="asc"
         )
 
-        # Result is an ArtistConnectionResult dataclass for custom sorting
         items = result.items
 
-        # Verify nulls come first
         assert items[0].name == "Never Synced"
         assert items[1].name == "Synced Week Ago"
         assert items[2].name == "Synced Recently"
@@ -137,14 +135,12 @@ async def test_artist_sorting_last_synced_descending_nulls_last(
         mock_queryset.order_by = order_by_mock
         mock_all.return_value = mock_queryset
 
-        result = await artist_service.get_connection(
-            first=10, sort_by="lastSynced", sort_direction="desc"
+        result = await artist_service.get_page(
+            page=1, page_size=10, sort_by="lastSynced", sort_direction="desc"
         )
 
-        # Result is an ArtistConnectionResult dataclass for custom sorting
         items = result.items
 
-        # Verify newest first, nulls last
         assert items[0].name == "Synced Recently"
         assert items[1].name == "Synced Week Ago"
         assert items[2].name == "Never Synced"
@@ -186,11 +182,10 @@ async def test_artist_sorting_last_downloaded_nulls_handling(
         mock_queryset.order_by = order_by_asc
         mock_all.return_value = mock_queryset
 
-        result = await artist_service.get_connection(
-            first=10, sort_by="lastDownloaded", sort_direction="asc"
+        result = await artist_service.get_page(
+            page=1, page_size=10, sort_by="lastDownloaded", sort_direction="asc"
         )
 
-        # Result is an ArtistConnectionResult dataclass for custom sorting
         items = result.items
 
         assert items[0].name == "Never Downloaded"
@@ -225,30 +220,33 @@ async def test_album_sorting_created_at_nulls_handling(
         create_mock_album(3, "Old", created_at=old),
     ]
 
-    def mock_get_connection(*args, **kwargs):
-        # Simulate database query with proper ordering
-        mock_queryset = Mock()
-        mock_queryset.filter.return_value = mock_queryset
-        mock_queryset.count = Mock(return_value=3)
+    from src.services.base import PageResult
 
+    def mock_get_page(*args, **kwargs):
         if kwargs.get("sort_by") == "createdAt":
             if kwargs.get("sort_direction") == "asc":
-                # Ascending: None, old, now
-                return ([albums[0], albums[2], albums[1]], False, 3)
+                return PageResult(
+                    items=[albums[0], albums[2], albums[1]],
+                    page=1,
+                    page_size=10,
+                    total_count=3,
+                )
             else:
-                # Descending: now, old, None
-                return ([albums[1], albums[2], albums[0]], False, 3)
-        return (albums, False, 3)
+                return PageResult(
+                    items=[albums[1], albums[2], albums[0]],
+                    page=1,
+                    page_size=10,
+                    total_count=3,
+                )
+        return PageResult(items=albums, page=1, page_size=10, total_count=3)
 
-    with patch.object(album_service, "get_connection", side_effect=mock_get_connection):
-        # Test ascending
-        items, _, _ = await album_service.get_connection(
-            first=10, sort_by="createdAt", sort_direction="asc"
+    with patch.object(album_service, "get_page", side_effect=mock_get_page):
+        result = await album_service.get_page(
+            page=1, page_size=10, sort_by="createdAt", sort_direction="asc"
         )
-        assert items[0].name == "No Date"
+        assert result.items[0].name == "No Date"
 
-        # Test descending
-        items, _, _ = await album_service.get_connection(
-            first=10, sort_by="createdAt", sort_direction="desc"
+        result = await album_service.get_page(
+            page=1, page_size=10, sort_by="createdAt", sort_direction="desc"
         )
-        assert items[2].name == "No Date"
+        assert result.items[2].name == "No Date"

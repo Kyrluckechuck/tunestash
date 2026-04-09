@@ -5,7 +5,7 @@ when instantiated. We disable that check for this module to avoid noisy errors.
 """
 
 # mypy: disable-error-code=attr-defined
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional
 
 from django.db.models import Q
 
@@ -15,7 +15,7 @@ from library_manager.models import DownloadProvider as DjangoDownloadProvider
 from library_manager.models import Song as DjangoSong
 
 from ..graphql_types.models import DownloadProvider, Song
-from .base import BaseService
+from .base import BaseService, PageResult
 
 
 class SongService(BaseService[Song]):
@@ -23,14 +23,12 @@ class SongService(BaseService[Song]):
         super().__init__()
         self.model = DjangoSong
 
-    async def get_connection(
+    async def get_page(
         self,
-        first: int = 20,
-        after: Optional[str] = None,
-        **filters: Optional[object],
-    ) -> Tuple[List[Song], bool, int]:
-        """Get paginated songs with filtering."""
-        # Extract supported filters
+        page: int = 1,
+        page_size: int = 50,
+        **filters: Any,
+    ) -> PageResult[Song]:
         artist_id = (
             filters.get("artist_id")
             if isinstance(filters.get("artist_id"), int)
@@ -62,8 +60,8 @@ class SongService(BaseService[Song]):
             if isinstance(filters.get("max_bitrate"), int)
             else None
         )
+        page, page_size = self.validate_page_params(page, page_size)
 
-        # Copy the exact pattern from ArtistService
         queryset = self.model.objects.all()
 
         album_id = (
@@ -72,7 +70,6 @@ class SongService(BaseService[Song]):
             else None
         )
 
-        # Apply filters
         if artist_id is not None:
             queryset = queryset.filter(primary_artist_id=artist_id)
 
@@ -93,7 +90,6 @@ class SongService(BaseService[Song]):
                 Q(name__icontains=search) | Q(primary_artist__name__icontains=search)
             )
 
-        # Apply sorting
         sort_field_map: dict[str, str] = {
             "name": "name",
             "primaryArtist": "primary_artist__name",
@@ -101,7 +97,7 @@ class SongService(BaseService[Song]):
             "downloaded": "downloaded",
         }
 
-        order_field = "id"  # default
+        order_field = "id"
         if isinstance(sort_by, str):
             mapped_field = sort_field_map.get(sort_by)
             if mapped_field is not None:
@@ -110,31 +106,25 @@ class SongService(BaseService[Song]):
                     order_field = f"-{order_field}"
 
         total_count = await queryset.acount()
+        offset = (page - 1) * page_size
 
-        # Apply cursor-based pagination
-        if after:
-            id_after = self.decode_cursor(after)
-            queryset = queryset.filter(id__gt=id_after)
-
-        # Get one extra item to determine if there are more pages
         def fetch_items() -> List[DjangoSong]:
-            return list(queryset.order_by(order_field, "id")[: first + 1])
+            return list(
+                queryset.order_by(order_field, "id")[offset : offset + page_size]
+            )
 
         items: List[DjangoSong] = await sync_to_async(fetch_items)()
 
-        has_next_page = len(items) > first
-        items = items[:first]  # Remove the extra item
-
-        # Convert items to GraphQL types
-        graphql_items = []
+        graphql_items: List[Song] = []
         for item in items:
             graphql_item = await self._to_graphql_type(item)
             graphql_items.append(graphql_item)
 
-        return (
-            graphql_items,
-            has_next_page,
-            total_count,
+        return PageResult(
+            items=graphql_items,
+            page=page,
+            page_size=page_size,
+            total_count=total_count,
         )
 
     async def get_by_id(self, id: str) -> Optional[Song]:

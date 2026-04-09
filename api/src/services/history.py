@@ -1,10 +1,12 @@
 # mypy: disable-error-code=attr-defined
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional
+
+from asgiref.sync import sync_to_async
 
 from library_manager.models import DownloadHistory as DjangoDownloadHistory
 
 from ..graphql_types.models import DownloadHistory, DownloadStatus
-from .base import BaseService
+from .base import BaseService, PageResult
 
 
 class DownloadHistoryService(BaseService[DownloadHistory]):
@@ -13,20 +15,19 @@ class DownloadHistoryService(BaseService[DownloadHistory]):
         self.model = DjangoDownloadHistory
 
     async def get_by_id(self, id: str) -> Optional[DownloadHistory]:
-        # Not needed for current API; implement to satisfy linter
         return None
 
-    async def get_connection(
+    async def get_page(
         self,
-        first: int = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         **filters: Any,
-    ) -> Tuple[List[DownloadHistory], bool, int]:
+    ) -> PageResult[DownloadHistory]:
         entity_type: Optional[str] = filters.get("entity_type")
         status: Optional[str] = filters.get("status")
+        page, page_size = self.validate_page_params(page, page_size)
         queryset = self.model.objects.all()
 
-        # Apply filters
         if entity_type:
             queryset = queryset.filter(url__contains=entity_type)
 
@@ -38,24 +39,19 @@ class DownloadHistoryService(BaseService[DownloadHistory]):
             elif status == "PENDING":
                 queryset = queryset.filter(completed_at__isnull=True, progress=0)
 
-        # Apply cursor-based pagination
-        if after:
-            id_after = self.decode_cursor(after)
-            queryset = queryset.filter(id__gt=id_after)
-
-        # Get total count before slicing
         total_count = await queryset.acount()
+        offset = (page - 1) * page_size
 
-        # Get one extra item to determine if there are more pages
-        items = list(await queryset.order_by("-added_at")[: first + 1].all())
+        def fetch_items() -> List[DjangoDownloadHistory]:
+            return list(queryset.order_by("-added_at")[offset : offset + page_size])
 
-        has_next_page = len(items) > first
-        items = items[:first]  # Remove the extra item
+        items = await sync_to_async(fetch_items)()
 
-        return (
-            [self._to_graphql_type(item) for item in items],
-            has_next_page,
-            total_count,
+        return PageResult(
+            items=[self._to_graphql_type(item) for item in items],
+            page=page,
+            page_size=page_size,
+            total_count=total_count,
         )
 
     def _to_graphql_type(

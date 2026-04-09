@@ -178,68 +178,6 @@ class TaskHistory:
     log_messages: List[str]
 
 
-@strawberry.type
-class PageInfo:
-    has_next_page: bool
-    has_previous_page: bool
-    start_cursor: Optional[str]
-    end_cursor: Optional[str]
-
-
-@strawberry.type
-class ArtistConnection:
-    edges: List[Artist]
-    page_info: PageInfo
-    total_count: int
-
-
-@strawberry.type
-class AlbumConnection:
-    edges: List[Album]
-    page_info: PageInfo
-    total_count: int
-
-
-@strawberry.type
-class PlaylistConnection:
-    edges: List[Playlist]
-    page_info: PageInfo
-    total_count: int
-
-
-@strawberry.type
-class SongConnection:
-    edges: List[Song]
-    page_info: PageInfo
-    total_count: int
-
-
-@strawberry.type
-class HistoryConnection:
-    edges: List["HistoryEdge"]
-    page_info: PageInfo
-    total_count: int
-
-
-@strawberry.type
-class HistoryEdge:
-    node: DownloadHistory
-    cursor: str
-
-
-@strawberry.type
-class TaskHistoryConnection:
-    edges: List["TaskHistoryEdge"]
-    page_info: PageInfo
-    total_count: int
-
-
-@strawberry.type
-class TaskHistoryEdge:
-    node: TaskHistory
-    cursor: str
-
-
 @strawberry.input
 class TrackArtistInput:
     artist_id: str
@@ -690,13 +628,6 @@ class ExternalListType:
     total_tracks: int
     mapped_tracks: int
     failed_tracks: int
-
-
-@strawberry.type
-class ExternalListConnection:
-    edges: List[ExternalListType]
-    page_info: PageInfo
-    total_count: int
 
 
 @strawberry.type

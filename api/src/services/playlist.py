@@ -1,5 +1,5 @@
 # mypy: disable-error-code=attr-defined
-from typing import Any, List, Optional, Tuple, cast
+from typing import Any, List, Optional, cast
 
 from django.db.models import Q
 
@@ -13,7 +13,7 @@ from library_manager.tasks.core import extract_deezer_playlist_id
 from library_manager.validators import is_spotify_owned_playlist
 
 from ..graphql_types.models import MutationResult, Playlist
-from .base import BaseService
+from .base import BaseService, PageResult
 
 
 class PlaylistService(BaseService[Playlist]):
@@ -96,12 +96,12 @@ class PlaylistService(BaseService[Playlist]):
             except (self.model.DoesNotExist, self.model.MultipleObjectsReturned):
                 return None
 
-    async def get_connection(
+    async def get_page(
         self,
-        first: int = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         **filters: Any,
-    ) -> Tuple[List[Playlist], bool, int]:
+    ) -> PageResult[Playlist]:
         enabled: Optional[bool] = filters.get("enabled")
         status_filter: Optional[str] = filters.get("status")
         search: Optional[str] = filters.get("search")
@@ -113,13 +113,12 @@ class PlaylistService(BaseService[Playlist]):
             if isinstance(filters.get("sort_direction"), str)
             else None
         )
+        page, page_size = self.validate_page_params(page, page_size)
         queryset = self.model.objects.all()
 
-        # Apply filters
         if status_filter is not None:
             queryset = queryset.filter(status=status_filter)
         elif enabled is not None:
-            # Backwards compatibility: enabled=True means status=active
             if enabled:
                 queryset = queryset.filter(status=PlaylistStatus.ACTIVE)
             else:
@@ -130,16 +129,15 @@ class PlaylistService(BaseService[Playlist]):
                 Q(name__icontains=search) | Q(url__icontains=search)
             )
 
-        # Apply sorting
         sort_field_map: dict[str, str] = {
             "name": "name",
             "status": "status",
-            "enabled": "status",  # Backwards compatibility
+            "enabled": "status",
             "autoTrackTier": "auto_track_tier",
             "lastSyncedAt": "last_synced_at",
         }
 
-        order_field = "id"  # default
+        order_field = "id"
         if isinstance(sort_by, str):
             mapped_field = sort_field_map.get(sort_by)
             if mapped_field is not None:
@@ -148,25 +146,20 @@ class PlaylistService(BaseService[Playlist]):
                     order_field = f"-{order_field}"
 
         total_count = await queryset.acount()
+        offset = (page - 1) * page_size
 
-        # Apply cursor-based pagination
-        if after:
-            id_after = self.decode_cursor(after)
-            queryset = queryset.filter(id__gt=id_after)
-
-        # Get one extra item to determine if there are more pages
         def fetch_items() -> List[DjangoPlaylist]:
-            return list(queryset.order_by(order_field, "id")[: first + 1])
+            return list(
+                queryset.order_by(order_field, "id")[offset : offset + page_size]
+            )
 
         items: List[DjangoPlaylist] = await sync_to_async(fetch_items)()
 
-        has_next_page = len(items) > first
-        items = items[:first]  # Remove the extra item
-
-        return (
-            [self._to_graphql_type(item) for item in items],
-            has_next_page,
-            total_count,
+        return PageResult(
+            items=[self._to_graphql_type(item) for item in items],
+            page=page,
+            page_size=page_size,
+            total_count=total_count,
         )
 
     async def track_playlist(

@@ -145,13 +145,9 @@ class TestIsolatedIntegration:
 
         query = """
         {
-            artists(first: 10) {
-                totalCount
-                edges {
-                    id
-                    name
-                    trackingTier
-                }
+            artists(pageSize: 10) {
+                pageInfo { totalCount }
+                items { id name trackingTier }
             }
         }
         """
@@ -160,8 +156,8 @@ class TestIsolatedIntegration:
 
         assert result.errors is None
         assert result.data is not None
-        assert result.data["artists"]["totalCount"] == 3
-        assert len(result.data["artists"]["edges"]) == 3
+        assert result.data["artists"]["pageInfo"]["totalCount"] == 3
+        assert len(result.data["artists"]["items"]) == 3
 
     @pytest.mark.asyncio
     async def test_albums_query_with_data_isolated(self, transactional_db):
@@ -188,13 +184,9 @@ class TestIsolatedIntegration:
 
         query = """
         {
-            albums(first: 10) {
-                totalCount
-                edges {
-                    id
-                    name
-                    wanted
-                }
+            albums(pageSize: 10) {
+                pageInfo { totalCount }
+                items { id name wanted }
             }
         }
         """
@@ -203,5 +195,5 @@ class TestIsolatedIntegration:
 
         assert result.errors is None
         assert result.data is not None
-        assert result.data["albums"]["totalCount"] == 2
-        assert len(result.data["albums"]["edges"]) == 2
+        assert result.data["albums"]["pageInfo"]["totalCount"] == 2
+        assert len(result.data["albums"]["items"]) == 2

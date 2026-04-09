@@ -1,6 +1,6 @@
 # mypy: disable-error-code=attr-defined
 import logging
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional
 
 from django.db.models import F, Q
 
@@ -11,7 +11,7 @@ from library_manager.models import Album as DjangoAlbum
 from library_manager.models import Artist as DjangoArtist
 
 from ..graphql_types.models import Album, MutationResult
-from .base import BaseService
+from .base import BaseService, PageResult
 
 logger = logging.getLogger(__name__)
 
@@ -117,12 +117,12 @@ class AlbumService(BaseService[Album]):
         except self.model.DoesNotExist:
             return None
 
-    async def get_connection(
+    async def get_page(
         self,
-        first: int = 20,
-        after: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
         **filters: Any,
-    ) -> Tuple[List[Album], bool, int]:
+    ) -> PageResult[Album]:
         artist_id: Optional[int] = filters.get("artist_id")
         downloaded: Optional[bool] = filters.get("downloaded")
         wanted: Optional[bool] = filters.get("wanted")
@@ -135,11 +135,11 @@ class AlbumService(BaseService[Album]):
             if isinstance(filters.get("sort_direction"), str)
             else None
         )
+        page, page_size = self.validate_page_params(page, page_size)
 
-        def fetch_items() -> Tuple[List[Album], bool, int]:
+        def fetch_page() -> PageResult[Album]:
             queryset = self.model.objects.all()
 
-            # Apply filters
             if artist_id:
                 queryset = queryset.filter(artist__id=artist_id)
 
@@ -154,7 +154,6 @@ class AlbumService(BaseService[Album]):
                     Q(name__icontains=search) | Q(spotify_gid__icontains=search)
                 )
 
-            # Apply sorting
             sort_field_map: dict[str, str] = {
                 "name": "name",
                 "artist": "artist__name",
@@ -166,29 +165,24 @@ class AlbumService(BaseService[Album]):
                 "albumGroup": "album_group",
             }
 
-            # Timestamp fields where null = "earliest"
             timestamp_fields = {"created_at"}
 
-            order_expressions: List[Any] = ["id"]  # default
+            order_expressions: List[Any] = ["id"]
             if isinstance(sort_by, str):
                 mapped_field = sort_field_map.get(sort_by)
                 if mapped_field is not None:
-                    # For timestamp fields, nulls should be treated as earliest
                     if mapped_field in timestamp_fields:
                         if sort_direction == "desc":
-                            # Descending: newest first, nulls last
                             order_expressions = [
                                 F(mapped_field).desc(nulls_last=True),
                                 "id",
                             ]
                         else:
-                            # Ascending: oldest first, nulls first
                             order_expressions = [
                                 F(mapped_field).asc(nulls_first=True),
                                 "id",
                             ]
                     else:
-                        # Non-timestamp fields use standard sorting
                         order_field = mapped_field
                         if sort_direction == "desc":
                             order_expressions = [f"-{order_field}", "id"]
@@ -196,25 +190,20 @@ class AlbumService(BaseService[Album]):
                             order_expressions = [order_field, "id"]
 
             total_count = queryset.count()
+            offset = (page - 1) * page_size
 
-            # Apply cursor-based pagination
-            if after:
-                id_after = self.decode_cursor(after)
-                queryset = queryset.filter(id__gt=id_after)
-
-            # Get one extra item to determine if there are more pages
-            items = list(queryset.order_by(*order_expressions)[: first + 1])
-
-            has_next_page = len(items) > first
-            items = items[:first]  # Remove the extra item
-
-            return (
-                [self._to_graphql_type(item) for item in items],
-                has_next_page,
-                total_count,
+            items = list(
+                queryset.order_by(*order_expressions)[offset : offset + page_size]
             )
 
-        return await sync_to_async(fetch_items)()
+            return PageResult(
+                items=[self._to_graphql_type(item) for item in items],
+                page=page,
+                page_size=page_size,
+                total_count=total_count,
+            )
+
+        return await sync_to_async(fetch_page)()
 
     async def update_album(
         self, album_id: str, is_wanted: Optional[bool] = None
