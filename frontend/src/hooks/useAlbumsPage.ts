@@ -5,16 +5,10 @@ import {
   SetAlbumWantedDocument,
   DownloadAlbumDocument,
   GetArtistDocument,
-  type Album,
 } from '../types/generated/graphql';
 import { useToast } from '../components/ui/useToast';
 import { useMutationState } from './useMutationState';
 import { useRequestState } from './useRequestState';
-import {
-  usePrefetchFilters,
-  generateFilterCombinations,
-} from './usePrefetchFilters';
-import { useQueryPrefetch } from './useQueryPrefetch';
 import type { AlbumSortField } from '../components/albums/AlbumsTable';
 import type {
   SortDirection,
@@ -33,6 +27,7 @@ export function useAlbumsPage(options: UseAlbumsPageOptions = {}) {
   // State
   const [wantedFilter, setWantedFilter] = useState<WantedFilter>('all');
   const [downloadFilter, setDownloadFilter] = useState<DownloadFilter>('all');
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [sortField, setSortField] = useState<AlbumSortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -45,7 +40,8 @@ export function useAlbumsPage(options: UseAlbumsPageOptions = {}) {
       wanted: wantedFilter === 'all' ? undefined : wantedFilter === 'wanted',
       downloaded:
         downloadFilter === 'all' ? undefined : downloadFilter === 'downloaded',
-      first: pageSize,
+      page,
+      pageSize,
       sortBy: sortField,
       sortDirection: sortDirection,
       search: searchQuery || undefined,
@@ -54,6 +50,7 @@ export function useAlbumsPage(options: UseAlbumsPageOptions = {}) {
       artistId,
       wantedFilter,
       downloadFilter,
+      page,
       pageSize,
       sortField,
       sortDirection,
@@ -62,16 +59,13 @@ export function useAlbumsPage(options: UseAlbumsPageOptions = {}) {
   );
 
   // Data fetching
-  const { data, loading, error, fetchMore, networkStatus } = useQuery(
-    GetAlbumsDocument,
-    {
-      variables: queryVariables,
-      fetchPolicy: 'cache-and-network',
-      notifyOnNetworkStatusChange: true,
-      pollInterval: 0,
-      errorPolicy: 'all',
-    }
-  );
+  const { data, loading, error, networkStatus } = useQuery(GetAlbumsDocument, {
+    variables: queryVariables,
+    fetchPolicy: 'cache-and-network',
+    notifyOnNetworkStatusChange: true,
+    pollInterval: 0,
+    errorPolicy: 'all',
+  });
 
   // Fetch artist details if filtering by artist
   const { data: artistData } = useQuery(GetArtistDocument, {
@@ -88,74 +82,39 @@ export function useAlbumsPage(options: UseAlbumsPageOptions = {}) {
   const [downloadAlbum] = useMutation(DownloadAlbumDocument);
   const { mutatingIds, pulseIds, handleMutation } = useMutationState();
 
-  // Prefetching setup
-  const createPrefetchHandler = useQueryPrefetch(
-    GetAlbumsDocument,
-    queryVariables
-  );
+  // Handlers
+  const handleWantedFilterChange = useCallback((newFilter: WantedFilter) => {
+    setWantedFilter(newFilter);
+    setPage(1);
+  }, []);
 
-  const baseVariables = useMemo(
-    () => ({
-      artistId: artistId || undefined,
-      first: pageSize,
-      sortBy: sortField,
-      sortDirection: sortDirection,
-      search: searchQuery || undefined,
-    }),
-    [artistId, pageSize, sortField, sortDirection, searchQuery]
-  );
-
-  const filterCombinations = useMemo(
-    () =>
-      generateFilterCombinations({
-        wanted: [true, false],
-        downloaded: [true, false],
-      }),
+  const handleDownloadFilterChange = useCallback(
+    (newFilter: DownloadFilter) => {
+      setDownloadFilter(newFilter);
+      setPage(1);
+    },
     []
   );
 
-  usePrefetchFilters({
-    query: GetAlbumsDocument,
-    baseVariables,
-    filterCombinations,
-    enabled: !!data,
-    networkStatus,
-  });
+  const handlePageSizeChange = useCallback((newSize: number) => {
+    setPageSize(newSize);
+    setPage(1);
+  }, []);
 
-  // Handlers
-  const handleWantedFilterChange = createPrefetchHandler(
-    setWantedFilter,
-    (newFilter: WantedFilter) => ({
-      wanted: newFilter === 'all' ? undefined : newFilter === 'wanted',
-    })
+  const handleSort = useCallback(
+    (field: AlbumSortField) => {
+      const newDirection: SortDirection =
+        sortField === field && sortDirection === 'asc' ? 'desc' : 'asc';
+      setSortField(field);
+      setSortDirection(newDirection);
+      setPage(1);
+    },
+    [sortField, sortDirection]
   );
-
-  const handleDownloadFilterChange = createPrefetchHandler(
-    setDownloadFilter,
-    (newFilter: DownloadFilter) => ({
-      downloaded: newFilter === 'all' ? undefined : newFilter === 'downloaded',
-    })
-  );
-
-  const handlePageSizeChange = createPrefetchHandler(setPageSize, newSize => ({
-    first: newSize,
-  }));
-
-  const handleSort = (field: AlbumSortField) => {
-    const newDirection: SortDirection =
-      sortField === field && sortDirection === 'asc' ? 'desc' : 'asc';
-
-    setSortField(field);
-    setSortDirection(newDirection);
-
-    createPrefetchHandler(null, () => ({
-      sortBy: field,
-      sortDirection: newDirection,
-    }))(field);
-  };
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
+    setPage(1);
   }, []);
 
   const handleWantedToggle = async (albumId: number, wanted: boolean) => {
@@ -189,21 +148,10 @@ export function useAlbumsPage(options: UseAlbumsPageOptions = {}) {
     );
   };
 
-  const handleLoadMore = () => {
-    if (data?.albums.pageInfo.hasNextPage) {
-      fetchMore({
-        variables: {
-          ...queryVariables,
-          after: data.albums.pageInfo.endCursor,
-        },
-      });
-    }
-  };
-
   // Derived state
-  const albums = (data?.albums.edges as Album[]) || [];
-  const totalCount = data?.albums.totalCount || 0;
-  const pageInfo = data?.albums.pageInfo;
+  const albums = data?.albums?.items || [];
+  const totalCount = data?.albums?.pageInfo?.totalCount || 0;
+  const totalPages = data?.albums?.pageInfo?.totalPages || 1;
   const { isRefreshing, isInitial: isInitialLoading } =
     useRequestState(networkStatus);
 
@@ -213,12 +161,16 @@ export function useAlbumsPage(options: UseAlbumsPageOptions = {}) {
     // Data
     albums,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
     isRefreshing,
     isInitialLoading,
     artist,
+
+    // Pagination
+    page,
+    setPage,
 
     // Filters & sorting
     wantedFilter,
@@ -240,6 +192,5 @@ export function useAlbumsPage(options: UseAlbumsPageOptions = {}) {
     handleSearch,
     handleWantedToggle,
     handleDownloadAlbum,
-    handleLoadMore,
   };
 }

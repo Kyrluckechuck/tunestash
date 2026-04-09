@@ -12,7 +12,7 @@ import { SongsTable } from '../components/songs/SongsTable';
 import { PageSpinner } from '../components/ui/PageSpinner';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import { InlineSpinner } from '../components/ui/InlineSpinner';
-import { LoadMoreButton } from '../components/ui/LoadMoreButton';
+import { PaginationBar } from '../components/ui/PaginationBar';
 import { PageSizeSelector } from '../components/ui/PageSizeSelector';
 import { SearchInput } from '../components/ui/SearchInput';
 import { ProviderBadges } from '../components/ui/ProviderBadges';
@@ -23,6 +23,7 @@ function AlbumDetail() {
   const { albumId } = Route.useParams();
   const albumIdNum = parseInt(albumId, 10);
 
+  const [songPage, setSongPage] = useState(1);
   const [songPageSize, setSongPageSize] = useState(50);
   const [songSortField, setSongSortField] = useState<SortField>(null);
   const [songSortDirection, setSongSortDirection] = useState<'asc' | 'desc'>(
@@ -42,23 +43,23 @@ function AlbumDetail() {
     variables: { id: albumIdNum },
   });
 
-  const {
-    data: songsData,
-    loading: songsLoading,
-    fetchMore,
-  } = useQuery(GetSongsDocument, {
-    variables: {
-      first: songPageSize,
-      albumId: albumIdNum,
-      downloaded:
-        songDownloadFilter === 'all'
-          ? undefined
-          : songDownloadFilter === 'downloaded',
-      sortBy: songSortField ?? undefined,
-      sortDirection: songSortDirection,
-      search: songSearch,
-    },
-  });
+  const { data: songsData, loading: songsLoading } = useQuery(
+    GetSongsDocument,
+    {
+      variables: {
+        page: songPage,
+        pageSize: songPageSize,
+        albumId: albumIdNum,
+        downloaded:
+          songDownloadFilter === 'all'
+            ? undefined
+            : songDownloadFilter === 'downloaded',
+        sortBy: songSortField ?? undefined,
+        sortDirection: songSortDirection,
+        search: songSearch,
+      },
+    }
+  );
 
   const [setAlbumWanted] = useMutation(SetAlbumWantedDocument);
   const [downloadAlbum, { loading: downloadLoading }] = useMutation(
@@ -69,9 +70,9 @@ function AlbumDetail() {
   );
 
   const album = albumData?.albumById;
-  const songs = songsData?.songs?.edges ?? [];
-  const songsTotalCount = songsData?.songs?.totalCount ?? 0;
-  const songsPageInfo = songsData?.songs?.pageInfo;
+  const songs = songsData?.songs?.items ?? [];
+  const songsTotalCount = songsData?.songs?.pageInfo?.totalCount ?? 0;
+  const songsTotalPages = songsData?.songs?.pageInfo?.totalPages ?? 1;
 
   const handleWantedToggle = useCallback(async () => {
     if (!album) return;
@@ -100,12 +101,26 @@ function AlbumDetail() {
       setSongSortDirection('asc');
       return field;
     });
+    setSongPage(1);
   }, []);
 
-  const handleLoadMoreSongs = useCallback(() => {
-    if (!songsPageInfo?.endCursor) return;
-    fetchMore({ variables: { after: songsPageInfo.endCursor } });
-  }, [fetchMore, songsPageInfo]);
+  const handleSongPageSizeChange = useCallback((size: number) => {
+    setSongPageSize(size);
+    setSongPage(1);
+  }, []);
+
+  const handleSongSearchChange = useCallback((search: string) => {
+    setSongSearch(search || undefined);
+    setSongPage(1);
+  }, []);
+
+  const handleSongDownloadFilterChange = useCallback(
+    (filter: 'all' | 'downloaded' | 'not_downloaded') => {
+      setSongDownloadFilter(filter);
+      setSongPage(1);
+    },
+    []
+  );
 
   if (albumLoading) {
     return (
@@ -276,20 +291,18 @@ function AlbumDetail() {
       <section>
         <div className='flex items-center justify-between mb-4'>
           <div className='flex items-center gap-3'>
-            <h2 className='text-xl font-semibold'>
-              Songs ({songs.length} of {songsTotalCount})
-            </h2>
+            <h2 className='text-xl font-semibold'>Songs ({songsTotalCount})</h2>
             {songsLoading && <InlineSpinner label='Loading...' />}
           </div>
           <div className='flex items-center gap-4'>
             <SearchInput
               placeholder='Search songs...'
-              onSearch={setSongSearch}
+              onSearch={handleSongSearchChange}
               className='w-48'
             />
             <PageSizeSelector
               pageSize={songPageSize}
-              onPageSizeChange={setSongPageSize}
+              onPageSizeChange={handleSongPageSizeChange}
             />
           </div>
         </div>
@@ -299,7 +312,7 @@ function AlbumDetail() {
           {(['all', 'downloaded', 'not_downloaded'] as const).map(filter => (
             <button
               key={filter}
-              onClick={() => setSongDownloadFilter(filter)}
+              onClick={() => handleSongDownloadFilterChange(filter)}
               className={`px-3 py-1 rounded-full text-sm transition-colors ${
                 songDownloadFilter === filter
                   ? 'bg-green-600 text-white'
@@ -323,12 +336,16 @@ function AlbumDetail() {
           loading={songsLoading}
         />
 
-        <LoadMoreButton
-          hasNextPage={!!songsPageInfo?.hasNextPage}
-          loading={songsLoading}
-          remainingCount={songsTotalCount - songs.length}
-          onLoadMore={handleLoadMoreSongs}
-        />
+        {songsTotalPages > 1 && (
+          <PaginationBar
+            page={songPage}
+            totalPages={songsTotalPages}
+            totalCount={songsTotalCount}
+            pageSize={songPageSize}
+            onPageChange={setSongPage}
+            loading={songsLoading}
+          />
+        )}
       </section>
     </PageContainer>
   );

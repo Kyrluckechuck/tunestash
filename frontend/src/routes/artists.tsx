@@ -30,11 +30,15 @@ function Artists() {
     // Data
     artists,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
     isRefreshing,
     isInitialLoading,
+
+    // Pagination
+    page,
+    setPage,
 
     // Filters & sorting
     filter,
@@ -64,7 +68,6 @@ function Artists() {
     handleRetryFailedSongs,
     handleSyncAllTrackedArtists,
     handleDownloadAllTrackedArtists,
-    handleLoadMore,
   } = useArtistsPage();
 
   const tabs = [
@@ -140,8 +143,9 @@ function Artists() {
             error={error}
             totalCount={totalCount}
             pageSize={pageSize}
-            hasNextPage={!!pageInfo?.hasNextPage}
-            onLoadMore={handleLoadMore}
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
             emptyMessage='No artists found'
             loadingMessage='Loading artists...'
             errorMessage='Error loading artists'

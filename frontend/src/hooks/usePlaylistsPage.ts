@@ -11,16 +11,10 @@ import {
   DownloadAllPlaylistsDocument,
   DeletePlaylistDocument,
   type Playlist,
-  type GetPlaylistsQuery,
 } from '../types/generated/graphql';
 import { useToast } from '../components/ui/useToast';
 import { useMutationState, useMutationLoadingState } from './useMutationState';
 import { useRequestState } from './useRequestState';
-import {
-  usePrefetchFilters,
-  generateFilterCombinations,
-} from './usePrefetchFilters';
-import { useQueryPrefetch } from './useQueryPrefetch';
 import type { PlaylistSortField } from '../components/playlists/PlaylistsTable';
 import type { SortDirection, PlaylistEnabledFilter } from '../types/shared';
 
@@ -29,6 +23,7 @@ export function usePlaylistsPage() {
 
   // State
   const [filter, setFilter] = useState<PlaylistEnabledFilter>('all');
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [sortField, setSortField] = useState<PlaylistSortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -44,16 +39,17 @@ export function usePlaylistsPage() {
         filter === 'all' || filter === 'issues'
           ? undefined
           : filter === 'enabled',
-      first: pageSize,
+      page,
+      pageSize,
       sortBy: sortField,
       sortDirection: sortDirection,
       search: searchQuery || undefined,
     }),
-    [filter, pageSize, sortField, sortDirection, searchQuery]
+    [filter, page, pageSize, sortField, sortDirection, searchQuery]
   );
 
   // Data fetching
-  const { data, loading, error, fetchMore, networkStatus } = useQuery(
+  const { data, loading, error, networkStatus } = useQuery(
     GetPlaylistsDocument,
     {
       variables: queryVariables,
@@ -120,80 +116,35 @@ export function usePlaylistsPage() {
     stopLoading: stopRecheck,
   } = useMutationLoadingState();
 
-  // Prefetching setup
-  const createPrefetchHandler = useQueryPrefetch(
-    GetPlaylistsDocument,
-    queryVariables
-  );
-
-  const baseVariables = useMemo(
-    () => ({
-      first: pageSize,
-      sortBy: sortField,
-      sortDirection: sortDirection,
-      search: searchQuery || undefined,
-    }),
-    [pageSize, sortField, sortDirection, searchQuery]
-  );
-
-  const filterCombinations = useMemo(
-    () =>
-      generateFilterCombinations({
-        enabled: [true, false],
-      }),
+  // Handlers
+  const handleEnabledFilterChange = useCallback(
+    (newFilter: PlaylistEnabledFilter) => {
+      setFilter(newFilter);
+      setPage(1);
+    },
     []
   );
 
-  usePrefetchFilters({
-    query: GetPlaylistsDocument,
-    baseVariables,
-    filterCombinations,
-    enabled: !!data,
-    networkStatus,
-  });
+  const handlePageSizeChange = useCallback((newSize: number) => {
+    setPageSize(newSize);
+    setPage(1);
+  }, []);
 
-  // Handlers
-  const handleEnabledFilterChange = createPrefetchHandler(
-    setFilter,
-    (newFilter: PlaylistEnabledFilter) => ({
-      enabled:
-        newFilter === 'all' || newFilter === 'issues'
-          ? undefined
-          : newFilter === 'enabled',
-    })
+  const handleSort = useCallback(
+    (field: PlaylistSortField) => {
+      const newDirection: SortDirection =
+        sortField === field && sortDirection === 'asc' ? 'desc' : 'asc';
+      setSortField(field);
+      setSortDirection(newDirection);
+      setPage(1);
+    },
+    [sortField, sortDirection]
   );
-
-  const handlePageSizeChange = createPrefetchHandler(setPageSize, newSize => ({
-    first: newSize,
-  }));
-
-  const handleSort = (field: PlaylistSortField) => {
-    const newDirection: SortDirection =
-      sortField === field && sortDirection === 'asc' ? 'desc' : 'asc';
-
-    setSortField(field);
-    setSortDirection(newDirection);
-
-    createPrefetchHandler(null, () => ({
-      sortBy: field,
-      sortDirection: newDirection,
-    }))(field);
-  };
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
+    setPage(1);
   }, []);
-
-  // Prefetch-only handler for hover (no state update)
-  const handleFilterHover = createPrefetchHandler(
-    null,
-    (hoverFilter: PlaylistEnabledFilter) => ({
-      enabled:
-        hoverFilter === 'all' || hoverFilter === 'issues'
-          ? undefined
-          : hoverFilter === 'enabled',
-    })
-  );
 
   const handleTogglePlaylist = async (playlist: Playlist) => {
     await handleEnabledMutation(
@@ -347,36 +298,10 @@ export function usePlaylistsPage() {
     }
   };
 
-  const handleLoadMore = () => {
-    if (data?.playlists?.pageInfo?.hasNextPage) {
-      fetchMore({
-        variables: {
-          after: data.playlists.pageInfo.endCursor,
-        },
-        updateQuery: (
-          prevResult: GetPlaylistsQuery,
-          { fetchMoreResult }: { fetchMoreResult?: GetPlaylistsQuery }
-        ) => {
-          if (!fetchMoreResult) return prevResult;
-
-          return {
-            playlists: {
-              ...fetchMoreResult.playlists,
-              edges: [
-                ...prevResult.playlists.edges,
-                ...fetchMoreResult.playlists.edges,
-              ],
-            },
-          };
-        },
-      });
-    }
-  };
-
   // Derived state
   const allPlaylists = useMemo(
-    () => data?.playlists?.edges || [],
-    [data?.playlists?.edges]
+    () => data?.playlists?.items || [],
+    [data?.playlists?.items]
   );
 
   // Apply client-side filtering for 'issues' filter
@@ -399,8 +324,10 @@ export function usePlaylistsPage() {
   );
 
   const totalCount =
-    filter === 'issues' ? playlists.length : data?.playlists?.totalCount || 0;
-  const pageInfo = data?.playlists?.pageInfo;
+    filter === 'issues'
+      ? playlists.length
+      : data?.playlists?.pageInfo?.totalCount || 0;
+  const totalPages = data?.playlists?.pageInfo?.totalPages || 1;
   const { isRefreshing, isInitial: isInitialLoading } =
     useRequestState(networkStatus);
 
@@ -408,12 +335,16 @@ export function usePlaylistsPage() {
     // Data
     playlists,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
     isRefreshing,
     isInitialLoading,
     issuesCount,
+
+    // Pagination
+    page,
+    setPage,
 
     // Filters & sorting
     filter,
@@ -444,7 +375,6 @@ export function usePlaylistsPage() {
     handlePageSizeChange,
     handleSort,
     handleSearch,
-    handleFilterHover,
     handleTogglePlaylist,
     handleSyncPlaylist,
     handleForceSyncPlaylist,
@@ -456,6 +386,5 @@ export function usePlaylistsPage() {
     handleClosePlaylistModal,
     handleCreatePlaylist,
     handleDownloadAllPlaylists,
-    handleLoadMore,
   };
 }

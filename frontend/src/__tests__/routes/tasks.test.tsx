@@ -2,11 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useQuery } from '@apollo/client';
-import type {
-  TestTaskHistory,
-  TestEdge,
-  MockedUseQuery,
-} from '../../types/test';
+import type { TestTaskHistory, MockedUseQuery } from '../../types/test';
 
 // Import mock data
 import {
@@ -58,7 +54,7 @@ const TestTasksComponent = () => {
     return <div>Error loading task history: {error.message}</div>;
   }
 
-  if (!data?.taskHistory?.edges?.length) {
+  if (!data?.taskHistory?.items?.length) {
     return <div>No tasks found</div>;
   }
 
@@ -75,9 +71,9 @@ const TestTasksComponent = () => {
   };
 
   // Filter tasks based on current filters
-  const filteredTasks = data.taskHistory.edges.filter(
-    (edge: TestEdge<TestTaskHistory>) => {
-      const task = edge.node;
+  const filteredTasks = data.taskHistory.items.filter(
+    (edge: TestTaskHistory) => {
+      const task = edge;
 
       if (
         filters.status !== 'all' &&
@@ -110,7 +106,7 @@ const TestTasksComponent = () => {
 
   // Get active tasks (running status)
   const activeTasks = filteredTasks.filter(
-    (edge: TestEdge<TestTaskHistory>) => edge.node.status === 'RUNNING'
+    (edge: TestTaskHistory) => edge.status === 'RUNNING'
   );
 
   return (
@@ -120,8 +116,8 @@ const TestTasksComponent = () => {
       {/* Active tasks section */}
       <div>
         <h2>Active Tasks ({activeTasks.length})</h2>
-        {activeTasks.map((edge: TestEdge<TestTaskHistory>) => {
-          const task = edge.node;
+        {activeTasks.map((edge: TestTaskHistory) => {
+          const task = edge;
           return (
             <div key={task.id} data-testid={`active-task-${task.id}`}>
               <span>{task.type}</span>
@@ -191,10 +187,11 @@ const TestTasksComponent = () => {
       {/* Task history */}
       <div>
         <h2>
-          Task History ({filteredTasks.length} of {data.taskHistory.totalCount})
+          Task History ({filteredTasks.length} of{' '}
+          {data.taskHistory.pageInfo.totalCount})
         </h2>
-        {filteredTasks.map((edge: TestEdge<TestTaskHistory>) => {
-          const task = edge.node;
+        {filteredTasks.map((edge: TestTaskHistory) => {
+          const task = edge;
           return (
             <div key={task.id} data-testid={`task-${task.id}`}>
               <span>{task.taskId}</span>
@@ -215,7 +212,7 @@ const TestTasksComponent = () => {
         })}
       </div>
 
-      {data.taskHistory.pageInfo.hasNextPage && (
+      {data.taskHistory.pageInfo.totalPages > 1 && (
         <button onClick={() => fetchMore()} data-testid='load-more'>
           Load More
         </button>
@@ -277,14 +274,13 @@ describe('Tasks Route', () => {
     it('renders empty state when no tasks', () => {
       const emptyResponse = {
         taskHistory: {
-          totalCount: 0,
           pageInfo: {
-            hasNextPage: false,
-            hasPreviousPage: false,
-            startCursor: null,
-            endCursor: null,
+            page: 1,
+            pageSize: 50,
+            totalPages: 0,
+            totalCount: 0,
           },
-          edges: [],
+          items: [],
         },
       };
 
@@ -302,7 +298,7 @@ describe('Tasks Route', () => {
           ...mockGetTaskHistoryResponse.taskHistory,
           pageInfo: {
             ...mockGetTaskHistoryResponse.taskHistory.pageInfo,
-            hasNextPage: true,
+            totalPages: 2,
           },
         },
       };

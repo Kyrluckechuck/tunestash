@@ -7,7 +7,6 @@ import {
   GetTaskHistoryDocument,
   CancelRunningTasksByNameDocument,
   type TaskHistory,
-  type TaskHistoryEdge,
 } from '../types/generated/graphql';
 import EnhancedEntityDisplay from '../components/EnhancedEntityDisplay';
 import { useToast } from '../components/ui/useToast';
@@ -46,6 +45,7 @@ function Tasks() {
   const [historyTypeFilter, setHistoryTypeFilter] = useState<TaskType>('all');
   const [historyEntityFilter, setHistoryEntityFilter] =
     useState<EntityType>('all');
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -60,11 +60,35 @@ function Tasks() {
     CancelRunningTasksByNameDocument
   );
 
+  const handleHistoryFilterChange = useCallback((status: TaskStatus) => {
+    setHistoryFilter(status);
+    setPage(1);
+  }, []);
+
+  const handleHistoryTypeFilterChange = useCallback((type: TaskType) => {
+    setHistoryTypeFilter(type);
+    setPage(1);
+  }, []);
+
+  const handleHistoryEntityFilterChange = useCallback((entity: EntityType) => {
+    setHistoryEntityFilter(entity);
+    setPage(1);
+  }, []);
+
+  const handleSearchChange = useCallback((query: string) => {
+    setSearchQuery(query);
+    setPage(1);
+  }, []);
+
+  const handlePageSizeChange = useCallback((size: number) => {
+    setPageSize(size);
+    setPage(1);
+  }, []);
+
   const {
     data: historyData,
     loading: historyLoading,
     error: historyError,
-    fetchMore,
     refetch: refetchHistory,
     networkStatus: historyNetworkStatus,
   } = useQuery(GetTaskHistoryDocument, {
@@ -74,7 +98,8 @@ function Tasks() {
       entityType:
         historyEntityFilter === 'all' ? undefined : historyEntityFilter,
       search: searchQuery || undefined,
-      first: pageSize,
+      page,
+      pageSize,
     },
     fetchPolicy: 'cache-first',
     notifyOnNetworkStatusChange: true,
@@ -94,9 +119,11 @@ function Tasks() {
   }, [isHistoryRefreshing, historyData]);
 
   const historyNodes = useMemo<TaskHistory[]>(
-    () => historyData?.taskHistory?.edges?.map(edge => edge.node) || [],
-    [historyData?.taskHistory?.edges]
+    () => historyData?.taskHistory?.items || [],
+    [historyData?.taskHistory?.items]
   );
+
+  const totalPages = historyData?.taskHistory?.pageInfo?.totalPages ?? 1;
 
   // Single-pass filtering and categorization for better performance
   const taskCategories = useMemo(() => {
@@ -130,8 +157,6 @@ function Tasks() {
   }, [historyNodes, activeTasksFilter, activeTasksEntityFilter]);
 
   const { running: runningTasks } = taskCategories;
-  // Note: completedTasks and failedTasks were only used in filteredActiveTasks which was incorrect
-  // (they filtered from realActiveTasks which were all RUNNING, so completed/failed would always be empty)
   const completedTasks: TaskHistory[] = [];
   const failedTasks: TaskHistory[] = [];
 
@@ -253,18 +278,14 @@ function Tasks() {
             entityFilter={historyEntityFilter}
             searchQuery={searchQuery}
             pageSize={pageSize}
-            onStatusFilterChange={setHistoryFilter}
-            onTypeFilterChange={setHistoryTypeFilter}
-            onEntityFilterChange={setHistoryEntityFilter}
-            onSearchChange={setSearchQuery}
-            onPageSizeChange={setPageSize}
-            onLoadMore={() =>
-              fetchMore({
-                variables: {
-                  after: historyData?.taskHistory?.pageInfo?.endCursor,
-                },
-              })
-            }
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onStatusFilterChange={handleHistoryFilterChange}
+            onTypeFilterChange={handleHistoryTypeFilterChange}
+            onEntityFilterChange={handleHistoryEntityFilterChange}
+            onSearchChange={handleSearchChange}
+            onPageSizeChange={handlePageSizeChange}
           />
 
           <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
@@ -275,18 +296,15 @@ function Tasks() {
             </div>
 
             <div className='p-6'>
-              {historyData?.taskHistory?.edges?.some(
-                (edge: TaskHistoryEdge) =>
-                  (edge.node.logMessages?.length ?? 0) > 0
+              {historyData?.taskHistory?.items?.some(
+                (task: TaskHistory) => (task.logMessages?.length ?? 0) > 0
               ) ? (
                 <div className='space-y-1'>
-                  {historyData.taskHistory.edges
+                  {historyData.taskHistory.items
                     .filter(
-                      (edge: TaskHistoryEdge) =>
-                        (edge.node.logMessages?.length ?? 0) > 0
+                      (task: TaskHistory) => (task.logMessages?.length ?? 0) > 0
                     )
-                    .map((edge: TaskHistoryEdge) => {
-                      const task = edge.node;
+                    .map((task: TaskHistory) => {
                       const isExpanded = !!expandedLogs[task.id];
                       return (
                         <div

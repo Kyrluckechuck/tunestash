@@ -7,7 +7,7 @@ import { PageSizeSelector } from '../components/ui/PageSizeSelector';
 import { InlineSpinner } from '../components/ui/InlineSpinner';
 import { PageSpinner } from '../components/ui/PageSpinner';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
-import { LoadMoreButton } from '../components/ui/LoadMoreButton';
+import { PaginationBar } from '../components/ui/PaginationBar';
 import { ArtistContext } from '../components/ui/ArtistContext';
 import { SearchInput } from '../components/ui/SearchInput';
 
@@ -21,12 +21,16 @@ function Albums() {
     // Data
     albums,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
     isRefreshing,
     isInitialLoading,
     artist,
+
+    // Pagination
+    page,
+    setPage,
 
     // Filters & sorting
     wantedFilter,
@@ -47,7 +51,6 @@ function Albums() {
     handleSearch,
     handleWantedToggle,
     handleDownloadAlbum,
-    handleLoadMore,
   } = useAlbumsPage({ artistId });
 
   // Only show loading state on initial load
@@ -127,12 +130,16 @@ function Albums() {
         />
       </div>
 
-      <LoadMoreButton
-        hasNextPage={!!pageInfo?.hasNextPage}
-        loading={loading}
-        remainingCount={totalCount - albums.length}
-        onLoadMore={handleLoadMore}
-      />
+      {totalPages > 1 && (
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          loading={loading}
+        />
+      )}
     </section>
   );
 }

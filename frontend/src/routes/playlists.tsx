@@ -7,7 +7,7 @@ import { PageSizeSelector } from '../components/ui/PageSizeSelector';
 import { InlineSpinner } from '../components/ui/InlineSpinner';
 import { PageSpinner } from '../components/ui/PageSpinner';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
-import { LoadMoreButton } from '../components/ui/LoadMoreButton';
+import { PaginationBar } from '../components/ui/PaginationBar';
 import { PlaylistModal } from '../components/ui/PlaylistModal';
 import { SearchInput } from '../components/ui/SearchInput';
 import { ExternalListsSection } from '../components/external-lists/ExternalListsSection';
@@ -29,12 +29,16 @@ function Playlists() {
     // Data
     playlists,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
     isRefreshing,
     isInitialLoading,
     issuesCount,
+
+    // Pagination
+    page,
+    setPage,
 
     // Filters & sorting
     filter,
@@ -65,7 +69,6 @@ function Playlists() {
     handlePageSizeChange,
     handleSort,
     handleSearch,
-    handleFilterHover,
     handleTogglePlaylist,
     handleSyncPlaylist,
     handleForceSyncPlaylist,
@@ -77,7 +80,6 @@ function Playlists() {
     handleClosePlaylistModal,
     handleCreatePlaylist,
     handleDownloadAllPlaylists,
-    handleLoadMore,
   } = usePlaylistsPage();
 
   const tabClass = (tab: PlaylistTab) =>
@@ -110,17 +112,18 @@ function Playlists() {
         <SyncedPlaylistsTab
           playlists={playlists}
           totalCount={totalCount}
-          pageInfo={pageInfo}
+          totalPages={totalPages}
           loading={loading}
           error={error}
           isRefreshing={isRefreshing}
           isInitialLoading={isInitialLoading}
           issuesCount={issuesCount}
+          page={page}
+          setPage={setPage}
           filter={filter}
           pageSize={pageSize}
           sortField={sortField}
           sortDirection={sortDirection}
-          searchQuery={searchQuery}
           showPlaylistModal={showPlaylistModal}
           editingPlaylist={editingPlaylist}
           enabledMutatingIds={enabledMutatingIds}
@@ -134,11 +137,11 @@ function Playlists() {
           deleteMutatingIds={deleteMutatingIds}
           recheckMutatingIds={recheckMutatingIds}
           errorById={errorById}
+          searchQuery={searchQuery}
           handleEnabledFilterChange={handleEnabledFilterChange}
           handlePageSizeChange={handlePageSizeChange}
           handleSort={handleSort}
           handleSearch={handleSearch}
-          handleFilterHover={handleFilterHover}
           handleTogglePlaylist={handleTogglePlaylist}
           handleSyncPlaylist={handleSyncPlaylist}
           handleForceSyncPlaylist={handleForceSyncPlaylist}
@@ -150,7 +153,6 @@ function Playlists() {
           handleClosePlaylistModal={handleClosePlaylistModal}
           handleCreatePlaylist={handleCreatePlaylist}
           handleDownloadAllPlaylists={handleDownloadAllPlaylists}
-          handleLoadMore={handleLoadMore}
         />
       )}
 
@@ -162,12 +164,14 @@ function Playlists() {
 function SyncedPlaylistsTab({
   playlists,
   totalCount,
-  pageInfo,
+  totalPages,
   loading,
   error,
   isRefreshing,
   isInitialLoading,
   issuesCount,
+  page,
+  setPage,
   filter,
   pageSize,
   sortField,
@@ -189,7 +193,6 @@ function SyncedPlaylistsTab({
   handlePageSizeChange,
   handleSort,
   handleSearch,
-  handleFilterHover,
   handleTogglePlaylist,
   handleSyncPlaylist,
   handleForceSyncPlaylist,
@@ -201,7 +204,6 @@ function SyncedPlaylistsTab({
   handleClosePlaylistModal,
   handleCreatePlaylist,
   handleDownloadAllPlaylists,
-  handleLoadMore,
 }: ReturnType<typeof usePlaylistsPage>) {
   if (isInitialLoading && !playlists.length) {
     return <PageSpinner message='Loading playlists...' />;
@@ -218,7 +220,7 @@ function SyncedPlaylistsTab({
       <div className='flex items-center justify-between mb-4'>
         <div className='flex items-center gap-3'>
           <h2 className='text-lg font-medium text-gray-700 dark:text-slate-300'>
-            Synced Playlists ({playlists.length} of {totalCount})
+            Synced Playlists ({totalCount})
           </h2>
           {isRefreshing && <InlineSpinner label='Updating...' />}
         </div>
@@ -246,18 +248,12 @@ function SyncedPlaylistsTab({
             pageSize={pageSize}
             onPageSizeChange={handlePageSizeChange}
           />
-          {totalCount > playlists.length && (
-            <span className='text-sm text-gray-500 dark:text-slate-400'>
-              Showing first {playlists.length} playlists
-            </span>
-          )}
         </div>
       </div>
 
       <PlaylistFilters
         currentEnabledFilter={filter}
         onEnabledFilterChange={handleEnabledFilterChange}
-        onFilterHover={handleFilterHover}
         issuesCount={issuesCount}
       />
 
@@ -290,12 +286,16 @@ function SyncedPlaylistsTab({
         />
       </div>
 
-      <LoadMoreButton
-        hasNextPage={!!pageInfo?.hasNextPage}
-        loading={loading}
-        remainingCount={totalCount - playlists.length}
-        onLoadMore={handleLoadMore}
-      />
+      {totalPages > 1 && (
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          loading={loading}
+        />
+      )}
 
       <PlaylistModal
         isOpen={showPlaylistModal}

@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQuery } from '@apollo/client/react';
 import {
+  type GetExternalListsQuery,
   GetExternalListsDocument,
   CreateExternalListDocument,
   UpdateExternalListDocument,
@@ -9,7 +10,6 @@ import {
   SyncExternalListDocument,
   SyncAllExternalListsDocument,
   DeleteExternalListDocument,
-  type GetExternalListsQuery,
 } from '../types/generated/graphql';
 import { useToast } from '../components/ui/useToast';
 import { useMutationLoadingState } from './useMutationState';
@@ -38,16 +38,20 @@ export function useExternalListsPage() {
     null
   );
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+
   // Memoize query variables
   const queryVariables = useMemo(
     () => ({
       source: sourceFilter === 'all' ? undefined : sourceFilter,
-      first: pageSize,
+      page,
+      pageSize,
       sortBy: sortField,
       sortDirection: sortDirection,
       search: searchQuery || undefined,
     }),
-    [sourceFilter, pageSize, sortField, sortDirection, searchQuery]
+    [sourceFilter, page, pageSize, sortField, sortDirection, searchQuery]
   );
 
   // Smart polling: force polling briefly after sync mutations
@@ -73,25 +77,23 @@ export function useExternalListsPage() {
   );
 
   // Derived state (declared before useQuery so pollInterval can use it)
-  // We'll compute hasPendingWork after data loads; for the initial render,
-  // pollInterval starts at 0 and updates reactively.
   const dataRef = useRef<GetExternalListsQuery | undefined>(undefined);
 
-  const hasPendingWork = useMemo(() => {
-    const edges = dataRef.current?.externalLists?.edges;
-    if (!edges) return false;
-    return edges.some(list => {
+  const hasPendingWork: boolean = useMemo(() => {
+    const items = dataRef.current?.externalLists?.items;
+    if (!items) return false;
+    return items.some(list => {
       const pending = list.totalTracks - list.mappedTracks - list.failedTracks;
       if (pending > 0) return true;
       if (!list.lastSyncedAt && list.status === 'active') return true;
       return false;
     });
-  }, [dataRef.current?.externalLists?.edges]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dataRef.current?.externalLists?.items]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pollInterval = hasPendingWork || isPollingForced ? 5000 : 0;
+  const pollInterval: number = hasPendingWork || isPollingForced ? 5000 : 0;
 
   // Data fetching
-  const { data, loading, error, fetchMore, networkStatus } = useQuery(
+  const { data, loading, error, networkStatus } = useQuery(
     GetExternalListsDocument,
     {
       variables: queryVariables,
@@ -143,6 +145,7 @@ export function useExternalListsPage() {
   const handleSourceFilterChange = useCallback(
     (filter: ExternalListSourceFilter) => {
       setSourceFilter(filter);
+      setPage(1);
     },
     []
   );
@@ -153,16 +156,19 @@ export function useExternalListsPage() {
         sortField === field && sortDirection === 'asc' ? 'desc' : 'asc';
       setSortField(field);
       setSortDirection(newDirection);
+      setPage(1);
     },
     [sortField, sortDirection]
   );
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
+    setPage(1);
   }, []);
 
   const handlePageSizeChange = useCallback((size: number) => {
     setPageSize(size);
+    setPage(1);
   }, []);
 
   const handleCreateList = async (
@@ -384,40 +390,14 @@ export function useExternalListsPage() {
     setShowCreateModal(true);
   }, []);
 
-  const handleLoadMore = () => {
-    if (data?.externalLists?.pageInfo?.hasNextPage) {
-      fetchMore({
-        variables: {
-          after: data.externalLists.pageInfo.endCursor,
-        },
-        updateQuery: (
-          prevResult: GetExternalListsQuery,
-          { fetchMoreResult }: { fetchMoreResult?: GetExternalListsQuery }
-        ) => {
-          if (!fetchMoreResult) return prevResult;
-
-          return {
-            externalLists: {
-              ...fetchMoreResult.externalLists,
-              edges: [
-                ...prevResult.externalLists.edges,
-                ...fetchMoreResult.externalLists.edges,
-              ],
-            },
-          };
-        },
-      });
-    }
-  };
-
   // Derived state
   const lists = useMemo(
-    () => data?.externalLists?.edges || [],
-    [data?.externalLists?.edges]
+    () => data?.externalLists?.items || [],
+    [data?.externalLists?.items]
   );
 
-  const totalCount = data?.externalLists?.totalCount || 0;
-  const pageInfo = data?.externalLists?.pageInfo;
+  const totalCount = data?.externalLists?.pageInfo?.totalCount || 0;
+  const totalPages = data?.externalLists?.pageInfo?.totalPages || 1;
   const { isRefreshing, isInitial: isInitialLoading } =
     useRequestState(networkStatus);
 
@@ -425,11 +405,15 @@ export function useExternalListsPage() {
     // Data
     lists,
     totalCount,
-    pageInfo,
+    totalPages,
     loading,
     error,
     isRefreshing,
     isInitialLoading,
+
+    // Pagination
+    page,
+    setPage,
 
     // Filters & sorting
     sourceFilter,
@@ -463,6 +447,5 @@ export function useExternalListsPage() {
     handleOpenCreateModal,
     handleOpenEditModal,
     handleCloseCreateModal,
-    handleLoadMore,
   };
 }

@@ -11,7 +11,7 @@ export type SortField =
   | 'downloaded'
   | null;
 
-type Song = GetSongsQuery['songs']['edges'][number];
+type Song = GetSongsQuery['songs']['items'][number];
 
 interface SongsTableProps {
   songs: Song[];

@@ -64,7 +64,7 @@ const TestAlbumsComponent = () => {
     return <div>Error loading albums: {error.message}</div>;
   }
 
-  if (!data?.albums?.edges?.length) {
+  if (!data?.albums?.items?.length) {
     return <div>No albums found</div>;
   }
 
@@ -83,7 +83,7 @@ const TestAlbumsComponent = () => {
   return (
     <div>
       <h1>
-        Albums ({data.albums.edges.length} of {data.albums.totalCount})
+        Albums ({data.albums.items.length} of {data.albums.pageInfo.totalCount})
       </h1>
 
       {/* Filter controls */}
@@ -130,7 +130,7 @@ const TestAlbumsComponent = () => {
 
       {/* Album list */}
       <div>
-        {data.albums.edges.map((album: TestAlbum) => (
+        {data.albums.items.map((album: TestAlbum) => (
           <div key={album.id} data-testid={`album-${album.id}`}>
             <span>{album.name}</span>
             <span>{album.artist}</span>
@@ -147,7 +147,7 @@ const TestAlbumsComponent = () => {
         ))}
       </div>
 
-      {data.albums.pageInfo.hasNextPage && (
+      {data.albums.pageInfo.totalPages > 1 && (
         <button onClick={() => fetchMore()} data-testid='load-more'>
           Load More
         </button>
@@ -209,14 +209,13 @@ describe('Albums Route', () => {
     it('renders empty state when no albums', () => {
       const emptyResponse = {
         albums: {
-          totalCount: 0,
           pageInfo: {
-            hasNextPage: false,
-            hasPreviousPage: false,
-            startCursor: null,
-            endCursor: null,
+            page: 1,
+            pageSize: 50,
+            totalPages: 0,
+            totalCount: 0,
           },
-          edges: [],
+          items: [],
         },
       };
 
@@ -235,7 +234,7 @@ describe('Albums Route', () => {
           ...mockGetAlbumsResponse.albums,
           pageInfo: {
             ...mockGetAlbumsResponse.albums.pageInfo,
-            hasNextPage: true,
+            totalPages: 2,
           },
         },
       };
