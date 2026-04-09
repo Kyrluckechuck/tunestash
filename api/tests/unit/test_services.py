@@ -123,6 +123,10 @@ class TestArtistService:
             assert result.total_count == 5
             assert result.page == 1
 
+            filter_calls = mock_queryset.filter.call_args_list
+            filter_kwargs = [call.kwargs for call in filter_calls]
+            assert any(kw.get("tracking_tier") == 1 for kw in filter_kwargs)
+
     @pytest.mark.asyncio
     async def test_to_graphql_type_includes_timestamp_fields(self, artist_service):
         """Test that GraphQL type conversion includes both timestamp fields."""
@@ -203,19 +207,24 @@ class TestSongService:
             mock_queryset.acount = AsyncMock(return_value=3)
 
             mock_songs = []
-            for name in ["Zebra Song", "Alpha Song", "Beta Song"]:
+            for idx, song_name in enumerate(["Zebra Song", "Alpha Song", "Beta Song"]):
                 mock_song = Mock()
-                mock_song.id = len(mock_songs) + 1
-                mock_song.name = name
-                mock_song.gid = f"song{len(mock_songs)}"
-                mock_song.primary_artist = Mock(name="Test Artist", id=1, gid="artist1")
+                mock_song.id = idx + 1
+                mock_song.name = song_name
+                mock_song.gid = f"song{idx}"
+                mock_song.primary_artist = Mock()
+                mock_song.primary_artist.name = "Test Artist"
+                mock_song.primary_artist.id = 1
+                mock_song.primary_artist.gid = "artist1"
                 mock_song.created_at = datetime.now()
                 mock_song.failed_count = 0
                 mock_song.bitrate = 320
                 mock_song.unavailable = False
                 mock_song.file_path = None
                 mock_song.downloaded = False
-                mock_song.spotify_uri = f"spotify:track:song{len(mock_songs)}"
+                mock_song.spotify_uri = f"spotify:track:song{idx}"
+                mock_song.download_provider = 0
+                mock_song.deezer_id = None
                 mock_songs.append(mock_song)
 
             mock_queryset.order_by.return_value = mock_queryset
@@ -263,14 +272,18 @@ class TestAlbumService:
             "library_manager.models.Album.objects.aget", new_callable=AsyncMock
         ) as mock_get:
             mock_album = Mock()
+            mock_album.id = 1
             mock_album.spotify_gid = "album123"
             mock_album.name = "Test Album"
             mock_album.total_tracks = 10
             mock_album.wanted = True
             mock_album.downloaded = False
-            mock_album.failed_count = 0
-            mock_album.spotify_uri = "spotify:album:album123"
+            mock_album.album_type = "album"
+            mock_album.album_group = "album"
+            mock_album.deezer_id = None
             mock_album.artist = Mock()
+            mock_album.artist.name = "Test Artist"
+            mock_album.artist.id = 1
             mock_album.artist.gid = "artist123"
             mock_get.return_value = mock_album
 
@@ -282,6 +295,7 @@ class TestAlbumService:
             assert result.total_tracks == 10
             assert result.wanted is True
             assert result.downloaded is False
+            assert result.artist == "Test Artist"
 
     @pytest.mark.asyncio
     async def test_get_page_with_sorting(self, album_service):
@@ -292,17 +306,21 @@ class TestAlbumService:
             mock_queryset.count = Mock(return_value=2)
 
             mock_albums = []
-            for name in ["B Album", "A Album"]:
+            for idx, album_name in enumerate(["B Album", "A Album"]):
                 mock_album = Mock()
-                mock_album.id = len(mock_albums) + 1
-                mock_album.name = name
-                mock_album.spotify_gid = f"album{len(mock_albums)}"
-                mock_album.artist = Mock(name="Test Artist", gid="artist1")
+                mock_album.id = idx + 1
+                mock_album.name = album_name
+                mock_album.spotify_gid = f"album{idx}"
+                mock_album.artist = Mock()
+                mock_album.artist.name = "Test Artist"
+                mock_album.artist.id = 1
+                mock_album.artist.gid = "artist1"
                 mock_album.total_tracks = 10
                 mock_album.wanted = True
                 mock_album.downloaded = False
-                mock_album.failed_count = 0
-                mock_album.spotify_uri = f"spotify:album:album{len(mock_albums)}"
+                mock_album.album_type = "album"
+                mock_album.album_group = "album"
+                mock_album.deezer_id = None
                 mock_albums.append(mock_album)
 
             mock_queryset.order_by.return_value = mock_queryset
@@ -316,6 +334,8 @@ class TestAlbumService:
             mock_queryset.order_by.assert_called_with("artist__name", "id")
             assert len(result.items) == 2
             assert result.total_count == 2
+            assert result.items[0].name == "B Album"
+            assert result.items[0].artist == "Test Artist"
 
 
 @pytest.mark.django_db

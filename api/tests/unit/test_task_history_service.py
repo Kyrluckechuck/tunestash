@@ -1,7 +1,6 @@
 """Unit tests for task history service."""
 
 from datetime import datetime, timedelta
-from unittest.mock import Mock
 
 import pytest
 from asgiref.sync import sync_to_async
@@ -14,23 +13,6 @@ from src.services.task_history import TaskHistoryService
 @pytest.fixture
 def task_history_service():
     return TaskHistoryService()
-
-
-@pytest.fixture
-def mock_task():
-    return Mock(
-        id="task_123",
-        type="SYNC",
-        entity_id="entity_456",
-        entity_type="ARTIST",
-        status="RUNNING",
-        started_at=datetime.now(),
-        completed_at=None,
-        error_message=None,
-        duration_seconds=0,
-        progress_percentage=50,
-        log_messages=["Task started", "Processing..."],
-    )
 
 
 class TestTaskHistoryService:
@@ -158,11 +140,14 @@ class TestTaskHistoryService:
     async def test_get_page_empty_result(self, task_history_service):
         """Test getting page with no matching tasks."""
         result = await task_history_service.get_page(
-            page=1, page_size=10, status=TaskStatus.FAILED
+            page=1,
+            page_size=10,
+            status=TaskStatus.FAILED,
+            search="nonexistent_task_id_that_will_never_match_anything",
         )
 
-        assert len(result.items) >= 0
-        assert result.total_count >= 0
+        assert len(result.items) == 0
+        assert result.total_count == 0
 
     @pytest.mark.django_db
     @pytest.mark.asyncio

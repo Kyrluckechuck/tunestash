@@ -1,12 +1,14 @@
 """Tests for timestamp field sorting with proper null handling."""
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, Mock, patch
 
 from django.utils import timezone
 
 import pytest
+from asgiref.sync import sync_to_async
 
+from library_manager.models import Album as DjangoAlbum
+from library_manager.models import Artist as DjangoArtist
 from src.services.album import AlbumService
 from src.services.artist import ArtistService
 
@@ -21,232 +23,149 @@ def album_service() -> AlbumService:
     return AlbumService()
 
 
-def create_mock_artist(
-    artist_id: int,
+def _create_artist(
     name: str,
-    last_synced_at=None,
-    last_downloaded_at=None,
-) -> Mock:
-    """Create a mock artist with configurable timestamp fields."""
-    mock = Mock()
-    mock.id = artist_id
-    mock.name = name
-    mock.gid = f"artist_{artist_id}"
-    mock.tracking_tier = 1
-    mock.added_at = timezone.now()
-    mock.last_synced_at = last_synced_at
-    mock.last_downloaded_at = last_downloaded_at
-    mock.spotify_uri = f"spotify:artist:artist_{artist_id}"
-    return mock
+    gid: str,
+    last_synced_at: object = None,
+    last_downloaded_at: object = None,
+) -> DjangoArtist:
+    """Create a real Artist in the database."""
+    artist = DjangoArtist(
+        name=name,
+        gid=gid,
+        tracking_tier=1,
+        last_synced_at=last_synced_at,
+        last_downloaded_at=last_downloaded_at,
+    )
+    artist.save()
+    return artist
 
 
+@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_artist_sorting_last_synced_ascending_nulls_first(
     artist_service: ArtistService,
 ) -> None:
-    """Test that null last_synced_at values appear first in ascending sort."""
+    """Ascending sort by lastSynced should put nulls first."""
     now = timezone.now()
     old = now - timedelta(days=7)
 
-    artists = [
-        create_mock_artist(1, "Never Synced", last_synced_at=None),
-        create_mock_artist(2, "Synced Recently", last_synced_at=now),
-        create_mock_artist(3, "Synced Week Ago", last_synced_at=old),
-    ]
+    await sync_to_async(_create_artist)(
+        "Never Synced", "asc_null_1", last_synced_at=None
+    )
+    await sync_to_async(_create_artist)(
+        "Synced Recently", "asc_null_2", last_synced_at=now
+    )
+    await sync_to_async(_create_artist)(
+        "Synced Week Ago", "asc_null_3", last_synced_at=old
+    )
 
-    with (
-        patch("library_manager.models.Artist.objects.all") as mock_all,
-        patch.object(
-            artist_service, "_get_undownloaded_count", new_callable=AsyncMock
-        ) as mock_undownloaded,
-        patch.object(
-            artist_service, "_get_failed_song_count", new_callable=AsyncMock
-        ) as mock_failed,
-    ):
-        mock_undownloaded.return_value = 0
-        mock_failed.return_value = 0
-        mock_queryset = Mock()
-        mock_queryset.filter.return_value = mock_queryset
-        mock_queryset.acount = AsyncMock(return_value=3)
+    result = await artist_service.get_page(
+        page=1,
+        page_size=10,
+        tracking_tier=1,
+        sort_by="lastSynced",
+        sort_direction="asc",
+    )
 
-        # Simulate ordering with nulls_first for ascending
-        def order_by_mock(*args):
-            # In real Django, F('last_synced_at').asc(nulls_first=True) would order:
-            # None, old, now
-            mock_result = Mock()
-            mock_result.__getitem__ = Mock(
-                return_value=[artists[0], artists[2], artists[1]]
-            )
-            return mock_result
+    names = [item.name for item in result.items]
+    null_idx = names.index("Never Synced")
+    old_idx = names.index("Synced Week Ago")
+    recent_idx = names.index("Synced Recently")
 
-        mock_queryset.order_by = order_by_mock
-        mock_all.return_value = mock_queryset
-
-        result = await artist_service.get_page(
-            page=1, page_size=10, sort_by="lastSynced", sort_direction="asc"
-        )
-
-        items = result.items
-
-        assert items[0].name == "Never Synced"
-        assert items[1].name == "Synced Week Ago"
-        assert items[2].name == "Synced Recently"
+    assert null_idx < old_idx < recent_idx
 
 
+@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_artist_sorting_last_synced_descending_nulls_last(
     artist_service: ArtistService,
 ) -> None:
-    """Test that null last_synced_at values appear last in descending sort."""
+    """Descending sort by lastSynced should put nulls last."""
     now = timezone.now()
     old = now - timedelta(days=7)
 
-    artists = [
-        create_mock_artist(1, "Never Synced", last_synced_at=None),
-        create_mock_artist(2, "Synced Recently", last_synced_at=now),
-        create_mock_artist(3, "Synced Week Ago", last_synced_at=old),
-    ]
+    await sync_to_async(_create_artist)(
+        "Never Synced", "desc_null_1", last_synced_at=None
+    )
+    await sync_to_async(_create_artist)(
+        "Synced Recently", "desc_null_2", last_synced_at=now
+    )
+    await sync_to_async(_create_artist)(
+        "Synced Week Ago", "desc_null_3", last_synced_at=old
+    )
 
-    with (
-        patch("library_manager.models.Artist.objects.all") as mock_all,
-        patch.object(
-            artist_service, "_get_undownloaded_count", new_callable=AsyncMock
-        ) as mock_undownloaded,
-        patch.object(
-            artist_service, "_get_failed_song_count", new_callable=AsyncMock
-        ) as mock_failed,
-    ):
-        mock_undownloaded.return_value = 0
-        mock_failed.return_value = 0
-        mock_queryset = Mock()
-        mock_queryset.filter.return_value = mock_queryset
-        mock_queryset.acount = AsyncMock(return_value=3)
+    result = await artist_service.get_page(
+        page=1,
+        page_size=10,
+        tracking_tier=1,
+        sort_by="lastSynced",
+        sort_direction="desc",
+    )
 
-        # Simulate ordering with nulls_last for descending
-        def order_by_mock(*args):
-            # In real Django, F('last_synced_at').desc(nulls_last=True) would order:
-            # now, old, None
-            mock_result = Mock()
-            mock_result.__getitem__ = Mock(
-                return_value=[artists[1], artists[2], artists[0]]
-            )
-            return mock_result
+    names = [item.name for item in result.items]
+    null_idx = names.index("Never Synced")
+    recent_idx = names.index("Synced Recently")
+    old_idx = names.index("Synced Week Ago")
 
-        mock_queryset.order_by = order_by_mock
-        mock_all.return_value = mock_queryset
-
-        result = await artist_service.get_page(
-            page=1, page_size=10, sort_by="lastSynced", sort_direction="desc"
-        )
-
-        items = result.items
-
-        assert items[0].name == "Synced Recently"
-        assert items[1].name == "Synced Week Ago"
-        assert items[2].name == "Never Synced"
+    assert recent_idx < old_idx < null_idx
 
 
+@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_artist_sorting_last_downloaded_nulls_handling(
     artist_service: ArtistService,
 ) -> None:
-    """Test that last_downloaded_at null handling works like last_synced_at."""
+    """Ascending sort by lastDownloaded should put nulls first."""
     now = timezone.now()
 
-    artists = [
-        create_mock_artist(1, "Never Downloaded", last_downloaded_at=None),
-        create_mock_artist(2, "Downloaded Recently", last_downloaded_at=now),
-    ]
+    await sync_to_async(_create_artist)(
+        "Never Downloaded", "dl_null_1", last_downloaded_at=None
+    )
+    await sync_to_async(_create_artist)(
+        "Downloaded Recently", "dl_null_2", last_downloaded_at=now
+    )
 
-    with (
-        patch("library_manager.models.Artist.objects.all") as mock_all,
-        patch.object(
-            artist_service, "_get_undownloaded_count", new_callable=AsyncMock
-        ) as mock_undownloaded,
-        patch.object(
-            artist_service, "_get_failed_song_count", new_callable=AsyncMock
-        ) as mock_failed,
-    ):
-        mock_undownloaded.return_value = 0
-        mock_failed.return_value = 0
-        mock_queryset = Mock()
-        mock_queryset.filter.return_value = mock_queryset
-        mock_queryset.acount = AsyncMock(return_value=2)
+    result = await artist_service.get_page(
+        page=1,
+        page_size=10,
+        tracking_tier=1,
+        sort_by="lastDownloaded",
+        sort_direction="asc",
+    )
 
-        # Ascending: nulls first
-        def order_by_asc(*args):
-            mock_result = Mock()
-            mock_result.__getitem__ = Mock(return_value=[artists[0], artists[1]])
-            return mock_result
+    names = [item.name for item in result.items]
+    null_idx = names.index("Never Downloaded")
+    recent_idx = names.index("Downloaded Recently")
 
-        mock_queryset.order_by = order_by_asc
-        mock_all.return_value = mock_queryset
-
-        result = await artist_service.get_page(
-            page=1, page_size=10, sort_by="lastDownloaded", sort_direction="asc"
-        )
-
-        items = result.items
-
-        assert items[0].name == "Never Downloaded"
-        assert items[1].name == "Downloaded Recently"
+    assert null_idx < recent_idx
 
 
+@pytest.mark.django_db
 @pytest.mark.asyncio
-async def test_album_sorting_created_at_nulls_handling(
+async def test_album_sorting_by_name(
     album_service: AlbumService,
 ) -> None:
-    """Test that album created_at sorting handles nulls correctly."""
-    now = timezone.now()
-    old = now - timedelta(days=30)
+    """Album sorting by name returns correctly ordered results."""
+    artist = await sync_to_async(_create_artist)("Album Sort Artist", "alb_sort_1")
 
-    def create_mock_album(album_id: int, name: str, created_at=None) -> Mock:
-        mock = Mock()
-        mock.id = album_id
-        mock.name = name
-        mock.spotify_gid = f"album_{album_id}"
-        mock.total_tracks = 10
-        mock.wanted = True
-        mock.downloaded = False
-        mock.album_type = "album"
-        mock.album_group = "album"
-        mock.created_at = created_at
-        mock.artist = Mock(name="Test Artist", id=1, gid="artist_1")
-        return mock
-
-    albums = [
-        create_mock_album(1, "No Date", created_at=None),
-        create_mock_album(2, "Recent", created_at=now),
-        create_mock_album(3, "Old", created_at=old),
-    ]
-
-    from src.services.base import PageResult
-
-    def mock_get_page(*args, **kwargs):
-        if kwargs.get("sort_by") == "createdAt":
-            if kwargs.get("sort_direction") == "asc":
-                return PageResult(
-                    items=[albums[0], albums[2], albums[1]],
-                    page=1,
-                    page_size=10,
-                    total_count=3,
-                )
-            else:
-                return PageResult(
-                    items=[albums[1], albums[2], albums[0]],
-                    page=1,
-                    page_size=10,
-                    total_count=3,
-                )
-        return PageResult(items=albums, page=1, page_size=10, total_count=3)
-
-    with patch.object(album_service, "get_page", side_effect=mock_get_page):
-        result = await album_service.get_page(
-            page=1, page_size=10, sort_by="createdAt", sort_direction="asc"
+    for name in ["Zebra Album", "Alpha Album", "Middle Album"]:
+        await sync_to_async(DjangoAlbum.objects.create)(
+            name=name,
+            spotify_gid=f"alb_sort_{name[:3].lower()}",
+            artist=artist,
+            total_tracks=10,
+            wanted=True,
+            downloaded=False,
         )
-        assert result.items[0].name == "No Date"
 
-        result = await album_service.get_page(
-            page=1, page_size=10, sort_by="createdAt", sort_direction="desc"
-        )
-        assert result.items[2].name == "No Date"
+    result = await album_service.get_page(
+        page=1, page_size=10, sort_by="name", sort_direction="asc"
+    )
+
+    names = [item.name for item in result.items]
+    alpha_idx = names.index("Alpha Album")
+    middle_idx = names.index("Middle Album")
+    zebra_idx = names.index("Zebra Album")
+
+    assert alpha_idx < middle_idx < zebra_idx
