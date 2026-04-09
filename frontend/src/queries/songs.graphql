@@ -1,6 +1,6 @@
 query GetSongs(
-  $first: Int
-  $after: String
+  $page: Int = 1
+  $pageSize: Int = 50
   $artistId: Int
   $albumId: Int
   $downloaded: Boolean
@@ -11,8 +11,8 @@ query GetSongs(
   $maxBitrate: Int
 ) {
   songs(
-    first: $first
-    after: $after
+    page: $page
+    pageSize: $pageSize
     artistId: $artistId
     albumId: $albumId
     downloaded: $downloaded
@@ -22,7 +22,7 @@ query GetSongs(
     search: $search
     maxBitrate: $maxBitrate
   ) {
-    edges {
+    items {
       id
       name
       gid
@@ -40,12 +40,11 @@ query GetSongs(
       downloadProvider
     }
     pageInfo {
-      hasNextPage
-      hasPreviousPage
-      startCursor
-      endCursor
+      page
+      pageSize
+      totalPages
+      totalCount
     }
-    totalCount
   }
 }
 

@@ -1,6 +1,6 @@
 query GetExternalLists(
-  $first: Int = 20
-  $after: String
+  $page: Int = 1
+  $pageSize: Int = 50
   $source: String
   $listType: String
   $status: String
@@ -9,8 +9,8 @@ query GetExternalLists(
   $sortDirection: String
 ) {
   externalLists(
-    first: $first
-    after: $after
+    page: $page
+    pageSize: $pageSize
     source: $source
     listType: $listType
     status: $status
@@ -18,14 +18,13 @@ query GetExternalLists(
     sortBy: $sortBy
     sortDirection: $sortDirection
   ) {
-    totalCount
     pageInfo {
-      hasNextPage
-      hasPreviousPage
-      startCursor
-      endCursor
+      page
+      pageSize
+      totalPages
+      totalCount
     }
-    edges {
+    items {
       id
       name
       source

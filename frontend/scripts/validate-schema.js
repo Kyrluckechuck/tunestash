@@ -92,10 +92,10 @@ async function testGraphQLOperations() {
     {
       name: 'GetSongs',
       query: `
-        query GetSongs($first: Int = 10) {
-          songs(first: $first) {
-            totalCount
-            edges {
+        query GetSongs($page: Int = 1, $pageSize: Int = 10) {
+          songs(page: $page, pageSize: $pageSize) {
+            pageInfo { page pageSize totalPages totalCount }
+            items {
               id
               name
               gid
@@ -112,15 +112,15 @@ async function testGraphQLOperations() {
           }
         }
       `,
-      variables: { first: 5 },
+      variables: { page: 1, pageSize: 5 },
     },
     {
       name: 'GetArtists',
       query: `
-        query GetArtists($first: Int = 10) {
-          artists(first: $first) {
-            totalCount
-            edges {
+        query GetArtists($page: Int = 1, $pageSize: Int = 10) {
+          artists(page: $page, pageSize: $pageSize) {
+            pageInfo { page pageSize totalPages totalCount }
+            items {
               id
               name
               gid
@@ -131,15 +131,15 @@ async function testGraphQLOperations() {
           }
         }
       `,
-      variables: { first: 5 },
+      variables: { page: 1, pageSize: 5 },
     },
     {
       name: 'GetAlbums',
       query: `
-        query GetAlbums($first: Int = 10) {
-          albums(first: $first) {
-            totalCount
-            edges {
+        query GetAlbums($page: Int = 1, $pageSize: Int = 10) {
+          albums(page: $page, pageSize: $pageSize) {
+            pageInfo { page pageSize totalPages totalCount }
+            items {
               id
               name
               spotifyGid
@@ -154,7 +154,7 @@ async function testGraphQLOperations() {
           }
         }
       `,
-      variables: { first: 5 },
+      variables: { page: 1, pageSize: 5 },
     },
   ];
 

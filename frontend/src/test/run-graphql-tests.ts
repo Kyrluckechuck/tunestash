@@ -41,24 +41,23 @@ const testQueries = [
     query: gql`
       query GetArtistsTest(
         $trackingTier: Int
-        $first: Int = 20
-        $after: String
+        $page: Int = 1
+        $pageSize: Int = 50
         $search: String
       ) {
         artists(
           trackingTier: $trackingTier
-          first: $first
-          after: $after
+          page: $page
+          pageSize: $pageSize
           search: $search
         ) {
-          totalCount
           pageInfo {
-            hasNextPage
-            hasPreviousPage
-            startCursor
-            endCursor
+            page
+            pageSize
+            totalPages
+            totalCount
           }
-          edges {
+          items {
             id
             name
             gid
@@ -79,8 +78,8 @@ const testQueries = [
         $artistId: Int
         $wanted: Boolean
         $downloaded: Boolean
-        $first: Int = 20
-        $after: String
+        $page: Int = 1
+        $pageSize: Int = 50
         $sortBy: String
         $sortDirection: String
         $search: String
@@ -89,20 +88,19 @@ const testQueries = [
           artistId: $artistId
           wanted: $wanted
           downloaded: $downloaded
-          first: $first
-          after: $after
+          page: $page
+          pageSize: $pageSize
           sortBy: $sortBy
           sortDirection: $sortDirection
           search: $search
         ) {
-          totalCount
           pageInfo {
-            hasNextPage
-            hasPreviousPage
-            startCursor
-            endCursor
+            page
+            pageSize
+            totalPages
+            totalCount
           }
-          edges {
+          items {
             id
             name
             spotifyGid
@@ -125,28 +123,27 @@ const testQueries = [
     query: gql`
       query GetPlaylistsTest(
         $enabled: Boolean
-        $first: Int = 20
-        $after: String
+        $page: Int = 1
+        $pageSize: Int = 50
         $sortBy: String
         $sortDirection: String
         $search: String
       ) {
         playlists(
           enabled: $enabled
-          first: $first
-          after: $after
+          page: $page
+          pageSize: $pageSize
           sortBy: $sortBy
           sortDirection: $sortDirection
           search: $search
         ) {
-          totalCount
           pageInfo {
-            hasNextPage
-            hasPreviousPage
-            startCursor
-            endCursor
+            page
+            pageSize
+            totalPages
+            totalCount
           }
-          edges {
+          items {
             id
             name
             url
@@ -165,8 +162,8 @@ const testQueries = [
     name: 'GetSongs',
     query: gql`
       query GetSongsTest(
-        $first: Int
-        $after: String
+        $page: Int = 1
+        $pageSize: Int = 50
         $artistId: Int
         $downloaded: Boolean
         $unavailable: Boolean
@@ -175,8 +172,8 @@ const testQueries = [
         $search: String
       ) {
         songs(
-          first: $first
-          after: $after
+          page: $page
+          pageSize: $pageSize
           artistId: $artistId
           downloaded: $downloaded
           unavailable: $unavailable
@@ -184,7 +181,7 @@ const testQueries = [
           sortDirection: $sortDirection
           search: $search
         ) {
-          edges {
+          items {
             id
             name
             gid
@@ -200,12 +197,11 @@ const testQueries = [
             spotifyUri
           }
           pageInfo {
-            hasNextPage
-            hasPreviousPage
-            startCursor
-            endCursor
+            page
+            pageSize
+            totalPages
+            totalCount
           }
-          totalCount
         }
       }
     `,
@@ -215,43 +211,39 @@ const testQueries = [
     name: 'GetTaskHistory',
     query: gql`
       query GetTaskHistory(
-        $first: Int = 20
-        $after: String
+        $page: Int = 1
+        $pageSize: Int = 50
         $status: String
         $type: String
         $entityType: String
         $search: String
       ) {
         taskHistory(
-          first: $first
-          after: $after
+          page: $page
+          pageSize: $pageSize
           status: $status
           type: $type
           entityType: $entityType
           search: $search
         ) {
-          totalCount
           pageInfo {
-            hasNextPage
-            hasPreviousPage
-            startCursor
-            endCursor
+            page
+            pageSize
+            totalPages
+            totalCount
           }
-          edges {
-            node {
-              id
-              taskId
-              type
-              entityId
-              entityType
-              status
-              startedAt
-              completedAt
-              durationSeconds
-              progressPercentage
-              logMessages
-            }
-            cursor
+          items {
+            id
+            taskId
+            type
+            entityId
+            entityType
+            status
+            startedAt
+            completedAt
+            durationSeconds
+            progressPercentage
+            logMessages
           }
         }
       }
