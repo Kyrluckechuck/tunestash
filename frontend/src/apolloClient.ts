@@ -114,7 +114,6 @@ export const apolloClient = new ApolloClient({
               'type',
               'entityType',
               'search',
-              'daysLookback',
               'page',
               'pageSize',
             ],

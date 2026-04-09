@@ -13,10 +13,6 @@ interface DataTableProps<T> {
   page?: number;
   totalPages?: number;
   onPageChange?: (page: number) => void;
-  /** @deprecated Use page/totalPages/onPageChange instead */
-  hasNextPage?: boolean;
-  /** @deprecated Use page/totalPages/onPageChange instead */
-  onLoadMore?: () => void;
   children: React.ReactNode;
   emptyMessage?: string;
   loadingMessage?: string;

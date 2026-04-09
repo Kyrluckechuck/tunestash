@@ -46,7 +46,8 @@ const mockUseMutation = useMutation as MockUseMutation;
 
 // Create a test component that simulates the Albums route
 const TestAlbumsComponent = () => {
-  const { data, loading, error, fetchMore } = mockUseQuery();
+  const { data, loading, error } = mockUseQuery();
+  const [page, setPage] = React.useState(1);
   const [setAlbumWanted] = mockUseMutation();
 
   const [filters, setFilters] = React.useState({
@@ -148,8 +149,8 @@ const TestAlbumsComponent = () => {
       </div>
 
       {data.albums.pageInfo.totalPages > 1 && (
-        <button onClick={() => fetchMore()} data-testid='load-more'>
-          Load More
+        <button onClick={() => setPage(p => p + 1)} data-testid='next-page'>
+          Next Page ({page})
         </button>
       )}
     </div>
@@ -239,20 +240,16 @@ describe('Albums Route', () => {
         },
       };
 
-      const mockFetchMore = vi.fn();
-      mockUseQuery.mockReturnValue({
-        ...createMockUseQuery(responseWithNextPage),
-        fetchMore: mockFetchMore,
-      });
+      mockUseQuery.mockReturnValue(createMockUseQuery(responseWithNextPage));
       mockUseMutation.mockReturnValue(createMockUseMutation());
 
       render(<TestAlbumsComponent />);
 
-      const loadMoreButton = screen.getByTestId('load-more');
-      expect(loadMoreButton).toBeInTheDocument();
+      const nextPageButton = screen.getByTestId('next-page');
+      expect(nextPageButton).toBeInTheDocument();
 
-      fireEvent.click(loadMoreButton);
-      expect(mockFetchMore).toHaveBeenCalled();
+      fireEvent.click(nextPageButton);
+      expect(screen.getByText(/next page \(2\)/i)).toBeInTheDocument();
     });
   });
 

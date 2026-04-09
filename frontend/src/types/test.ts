@@ -7,7 +7,6 @@ export interface MockUseQueryResult {
   data: unknown;
   loading: boolean;
   error?: Error;
-  fetchMore: () => void;
   networkStatus: number;
   refetch: () => void;
 }
@@ -46,19 +45,4 @@ export interface TestSong extends Song {
 
 export interface TestTaskHistory extends TaskHistory {
   // Additional test-specific properties if needed
-}
-
-export interface TestEdge<T> {
-  node: T;
-}
-
-export interface TestConnection<T> {
-  edges: TestEdge<T>[];
-  totalCount: number;
-  pageInfo: {
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
-    startCursor?: string | null;
-    endCursor?: string | null;
-  };
 }
