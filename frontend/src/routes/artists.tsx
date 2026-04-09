@@ -17,6 +17,7 @@ import { DeezerLinkingSection } from '../components/artists/DeezerLinkingSection
 
 // Hooks
 import { useArtistsPage } from '../hooks/useArtistsPage';
+import { useColumnPreferences } from '../hooks/useColumnPreferences';
 
 function Artists() {
   const { tab } = Route.useSearch();
@@ -25,6 +26,11 @@ function Artists() {
   const setActiveTab = (tab: string) => {
     navigate({ search: { tab } });
   };
+
+  const { visibleColumns, toggleColumn } = useColumnPreferences(
+    'tunestash:artists:columns',
+    ['lastSynced', 'lastDownloaded']
+  );
 
   const {
     // Data
@@ -159,6 +165,8 @@ function Artists() {
               onSyncArtist={handleSyncArtist}
               onDownloadArtist={handleDownloadArtist}
               onRetryFailedSongs={handleRetryFailedSongs}
+              visibleColumns={visibleColumns}
+              onToggleColumn={toggleColumn}
               loading={loading}
               mutatingIds={mutatingIds}
               syncMutatingIds={syncMutatingIds}

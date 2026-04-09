@@ -1,5 +1,6 @@
 import type { Artist } from '../../types/generated/graphql';
 import { SortableTableHeader } from '../ui/SortableTableHeader';
+import { ColumnToggle } from './ColumnToggle';
 import { Link } from '@tanstack/react-router';
 
 export type SortField =
@@ -10,6 +11,20 @@ export type SortField =
   | 'lastDownloaded'
   | null;
 
+const OPTIONAL_COLUMNS = [
+  { key: 'lastSynced', label: 'Last Synced' },
+  { key: 'lastDownloaded', label: 'Last Downloaded' },
+  { key: 'addedAt', label: 'Added At' },
+  { key: 'albumCount', label: 'Albums' },
+  { key: 'downloadedAlbumCount', label: 'Downloaded Albums' },
+  { key: 'songCount', label: 'Songs' },
+  { key: 'downloadedSongCount', label: 'Downloaded Songs' },
+  { key: 'undownloadedCount', label: 'Pending' },
+  { key: 'failedSongCount', label: 'Failed' },
+] as const;
+
+const SORTABLE_COLUMNS = new Set(['lastSynced', 'lastDownloaded', 'addedAt']);
+
 interface ArtistsTableProps {
   artists: Artist[];
   sortField: SortField;
@@ -19,6 +34,8 @@ interface ArtistsTableProps {
   onSyncArtist: (artistId: number) => void;
   onDownloadArtist: (artistId: number) => void;
   onRetryFailedSongs: (artistId: number) => void;
+  visibleColumns: string[];
+  onToggleColumn: (key: string) => void;
   loading?: boolean;
   mutatingIds?: Set<number>;
   syncMutatingIds?: Set<number>;
@@ -26,6 +43,11 @@ interface ArtistsTableProps {
   retryMutatingIds?: Set<number>;
   errorById?: Record<number, string>;
   pulseIds?: Set<number>;
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return 'Never';
+  return new Date(value).toLocaleString();
 }
 
 export function ArtistsTable({
@@ -37,6 +59,8 @@ export function ArtistsTable({
   onSyncArtist,
   onDownloadArtist,
   onRetryFailedSongs,
+  visibleColumns,
+  onToggleColumn,
   loading = false,
   mutatingIds,
   syncMutatingIds,
@@ -54,6 +78,10 @@ export function ArtistsTable({
       </div>
     );
   }
+
+  const activeOptionalColumns = OPTIONAL_COLUMNS.filter(col =>
+    visibleColumns.includes(col.key)
+  );
 
   return (
     <>
@@ -103,6 +131,15 @@ export function ArtistsTable({
 
       {/* Desktop table view */}
       <div className='hidden md:block bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
+        <div className='flex justify-end px-4 py-2 border-b border-gray-200 dark:border-slate-700'>
+          <ColumnToggle
+            columns={
+              OPTIONAL_COLUMNS as unknown as { key: string; label: string }[]
+            }
+            visibleColumns={visibleColumns}
+            onToggle={onToggleColumn}
+          />
+        </div>
         <div className='overflow-x-auto'>
           <table className='min-w-full divide-y divide-gray-200 dark:divide-slate-700'>
             <thead className='bg-gray-50 dark:bg-slate-900'>
@@ -123,22 +160,26 @@ export function ArtistsTable({
                 >
                   Status
                 </SortableTableHeader>
-                <SortableTableHeader
-                  field='lastSynced'
-                  currentSortField={sortField}
-                  currentSortDirection={sortDirection}
-                  onSort={onSort}
-                >
-                  Last Synced
-                </SortableTableHeader>
-                <SortableTableHeader
-                  field='lastDownloaded'
-                  currentSortField={sortField}
-                  currentSortDirection={sortDirection}
-                  onSort={onSort}
-                >
-                  Last Downloaded
-                </SortableTableHeader>
+                {activeOptionalColumns.map(col =>
+                  SORTABLE_COLUMNS.has(col.key) ? (
+                    <SortableTableHeader
+                      key={col.key}
+                      field={col.key as SortField}
+                      currentSortField={sortField}
+                      currentSortDirection={sortDirection}
+                      onSort={onSort}
+                    >
+                      {col.label}
+                    </SortableTableHeader>
+                  ) : (
+                    <th
+                      key={col.key}
+                      className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider'
+                    >
+                      {col.label}
+                    </th>
+                  )
+                )}
                 <SortableTableHeader
                   field={null}
                   currentSortField={sortField}
@@ -190,16 +231,31 @@ export function ArtistsTable({
                       <option value={2}>Favourite</option>
                     </select>
                   </td>
-                  <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
-                    {artist.lastSynced
-                      ? new Date(artist.lastSynced).toLocaleString()
-                      : 'Never'}
-                  </td>
-                  <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'>
-                    {artist.lastDownloaded
-                      ? new Date(artist.lastDownloaded).toLocaleString()
-                      : 'Never'}
-                  </td>
+                  {activeOptionalColumns.map(col => (
+                    <td
+                      key={col.key}
+                      className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400'
+                    >
+                      {SORTABLE_COLUMNS.has(col.key)
+                        ? formatDate(
+                            artist[
+                              col.key as
+                                | 'lastSynced'
+                                | 'lastDownloaded'
+                                | 'addedAt'
+                            ]
+                          )
+                        : artist[
+                            col.key as
+                              | 'albumCount'
+                              | 'downloadedAlbumCount'
+                              | 'songCount'
+                              | 'downloadedSongCount'
+                              | 'undownloadedCount'
+                              | 'failedSongCount'
+                          ]}
+                    </td>
+                  ))}
                   <td className='px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2'>
                     <button
                       onClick={() => onSyncArtist(artist.id)}
