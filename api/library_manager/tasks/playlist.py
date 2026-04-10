@@ -131,10 +131,6 @@ def sync_tracked_playlist(
     _sync_tracked_playlist_internal(tracked_playlist, task_id)
 
 
-# Re-export for backward compatibility with existing importers
-_extract_deezer_playlist_id = extract_deezer_playlist_id
-
-
 @celery_app.task(bind=True, name="library_manager.tasks.sync_deezer_playlist")
 def sync_deezer_playlist(
     self: Any, playlist_id: int, task_id: Optional[str] = None
@@ -159,7 +155,7 @@ def sync_deezer_playlist(
             )
             return
 
-        deezer_playlist_id = _extract_deezer_playlist_id(playlist.url)
+        deezer_playlist_id = extract_deezer_playlist_id(playlist.url)
         if not deezer_playlist_id:
             logger.error(
                 f"Could not extract Deezer playlist ID from URL: {playlist.url}"
@@ -330,7 +326,7 @@ def _track_artists_in_deezer_playlist(playlist: TrackedPlaylist) -> None:
     """Track all artists in a Deezer playlist by fetching tracks from Deezer API."""
     from src.providers.deezer import DeezerMetadataProvider
 
-    deezer_playlist_id = _extract_deezer_playlist_id(playlist.url)
+    deezer_playlist_id = extract_deezer_playlist_id(playlist.url)
     if not deezer_playlist_id:
         logger.error(f"Could not extract Deezer playlist ID from URL: {playlist.url}")
         return

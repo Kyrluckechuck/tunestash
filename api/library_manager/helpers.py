@@ -286,51 +286,6 @@ def enqueue_playlists(
     download_non_enqueued_playlists([], playlists_to_enqueue, priority=priority)
 
 
-def enqueue_fetch_all_albums_for_artists(
-    artists: QuerySet[Artist], extra_args: Optional[dict] = None
-) -> None:
-    """Enqueue fetch_all_albums_for_artist task for multiple artists."""
-    if extra_args is None:
-        extra_args = {}
-
-    # Track already enqueued artists to avoid duplicates
-    already_enqueued_artists = set()
-
-    for artist in artists:
-        # Use database ID for internal operations
-        if artist.id in already_enqueued_artists:
-            continue
-        already_enqueued_artists.add(artist.id)
-
-        # Pass database ID, not gid
-        from .tasks import fetch_all_albums_for_artist
-
-        # fetch_all_albums_for_artist doesn't accept any extra parameters
-        fetch_all_albums_for_artist.delay(artist.id)
-
-
-def enqueue_download_missing_albums_for_artists(
-    artists: QuerySet[Artist], extra_args: Optional[dict] = None
-) -> None:
-    """Enqueue download_missing_albums_for_artist task for multiple artists."""
-    if extra_args is None:
-        extra_args = {}
-
-    # Track already enqueued artists to avoid duplicates
-    already_enqueued_artists = set()
-
-    for artist in artists:
-        # Use database ID for internal operations
-        if artist.id in already_enqueued_artists:
-            continue
-        already_enqueued_artists.add(artist.id)
-
-        # Pass database ID, not gid
-        from .tasks import download_missing_albums_for_artist
-
-        download_missing_albums_for_artist.delay(artist.id, **extra_args)
-
-
 def enqueue_batch_artist_operations(
     artists: QuerySet[Artist],
     operations: Optional[List[str]] = None,
@@ -379,30 +334,6 @@ def enqueue_batch_artist_operations(
             operation_counts["download"] = operation_counts.get("download", 0) + 1
 
     return operation_counts
-
-
-def enqueue_priority_artist_operations(
-    artists: QuerySet[Artist], priority: int = 5, max_concurrent: int = 10
-) -> Dict[str, int]:
-    """
-    Enqueue high-priority operations for artists with rate limiting.
-
-    Args:
-        artists: QuerySet of artists to process
-        priority: Celery task priority (lower = higher priority)
-        max_concurrent: Maximum concurrent operations
-
-    Returns:
-        Dict with operation counts
-    """
-    extra_args = {"priority": priority}
-
-    # Limit concurrent operations
-    limited_artists = artists[:max_concurrent]
-
-    return enqueue_batch_artist_operations(
-        limited_artists, operations=["fetch", "download"], extra_args=extra_args
-    )
 
 
 def enqueue_artist_sync_with_download(

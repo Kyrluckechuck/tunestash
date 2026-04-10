@@ -1,16 +1,9 @@
-"""Deezer-specific tasks for album discovery and metadata fetching."""
+"""Deezer album discovery and metadata fetching."""
 
-from typing import Any, Optional
-
-from django.utils import timezone
-
-from celery_app import app as celery_app
+from typing import Optional
 
 from ..models import Album, Artist, TaskHistory
 from .core import (
-    complete_task,
-    create_task_history,
-    logger,
     normalize_name,
     update_task_progress,
 )
@@ -76,56 +69,3 @@ def _fetch_albums_via_deezer(
         created_count += 1
 
     return created_count, linked_count
-
-
-@celery_app.task(
-    bind=True,
-    name="library_manager.tasks.fetch_artist_albums_from_deezer",
-)
-def fetch_artist_albums_from_deezer(self: Any, artist_id: int) -> None:
-    """Fetch all albums for an artist from Deezer and create DB records."""
-    task_history = None
-    try:
-        try:
-            artist = Artist.objects.get(id=artist_id)
-        except Artist.DoesNotExist:
-            logger.warning(f"Artist with ID {artist_id} does not exist. Skipping.")
-            return
-
-        if not artist.deezer_id:
-            logger.warning(
-                f"Artist {artist.name} has no deezer_id. Skipping Deezer fetch."
-            )
-            return
-
-        task_history = create_task_history(
-            task_id=self.request.id,
-            task_type="FETCH",
-            entity_id=str(artist.id),
-            entity_type="ARTIST",
-            task_name="fetch_artist_albums_from_deezer",
-        )
-        task_history.status = "RUNNING"
-        task_history.save()
-        update_task_progress(
-            task_history, 0.0, f"Fetching albums for {artist.name} from Deezer"
-        )
-
-        created_count, linked_count = _fetch_albums_via_deezer(artist, task_history)
-
-        artist.last_synced_at = timezone.now()
-        artist.save(update_fields=["last_synced_at"])
-
-        msg = (
-            f"Deezer fetch complete for {artist.name}: "
-            f"{created_count} new, {linked_count} linked"
-        )
-        logger.info(msg)
-        update_task_progress(task_history, 100.0, msg)
-        complete_task(task_history)
-
-    except Exception as e:
-        logger.exception(f"Error fetching Deezer albums for artist_id={artist_id}")
-        if task_history:
-            complete_task(task_history, success=False, error_message=str(e))
-        raise

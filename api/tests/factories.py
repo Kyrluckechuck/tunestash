@@ -9,7 +9,6 @@ from factory.django import DjangoModelFactory
 from library_manager.models import (
     Album,
     Artist,
-    DownloadHistory,
     ExternalList,
     ExternalListSource,
     ExternalListStatus,
@@ -108,19 +107,6 @@ class TaskHistoryFactory(DjangoModelFactory):
     log_messages = Faker("sentences", nb=3)
 
 
-class DownloadHistoryFactory(DjangoModelFactory):
-    """Factory for creating DownloadHistory instances."""
-
-    class Meta:
-        model = DownloadHistory
-
-    url = Sequence(lambda n: f"spotify:track:download_{n}")
-    added_at = Faker("date_time", tzinfo=timezone.utc)
-    completed_at = Faker("date_time", tzinfo=timezone.utc)
-    progress = Faker("random_int", min=0, max=100)
-    error_message = Faker("sentence")
-
-
 # Specialized factories for common test scenarios
 class TrackedArtistFactory(ArtistFactory):
     """Factory for creating tracked artists."""
@@ -176,13 +162,6 @@ class FailedTaskFactory(TaskHistoryFactory):
     status = "FAILED"
     completed_at = Faker("date_time", tzinfo=timezone.utc)
     error_message = Faker("sentence")
-
-
-class CompletedDownloadFactory(DownloadHistoryFactory):
-    """Factory for creating completed downloads."""
-
-    completed_at = Faker("date_time", tzinfo=timezone.utc)
-    progress = 100
 
 
 class ExternalListFactory(DjangoModelFactory):

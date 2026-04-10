@@ -12,9 +12,6 @@ from library_manager.helpers import (
     download_missing_tracked_artists,
     enqueue_artist_sync_with_download,
     enqueue_batch_artist_operations,
-    enqueue_download_missing_albums_for_artists,
-    enqueue_fetch_all_albums_for_artists,
-    enqueue_priority_artist_operations,
     generate_task_id,
     is_task_pending_or_running,
     update_tracked_artists_albums,
@@ -36,42 +33,6 @@ class TestHelpers(TestCase):
         self.artist3 = Artist.objects.create(
             name="Test Artist 3", gid="artist_789", tracking_tier=0
         )
-
-    @patch("library_manager.tasks.fetch_all_albums_for_artist")
-    def test_enqueue_fetch_all_albums_for_artists_uses_database_ids(self, mock_fetch):
-        """Test that enqueue_fetch_all_albums_for_artists uses database IDs."""
-        from unittest.mock import call
-
-        artists = Artist.objects.filter(tracking_tier=1)
-
-        enqueue_fetch_all_albums_for_artists(artists)
-
-        # Verify that fetch_all_albums_for_artist.delay() was called with database IDs
-        expected_calls = [
-            call(self.artist1.id),
-            call(self.artist2.id),
-        ]
-        mock_fetch.delay.assert_has_calls(expected_calls, any_order=True)
-        assert mock_fetch.delay.call_count == 2
-
-    @patch("library_manager.tasks.download_missing_albums_for_artist")
-    def test_enqueue_download_missing_albums_for_artists_uses_database_ids(
-        self, mock_download
-    ):
-        """Test that enqueue_download_missing_albums_for_artists uses database IDs."""
-        from unittest.mock import call
-
-        artists = Artist.objects.filter(tracking_tier=1)
-
-        enqueue_download_missing_albums_for_artists(artists)
-
-        # Verify that download_missing_albums_for_artist.delay() was called with database IDs
-        expected_calls = [
-            call(self.artist1.id),
-            call(self.artist2.id),
-        ]
-        mock_download.delay.assert_has_calls(expected_calls, any_order=True)
-        assert mock_download.delay.call_count == 2
 
     @patch(
         "library_manager.helpers.is_task_pending_or_running", return_value=(False, "")
@@ -126,41 +87,6 @@ class TestHelpers(TestCase):
             # Verify task_id is set for deduplication
             assert "task_id" in kwargs
 
-    @patch("library_manager.tasks.fetch_all_albums_for_artist")
-    def test_enqueue_fetch_all_albums_for_artists_with_extra_args(self, mock_fetch):
-        """Test enqueue_fetch_all_albums_for_artists ignores extra args."""
-        from unittest.mock import call
-
-        artists = Artist.objects.filter(tracking_tier=1)
-        extra_args = {"priority": 10}
-
-        enqueue_fetch_all_albums_for_artists(artists, extra_args)
-
-        # fetch_all_albums_for_artist doesn't accept extra args, so they should NOT be passed
-        expected_calls = [
-            call(self.artist1.id),
-            call(self.artist2.id),
-        ]
-        mock_fetch.delay.assert_has_calls(expected_calls, any_order=True)
-
-    @patch("library_manager.tasks.fetch_all_albums_for_artist")
-    def test_enqueue_fetch_all_albums_for_artists_duplicate_prevention(
-        self, mock_fetch
-    ):
-        """Test that enqueue_fetch_all_albums_for_artists prevents duplicates."""
-        # Create a queryset with duplicate artists
-        artists = Artist.objects.filter(tracking_tier=1)
-
-        enqueue_fetch_all_albums_for_artists(artists)
-
-        # Should only call .delay() once per unique artist
-        assert mock_fetch.delay.call_count == 2
-        # Verify unique database IDs were used
-        called_ids = [call[0][0] for call in mock_fetch.delay.call_args_list]
-        assert len(set(called_ids)) == 2
-        assert self.artist1.id in called_ids
-        assert self.artist2.id in called_ids
-
     def test_artist_database_ids_are_integers(self):
         """Test that artist database IDs are integers (not gids)."""
         assert isinstance(self.artist1.id, int)
@@ -207,24 +133,6 @@ class TestHelpers(TestCase):
         # Verify operation counts
         assert operation_counts["fetch"] == 2
         assert operation_counts["download"] == 2
-
-    @patch("library_manager.tasks.fetch_all_albums_for_artist")
-    @patch("library_manager.tasks.download_missing_albums_for_artist")
-    def test_enqueue_priority_artist_operations_with_limit(
-        self, mock_download, mock_fetch
-    ):
-        """Test that enqueue_priority_artist_operations respects concurrency limits."""
-        artists = Artist.objects.filter(tracking_tier=1)
-
-        operation_counts = enqueue_priority_artist_operations(artists, max_concurrent=1)
-
-        # Should only process first artist due to concurrency limit
-        assert mock_fetch.delay.call_count == 1
-        assert mock_download.delay.call_count == 1
-
-        # Verify operation counts
-        assert operation_counts["fetch"] == 1
-        assert operation_counts["download"] == 1
 
     @patch("library_manager.tasks.fetch_all_albums_for_artist")
     @patch("library_manager.tasks.download_missing_albums_for_artist")
