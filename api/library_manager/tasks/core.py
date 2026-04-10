@@ -14,8 +14,7 @@ import re
 import time
 import unicodedata
 import uuid
-from functools import wraps
-from typing import Any, Callable, Optional, cast
+from typing import Optional, cast
 
 import psutil
 from celery.utils.log import get_task_logger
@@ -174,75 +173,6 @@ def check_task_cancellation(task_history: TaskHistory) -> bool:
     task_history.refresh_from_db()
     status_str: str = cast(str, task_history.status)
     return status_str == "CANCELLED"
-
-
-def check_if_cancelled(task_id: str) -> None:
-    """
-    Check if task has been cancelled. Raise TaskCancelledException if it has.
-
-    This function checks both TaskResult (for queued tasks marked as REVOKED)
-    and TaskHistory (for running tasks marked as CANCELLED).
-
-    Call this at safe checkpoints in long-running tasks (e.g., after each song/album).
-
-    Args:
-        task_id: The Celery task ID to check
-
-    Raises:
-        TaskCancelledException: If the task has been cancelled
-    """
-    from django_celery_results.models import TaskResult
-
-    # Check TaskResult first (for pending/queued tasks marked as REVOKED)
-    try:
-        task_result = TaskResult.objects.filter(task_id=task_id).first()
-        if task_result and task_result.status == "REVOKED":
-            logger.info(f"Task {task_id} cancelled via TaskResult (REVOKED)")
-            raise TaskCancelledException(f"Task {task_id} was cancelled")
-    except TaskResult.DoesNotExist:
-        pass
-
-    # Check TaskHistory (for running tasks marked as CANCELLED)
-    try:
-        task_history = TaskHistory.objects.filter(task_id=task_id).first()
-        if task_history and task_history.status == "CANCELLED":
-            logger.info(f"Task {task_id} cancelled via TaskHistory (CANCELLED)")
-            raise TaskCancelledException(f"Task {task_id} was cancelled")
-    except TaskHistory.DoesNotExist:
-        pass
-
-
-def skip_if_cancelled(func: Callable[..., Any]) -> Callable[..., Any]:
-    """
-    Decorator that checks if task is cancelled before starting execution.
-
-    If the task has been cancelled (REVOKED or CANCELLED status), it will be skipped
-    and return a cancellation result instead of executing.
-
-    Usage:
-        @shared_task(bind=True)
-        @skip_if_cancelled
-        def my_task(self, arg1, arg2):
-            # Task code here
-    """
-
-    @wraps(func)
-    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-        task_id = self.request.id
-        try:
-            check_if_cancelled(task_id)
-        except TaskCancelledException:
-            logger.info(f"Task {task_id} skipped - already cancelled before start")
-            return {
-                "status": "cancelled",
-                "skipped": True,
-                "message": "Task was cancelled before execution started",
-            }
-
-        # Execute task
-        return func(self, *args, **kwargs)
-
-    return wrapper
 
 
 def check_and_update_progress(

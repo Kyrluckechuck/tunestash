@@ -294,9 +294,9 @@ class ArtistService(BaseService[Artist]):
                 if updated_fields:
                     await existing.asave(update_fields=updated_fields)
 
-                from library_manager.tasks import fetch_artist_albums_from_deezer
+                from library_manager.tasks import fetch_all_albums_for_artist
 
-                await sync_to_async(fetch_artist_albums_from_deezer.delay)(existing.id)
+                await sync_to_async(fetch_all_albums_for_artist.delay)(existing.id)
 
                 return MutationResult(
                     success=True,
@@ -310,9 +310,9 @@ class ArtistService(BaseService[Artist]):
                 tracking_tier=TrackingTier.TRACKED,
             )
 
-            from library_manager.tasks import fetch_artist_albums_from_deezer
+            from library_manager.tasks import fetch_all_albums_for_artist
 
-            await sync_to_async(fetch_artist_albums_from_deezer.delay)(django_artist.id)
+            await sync_to_async(fetch_all_albums_for_artist.delay)(django_artist.id)
 
             return MutationResult(
                 success=True,

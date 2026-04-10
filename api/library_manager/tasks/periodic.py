@@ -646,12 +646,12 @@ def sync_tracked_artists_metadata(
 
     from src.providers.deezer import DeezerMetadataProvider
 
-    from .deezer import fetch_artist_albums_from_deezer
+    from .artist import fetch_all_albums_for_artist
 
     try:
         # Backpressure: check pending artist syncs
         pending_syncs = TaskHistory.objects.filter(
-            task_id__startswith="library_manager.tasks.fetch_artist_albums_from_deezer",
+            task_id__startswith="library_manager.tasks.fetch_all_albums_for_artist",
             status__in=["PENDING", "RUNNING"],
         ).count()
 
@@ -700,7 +700,7 @@ def sync_tracked_artists_metadata(
         for artist in artists_to_check:
             # Generate deterministic task ID for deduplication
             task_id = generate_task_id(
-                "library_manager.tasks.fetch_artist_albums_from_deezer", artist.id
+                "library_manager.tasks.fetch_all_albums_for_artist", artist.id
             )
 
             is_pending, reason = is_task_pending_or_running(task_id)
@@ -783,7 +783,7 @@ def sync_tracked_artists_metadata(
                     f"queueing Deezer sync"
                 )
                 try:
-                    fetch_artist_albums_from_deezer.apply_async(
+                    fetch_all_albums_for_artist.apply_async(
                         args=[artist.id], task_id=task_id
                     )
                     queued_count += 1
