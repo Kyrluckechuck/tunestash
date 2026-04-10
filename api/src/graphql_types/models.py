@@ -52,6 +52,8 @@ class DownloadProvider(Enum):
     SPOTDL = "SPOTDL"
     TIDAL = "TIDAL"
     QOBUZ = "QOBUZ"
+    YOUTUBE = "YOUTUBE"
+    MONOCHROME = "MONOCHROME"
 
 
 @strawberry.type

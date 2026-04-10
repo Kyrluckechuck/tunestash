@@ -551,7 +551,7 @@ class DownloadHistory(models.Model):
     progress: models.SmallIntegerField = models.SmallIntegerField(
         default=0,
         validators=[
-            django.core.validators.MinValueValidator(1),
+            django.core.validators.MinValueValidator(0),
             django.core.validators.MaxValueValidator(1000),
         ],
     )
