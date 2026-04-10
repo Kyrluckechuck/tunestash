@@ -171,6 +171,8 @@ enum DownloadProvider {
   SPOTDL
   TIDAL
   QOBUZ
+  YOUTUBE
+  MONOCHROME
 }
 
 enum DownloadStatus {

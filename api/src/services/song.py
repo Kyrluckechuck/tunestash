@@ -170,6 +170,8 @@ class SongService(BaseService[Song]):
             DjangoDownloadProvider.SPOTDL: DownloadProvider.SPOTDL,
             DjangoDownloadProvider.TIDAL: DownloadProvider.TIDAL,
             DjangoDownloadProvider.QOBUZ: DownloadProvider.QOBUZ,
+            DjangoDownloadProvider.YOUTUBE: DownloadProvider.YOUTUBE,
+            DjangoDownloadProvider.MONOCHROME: DownloadProvider.MONOCHROME,
         }
         download_provider = provider_map.get(
             django_song.download_provider, DownloadProvider.UNKNOWN

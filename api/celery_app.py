@@ -192,7 +192,7 @@ _register_signal_handlers()
 
 @worker_process_init.connect  # type: ignore[misc]
 def worker_process_init_handler(sender: Any = None, **kwargs: Any) -> None:
-    """Log when worker process starts."""
+    """Log when worker process starts and clean up orphaned tasks."""
     from src.app_settings.registry import get_setting_with_default
 
     diagnostics_enabled = get_setting_with_default("worker_diagnostics_enabled", False)
@@ -203,8 +203,41 @@ def worker_process_init_handler(sender: Any = None, **kwargs: Any) -> None:
         )
         log_process_state("Worker process initialization")
 
+    _cleanup_orphaned_tasks()
+
     # Always check and log Spotify rate limit status on startup
     _log_spotify_rate_limit_status()
+
+
+def _cleanup_orphaned_tasks() -> None:
+    """Mark orphaned RUNNING tasks as FAILED on worker startup.
+
+    When a worker dies (OOM, Docker restart, SIGKILL), any tasks that were
+    RUNNING get stuck in that state forever. With task_acks_late=True, Celery
+    re-queues the messages, but stale RUNNING TaskHistory records block the
+    dedup system (is_task_pending_or_running) from accepting the re-queued work.
+
+    Since this is a single-worker setup, any RUNNING task at startup is
+    provably orphaned — the previous worker process is dead.
+    """
+    from django.utils import timezone
+
+    from library_manager.models import TaskHistory
+
+    try:
+        orphaned = TaskHistory.objects.filter(status="RUNNING")
+        count = orphaned.count()
+        if count > 0:
+            orphaned.update(
+                status="FAILED",
+                completed_at=timezone.now(),
+                error_message="Worker restarted — task orphaned from previous process",
+            )
+            logger.warning(
+                f"[WORKER STARTUP] Cleaned up {count} orphaned RUNNING task(s)"
+            )
+    except Exception as e:
+        logger.error(f"[WORKER STARTUP] Failed to clean up orphaned tasks: {e}")
 
 
 def _log_spotify_rate_limit_status() -> None:
