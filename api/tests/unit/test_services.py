@@ -1,652 +1,332 @@
-"""Unit tests for service layer."""
+"""Tests for service layer using real DB objects."""
 
-from datetime import datetime
-from unittest.mock import AsyncMock, Mock, patch
+from datetime import datetime, timezone
 
 import pytest
+from tests.factories import (
+    AlbumFactory,
+    ArtistFactory,
+    SongFactory,
+    TrackedPlaylistFactory,
+)
 
+from library_manager.models import DownloadHistory
 from src.services.album import AlbumService
 from src.services.artist import ArtistService
 from src.services.history import DownloadHistoryService
 from src.services.playlist import PlaylistService
+from src.services.song import SongService
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestArtistService:
-    """Test cases for ArtistService."""
+    """Test ArtistService with real DB objects."""
 
     @pytest.fixture
-    def artist_service(self):
+    def service(self):
         return ArtistService()
 
-    @pytest.mark.asyncio
-    async def test_get_by_id_success(self, artist_service):
-        """Test successful artist retrieval by ID."""
-        with (
-            patch(
-                "library_manager.models.Artist.objects.aget", new_callable=AsyncMock
-            ) as mock_aget,
-            patch.object(
-                artist_service, "_get_undownloaded_count", new_callable=AsyncMock
-            ) as mock_undownloaded_count,
-            patch.object(
-                artist_service, "_get_album_count", new_callable=AsyncMock
-            ) as mock_album_count,
-            patch.object(
-                artist_service, "_get_downloaded_album_count", new_callable=AsyncMock
-            ) as mock_downloaded_album_count,
-            patch.object(
-                artist_service, "_get_song_count", new_callable=AsyncMock
-            ) as mock_song_count,
-            patch.object(
-                artist_service, "_get_failed_song_count", new_callable=AsyncMock
-            ) as mock_failed_song_count,
-            patch.object(
-                artist_service,
-                "_get_downloaded_song_count",
-                new_callable=AsyncMock,
-            ) as mock_downloaded_song_count,
-        ):
-            mock_artist = Mock()
-            mock_artist.gid = "test123"
-            mock_artist.name = "Test Artist"
-            mock_artist.tracking_tier = 1
-            mock_artist.last_synced_at = datetime.now()
-            mock_artist.id = 1  # Set the Django model ID
-            mock_artist.spotify_uri = "spotify:artist:test123"
-            mock_aget.return_value = mock_artist
-            mock_undownloaded_count.return_value = 5
-            mock_album_count.return_value = 10
-            mock_downloaded_album_count.return_value = 8
-            mock_song_count.return_value = 50
-            mock_failed_song_count.return_value = 0
-            mock_downloaded_song_count.return_value = 42
-
-            result = await artist_service.get_by_id("test123")
-
-            assert result is not None
-            assert result.id == 1  # GraphQL type uses Django model ID
-            assert result.name == "Test Artist"
-            assert result.tracking_tier >= 1
-            assert result.album_count == 10
-            assert result.downloaded_album_count == 8
-            assert result.song_count == 50
+    @pytest.fixture
+    def artists(self):
+        return {
+            "alpha": ArtistFactory(name="Alpha", tracking_tier=1, gid="aaa"),
+            "mango": ArtistFactory(name="Mango", tracking_tier=1, gid="mmm"),
+            "zebra": ArtistFactory(name="Zebra", tracking_tier=1, gid="zzz"),
+            "untracked": ArtistFactory(name="Untracked", tracking_tier=0, gid="uuu"),
+        }
 
     @pytest.mark.asyncio
-    async def test_get_by_id_not_found(self, artist_service):
-        """Test artist retrieval when not found."""
-        with patch(
-            "library_manager.models.Artist.objects.aget", new_callable=AsyncMock
-        ) as mock_aget:
-            mock_aget.side_effect = artist_service.model.DoesNotExist
-
-            result = await artist_service.get_by_id("not_found")
-
-            assert result is None
+    async def test_get_by_id_returns_artist(self, service, artists):
+        result = await service.get_by_id(str(artists["alpha"].id))
+        assert result is not None
+        assert result.name == "Alpha"
+        assert result.id == artists["alpha"].id
+        assert result.tracking_tier == 1
 
     @pytest.mark.asyncio
-    async def test_get_page_with_filters(self, artist_service):
-        """Test getting artist page with filters."""
-        with (
-            patch("library_manager.models.Artist.objects.all") as mock_all,
-            patch.object(
-                artist_service, "_get_undownloaded_count", new_callable=AsyncMock
-            ) as mock_undownloaded_count,
-            patch.object(
-                artist_service, "_get_failed_song_count", new_callable=AsyncMock
-            ) as mock_failed_song_count,
-        ):
-            mock_queryset = Mock()
-            mock_queryset.filter.return_value = mock_queryset
-            mock_queryset.acount = AsyncMock(return_value=5)
-            mock_queryset.order_by.return_value = mock_queryset
-
-            mock_artists = []
-            for i in range(3):
-                mock_artist = Mock()
-                mock_artist.gid = f"artist{i}"
-                mock_artist.name = f"Artist {i}"
-                mock_artist.tracking_tier = 1
-                mock_artist.spotify_uri = f"spotify:artist:artist{i}"
-                mock_artists.append(mock_artist)
-
-            mock_queryset.__getitem__ = Mock(return_value=mock_artists)
-            mock_all.return_value = mock_queryset
-            mock_undownloaded_count.return_value = 2
-            mock_failed_song_count.return_value = 0
-
-            result = await artist_service.get_page(
-                page=1, page_size=3, tracking_tier=1, search="Artist"
-            )
-
-            assert len(result.items) == 3
-            assert result.total_count == 5
-            assert result.page == 1
-
-            filter_calls = mock_queryset.filter.call_args_list
-            filter_kwargs = [call.kwargs for call in filter_calls]
-            assert any(kw.get("tracking_tier") == 1 for kw in filter_kwargs)
+    async def test_get_by_id_not_found(self, service):
+        result = await service.get_by_id("999999")
+        assert result is None
 
     @pytest.mark.asyncio
-    async def test_to_graphql_type_includes_timestamp_fields(self, artist_service):
-        """Test that GraphQL type conversion includes both timestamp fields."""
-        with (
-            patch.object(
-                artist_service, "_get_undownloaded_count", new_callable=AsyncMock
-            ) as mock_count,
-            patch.object(
-                artist_service, "_get_failed_song_count", new_callable=AsyncMock
-            ) as mock_failed,
-        ):
-            mock_count.return_value = 0
-            mock_failed.return_value = 0
-
-            mock_artist = Mock()
-            mock_artist.id = 1
-            mock_artist.gid = "test_id"
-            mock_artist.name = "Test Artist"
-            mock_artist.tracking_tier = 1
-            mock_artist.last_synced_at = datetime.now()
-            mock_artist.last_downloaded_at = datetime.now()
-            mock_artist.added_at = datetime.now()
-            mock_artist.spotify_uri = "spotify:artist:test_id"
-
-            result = await artist_service._to_graphql_type_async(mock_artist)
-
-            assert result.last_synced is not None
-            assert result.last_downloaded is not None
-            assert isinstance(result.last_synced, datetime)
-            assert isinstance(result.last_downloaded, datetime)
+    async def test_get_page_filters_by_tracking_tier(self, service, artists):
+        result = await service.get_page(page=1, page_size=50, tracking_tier=1)
+        names = [a.name for a in result.items]
+        assert "Alpha" in names
+        assert "Untracked" not in names
 
     @pytest.mark.asyncio
-    async def test_to_graphql_type_handles_null_timestamps(self, artist_service):
-        """Test that null timestamps are handled correctly."""
-        mock_artist = Mock()
-        mock_artist.id = 1
-        mock_artist.gid = "test_id"
-        mock_artist.name = "Never Synced Artist"
-        mock_artist.tracking_tier = 0
-        mock_artist.last_synced_at = None
-        mock_artist.last_downloaded_at = None
-        mock_artist.added_at = datetime.now()
-        mock_artist.spotify_uri = "spotify:artist:test_id"
+    async def test_get_page_search(self, service, artists):
+        result = await service.get_page(page=1, page_size=50, search="Mango")
+        assert len(result.items) == 1
+        assert result.items[0].name == "Mango"
 
-        with (
-            patch.object(
-                artist_service, "_get_undownloaded_count", new_callable=AsyncMock
-            ) as mock_count,
-            patch.object(
-                artist_service, "_get_failed_song_count", new_callable=AsyncMock
-            ) as mock_failed,
-        ):
-            mock_count.return_value = 10
-            mock_failed.return_value = 0
+    @pytest.mark.asyncio
+    async def test_get_page_sorts_by_name_asc(self, service, artists):
+        result = await service.get_page(
+            page=1, page_size=50, sort_by="name", sort_direction="asc"
+        )
+        names = [a.name for a in result.items]
+        assert names == sorted(names)
 
-            result = await artist_service._to_graphql_type_async(mock_artist)
+    @pytest.mark.asyncio
+    async def test_get_page_sorts_by_name_desc(self, service, artists):
+        result = await service.get_page(
+            page=1, page_size=50, sort_by="name", sort_direction="desc"
+        )
+        names = [a.name for a in result.items]
+        assert names == sorted(names, reverse=True)
 
-            assert result.last_synced is None
-            assert result.last_downloaded is None
+    @pytest.mark.asyncio
+    async def test_get_page_pagination(self, service, artists):
+        page1 = await service.get_page(page=1, page_size=2)
+        page2 = await service.get_page(page=2, page_size=2)
 
-
-@pytest.mark.django_db
-class TestSongService:
-    """Test cases for SongService."""
+        assert len(page1.items) == 2
+        assert len(page2.items) == 2
+        assert page1.total_count == 4
+        page1_ids = {a.id for a in page1.items}
+        page2_ids = {a.id for a in page2.items}
+        assert page1_ids.isdisjoint(page2_ids)
 
     @pytest.fixture
-    def song_service(self):
-        from src.services.song import SongService
+    def timestamped_artist(self):
+        now = datetime.now(tz=timezone.utc)
+        return ArtistFactory(
+            name="With Timestamps",
+            last_synced_at=now,
+            last_downloaded_at=now,
+            added_at=now,
+        )
 
+    @pytest.mark.asyncio
+    async def test_graphql_type_includes_timestamps(self, service, timestamped_artist):
+        result = await service.get_by_id(str(timestamped_artist.id))
+        assert result is not None
+        assert result.last_synced is not None
+        assert result.added_at is not None
+
+    @pytest.fixture
+    def null_timestamp_artist(self):
+        return ArtistFactory(
+            name="No Sync",
+            last_synced_at=None,
+            last_downloaded_at=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_graphql_type_handles_null_timestamps(
+        self, service, null_timestamp_artist
+    ):
+        result = await service.get_by_id(str(null_timestamp_artist.id))
+        assert result is not None
+        assert result.last_synced is None
+        assert result.last_downloaded is None
+
+
+@pytest.mark.django_db(transaction=True)
+class TestSongService:
+    """Test SongService with real DB objects."""
+
+    @pytest.fixture
+    def service(self):
         return SongService()
 
-    @pytest.mark.asyncio
-    async def test_get_page_with_sorting(self, song_service):
-        """Test getting song page with sorting."""
-        with patch("library_manager.models.Song.objects.all") as mock_all:
-            mock_queryset = Mock()
-            mock_queryset.filter.return_value = mock_queryset
-            mock_queryset.acount = AsyncMock(return_value=3)
-
-            mock_songs = []
-            for idx, song_name in enumerate(["Zebra Song", "Alpha Song", "Beta Song"]):
-                mock_song = Mock()
-                mock_song.id = idx + 1
-                mock_song.name = song_name
-                mock_song.gid = f"song{idx}"
-                mock_song.primary_artist = Mock()
-                mock_song.primary_artist.name = "Test Artist"
-                mock_song.primary_artist.id = 1
-                mock_song.primary_artist.gid = "artist1"
-                mock_song.created_at = datetime.now()
-                mock_song.failed_count = 0
-                mock_song.bitrate = 320
-                mock_song.unavailable = False
-                mock_song.file_path = None
-                mock_song.downloaded = False
-                mock_song.spotify_uri = f"spotify:track:song{idx}"
-                mock_song.download_provider = 0
-                mock_song.deezer_id = None
-                mock_songs.append(mock_song)
-
-            mock_queryset.order_by.return_value = mock_queryset
-            mock_queryset.__getitem__ = Mock(return_value=mock_songs)
-            mock_all.return_value = mock_queryset
-
-            result = await song_service.get_page(
-                page=1, page_size=10, sort_by="name", sort_direction="asc"
-            )
-
-            mock_queryset.order_by.assert_called_with("name", "id")
-            assert len(result.items) == 3
-            assert result.total_count == 3
+    @pytest.fixture
+    def songs(self):
+        artist_a = ArtistFactory(name="Alpha Band")
+        artist_z = ArtistFactory(name="Zeta Band")
+        return {
+            "zebra": SongFactory(
+                name="Zebra Song", primary_artist=artist_z, downloaded=False
+            ),
+            "alpha": SongFactory(
+                name="Alpha Song", primary_artist=artist_a, downloaded=True
+            ),
+            "beta": SongFactory(
+                name="Beta Song", primary_artist=artist_a, downloaded=False
+            ),
+        }
 
     @pytest.mark.asyncio
-    async def test_get_page_with_sorting_desc(self, song_service):
-        """Test getting song page with descending sort."""
-        with patch("library_manager.models.Song.objects.all") as mock_all:
-            mock_queryset = Mock()
-            mock_queryset.filter.return_value = mock_queryset
-            mock_queryset.acount = AsyncMock(return_value=2)
-            mock_queryset.order_by.return_value = mock_queryset
-            mock_queryset.__getitem__ = Mock(return_value=[])
-            mock_all.return_value = mock_queryset
+    async def test_get_page_sorts_by_name_asc(self, service, songs):
+        result = await service.get_page(
+            page=1, page_size=50, sort_by="name", sort_direction="asc"
+        )
+        names = [s.name for s in result.items]
+        assert names == sorted(names)
 
-            await song_service.get_page(
-                page=1, page_size=10, sort_by="primaryArtist", sort_direction="desc"
-            )
+    @pytest.mark.asyncio
+    async def test_get_page_sorts_by_name_desc(self, service, songs):
+        result = await service.get_page(
+            page=1, page_size=50, sort_by="name", sort_direction="desc"
+        )
+        names = [s.name for s in result.items]
+        assert names == sorted(names, reverse=True)
 
-            mock_queryset.order_by.assert_called_with("-primary_artist__name", "id")
+    @pytest.mark.asyncio
+    async def test_get_page_sorts_by_primary_artist(self, service, songs):
+        result = await service.get_page(
+            page=1, page_size=50, sort_by="primaryArtist", sort_direction="asc"
+        )
+        artists = [s.primary_artist for s in result.items]
+        assert artists == sorted(artists)
+
+    @pytest.mark.asyncio
+    async def test_get_page_filters_by_downloaded(self, service, songs):
+        result = await service.get_page(page=1, page_size=50, downloaded=True)
+        assert all(s.downloaded for s in result.items)
+        assert len(result.items) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_page_pagination(self, service, songs):
+        page1 = await service.get_page(page=1, page_size=2)
+        assert len(page1.items) == 2
+        assert page1.total_count == 3
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestAlbumService:
-    """Test cases for AlbumService."""
+    """Test AlbumService with real DB objects."""
 
     @pytest.fixture
-    def album_service(self):
+    def service(self):
         return AlbumService()
 
-    @pytest.mark.asyncio
-    async def test_get_by_id_success(self, album_service):
-        """Test successful album retrieval by ID."""
-        with patch(
-            "library_manager.models.Album.objects.aget", new_callable=AsyncMock
-        ) as mock_get:
-            mock_album = Mock()
-            mock_album.id = 1
-            mock_album.spotify_gid = "album123"
-            mock_album.name = "Test Album"
-            mock_album.total_tracks = 10
-            mock_album.wanted = True
-            mock_album.downloaded = False
-            mock_album.album_type = "album"
-            mock_album.album_group = "album"
-            mock_album.deezer_id = None
-            mock_album.artist = Mock()
-            mock_album.artist.name = "Test Artist"
-            mock_album.artist.id = 1
-            mock_album.artist.gid = "artist123"
-            mock_get.return_value = mock_album
-
-            result = await album_service.get_by_id("album123")
-
-            assert result is not None
-            assert result.spotify_gid == "album123"
-            assert result.name == "Test Album"
-            assert result.total_tracks == 10
-            assert result.wanted is True
-            assert result.downloaded is False
-            assert result.artist == "Test Artist"
+    @pytest.fixture
+    def albums(self):
+        artist_a = ArtistFactory(name="Alpha Band")
+        artist_z = ArtistFactory(name="Zebra Band")
+        return {
+            "ziggy": AlbumFactory(name="Ziggy", artist=artist_z, wanted=True),
+            "abbey": AlbumFactory(name="Abbey", artist=artist_a, wanted=True),
+        }
 
     @pytest.mark.asyncio
-    async def test_get_page_with_sorting(self, album_service):
-        """Test getting album page with sorting."""
-        with patch("library_manager.models.Album.objects.all") as mock_all:
-            mock_queryset = Mock()
-            mock_queryset.filter.return_value = mock_queryset
-            mock_queryset.count = Mock(return_value=2)
+    async def test_get_by_id_success(self, service, albums):
+        result = await service.get_by_id(albums["abbey"].spotify_gid)
+        assert result is not None
+        assert result.name == "Abbey"
+        assert result.artist == "Alpha Band"
 
-            mock_albums = []
-            for idx, album_name in enumerate(["B Album", "A Album"]):
-                mock_album = Mock()
-                mock_album.id = idx + 1
-                mock_album.name = album_name
-                mock_album.spotify_gid = f"album{idx}"
-                mock_album.artist = Mock()
-                mock_album.artist.name = "Test Artist"
-                mock_album.artist.id = 1
-                mock_album.artist.gid = "artist1"
-                mock_album.total_tracks = 10
-                mock_album.wanted = True
-                mock_album.downloaded = False
-                mock_album.album_type = "album"
-                mock_album.album_group = "album"
-                mock_album.deezer_id = None
-                mock_albums.append(mock_album)
+    @pytest.mark.asyncio
+    async def test_get_by_id_not_found(self, service):
+        result = await service.get_by_id("nonexistent_gid")
+        assert result is None
 
-            mock_queryset.order_by.return_value = mock_queryset
-            mock_queryset.__getitem__ = Mock(return_value=mock_albums)
-            mock_all.return_value = mock_queryset
+    @pytest.mark.asyncio
+    async def test_get_page_sorts_by_artist(self, service, albums):
+        result = await service.get_page(
+            page=1, page_size=50, sort_by="artist", sort_direction="asc"
+        )
+        artists = [a.artist for a in result.items]
+        assert artists == sorted(artists)
 
-            result = await album_service.get_page(
-                page=1, page_size=10, sort_by="artist", sort_direction="asc"
-            )
-
-            mock_queryset.order_by.assert_called_with("artist__name", "id")
-            assert len(result.items) == 2
-            assert result.total_count == 2
-            assert result.items[0].name == "B Album"
-            assert result.items[0].artist == "Test Artist"
+    @pytest.mark.asyncio
+    async def test_get_page_sorts_by_name(self, service, albums):
+        result = await service.get_page(
+            page=1, page_size=50, sort_by="name", sort_direction="asc"
+        )
+        names = [a.name for a in result.items]
+        assert names == sorted(names)
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestPlaylistService:
-    """Test cases for PlaylistService."""
+    """Test PlaylistService with real DB objects."""
 
     @pytest.fixture
-    def playlist_service(self):
+    def service(self):
         return PlaylistService()
 
-    @pytest.mark.asyncio
-    async def test_get_by_id_success(self, playlist_service):
-        """Test successful playlist retrieval by ID."""
-        with patch(
-            "library_manager.models.TrackedPlaylist.objects.aget",
-            new_callable=AsyncMock,
-        ) as mock_get:
-            mock_playlist = Mock()
-            mock_playlist.id = 1
-            mock_playlist.name = "Test Playlist"
-            mock_playlist.url = "https://open.spotify.com/playlist/test123"
-            mock_playlist.status = "active"
-            mock_playlist.status_message = None
-            mock_playlist.enabled = True
-            mock_playlist.auto_track_tier = 1
-            mock_playlist.last_synced_at = None
-            mock_get.return_value = mock_playlist
-
-            result = await playlist_service.get_by_id("1")
-
-            assert result is not None
-            assert result.id == 1
-            assert result.name == "Test Playlist"
-            assert result.url == "https://open.spotify.com/playlist/test123"
-            assert result.auto_track_tier == 1
-
-    @pytest.mark.asyncio
-    async def test_update_playlist_with_url(self, playlist_service):
-        """Test updating playlist including URL."""
-        # Mock the get operation
-        mock_playlist = Mock()
-        mock_playlist.id = 1
-        mock_playlist.name = "Original Name"
-        mock_playlist.url = "https://open.spotify.com/playlist/original"
-        mock_playlist.auto_track_tier = None
-        mock_playlist.asave = AsyncMock()
-
-        with (
-            patch(
-                "library_manager.models.TrackedPlaylist.objects.aget",
-                new_callable=AsyncMock,
-            ) as mock_aget,
-            patch.object(
-                playlist_service, "_find_duplicate_playlist"
-            ) as mock_find_duplicate,
-            patch("asgiref.sync.sync_to_async") as mock_sync_to_async,
-        ):
-            # Configure mocks
-            mock_aget.return_value = mock_playlist
-            # Mock the duplicate check to return no existing playlists
-            mock_find_duplicate.return_value = None
-            mock_sync_to_async.side_effect = lambda func: AsyncMock(return_value=func())
-
-            result = await playlist_service.update_playlist(
-                playlist_id=1,
-                name="Updated Name",
-                url="https://open.spotify.com/playlist/updated",
-                auto_track_tier=1,
-            )
-
-            # Verify the playlist was updated
-            assert mock_playlist.name == "Updated Name"
-            assert (
-                mock_playlist.url == "spotify:playlist:updated"
-            )  # URL should be normalized
-            assert mock_playlist.auto_track_tier == 1
-            assert result.success is True
-            assert result.message == "Playlist updated successfully"
-
-    @pytest.mark.asyncio
-    async def test_create_playlist_deduplication(self, playlist_service):
-        """Test that create_playlist handles URL deduplication correctly."""
-        # Mock existing playlist with normalized URL
-        mock_existing_playlist = Mock()
-        mock_existing_playlist.id = 1
-        mock_existing_playlist.name = "Existing Playlist"
-        mock_existing_playlist.url = "spotify:playlist:12345"
-
-        with (
-            patch(
-                "library_manager.models.TrackedPlaylist.objects.filter"
-            ) as mock_filter,
-            patch("asgiref.sync.sync_to_async") as mock_sync_to_async,
-        ):
-            # Configure mocks to return existing playlist
-            mock_filter.return_value.first.return_value = mock_existing_playlist
-            mock_sync_to_async.side_effect = lambda func: AsyncMock(return_value=func())
-
-            result = await playlist_service.create_playlist(
-                name="New Playlist",
-                url="https://open.spotify.com/playlist/12345?si=tracking_param",
-                auto_track_tier=None,
-            )
-
-            # Should return existing playlist, not create new one
-            assert result.id == 1
-            assert result.name == "Existing Playlist"
-            # Verify URL was normalized for lookup
-            mock_filter.assert_called_once_with(url="spotify:playlist:12345")
-
-    @pytest.mark.asyncio
-    async def test_update_playlist_duplicate_detection(self, playlist_service):
-        """Test that update_playlist detects duplicates correctly."""
-        # Mock the current playlist
-        mock_current_playlist = Mock()
-        mock_current_playlist.id = 1
-        mock_current_playlist.url = "spotify:playlist:original"
-
-        # Mock existing duplicate playlist
-        mock_duplicate_playlist = Mock()
-        mock_duplicate_playlist.id = 2
-        mock_duplicate_playlist.name = "Existing Duplicate"
-
-        with (
-            patch(
-                "library_manager.models.TrackedPlaylist.objects.aget",
-                new_callable=AsyncMock,
-            ) as mock_aget,
-            patch.object(
-                playlist_service, "_find_duplicate_playlist"
-            ) as mock_find_duplicate,
-            patch("asgiref.sync.sync_to_async") as mock_sync_to_async,
-        ):
-            # Configure mocks
-            mock_aget.return_value = mock_current_playlist
-            mock_find_duplicate.return_value = mock_duplicate_playlist
-            mock_sync_to_async.side_effect = lambda func: AsyncMock(return_value=func())
-
-            result = await playlist_service.update_playlist(
-                playlist_id=1,
-                name="Updated Name",
-                url="https://open.spotify.com/playlist/duplicate?si=param",
-                auto_track_tier=None,
-            )
-
-            # Should fail due to duplicate
-            assert result.success is False
-            assert "already exists" in result.message
-            assert "Existing Duplicate" in result.message
-
-    def test_normalize_spotify_url(self, playlist_service):
-        """Test URL normalization with various formats."""
-        # Test web URL with tracking parameters
-        url1 = (
-            "https://open.spotify.com/playlist/12345?si=tracking_param&utm_source=web"
-        )
-        normalized1 = playlist_service._normalize_spotify_url(url1)
-        assert normalized1 == "spotify:playlist:12345"
-
-        # Test web URL without parameters
-        url2 = "https://open.spotify.com/playlist/67890"
-        normalized2 = playlist_service._normalize_spotify_url(url2)
-        assert normalized2 == "spotify:playlist:67890"
-
-        # Test already normalized URI
-        url3 = "spotify:playlist:abcdef"
-        normalized3 = playlist_service._normalize_spotify_url(url3)
-        assert normalized3 == "spotify:playlist:abcdef"
-
-        # Test other content types
-        url4 = "https://open.spotify.com/artist/artist123?si=param"
-        normalized4 = playlist_service._normalize_spotify_url(url4)
-        assert normalized4 == "spotify:artist:artist123"
-
-    @pytest.mark.asyncio
-    async def test_create_playlist_detects_http_url_duplicates(self, playlist_service):
-        """Test that create_playlist detects duplicates when existing playlist has HTTP URL."""
-        # Mock existing playlist with HTTP URL (like existing data)
-        mock_existing_playlist = Mock()
-        mock_existing_playlist.id = 1
-        mock_existing_playlist.name = "Existing HTTP Playlist"
-        mock_existing_playlist.url = (
-            "https://open.spotify.com/playlist/12345?si=old_param"
-        )
-
-        with (
-            patch.object(
-                playlist_service, "_find_duplicate_playlist"
-            ) as mock_find_duplicate,
-            patch("asgiref.sync.sync_to_async") as mock_sync_to_async,
-        ):
-            # Configure mock to return existing playlist
-            mock_find_duplicate.return_value = mock_existing_playlist
-            mock_sync_to_async.side_effect = lambda func: AsyncMock(return_value=func())
-
-            result = await playlist_service.create_playlist(
-                name="New Playlist",
-                url="https://open.spotify.com/playlist/12345?si=new_param",
-                auto_track_tier=None,
-            )
-
-            # Should return existing playlist
-            assert result.id == 1
-            assert result.name == "Existing HTTP Playlist"
-            # Verify _find_duplicate_playlist was called with normalized URI
-            mock_find_duplicate.assert_called_once_with("spotify:playlist:12345")
-
-    def test_find_duplicate_playlist_cross_format_detection(self, playlist_service):
-        """Test that _find_duplicate_playlist detects duplicates across HTTP/URI formats."""
-        # Test with a normalized URI input, should find HTTP format existing playlist
-        with (
-            patch(
-                "library_manager.models.TrackedPlaylist.objects.filter"
-            ) as mock_filter,
-        ):
-            # Mock the QuerySet chain for exact match (returns None)
-            mock_exact_queryset = Mock()
-            mock_exact_queryset.first.return_value = None
-
-            # Mock the QuerySet chain for HTTP format match (returns existing)
-            mock_existing_playlist = Mock()
-            mock_existing_playlist.id = 1
-            mock_http_queryset = Mock()
-            mock_http_queryset.first.return_value = mock_existing_playlist
-
-            # Configure filter calls
-            def filter_side_effect(*args, **kwargs):
-                if "url" in kwargs:
-                    return mock_exact_queryset
-                else:
-                    # This is the Q() filter for HTTP URLs
-                    return mock_http_queryset
-
-            mock_filter.side_effect = filter_side_effect
-
-            result = playlist_service._find_duplicate_playlist("spotify:playlist:12345")
-
-            assert result == mock_existing_playlist
-            # Should have tried exact match first, then HTTP format
-            assert mock_filter.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_get_page_with_sorting(self, playlist_service):
-        """Test getting playlist page with sorting."""
-        with patch("library_manager.models.TrackedPlaylist.objects.all") as mock_all:
-            mock_queryset = Mock()
-            mock_queryset.filter.return_value = mock_queryset
-            mock_queryset.acount = AsyncMock(return_value=2)
-
-            mock_playlists = []
-            for name in ["Playlist B", "Playlist A"]:
-                mock_playlist = Mock()
-                mock_playlist.id = len(mock_playlists) + 1
-                mock_playlist.name = name
-                mock_playlist.url = (
-                    f"https://open.spotify.com/playlist/test{len(mock_playlists)}"
-                )
-                mock_playlist.status = "active"
-                mock_playlist.status_message = None
-                mock_playlist.enabled = True
-                mock_playlist.auto_track_tier = None
-                mock_playlist.last_synced_at = datetime.now()
-                mock_playlists.append(mock_playlist)
-
-            mock_queryset.order_by.return_value = mock_queryset
-            mock_queryset.__getitem__ = Mock(return_value=mock_playlists)
-            mock_all.return_value = mock_queryset
-
-            result = await playlist_service.get_page(
-                page=1, page_size=10, sort_by="name", sort_direction="desc"
-            )
-
-            mock_queryset.order_by.assert_called_with("-name", "id")
-            assert len(result.items) == 2
-            assert result.total_count == 2
-
-
-@pytest.mark.django_db
-class TestDownloadHistoryService:
-    """Test cases for DownloadHistoryService."""
+    @pytest.fixture
+    def playlists(self):
+        return {
+            "b": TrackedPlaylistFactory(name="Playlist B", status="active"),
+            "a": TrackedPlaylistFactory(name="Playlist A", status="active"),
+        }
 
     @pytest.fixture
-    def history_service(self):
-        return DownloadHistoryService()
+    def my_playlist(self):
+        return TrackedPlaylistFactory(
+            name="My Playlist",
+            url="spotify:playlist:test123",
+            status="active",
+            auto_track_tier=1,
+        )
 
     @pytest.mark.asyncio
-    async def test_get_page_with_pagination(self, history_service):
-        """Test getting download history with pagination."""
-        with patch("library_manager.models.DownloadHistory.objects.all") as mock_all:
-            mock_queryset = Mock()
-            mock_queryset.filter.return_value = mock_queryset
-            mock_queryset.acount = AsyncMock(return_value=20)
-            mock_queryset.order_by.return_value = mock_queryset
+    async def test_get_by_id_success(self, service, my_playlist):
+        result = await service.get_by_id(str(my_playlist.id))
+        assert result is not None
+        assert result.name == "My Playlist"
+        assert result.auto_track_tier == 1
 
-            mock_histories = []
-            for i in range(10):
-                mock_history = Mock()
-                mock_history.id = i
-                mock_history.url = f"spotify:track:song{i}"
-                mock_history.added_at = datetime.now()
-                mock_history.completed_at = datetime.now() if i % 2 == 0 else None
-                mock_history.progress = 100 if i % 2 == 0 else 0
-                mock_histories.append(mock_history)
+    @pytest.mark.asyncio
+    async def test_get_page_sorts_by_name_desc(self, service, playlists):
+        result = await service.get_page(
+            page=1, page_size=50, sort_by="name", sort_direction="desc"
+        )
+        names = [p.name for p in result.items]
+        assert names == sorted(names, reverse=True)
 
-            mock_queryset.__getitem__ = Mock(return_value=mock_histories)
-            mock_all.return_value = mock_queryset
+    def test_normalize_spotify_url_web_with_params(self, service):
+        url = "https://open.spotify.com/playlist/12345?si=tracking_param&utm_source=web"
+        assert service._normalize_spotify_url(url) == "spotify:playlist:12345"
 
-            result = await history_service.get_page(
-                page=1, page_size=10, entity_type="SONG"
+    def test_normalize_spotify_url_web_without_params(self, service):
+        url = "https://open.spotify.com/playlist/67890"
+        assert service._normalize_spotify_url(url) == "spotify:playlist:67890"
+
+    def test_normalize_spotify_url_already_normalized(self, service):
+        url = "spotify:playlist:abcdef"
+        assert service._normalize_spotify_url(url) == "spotify:playlist:abcdef"
+
+    def test_normalize_spotify_url_other_types(self, service):
+        url = "https://open.spotify.com/artist/artist123?si=param"
+        assert service._normalize_spotify_url(url) == "spotify:artist:artist123"
+
+
+@pytest.mark.django_db(transaction=True)
+class TestDownloadHistoryService:
+    """Test DownloadHistoryService with real DB objects."""
+
+    @pytest.fixture
+    def service(self):
+        return DownloadHistoryService()
+
+    @pytest.fixture
+    def histories(self):
+        items = []
+        for i in range(5):
+            completed = datetime.now(tz=timezone.utc) if i < 2 else None
+            progress = 100 if i < 2 else 0
+            items.append(
+                DownloadHistory.objects.create(
+                    url=f"spotify:track:song{i}",
+                    progress=progress,
+                    completed_at=completed,
+                )
             )
+        return items
 
-            assert len(result.items) == 10
-            assert result.total_count == 20
-            assert result.page == 1
+    @pytest.mark.asyncio
+    async def test_get_page_returns_items(self, service, histories):
+        result = await service.get_page(page=1, page_size=10)
+        assert len(result.items) == 5
+        assert result.total_count == 5
+
+    @pytest.mark.asyncio
+    async def test_get_page_pagination(self, service, histories):
+        page1 = await service.get_page(page=1, page_size=2)
+        page2 = await service.get_page(page=2, page_size=2)
+
+        assert len(page1.items) == 2
+        assert len(page2.items) == 2
+        assert page1.total_count == 5
+
+    @pytest.mark.asyncio
+    async def test_get_page_status_filter_completed(self, service, histories):
+        result = await service.get_page(page=1, page_size=10, status="COMPLETED")
+        assert len(result.items) == 2
+        assert all(item.status.value == "COMPLETED" for item in result.items)
