@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any, Optional, Set  # noqa: E402
 
+from django.db.models import Case, Exists, IntegerField, OuterRef, Value, When
 from django.utils import timezone
 
 from celery_app import app as celery_app
@@ -15,6 +16,7 @@ from ..models import (
     Album,
     Artist,
     PlaylistStatus,
+    Song,
     TaskHistory,
     TrackedPlaylist,
     TrackingTier,
@@ -300,23 +302,58 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
     Periodically find tracked artists with missing music and queue downloads.
 
     Uses a two-phase fill so FAVOURITE artists (tier=2) always get first dibs:
-    Phase 1: fill up to 150 slots with FAVOURITE artist albums.
-    Phase 2: fill any remaining slots with TRACKED artist albums.
+    Phase 1: fill up to max_downloads slots with FAVOURITE artist albums.
+    Phase 2: fill any remaining download slots with TRACKED artist albums.
 
-    Ordered by failed_count ascending (untried first), then newest first,
-    so fresh content gets priority and repeatedly-failing albums sink.
-
-    Skips albums that already have pending/running download tasks to prevent
-    duplicate task queuing. Works for both Spotify and Deezer-only albums.
+    Each phase scans up to max_scan albums, sorted so re-checks (albums where
+    all songs are already downloaded) come first. Re-checks are queued freely
+    to verify tracks via Deezer; actual downloads are capped at max_downloads
+    total to avoid flooding providers.
     """
-    max_albums_per_run = 150
+    max_downloads = 150
+    max_scan = 500
 
-    def _queue_albums(queryset: Any, pending_tasks: Set[str]) -> tuple[int, int]:
-        """Queue albums from queryset, respecting pending-task and retry checks.
+    has_unfinished_songs = Exists(
+        Song.objects.filter(
+            album=OuterRef("pk"),
+            downloaded=False,
+            unavailable=False,
+        )
+    )
+    has_any_songs = Exists(Song.objects.filter(album=OuterRef("pk")))
 
-        Returns (queued_count, skipped_count).
+    def _build_queryset(tracking_tier: int) -> Any:
+        """Build annotated queryset for a tracking tier, sorted rechecks-first."""
+        return (
+            Album.objects.filter(
+                artist__tracking_tier=tracking_tier,
+                downloaded=False,
+                wanted=True,
+                album_type__in=get_album_types_to_download(),
+            )
+            .exclude(album_group__in=get_album_groups_to_ignore())
+            .exclude(unavailable=True)
+            .annotate(
+                needs_download=has_unfinished_songs,
+                has_songs=has_any_songs,
+                download_priority=Case(
+                    When(has_songs=True, needs_download=False, then=Value(0)),
+                    default=Value(1),
+                    output_field=IntegerField(),
+                ),
+            )
+            .order_by("download_priority", "failed_count", "-id")[:max_scan]
+        )
+
+    def _queue_albums(
+        queryset: Any, pending_tasks: Set[str], download_budget: int
+    ) -> tuple[int, int, int]:
+        """Queue albums, rechecks freely and downloads up to budget.
+
+        Returns (recheck_count, download_count, skipped_count).
         """
-        queued = 0
+        rechecks = 0
+        downloads = 0
         skipped = 0
         for album in queryset.iterator():
             if str(album.id) in pending_tasks:
@@ -325,12 +362,20 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
             if not album.is_ready_for_retry():
                 skipped += 1
                 continue
+
+            is_recheck = album.has_songs and not album.needs_download
+            if not is_recheck and downloads >= download_budget:
+                break
+
             try:
                 download_single_album.delay(album.id)
-                queued += 1
+                if is_recheck:
+                    rechecks += 1
+                else:
+                    downloads += 1
             except Exception as e:
                 logger.warning(f"Failed to queue album {album.name} ({album.id}): {e}")
-        return queued, skipped
+        return rechecks, downloads, skipped
 
     try:
         logger.info("Starting periodic queue of missing albums for tracked artists")
@@ -341,61 +386,43 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
                 f"Found {len(albums_with_pending_tasks)} albums with pending/running tasks, will skip"
             )
 
-        base_filters = {
-            "downloaded": False,
-            "wanted": True,
-            "album_type__in": get_album_types_to_download(),
-        }
-
-        # Phase 1: FAVOURITE artists (tier=2) — fill up to the full batch
-        favourite_albums = (
-            Album.objects.filter(
-                artist__tracking_tier=TrackingTier.FAVOURITE,
-                **base_filters,
-            )
-            .exclude(album_group__in=get_album_groups_to_ignore())
-            .exclude(unavailable=True)
-            .order_by("failed_count", "-id")[:max_albums_per_run]
-        )
-        fav_queued, fav_skipped = _queue_albums(
-            favourite_albums, albums_with_pending_tasks
+        # Phase 1: FAVOURITE artists (tier=2) — full scan, downloads up to budget
+        fav_rechecks, fav_downloads, fav_skipped = _queue_albums(
+            _build_queryset(TrackingTier.FAVOURITE),
+            albums_with_pending_tasks,
+            max_downloads,
         )
 
-        # Phase 2: TRACKED artists (tier=1) — fill remaining slots
-        remaining = max_albums_per_run - fav_queued
-        tracked_queued = 0
-        tracked_skipped = 0
-        if remaining > 0:
-            tracked_albums = (
-                Album.objects.filter(
-                    artist__tracking_tier=TrackingTier.TRACKED,
-                    **base_filters,
-                )
-                .exclude(album_group__in=get_album_groups_to_ignore())
-                .exclude(unavailable=True)
-                .order_by("failed_count", "-id")[:remaining]
-            )
-            tracked_queued, tracked_skipped = _queue_albums(
-                tracked_albums, albums_with_pending_tasks
-            )
+        # Phase 2: TRACKED artists (tier=1) — full scan, remaining download budget
+        remaining_budget = max_downloads - fav_downloads
+        tracked_rechecks, tracked_downloads, tracked_skipped = _queue_albums(
+            _build_queryset(TrackingTier.TRACKED),
+            albums_with_pending_tasks,
+            max(remaining_budget, 0),
+        )
 
-        queued_count = fav_queued + tracked_queued
-        skipped_count = fav_skipped + tracked_skipped
+        total_rechecks = fav_rechecks + tracked_rechecks
+        total_downloads = fav_downloads + tracked_downloads
+        total_queued = total_rechecks + total_downloads
+        total_skipped = fav_skipped + tracked_skipped
 
-        if queued_count > 0:
+        if total_queued > 0:
             logger.info(
-                "Queued %d albums (%d favourite, %d tracked, skipped %d)",
-                queued_count,
-                fav_queued,
-                tracked_queued,
-                skipped_count,
+                "Queued %d albums (%d rechecks, %d downloads; "
+                "%d favourite, %d tracked, skipped %d)",
+                total_queued,
+                total_rechecks,
+                total_downloads,
+                fav_rechecks + fav_downloads,
+                tracked_rechecks + tracked_downloads,
+                total_skipped,
             )
 
-        # Use remaining capacity to backfill metadata for albums with type=None
-        remaining_capacity = max_albums_per_run - queued_count
+        # Use remaining download capacity to backfill metadata
+        remaining_capacity = max_downloads - total_downloads
         if remaining_capacity > 0:
             backfilled = backfill_album_metadata(limit=remaining_capacity)
-            if backfilled == 0 and queued_count == 0:
+            if backfilled == 0 and total_queued == 0:
                 logger.info(
                     "No missing albums found for tracked artists to queue for download"
                 )
