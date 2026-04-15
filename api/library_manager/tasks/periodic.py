@@ -337,8 +337,8 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
                 needs_download=has_unfinished_songs,
                 has_songs=has_any_songs,
                 download_priority=Case(
-                    When(has_songs=True, needs_download=False, then=Value(0)),
-                    default=Value(1),
+                    When(has_songs=True, needs_download=False, then=Value(1)),
+                    default=Value(0),
                     output_field=IntegerField(),
                 ),
             )
@@ -365,7 +365,7 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
 
             is_recheck = album.has_songs and not album.needs_download
             if not is_recheck and downloads >= download_budget:
-                break
+                continue
 
             try:
                 download_single_album.delay(album.id)
