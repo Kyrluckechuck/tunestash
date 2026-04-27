@@ -176,7 +176,9 @@ class TestOAuthSpotifyClient:
         client = OAuthSpotifyClient()
         result = client.refresh_token()
 
-        assert result is True
+        # New contract returns the freshly-built Spotipy client (or None).
+        assert result is client.sp
+        assert result is not None
         assert mock_get_oauth.call_count == 2
 
 
@@ -318,7 +320,9 @@ class TestSpotifyPlaylistClient:
 
         mock_oauth = MagicMock()
         mock_public = MagicMock()
-        mock_refresh = MagicMock(return_value=True)
+        # Refresh callback returns the new (mock) Spotipy client to use for
+        # the retry, mirroring OAuthSpotifyClient.refresh_token's contract.
+        mock_refresh = MagicMock(return_value=mock_oauth)
 
         mock_oauth.playlist.side_effect = [
             SpotifyException(http_status=401, code=-1, msg="Token expired"),
@@ -341,7 +345,8 @@ class TestSpotifyPlaylistClient:
 
         mock_oauth = MagicMock()
         mock_public = MagicMock()
-        mock_refresh = MagicMock(return_value=False)
+        # None signals refresh failure under the new contract.
+        mock_refresh = MagicMock(return_value=None)
 
         mock_oauth.playlist.side_effect = SpotifyException(
             http_status=401, code=-1, msg="Token expired"
@@ -364,7 +369,7 @@ class TestSpotifyPlaylistClient:
 
         mock_oauth = MagicMock()
         mock_public = MagicMock()
-        mock_refresh = MagicMock(return_value=True)
+        mock_refresh = MagicMock(return_value=mock_oauth)
 
         mock_oauth.playlist.side_effect = SpotifyException(
             http_status=401, code=-1, msg="Token expired"

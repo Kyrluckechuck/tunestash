@@ -10,11 +10,13 @@ from types import FrameType
 from typing import Any, Optional
 
 import django
+from django.db import close_old_connections
 
 import psutil
 from celery import Celery
 from celery.signals import (
     task_postrun,
+    task_prerun,
     worker_process_init,
     worker_process_shutdown,
     worker_shutdown,
@@ -31,6 +33,32 @@ django.setup()
 logger = logging.getLogger("celery_diagnostics")
 
 app = Celery("tunestash")
+
+
+def _log_startup_banner() -> None:
+    """Log a one-line container/process identity record at module load.
+
+    Fires for both the celery worker and the celery beat process. Lets us
+    correlate restart events across services (especially against
+    postgres's own startup line) when investigating future incidents.
+    """
+    import platform
+    import socket
+
+    role = "beat" if any("beat" in arg for arg in sys.argv) else "worker"
+    logger.warning(
+        "[STARTUP] role=%s host=%s pid=%d ppid=%d python=%s image_tag=%s git_sha=%s",
+        role,
+        socket.gethostname(),
+        os.getpid(),
+        os.getppid(),
+        platform.python_version(),
+        os.getenv("IMAGE_TAG", "unset"),
+        os.getenv("GIT_SHA", "unset"),
+    )
+
+
+_log_startup_banner()
 
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.
@@ -96,6 +124,24 @@ app.conf.task_track_started = True
 def debug_task(self: "Celery.Task") -> None:
     """Debug task for testing Celery configuration."""
     print(f"Request: {self.request!r}")
+
+
+# ============================================================================
+# DB connection hygiene
+# ============================================================================
+
+
+@task_prerun.connect  # type: ignore[misc]
+def task_prerun_close_old_connections(**_kwargs: Any) -> None:
+    """Close stale Django DB connections before each task runs.
+
+    Django's CONN_HEALTH_CHECKS only fires inside the request/response cycle,
+    which Celery does not have. Without this hook, idle connections that
+    Postgres has closed cause InterfaceError('connection already closed')
+    on the next ORM call, which then crashes the pool callback and forces
+    a worker recycle.
+    """
+    close_old_connections()
 
 
 # ============================================================================
