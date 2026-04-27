@@ -9,7 +9,7 @@ from pathlib import Path
 
 import django
 from django.conf import settings as dj_settings
-from django.db import connections
+from django.db import close_old_connections, connections
 
 from asgiref.sync import sync_to_async
 from fastapi import FastAPI
@@ -125,6 +125,21 @@ def create_app() -> FastAPI:
         """Run startup tasks including orphaned task cleanup and SpotifyClient init."""
         startup_logger = logging.getLogger("api.startup")
 
+        # Container/process identity. Lets us correlate web restart events
+        # against postgres + worker restarts when investigating incidents.
+        import platform
+        import socket
+
+        startup_logger.warning(
+            "[STARTUP] role=web host=%s pid=%d ppid=%d python=%s image_tag=%s git_sha=%s",
+            socket.gethostname(),
+            os.getpid(),
+            os.getppid(),
+            platform.python_version(),
+            os.getenv("IMAGE_TAG", "unset"),
+            os.getenv("GIT_SHA", "unset"),
+        )
+
         @sync_to_async
         def cleanup_orphaned_tasks() -> None:
             try:
@@ -192,6 +207,10 @@ def create_app() -> FastAPI:
 
         @sync_to_async
         def check_db() -> bool:
+            # FastAPI has no Django request cycle, so CONN_HEALTH_CHECKS does
+            # not auto-fire. Recycle stale connections before the ping so an
+            # idle-closed connection doesn't surface as a healthcheck error.
+            close_old_connections()
             try:
                 with connections["default"].cursor() as cursor:
                     cursor.execute("SELECT 1")

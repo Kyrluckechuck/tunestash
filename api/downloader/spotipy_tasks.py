@@ -302,21 +302,27 @@ class OAuthSpotifyClient:
         """Reset the singleton instance (for token refresh)."""
         cls._instance = None
 
-    def refresh_token(self) -> bool:
+    def refresh_token(self) -> Optional[spotipy.Spotify]:
         """Refresh OAuth token and reinitialize the client.
 
+        Forces a refresh of the stored token so callers that hit a 401 don't
+        get the same expired access_token back from the DB cache. Returns the
+        newly-constructed Spotipy client so callers can update any captured
+        references (the singleton's ``.sp`` is replaced — outside references
+        do not auto-update).
+
         Returns:
-            True if refresh successful, False otherwise.
+            The new spotipy.Spotify instance on success, None on failure.
         """
-        oauth_creds = get_spotify_oauth_credentials()
+        oauth_creds = get_spotify_oauth_credentials(force_refresh=True)
         if oauth_creds:
             self.sp = spotipy.Spotify(
                 auth=oauth_creds["access_token"],
                 requests_session=create_limited_session(),
             )
             self.is_oauth = True
-            return True
-        return False
+            return self.sp
+        return None
 
 
 # Backwards compatibility alias

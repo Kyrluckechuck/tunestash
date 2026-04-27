@@ -24,7 +24,7 @@ class SpotifyPlaylistClient:
         self,
         spotipy_client: Optional[spotipy.Spotify] = None,
         public_client: Optional[spotipy.Spotify] = None,
-        on_auth_error: Optional[Callable[[], bool]] = None,
+        on_auth_error: Optional[Callable[[], Optional[spotipy.Spotify]]] = None,
     ):
         self.spotipy_client = spotipy_client
         self.public_client = public_client if public_client else spotipy_client
@@ -110,7 +110,12 @@ class SpotifyPlaylistClient:
                     logger.warning(
                         "OAuth token expired during playlist snapshot check, refreshing..."
                     )
-                    if self._on_auth_error():
+                    new_client = self._on_auth_error()
+                    if new_client is not None:
+                        # Replace the captured reference; the singleton's .sp
+                        # was rebuilt and our old reference still holds the
+                        # expired token.
+                        self.spotipy_client = new_client
                         try:
                             result = self.spotipy_client.playlist(
                                 playlist_id, fields="snapshot_id"
