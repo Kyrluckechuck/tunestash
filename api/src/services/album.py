@@ -217,8 +217,14 @@ class AlbumService(BaseService[Album]):
                 django_album = await self.model.objects.aget(spotify_gid=album_id)
 
             if is_wanted is not None:
+                # Only clear failure state on the False→True transition. Without
+                # this guard, a redundant setAlbumWanted(true) on an already-
+                # wanted album would reset failed_count, unavailable, and
+                # last_failed_at — letting the periodic queue immediately re-
+                # pick known-bad albums and burn worker capacity.
+                was_wanted = django_album.wanted
                 django_album.wanted = is_wanted
-                if is_wanted:
+                if is_wanted and not was_wanted:
                     django_album.clear_failure_state()
                 await django_album.asave()
 

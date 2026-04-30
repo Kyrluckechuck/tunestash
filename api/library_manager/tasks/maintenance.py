@@ -287,9 +287,15 @@ def validate_undownloaded_songs(
     """
     Validate and re-download songs that should exist but aren't downloaded.
 
-    Processes up to 100 songs per run. Each song can only be attempted once per week
-    (tracked via last_download_attempt field). Runs every 12 hours but respects
-    the weekly per-song limit.
+    Three batches per run, capped at ~250 songs total:
+      - up to 100 high-confidence songs (bitrate>0, available)
+      - up to 100 high-confidence-but-marked-unavailable songs
+      - up to  50 low-confidence songs (bitrate=0), sorted by failed_count ASC
+        so high-fc dead-ends drain last and just get "tried eventually"
+
+    Each song can only be attempted once per week (tracked via
+    last_download_attempt field). Runs every 12 hours but respects the
+    weekly per-song limit.
     """
     from datetime import timedelta
 
@@ -305,6 +311,8 @@ def validate_undownloaded_songs(
         last_download_attempt__lt=one_week_ago
     )
 
+    # High confidence: songs with bitrate>0 (previously identified, just not
+    # yet on disk) — biggest batch since these are most likely to recover.
     non_downloaded_songs_that_should_exist = (
         Song.objects.filter(bitrate__gt=0, unavailable=False, downloaded=False)
         .filter(not_recently_attempted)
@@ -315,10 +323,20 @@ def validate_undownloaded_songs(
         .filter(not_recently_attempted)
         .order_by("created_at")[:100]
     )
+    # Low confidence: songs that never even partially identified (bitrate=0).
+    # Smaller batch + ordered by failed_count ASC so high-fc dead-ends drain
+    # last. Without this, brand-new "no provider has it" songs would never
+    # retry except via the wasteful album loop.
+    non_downloaded_songs_low_confidence = (
+        Song.objects.filter(bitrate=0, downloaded=False)
+        .filter(not_recently_attempted)
+        .order_by("failed_count", "created_at")[:50]
+    )
 
     non_downloaded_songs = (
         non_downloaded_songs_that_should_exist
         | non_downloaded_songs_that_maybe_should_exist
+        | non_downloaded_songs_low_confidence
     )
 
     non_downloaded_songs_count = non_downloaded_songs.count()
@@ -367,8 +385,9 @@ def retry_failed_songs(self: Any) -> None:
     1. failed_count ASC (fewer failures = higher priority)
     2. created_at ASC (older songs = higher priority within same failure count)
 
-    Songs with >10 failures are skipped (likely permanently unavailable).
-    Runs 3 times per week (Mon/Wed/Fri).
+    No hard cap on failed_count — songs with very high counts back off to ~90
+    days via get_retry_backoff_days, so they get tried eventually but don't
+    dominate the queue. Runs 3 times per week (Mon/Wed/Fri).
     """
     from ..models import FailureReason
 
@@ -378,12 +397,12 @@ def retry_failed_songs(self: Any) -> None:
         # Check authentication before proceeding
         require_download_capability()
 
-        # Find songs that have failed but might succeed on retry
-        # Priority: songs with fewer failures first
+        # Find songs that have failed but might succeed on retry. failed_count
+        # ASC + the per-song backoff in is_ready_for_retry naturally
+        # deprioritizes high-fc songs without a hard cutoff.
         candidate_songs = Song.objects.filter(
             downloaded=False,
             failed_count__gt=0,
-            failed_count__lte=10,  # Skip songs that have failed too many times
         ).order_by("failed_count", "created_at")[
             :200
         ]  # Fetch extra to filter
