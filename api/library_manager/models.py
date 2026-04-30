@@ -434,21 +434,28 @@ class Song(models.Model):
             Number of days to wait based on failure_reason and failed_count.
             - None (no failure): 0 days
             - TEMPORARY_ERROR: 1 day base, doubles each failure (max 7 days)
-            - SPOTIFY_NOT_FOUND/YTM_NO_MATCH: 2 day base, doubles each failure (max 30 days)
-            - BOTH_UNAVAILABLE: 30 days flat
+            - SPOTIFY_NOT_FOUND/YTM_NO_MATCH: 2 day base, doubles each failure
+              (max 30 days for fc<=10, then 60 days for fc<=20, then 90 days)
+            - BOTH_UNAVAILABLE: 30 days flat for fc<=10, then 90 days
         """
         if self.failure_reason is None:
             return 0
 
         if self.failure_reason == FailureReason.BOTH_UNAVAILABLE:
-            return 30
+            # Stay tried-eventually rather than abandoned: a song providers
+            # rejected today might surface in 3 months as catalog rotates.
+            return 30 if self.failed_count <= 10 else 90
 
         if self.failure_reason == FailureReason.TEMPORARY_ERROR:
             # Exponential backoff: 1, 2, 4, 7 (capped) days
             return int(min(2 ** (self.failed_count - 1), 7))
 
-        # SPOTIFY_NOT_FOUND or YTM_NO_MATCH - slower backoff
-        # 2, 4, 8, 16, 30 (capped) days
+        # SPOTIFY_NOT_FOUND or YTM_NO_MATCH — slower backoff with a long-tail
+        # cap so very-high-fc songs are deprioritized but not dropped.
+        if self.failed_count > 20:
+            return 90
+        if self.failed_count > 10:
+            return 60
         return int(min(2**self.failed_count, 30))
 
     def is_ready_for_retry(self) -> bool:
@@ -867,14 +874,21 @@ class Album(models.Model):
     def increment_failed_count(
         self, reason: "AlbumFailureReason" = AlbumFailureReason.TEMPORARY_ERROR
     ) -> None:
-        """Increment the failed count and update failure tracking fields."""
+        """Increment the failed count and update failure tracking fields.
+
+        Only DEEZER_NO_TRACKS sets unavailable=True — that's a hard verdict
+        from the metadata source itself ("this album has no tracks listed on
+        Deezer"). Soft failures (TEMPORARY_ERROR, PARTIAL_FAILURE,
+        ALL_TRACKS_UNAVAILABLE) leave unavailable=False and rely on
+        failed_count + last_failed_at + get_retry_backoff_days() for
+        deprioritization, so the album stays truthful (downloaded=False,
+        unavailable=False) and is_ready_for_retry() naturally gates retries.
+        """
         self.failed_count += 1
         self.failure_reason = reason
         self.last_failed_at = timezone.now()
 
         if reason == AlbumFailureReason.DEEZER_NO_TRACKS:
-            self.unavailable = True
-        elif self.failed_count >= 3:
             self.unavailable = True
 
         self.save()
@@ -884,8 +898,8 @@ class Album(models.Model):
 
         Returns backoff days based on failure_reason and failed_count:
         - TEMPORARY_ERROR / PARTIAL_FAILURE: 1, 2, 4, 7 (cap)
-        - ALL_TRACKS_UNAVAILABLE: 2, 4, 8, 16, 30 (cap)
-        - DEEZER_NO_TRACKS: 30 flat
+        - ALL_TRACKS_UNAVAILABLE: 2, 4, 8, 16, 30 then 60 (fc>10) then 90 (fc>20)
+        - DEEZER_NO_TRACKS: 30 flat (academic — unavailable=True excludes anyway)
         """
         if self.failure_reason is None:
             return 0
@@ -894,6 +908,13 @@ class Album(models.Model):
             return 30
 
         if self.failure_reason == AlbumFailureReason.ALL_TRACKS_UNAVAILABLE:
+            # Long-tail: high-fc albums tried-eventually rather than
+            # abandoned, but spaced far enough apart that they don't burn
+            # worker capacity.
+            if self.failed_count > 20:
+                return 90
+            if self.failed_count > 10:
+                return 60
             return int(min(2**self.failed_count, 30))
 
         # TEMPORARY_ERROR or PARTIAL_FAILURE
@@ -912,6 +933,22 @@ class Album(models.Model):
 
     def clear_failure_state(self) -> None:
         """Reset all failure tracking fields. Caller must save."""
+        # TEMPORARY: stack-trace logging to identify what's clearing failure
+        # state on albums with significant failure history. Remove once the
+        # culprit is identified and fixed.
+        if self.failed_count > 5:
+            import logging
+            import traceback
+
+            logging.getLogger("library_manager.investigation").warning(
+                "[INVESTIGATION] Album.clear_failure_state on id=%s name=%r "
+                "fc=%d unavail=%s — caller stack:\n%s",
+                self.id,
+                self.name,
+                self.failed_count,
+                self.unavailable,
+                "".join(traceback.format_stack(limit=10)),
+            )
         self.failed_count = 0
         self.failure_reason = None
         self.last_failed_at = None

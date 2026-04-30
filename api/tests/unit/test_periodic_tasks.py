@@ -360,7 +360,7 @@ class TestRetryFailedSongsTask(TestCase):
             downloaded=False,
         )
 
-        # Song with 11 failures (should be SKIPPED - over threshold)
+        # Song with 11 failures (deprioritized but still eligible — no hard cap)
         self.song_failed_eleven = Song.objects.create(
             name="Failed Eleven Times",
             gid="song_011",
@@ -405,13 +405,14 @@ class TestRetryFailedSongsTask(TestCase):
         downloaded_songs = mock_fallback.call_args[0][0]
         downloaded_ids = {s.gid for s in downloaded_songs}
 
-        # Should include songs with 1, 5, and 10 failures
+        # Should include all failed songs regardless of fc — high-fc songs
+        # are deprioritized via ordering + backoff, not hard-capped.
         assert self.song_failed_once.gid in downloaded_ids
         assert self.song_failed_five.gid in downloaded_ids
         assert self.song_failed_ten.gid in downloaded_ids
+        assert self.song_failed_eleven.gid in downloaded_ids
 
-        # Should NOT include songs with 11+ failures, 0 failures, or already downloaded
-        assert self.song_failed_eleven.gid not in downloaded_ids
+        # Should NOT include 0-failure or already-downloaded songs
         assert self.song_not_failed.gid not in downloaded_ids
         assert self.song_downloaded.gid not in downloaded_ids
 
@@ -503,36 +504,50 @@ class TestRetryFailedSongsTask(TestCase):
 
     @patch("library_manager.tasks.maintenance.require_download_capability")
     @patch("library_manager.tasks.maintenance._download_deezer_songs_via_fallback")
-    def test_retry_failed_songs_skips_high_failure_count(
+    def test_retry_failed_songs_includes_high_failure_count_deprioritized(
         self, mock_fallback, mock_require_download
     ):
-        """Test that songs with >10 failures are not retried."""
+        """High-fc songs are eligible for retry, ordered after lower-fc ones."""
         from library_manager.models import Song
         from library_manager.tasks import retry_failed_songs
 
         mock_fallback.return_value = (0, 0)
 
-        # Create songs with 11-20 failures
+        # Mix of low-fc and high-fc songs. Without failure_reason or
+        # last_failed_at they're all is_ready_for_retry=True.
+        for i in range(1, 4):
+            Song.objects.create(
+                name=f"Low Failure {i}",
+                gid=f"lowfail{i:016d}",
+                primary_artist=self.artist,
+                failed_count=i,
+                downloaded=False,
+            )
         for i in range(11, 21):
             Song.objects.create(
                 name=f"High Failure {i}",
-                gid=f"highfail{i:015d}",  # Unique 22-char GID
+                gid=f"highfail{i:015d}",
                 primary_artist=self.artist,
                 failed_count=i,
                 downloaded=False,
             )
 
-        # Run the task
         retry_failed_songs()
 
-        # Extract downloaded song GIDs
+        # All songs should be eligible — no hard cap any more
         downloaded_songs = mock_fallback.call_args[0][0]
         downloaded_gids = {s.gid for s in downloaded_songs}
-
-        # Verify none of the high-failure songs were included
         for i in range(11, 21):
-            gid = f"highfail{i:015d}"
-            assert gid not in downloaded_gids
+            assert f"highfail{i:015d}" in downloaded_gids
+        # And the order ensures lower-fc are processed first
+        gids_in_order = [s.gid for s in downloaded_songs]
+        first_low_idx = next(
+            i for i, gid in enumerate(gids_in_order) if gid.startswith("lowfail")
+        )
+        first_high_idx = next(
+            i for i, gid in enumerate(gids_in_order) if gid.startswith("highfail")
+        )
+        assert first_low_idx < first_high_idx
 
 
 class TestBackfillAlbumMetadata(TestCase):
@@ -1024,6 +1039,248 @@ class TestSongFailureBackoff(TestCase):
         assert song.failure_reason is None
         assert song.last_failed_at is None
         assert song.unavailable is False
+
+
+class TestAlbumFailureSemantics(TestCase):
+    """Album.unavailable is reserved for hard verdicts (DEEZER_NO_TRACKS only).
+
+    Soft failures rely on failed_count + last_failed_at + backoff via
+    is_ready_for_retry(), so the album stays truthful (downloaded=False,
+    unavailable=False) while still being deprioritized.
+    """
+
+    def setUp(self):
+        self.artist = Artist.objects.create(
+            name="Album Failure Artist",
+            gid="album_failure_artist",
+            tracking_tier=1,
+        )
+
+    def _make_album(self, **kwargs) -> Album:
+        defaults = dict(
+            name="Test Album",
+            spotify_gid="album_failure_test",
+            spotify_uri="spotify:album:album_failure_test",
+            artist=self.artist,
+            total_tracks=10,
+            wanted=True,
+            downloaded=False,
+        )
+        defaults.update(kwargs)
+        return Album.objects.create(**defaults)
+
+    def test_soft_failure_does_not_set_unavailable(self):
+        """ALL_TRACKS_UNAVAILABLE at any fc keeps unavailable=False."""
+        from library_manager.models import AlbumFailureReason
+
+        album = self._make_album()
+        for _ in range(5):
+            album.increment_failed_count(AlbumFailureReason.ALL_TRACKS_UNAVAILABLE)
+
+        album.refresh_from_db()
+        assert album.failed_count == 5
+        assert album.failure_reason == AlbumFailureReason.ALL_TRACKS_UNAVAILABLE
+        assert album.unavailable is False
+
+    def test_partial_failure_does_not_set_unavailable(self):
+        """PARTIAL_FAILURE never sets unavailable, even after many failures."""
+        from library_manager.models import AlbumFailureReason
+
+        album = self._make_album(spotify_gid="album_partial_test")
+        for _ in range(10):
+            album.increment_failed_count(AlbumFailureReason.PARTIAL_FAILURE)
+
+        album.refresh_from_db()
+        assert album.failed_count == 10
+        assert album.unavailable is False
+
+    def test_temporary_error_does_not_set_unavailable(self):
+        """TEMPORARY_ERROR never sets unavailable."""
+        from library_manager.models import AlbumFailureReason
+
+        album = self._make_album(spotify_gid="album_temp_test")
+        for _ in range(5):
+            album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
+
+        album.refresh_from_db()
+        assert album.unavailable is False
+
+    def test_deezer_no_tracks_sets_unavailable(self):
+        """DEEZER_NO_TRACKS still hard-flags unavailable=True (the one case)."""
+        from library_manager.models import AlbumFailureReason
+
+        album = self._make_album(spotify_gid="album_dnt_test")
+        album.increment_failed_count(AlbumFailureReason.DEEZER_NO_TRACKS)
+
+        album.refresh_from_db()
+        assert album.failed_count == 1
+        assert album.failure_reason == AlbumFailureReason.DEEZER_NO_TRACKS
+        assert album.unavailable is True
+
+    def test_backoff_all_tracks_unavailable_curve(self):
+        """ALL_TRACKS_UNAVAILABLE: 2,4,8,16,30 then 60 (fc>10) then 90 (fc>20)."""
+        from library_manager.models import AlbumFailureReason
+
+        album = self._make_album(spotify_gid="album_backoff_test")
+        album.failure_reason = AlbumFailureReason.ALL_TRACKS_UNAVAILABLE
+
+        album.failed_count = 1
+        assert album.get_retry_backoff_days() == 2
+        album.failed_count = 2
+        assert album.get_retry_backoff_days() == 4
+        album.failed_count = 4
+        assert album.get_retry_backoff_days() == 16
+        album.failed_count = 5
+        assert album.get_retry_backoff_days() == 30
+        album.failed_count = 10
+        assert album.get_retry_backoff_days() == 30
+        album.failed_count = 11
+        assert album.get_retry_backoff_days() == 60
+        album.failed_count = 20
+        assert album.get_retry_backoff_days() == 60
+        album.failed_count = 21
+        assert album.get_retry_backoff_days() == 90
+        album.failed_count = 100
+        assert album.get_retry_backoff_days() == 90
+
+    def test_backoff_temporary_error_unchanged(self):
+        """TEMPORARY_ERROR / PARTIAL_FAILURE backoff curve unchanged."""
+        from library_manager.models import AlbumFailureReason
+
+        album = self._make_album(spotify_gid="album_backoff_temp")
+        album.failure_reason = AlbumFailureReason.TEMPORARY_ERROR
+
+        album.failed_count = 1
+        assert album.get_retry_backoff_days() == 1
+        album.failed_count = 4
+        assert album.get_retry_backoff_days() == 7
+        album.failed_count = 50
+        assert album.get_retry_backoff_days() == 7  # still capped at 7
+
+    def test_is_ready_for_retry_respects_extended_backoff(self):
+        """Album with high fc + extended backoff is not ready until window passes."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from library_manager.models import AlbumFailureReason
+
+        album = self._make_album(spotify_gid="album_ready_test")
+        album.failure_reason = AlbumFailureReason.ALL_TRACKS_UNAVAILABLE
+        album.failed_count = 25  # → 90-day backoff
+        album.last_failed_at = timezone.now() - timedelta(days=30)
+
+        # 30 days < 90-day backoff window
+        assert album.is_ready_for_retry() is False
+
+        # Past the window
+        album.last_failed_at = timezone.now() - timedelta(days=91)
+        assert album.is_ready_for_retry() is True
+
+
+class TestResetSoftUnavailableAlbumsCommand(TestCase):
+    """Management command that rehabilitates historical soft-unavailable albums."""
+
+    def setUp(self):
+        self.artist = Artist.objects.create(
+            name="Reset Cmd Artist",
+            gid="reset_cmd_artist",
+            tracking_tier=1,
+        )
+
+    def _make_album(self, gid_suffix: str, **kwargs) -> Album:
+        defaults = dict(
+            name=f"Reset Test Album {gid_suffix}",
+            spotify_gid=f"reset_album_{gid_suffix}",
+            spotify_uri=f"spotify:album:reset_album_{gid_suffix}",
+            artist=self.artist,
+            total_tracks=10,
+            wanted=True,
+            downloaded=False,
+        )
+        defaults.update(kwargs)
+        return Album.objects.create(**defaults)
+
+    def test_dry_run_does_not_modify_data(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from library_manager.models import AlbumFailureReason
+
+        soft = self._make_album(
+            "soft",
+            unavailable=True,
+            failure_reason=AlbumFailureReason.ALL_TRACKS_UNAVAILABLE,
+            failed_count=5,
+        )
+        hard = self._make_album(
+            "hard",
+            unavailable=True,
+            failure_reason=AlbumFailureReason.DEEZER_NO_TRACKS,
+            failed_count=1,
+        )
+
+        out = StringIO()
+        # No --apply → dry-run
+        call_command("reset_soft_unavailable_albums", stdout=out)
+
+        soft.refresh_from_db()
+        hard.refresh_from_db()
+        # Nothing changed
+        assert soft.unavailable is True
+        assert hard.unavailable is True
+        assert "DRY RUN" in out.getvalue()
+
+    def test_apply_resets_only_soft_failures(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from library_manager.models import AlbumFailureReason
+
+        soft_atu = self._make_album(
+            "soft_atu",
+            unavailable=True,
+            failure_reason=AlbumFailureReason.ALL_TRACKS_UNAVAILABLE,
+            failed_count=5,
+        )
+        soft_partial = self._make_album(
+            "soft_partial",
+            unavailable=True,
+            failure_reason=AlbumFailureReason.PARTIAL_FAILURE,
+            failed_count=4,
+        )
+        hard = self._make_album(
+            "hard",
+            unavailable=True,
+            failure_reason=AlbumFailureReason.DEEZER_NO_TRACKS,
+            failed_count=1,
+        )
+        unrelated = self._make_album(
+            "unrelated",
+            unavailable=False,  # not affected, just here to ensure we don't accidentally touch it
+            failure_reason=None,
+            failed_count=0,
+        )
+
+        call_command("reset_soft_unavailable_albums", "--apply", stdout=StringIO())
+
+        soft_atu.refresh_from_db()
+        soft_partial.refresh_from_db()
+        hard.refresh_from_db()
+        unrelated.refresh_from_db()
+
+        # Soft failures rehabilitated
+        assert soft_atu.unavailable is False
+        assert soft_partial.unavailable is False
+        # Failure tracking preserved (we only flipped the flag)
+        assert soft_atu.failed_count == 5
+        assert soft_atu.failure_reason == AlbumFailureReason.ALL_TRACKS_UNAVAILABLE
+        # Hard verdicts preserved
+        assert hard.unavailable is True
+        # Unrelated album untouched
+        assert unrelated.unavailable is False
 
 
 class TestCleanupStuckTasksPeriodic(TestCase):
