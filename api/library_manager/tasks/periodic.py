@@ -301,17 +301,26 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
     """
     Periodically find tracked artists with missing music and queue downloads.
 
-    Uses a two-phase fill so FAVOURITE artists (tier=2) always get first dibs:
-    Phase 1: fill up to max_downloads slots with FAVOURITE artist albums.
-    Phase 2: fill any remaining download slots with TRACKED artist albums.
+    Two-tier fill so FAVOURITE artists (tier=2) always get first dibs:
+      Phase 1: fill up to max_downloads slots with FAVOURITE artist albums.
+      Phase 2: fill any remaining download slots with TRACKED artist albums.
 
-    Each phase scans up to max_scan albums, sorted so re-checks (albums where
-    all songs are already downloaded) come first. Re-checks are queued freely
-    to verify tracks via Deezer; actual downloads are capped at max_downloads
-    total to avoid flooding providers.
+    Each phase scans the queryset in TWO directions per tier (newest-first
+    AND oldest-first) to prevent queue starvation: with default ordering by
+    -id, low-id albums never reach the top of the scan and were never
+    attempted. The download budget is split: ``oldest_download_budget``
+    slots are reserved for oldest-first queueing so old backlog drains
+    steadily even when fresh releases keep arriving.
+
+    Re-checks (albums where all songs are already downloaded) are queued
+    freely without consuming the download budget.
     """
     max_downloads = 150
-    max_scan = 500
+    # Reserve part of the budget for oldest-first scans so old backlog
+    # doesn't get permanently starved by fresh releases.
+    oldest_download_budget = 50
+    newest_download_budget = max_downloads - oldest_download_budget
+    max_scan_per_direction = 250
 
     has_unfinished_songs = Exists(
         Song.objects.filter(
@@ -322,8 +331,13 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
     )
     has_any_songs = Exists(Song.objects.filter(album=OuterRef("pk")))
 
-    def _build_queryset(tracking_tier: int) -> Any:
-        """Build annotated queryset for a tracking tier, sorted rechecks-first."""
+    def _build_queryset(tracking_tier: int, oldest_first: bool) -> Any:
+        """Build annotated queryset for a tracking tier in one direction."""
+        ordering = (
+            "download_priority",
+            "failed_count",
+            "id" if oldest_first else "-id",
+        )
         return (
             Album.objects.filter(
                 artist__tracking_tier=tracking_tier,
@@ -342,13 +356,19 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
                     output_field=IntegerField(),
                 ),
             )
-            .order_by("download_priority", "failed_count", "-id")[:max_scan]
+            .order_by(*ordering)[:max_scan_per_direction]
         )
 
     def _queue_albums(
-        queryset: Any, pending_tasks: Set[str], download_budget: int
+        queryset: Any,
+        pending_tasks: Set[str],
+        queued_ids: set[int],
+        download_budget: int,
     ) -> tuple[int, int, int]:
         """Queue albums, rechecks freely and downloads up to budget.
+
+        ``queued_ids`` is shared across passes so an album surfaced in both
+        the newest-first and oldest-first scans is only queued once.
 
         Returns (recheck_count, download_count, skipped_count).
         """
@@ -356,6 +376,9 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
         downloads = 0
         skipped = 0
         for album in queryset.iterator():
+            if album.id in queued_ids:
+                skipped += 1
+                continue
             if str(album.id) in pending_tasks:
                 skipped += 1
                 continue
@@ -369,6 +392,7 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
 
             try:
                 download_single_album.delay(album.id)
+                queued_ids.add(album.id)
                 if is_recheck:
                     rechecks += 1
                 else:
@@ -386,35 +410,61 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
                 f"Found {len(albums_with_pending_tasks)} albums with pending/running tasks, will skip"
             )
 
-        # Phase 1: FAVOURITE artists (tier=2) — full scan, downloads up to budget
-        fav_rechecks, fav_downloads, fav_skipped = _queue_albums(
-            _build_queryset(TrackingTier.FAVOURITE),
+        queued_ids: set[int] = set()
+
+        # Phase 1a: FAVOURITE newest-first
+        fav_n_recheck, fav_n_dl, fav_n_skip = _queue_albums(
+            _build_queryset(TrackingTier.FAVOURITE, oldest_first=False),
             albums_with_pending_tasks,
-            max_downloads,
+            queued_ids,
+            newest_download_budget,
+        )
+        # Phase 1b: FAVOURITE oldest-first
+        fav_o_recheck, fav_o_dl, fav_o_skip = _queue_albums(
+            _build_queryset(TrackingTier.FAVOURITE, oldest_first=True),
+            albums_with_pending_tasks,
+            queued_ids,
+            oldest_download_budget,
         )
 
-        # Phase 2: TRACKED artists (tier=1) — full scan, remaining download budget
-        remaining_budget = max_downloads - fav_downloads
-        tracked_rechecks, tracked_downloads, tracked_skipped = _queue_albums(
-            _build_queryset(TrackingTier.TRACKED),
+        # Phase 2a: TRACKED newest-first, remaining newest budget
+        newest_remaining = max(newest_download_budget - fav_n_dl, 0)
+        tr_n_recheck, tr_n_dl, tr_n_skip = _queue_albums(
+            _build_queryset(TrackingTier.TRACKED, oldest_first=False),
             albums_with_pending_tasks,
-            max(remaining_budget, 0),
+            queued_ids,
+            newest_remaining,
         )
+        # Phase 2b: TRACKED oldest-first, remaining oldest budget
+        oldest_remaining = max(oldest_download_budget - fav_o_dl, 0)
+        tr_o_recheck, tr_o_dl, tr_o_skip = _queue_albums(
+            _build_queryset(TrackingTier.TRACKED, oldest_first=True),
+            albums_with_pending_tasks,
+            queued_ids,
+            oldest_remaining,
+        )
+
+        fav_rechecks = fav_n_recheck + fav_o_recheck
+        fav_downloads = fav_n_dl + fav_o_dl
+        tracked_rechecks = tr_n_recheck + tr_o_recheck
+        tracked_downloads = tr_n_dl + tr_o_dl
 
         total_rechecks = fav_rechecks + tracked_rechecks
         total_downloads = fav_downloads + tracked_downloads
         total_queued = total_rechecks + total_downloads
-        total_skipped = fav_skipped + tracked_skipped
+        total_skipped = fav_n_skip + fav_o_skip + tr_n_skip + tr_o_skip
 
         if total_queued > 0:
             logger.info(
                 "Queued %d albums (%d rechecks, %d downloads; "
-                "%d favourite, %d tracked, skipped %d)",
+                "%d favourite, %d tracked, %d newest, %d oldest, skipped %d)",
                 total_queued,
                 total_rechecks,
                 total_downloads,
                 fav_rechecks + fav_downloads,
                 tracked_rechecks + tracked_downloads,
+                fav_n_recheck + fav_n_dl + tr_n_recheck + tr_n_dl,
+                fav_o_recheck + fav_o_dl + tr_o_recheck + tr_o_dl,
                 total_skipped,
             )
 

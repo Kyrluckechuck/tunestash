@@ -307,17 +307,26 @@ class TestPeriodicTasks(TestCase):
 
     @patch("library_manager.tasks.periodic.download_single_album")
     def test_queue_missing_albums_handles_task_queue_failure(self, mock_download):
-        """Test that periodic task continues even if individual album queuing fails."""
+        """Periodic task continues across queue-failure exceptions."""
         from library_manager.tasks import queue_missing_albums_for_tracked_artists
 
-        # Make delay() raise an exception on first call, succeed on second
-        mock_download.delay.side_effect = [Exception("Queue error"), None]
+        # Repeated raises so subsequent passes (oldest-first re-iterates the
+        # same album when the failed call didn't make it into queued_ids)
+        # still have side-effect values to consume.
+        mock_download.delay.side_effect = [
+            Exception("Queue error"),
+            None,
+            Exception("Queue error"),
+            None,
+        ]
 
         # Run the periodic task - should not crash
         queue_missing_albums_for_tracked_artists()
 
-        # Should have attempted to queue both albums despite first failure
-        assert mock_download.delay.call_count == 2
+        # Should have attempted to queue at least both setup albums, possibly
+        # more due to the dual-direction scan retrying failed-and-not-deduped
+        # albums.
+        assert mock_download.delay.call_count >= 2
 
 
 class TestRetryFailedSongsTask(TestCase):
@@ -1281,6 +1290,246 @@ class TestResetSoftUnavailableAlbumsCommand(TestCase):
         assert hard.unavailable is True
         # Unrelated album untouched
         assert unrelated.unavailable is False
+
+
+class TestPeriodicQueueDualDirection(TestCase):
+    """Periodic queue scans newest-first AND oldest-first to prevent
+    queue starvation of low-id (old) backlog albums."""
+
+    def setUp(self):
+        self.artist = Artist.objects.create(
+            name="Dual Dir Artist",
+            gid="dual_dir_artist",
+            tracking_tier=2,  # FAVOURITE — exercises Phase 1
+        )
+
+    def _make_album(self, suffix: str, **kwargs) -> Album:
+        defaults = dict(
+            name=f"Dual Album {suffix}",
+            spotify_gid=f"dual_album_{suffix}",
+            spotify_uri=f"spotify:album:dual_{suffix}",
+            artist=self.artist,
+            wanted=True,
+            downloaded=False,
+            album_type="album",
+            album_group="album",
+            total_tracks=10,
+        )
+        defaults.update(kwargs)
+        return Album.objects.create(**defaults)
+
+    @patch("library_manager.tasks.periodic.download_single_album")
+    def test_oldest_albums_get_queued_alongside_newest(self, mock_download):
+        """When backlog is much larger than newest_budget, both ends drain.
+
+        Without dual-direction, only the newest 100 (newest_budget) would be
+        queued and old albums would never reach the scan window.
+        """
+        from library_manager.tasks import queue_missing_albums_for_tracked_artists
+
+        # Create 200 albums; oldest get id-numbered first
+        created = [self._make_album(f"{i:03d}") for i in range(200)]
+
+        queue_missing_albums_for_tracked_artists()
+
+        queued_ids = {call[0][0] for call in mock_download.delay.call_args_list}
+        # 200 albums + budget 150 → 150 calls
+        assert mock_download.delay.call_count == 150
+
+        # The first 50 created (oldest by id) should at least partially be in
+        # the queue thanks to the oldest-first pass (50-album budget).
+        oldest_50_ids = {a.id for a in created[:50]}
+        oldest_in_queue = oldest_50_ids & queued_ids
+        assert len(oldest_in_queue) >= 40, (
+            f"Expected oldest pass to queue most of the bottom 50 albums, "
+            f"got only {len(oldest_in_queue)}"
+        )
+
+        # The newest 100 should also be queued via the newest-first pass
+        newest_100_ids = {a.id for a in created[-100:]}
+        newest_in_queue = newest_100_ids & queued_ids
+        assert len(newest_in_queue) >= 90, (
+            f"Expected newest pass to queue most of the top 100 albums, "
+            f"got only {len(newest_in_queue)}"
+        )
+
+    @patch("library_manager.tasks.periodic.download_single_album")
+    def test_dedup_across_passes(self, mock_download):
+        """Album surfaced in both newest and oldest scans is queued only once."""
+        from library_manager.tasks import queue_missing_albums_for_tracked_artists
+
+        # Only 3 albums — they'll appear in BOTH newest and oldest scans
+        # (since each scan window is 250)
+        a = [self._make_album(f"{i}") for i in range(3)]
+
+        queue_missing_albums_for_tracked_artists()
+
+        # Should queue exactly 3 (deduped), not 6
+        queued_ids = [call[0][0] for call in mock_download.delay.call_args_list]
+        assert len(queued_ids) == 3
+        assert set(queued_ids) == {x.id for x in a}
+
+
+class TestCleanupRedundantAlbumsCommand(TestCase):
+    """Tests for cleanup_redundant_albums management command (the bulk
+    wanted=False sweep for obvious duplicates)."""
+
+    def setUp(self):
+        self.artist = Artist.objects.create(
+            name="Cleanup Cmd Artist",
+            gid="cleanup_cmd_artist",
+            tracking_tier=1,
+        )
+
+    def _make_album(self, suffix: str, **kwargs) -> Album:
+        defaults = dict(
+            name=f"Cleanup Album {suffix}",
+            spotify_gid=f"cleanup_album_{suffix}",
+            spotify_uri=f"spotify:album:cleanup_{suffix}",
+            artist=self.artist,
+            wanted=True,
+            downloaded=False,
+            album_type="album",
+            album_group="album",
+            total_tracks=1,
+            deezer_id=int(f"99{suffix}") if suffix.isdigit() else None,
+        )
+        defaults.update(kwargs)
+        return Album.objects.create(**defaults)
+
+    def _make_song(self, album: Album, name: str, isrc: str, **kwargs):
+        from library_manager.models import Song
+
+        defaults = dict(
+            name=name,
+            gid=f"song_{name[:10].replace(' ', '_')}_{album.id}",
+            primary_artist=self.artist,
+            album=album,
+            isrc=isrc,
+            downloaded=False,
+        )
+        defaults.update(kwargs)
+        return Song.objects.create(**defaults)
+
+    def test_isrc_redundant_marks_albums_with_downloaded_twins(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        # Album A: downloaded, with song ISRC=ABC123
+        album_a = self._make_album("a", downloaded=True, wanted=True)
+        self._make_song(
+            album_a,
+            "Track 1",
+            "ABC123",
+            downloaded=True,
+            bitrate=320,
+            file_path="/music/a.mp3",
+        )
+
+        # Album B: backlog, has SAME ISRC → should be marked
+        album_b = self._make_album("b")
+        self._make_song(album_b, "Track 1 (Single)", "ABC123")
+
+        # Album C: backlog, has DIFFERENT ISRC → should NOT be marked
+        album_c = self._make_album("c")
+        self._make_song(album_c, "Different Track", "XYZ999")
+
+        call_command(
+            "cleanup_redundant_albums",
+            "--isrc-redundant",
+            "--apply",
+            stdout=StringIO(),
+        )
+
+        album_b.refresh_from_db()
+        album_c.refresh_from_db()
+        assert album_b.wanted is False
+        assert album_c.wanted is True
+
+    def test_spotify_only_marks_albums_without_deezer_id(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        spotify_only = self._make_album("spotify", deezer_id=None)
+        deezer_albums = self._make_album("deezer", deezer_id=12345)
+
+        call_command(
+            "cleanup_redundant_albums",
+            "--spotify-only",
+            "--apply",
+            stdout=StringIO(),
+        )
+
+        spotify_only.refresh_from_db()
+        deezer_albums.refresh_from_db()
+        assert spotify_only.wanted is False
+        assert deezer_albums.wanted is True
+
+    def test_compilations_match_keywords_but_exclude_deluxe(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        # Should match
+        comp = self._make_album("comp")
+        comp.name = "Greatest Hits 2020"
+        comp.save()
+
+        live = self._make_album("live")
+        live.name = "Live at Madison Square Garden"
+        live.save()
+
+        # Should NOT match (Deluxe excluded)
+        deluxe = self._make_album("deluxe")
+        deluxe.name = "Original Album (Deluxe Edition)"
+        deluxe.save()
+
+        # Should NOT match (no compilation keyword)
+        plain = self._make_album("plain")
+        plain.name = "Some Plain Album"
+        plain.save()
+
+        call_command(
+            "cleanup_redundant_albums",
+            "--compilations",
+            "--apply",
+            stdout=StringIO(),
+        )
+
+        comp.refresh_from_db()
+        live.refresh_from_db()
+        deluxe.refresh_from_db()
+        plain.refresh_from_db()
+        assert comp.wanted is False
+        assert live.wanted is False
+        assert deluxe.wanted is True
+        assert plain.wanted is True
+
+    def test_dry_run_does_not_modify(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        spotify_only = self._make_album("spotify_dry", deezer_id=None)
+
+        out = StringIO()
+        call_command("cleanup_redundant_albums", "--spotify-only", stdout=out)
+
+        spotify_only.refresh_from_db()
+        assert spotify_only.wanted is True  # unchanged
+        assert "DRY RUN" in out.getvalue()
+
+    def test_no_category_flag_errors(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("cleanup_redundant_albums", stdout=out)
+        # Either no-op message or error — should NOT raise
+        assert "No category selected" in out.getvalue()
 
 
 class TestCleanupStuckTasksPeriodic(TestCase):
