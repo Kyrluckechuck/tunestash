@@ -933,22 +933,6 @@ class Album(models.Model):
 
     def clear_failure_state(self) -> None:
         """Reset all failure tracking fields. Caller must save."""
-        # TEMPORARY: stack-trace logging to identify what's clearing failure
-        # state on albums with significant failure history. Remove once the
-        # culprit is identified and fixed.
-        if self.failed_count > 5:
-            import logging
-            import traceback
-
-            logging.getLogger("library_manager.investigation").warning(
-                "[INVESTIGATION] Album.clear_failure_state on id=%s name=%r "
-                "fc=%d unavail=%s — caller stack:\n%s",
-                self.id,
-                self.name,
-                self.failed_count,
-                self.unavailable,
-                "".join(traceback.format_stack(limit=10)),
-            )
         self.failed_count = 0
         self.failure_reason = None
         self.last_failed_at = None
