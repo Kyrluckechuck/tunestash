@@ -165,7 +165,7 @@ def _trace_download_single_album_publish(**kwargs: Any) -> None:
         logging.getLogger("library_manager.investigation").warning(
             "[INVESTIGATION] download_single_album published album_id=%s — caller stack:\n%s",
             album_id,
-            "".join(traceback.format_stack(limit=15)),
+            "".join(traceback.format_stack()),
         )
     except Exception as exc:
         logger.debug(f"[INVESTIGATION] publish trace failed: {exc}")
