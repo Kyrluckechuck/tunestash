@@ -109,13 +109,16 @@ SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
     },
     # ── Downloads ─────────────────────────────────────────────────────────
     "download_provider_order": {
-        "default": ["youtube", "tidal", "qobuz", "monochrome"],
+        "default": ["youtube"],
         "type": TYPE_LIST,
         "category": CAT_DOWNLOADS,
         "label": "Provider Order",
         "description": (
             "Download providers tried in order. "
-            "Available: youtube, tidal, qobuz, monochrome."
+            "Available: youtube, tidal, qobuz, monochrome. "
+            "Tidal/Qobuz/Monochrome rely on third-party squid endpoints "
+            "which are currently returning 502/403 — re-add them only if "
+            "their upstream services come back online."
         ),
         "options": ["youtube", "tidal", "qobuz", "monochrome"],
     },
