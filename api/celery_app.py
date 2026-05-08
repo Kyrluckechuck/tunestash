@@ -15,7 +15,6 @@ from django.db import close_old_connections
 import psutil
 from celery import Celery
 from celery.signals import (
-    before_task_publish,
     task_postrun,
     task_prerun,
     worker_process_init,
@@ -143,32 +142,6 @@ def task_prerun_close_old_connections(**_kwargs: Any) -> None:
     a worker recycle.
     """
     close_old_connections()
-
-
-# TEMPORARY: trace publish-time stacks for download_single_album to identify
-# what's queueing tasks for already-downloaded albums. Remove once the source
-# is identified.
-_DSA_TRACE_TASK = "library_manager.tasks.download_single_album"
-
-
-@before_task_publish.connect  # type: ignore[misc]
-def _trace_download_single_album_publish(**kwargs: Any) -> None:
-    sender = kwargs.get("sender")
-    if sender != _DSA_TRACE_TASK:
-        return
-    try:
-        import traceback
-
-        body: Any = kwargs.get("body") or ((), {}, {})
-        args = body[0] if isinstance(body, tuple) else ()
-        album_id = args[0] if args else None
-        logging.getLogger("library_manager.investigation").warning(
-            "[INVESTIGATION] download_single_album published album_id=%s — caller stack:\n%s",
-            album_id,
-            "".join(traceback.format_stack()),
-        )
-    except Exception as exc:
-        logger.debug(f"[INVESTIGATION] publish trace failed: {exc}")
 
 
 # ============================================================================

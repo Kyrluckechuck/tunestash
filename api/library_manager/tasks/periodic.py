@@ -95,19 +95,107 @@ def backfill_album_metadata(limit: int = _MAX_METADATA_BACKFILL_PER_RUN) -> int:
 def get_albums_with_pending_tasks() -> Set[str]:
     """Get set of album entity_ids (DB IDs) that have pending/running download tasks.
 
-    This prevents queueing duplicate download tasks for the same album when
-    the periodic task runs multiple times before previous downloads complete.
+    Combines two sources so dedup catches the full lifecycle:
+      1. ``TaskHistory`` — tasks that have started executing (PENDING/RUNNING)
+      2. ``kombu_message`` — tasks queued in the broker but not yet executing
 
-    Returns:
-        Set of entity_id strings for albums with active tasks
+    Without (2), the periodic queue blindly re-queues an album every cycle while
+    its prior task is still waiting in the broker queue. With concurrency=1 +
+    rate limits + slow Deezer downloads, ingest can outpace processing and
+    accumulate hundreds of thousands of stale messages.
     """
-    pending_tasks = TaskHistory.objects.filter(
-        entity_type="ALBUM",
-        type="DOWNLOAD",
-        status__in=["PENDING", "RUNNING"],
-    ).values_list("entity_id", flat=True)
+    pending: Set[str] = set(
+        TaskHistory.objects.filter(
+            entity_type="ALBUM",
+            type="DOWNLOAD",
+            status__in=["PENDING", "RUNNING"],
+        ).values_list("entity_id", flat=True)
+    )
 
-    return set(pending_tasks)
+    pending |= _get_broker_queued_album_ids()
+    return pending
+
+
+def _get_broker_queued_album_ids() -> Set[str]:
+    """Extract album_ids from broker-queued ``download_single_album`` messages.
+
+    Reads ``kombu_message`` directly (Django Celery transport) and decodes
+    each pending message's body to recover the album_id positional arg.
+    Filtered server-side by queue name + task name substring to avoid
+    parsing unrelated messages. Wrapped in a savepoint so a missing-table
+    error (e.g. test DB without celery transport tables) doesn't poison
+    the surrounding transaction.
+    """
+    import base64
+    import json
+
+    from django.db import connection, transaction
+
+    album_ids: Set[str] = set()
+    rows: list[tuple[str]] = []
+    try:
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT m.payload
+                    FROM kombu_message m
+                    JOIN kombu_queue q ON m.queue_id = q.id
+                    WHERE m.visible = true
+                      AND q.name = 'downloads'
+                      AND m.payload LIKE '%library_manager.tasks.download_single_album%'
+                    """
+                )
+                rows = cursor.fetchall()
+    except Exception as e:
+        logger.warning(f"Broker-queue dedup query failed: {e}")
+        return album_ids
+
+    for (payload_text,) in rows:
+        try:
+            payload = json.loads(payload_text)
+            if (
+                payload.get("headers", {}).get("task")
+                != "library_manager.tasks.download_single_album"
+            ):
+                continue
+            body_b64 = payload.get("body")
+            if not body_b64:
+                continue
+            body = json.loads(base64.b64decode(body_b64))
+            args = body[0] if body else []
+            if args:
+                album_ids.add(str(args[0]))
+        except (ValueError, IndexError, TypeError):
+            continue
+    return album_ids
+
+
+def _get_broker_downloads_depth() -> int:
+    """Return number of visible messages in the ``downloads`` broker queue.
+
+    Used as a saturation gate by the periodic queue so we stop publishing
+    when the worker is already behind. Wrapped in a savepoint so a
+    missing-table error doesn't poison the surrounding transaction.
+    """
+    from django.db import connection, transaction
+
+    try:
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM kombu_message m
+                    JOIN kombu_queue q ON m.queue_id = q.id
+                    WHERE m.visible = true AND q.name = 'downloads'
+                    """
+                )
+                row = cursor.fetchone()
+                return int(row[0]) if row else 0
+    except Exception as e:
+        logger.warning(f"Broker depth query failed: {e}")
+        return 0
 
 
 @celery_app.task(
@@ -321,6 +409,21 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
     oldest_download_budget = 50
     newest_download_budget = max_downloads - oldest_download_budget
     max_scan_per_direction = 250
+
+    # Skip queueing if broker is already saturated. With concurrency=1 +
+    # rate limits, ingest can outpace processing during stretches of slow
+    # downloads; without this safety valve, the queue accumulates stale
+    # tasks indefinitely.
+    broker_saturation_threshold = 500
+    broker_depth = _get_broker_downloads_depth()
+    if broker_depth >= broker_saturation_threshold:
+        logger.info(
+            "Skipping periodic queue: broker has %d pending downloads "
+            "(threshold %d) — letting worker drain before queueing more",
+            broker_depth,
+            broker_saturation_threshold,
+        )
+        return
 
     has_unfinished_songs = Exists(
         Song.objects.filter(
