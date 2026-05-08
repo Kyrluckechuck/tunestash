@@ -16,7 +16,7 @@ from .core import (
     require_download_capability,
     update_task_progress,
 )
-from .download import DEFAULT_FALLBACK_ORDER, FALLBACK_PROVIDER_MAP
+from .download import FALLBACK_PROVIDER_MAP, _get_fallback_order
 
 
 def _try_resolve_to_deezer(song: Song) -> None:
@@ -135,7 +135,7 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
     from downloader.providers.fallback import FallbackDownloader
 
     downloader = FallbackDownloader(
-        provider_order=DEFAULT_FALLBACK_ORDER,
+        provider_order=_get_fallback_order(),
     )
 
     downloaded = 0

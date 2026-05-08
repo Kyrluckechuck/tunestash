@@ -45,7 +45,17 @@ FALLBACK_PROVIDER_MAP = {
     "monochrome": DownloadProviderEnum.MONOCHROME,
 }
 
-DEFAULT_FALLBACK_ORDER = ["youtube", "tidal", "qobuz", "monochrome"]
+
+def _get_fallback_order() -> list[str]:
+    """Read the configured provider order from app settings.
+
+    Reads at call time so changes to the ``download_provider_order`` app
+    setting take effect on the next task without a worker restart.
+    """
+    from src.app_settings.registry import get_setting_with_default
+
+    order = get_setting_with_default("download_provider_order", ["youtube"])
+    return list(order) if order else ["youtube"]
 
 
 def _resolve_album_to_deezer(album: Album) -> Optional[int]:
@@ -527,7 +537,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
     )
 
     downloader = FallbackDownloader(
-        provider_order=DEFAULT_FALLBACK_ORDER,
+        provider_order=_get_fallback_order(),
     )
 
     downloaded_count = 0
@@ -1214,7 +1224,7 @@ def download_deezer_track(self: Any, song_id: int) -> None:
         )
 
         downloader = FallbackDownloader(
-            provider_order=DEFAULT_FALLBACK_ORDER,
+            provider_order=_get_fallback_order(),
         )
 
         loop = asyncio.new_event_loop()

@@ -5,7 +5,7 @@ Covers:
 - core.extract_deezer_playlist_id (shared regex extractor)
 - core.normalize_name (base normalization)
 - track_mapping._normalize_name_for_track_matching (composed normalization)
-- download.FALLBACK_PROVIDER_MAP / DEFAULT_FALLBACK_ORDER constants
+- download.FALLBACK_PROVIDER_MAP and _get_fallback_order helper
 """
 
 from unittest.mock import patch
@@ -154,15 +154,14 @@ class TestCheckApiRateLimit:
 class TestFallbackProviderConstants:
     """Test that download constants are consistent and importable."""
 
-    def test_provider_map_has_all_fallback_providers(self):
-        from library_manager.tasks.download import (
-            DEFAULT_FALLBACK_ORDER,
-            FALLBACK_PROVIDER_MAP,
-        )
+    def test_provider_map_covers_supported_provider_names(self):
+        from downloader.providers.fallback import FallbackDownloader
 
-        for provider_name in DEFAULT_FALLBACK_ORDER:
+        from library_manager.tasks.download import FALLBACK_PROVIDER_MAP
+
+        for provider_name in FallbackDownloader.SUPPORTED_PROVIDERS:
             assert provider_name in FALLBACK_PROVIDER_MAP, (
-                f"'{provider_name}' is in DEFAULT_FALLBACK_ORDER "
+                f"'{provider_name}' is supported by FallbackDownloader "
                 f"but missing from FALLBACK_PROVIDER_MAP"
             )
 
@@ -176,8 +175,8 @@ class TestFallbackProviderConstants:
             ), f"FALLBACK_PROVIDER_MAP['{name}'] should be a DownloadProvider enum"
 
     def test_maintenance_imports_same_constants(self):
-        """Ensure maintenance module uses the same constants (no local copies)."""
+        """Ensure maintenance module uses the same helpers (no local copies)."""
         from library_manager.tasks import download, maintenance
 
         assert maintenance.FALLBACK_PROVIDER_MAP is download.FALLBACK_PROVIDER_MAP
-        assert maintenance.DEFAULT_FALLBACK_ORDER is download.DEFAULT_FALLBACK_ORDER
+        assert maintenance._get_fallback_order is download._get_fallback_order
