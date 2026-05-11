@@ -25,6 +25,32 @@ services:
       retries: 5
     restart: unless-stopped
 
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: >-
+      valkey-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy noeviction
+      --save ""
+    volumes:
+      - valkey_data:/data
+    networks:
+      - slm_net
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 64M
+
   web:
     image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash:latest}
     environment:
@@ -38,10 +64,13 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://valkey:6379/0}
       - HOME=/config
     command: bash scripts/startup.sh
     depends_on:
       postgres:
+        condition: service_healthy
+      valkey:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "scripts/health_check.py"]
@@ -91,10 +120,13 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://valkey:6379/0}
       - HOME=/config
     command: bash scripts/worker_startup.sh
     depends_on:
       postgres:
+        condition: service_healthy
+      valkey:
         condition: service_healthy
     volumes:
       - config_storage:/config
@@ -120,10 +152,13 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://valkey:6379/0}
       - HOME=/config
     command: celery -A celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     depends_on:
       postgres:
+        condition: service_healthy
+      valkey:
         condition: service_healthy
     volumes:
       - config_storage:/config
@@ -140,6 +175,7 @@ services:
           memory: 128M # Soft limit - guaranteed minimum
 
 volumes:
+  valkey_data:
   config_storage:
     driver: local
     driver_opts:

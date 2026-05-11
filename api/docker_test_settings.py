@@ -48,8 +48,9 @@ PASSWORD_HASHERS = [
 # Migrations are enabled for tests to ensure schema changes are applied.
 # The performance cost is acceptable for correctness.
 
-# Celery configuration for tests - use django-db broker
-CELERY_BROKER_URL = "django-db"
+# Celery configuration for tests — in-memory broker (never connects since
+# CELERY_TASK_ALWAYS_EAGER=True makes every task run synchronously in-process).
+CELERY_BROKER_URL = "memory://"
 CELERY_RESULT_BACKEND = "django-db"
 
 # Disable Celery task execution during tests (run synchronously)
