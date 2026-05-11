@@ -66,6 +66,9 @@ def _build_ydl_opts(cookies_path: Optional[str] = None) -> dict:
         "no_warnings": True,
         "socket_timeout": YTDLP_TIMEOUT,
         "retries": 2,
+        # 10MB HTTP read buffer; default leaves TCP windows small and a
+        # ~10MB audio stream takes ~7s instead of ~3s.
+        "http_chunk_size": 10 * 1024 * 1024,
     }
     if cookies_path:
         opts["cookiefile"] = cookies_path
@@ -134,9 +137,14 @@ class YouTubeMusicProvider(DownloadProvider):
         import yt_dlp
         from downloader.track_matcher import score_track_match
 
-        search_query = f"ytsearch5:{artist} - {title}"
+        # extract_flat=True keeps yt-dlp from sequentially re-fetching full
+        # video info per candidate (~3s each). Search-result page already
+        # carries title/uploader/channel/duration/id — everything scoring
+        # needs. Bumping to 10 candidates costs ~0.1s but doubles match
+        # confidence sample size.
+        search_query = f"ytsearch10:{artist} - {title}"
         opts = _build_ydl_opts(self._cookies_path)
-        opts["extract_flat"] = False
+        opts["extract_flat"] = True
         opts["default_search"] = "ytsearch"
 
         try:
@@ -186,6 +194,11 @@ class YouTubeMusicProvider(DownloadProvider):
 
                 if confidence > best_confidence:
                     best_confidence = confidence
+                    # Construct thumbnail URL from video_id rather than relying
+                    # on entry["thumbnail"]; extract_flat search results omit
+                    # the thumbnail field, and this URL pattern is stable.
+                    # Only used as a fallback when the source metadata
+                    # (Deezer/Spotify) lacks cover art.
                     best_match = TrackMatch(
                         provider="youtube",
                         provider_track_id=video_id,
@@ -194,7 +207,7 @@ class YouTubeMusicProvider(DownloadProvider):
                         album=album or "",
                         duration_ms=result_duration_ms,
                         confidence=confidence,
-                        cover_url=entry.get("thumbnail"),
+                        cover_url=f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
                     )
 
             if best_match and best_confidence >= MIN_MATCH_CONFIDENCE:
