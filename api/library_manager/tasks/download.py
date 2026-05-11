@@ -45,6 +45,11 @@ FALLBACK_PROVIDER_MAP = {
     "monochrome": DownloadProviderEnum.MONOCHROME,
 }
 
+# Per-album track-download concurrency. Worker concurrency × this value =
+# global yt-dlp parallelism. Default 3 keeps us well under YouTube rate
+# limits with worker concurrency=2 (6 concurrent processes max).
+PER_ALBUM_TRACK_CONCURRENCY = 3
+
 
 def _get_fallback_order() -> list[str]:
     """Read the configured provider order from app settings.
@@ -547,15 +552,29 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        for i, (song, metadata) in enumerate(songs_to_download):
-            progress = 30.0 + (60.0 * (i / len(songs_to_download)))
-            update_task_progress(
-                task_history,
-                progress,
-                f"Downloading {i + 1}/{len(songs_to_download)}: {song.name}",
+        async def _download_all() -> list:
+            sem = asyncio.Semaphore(PER_ALBUM_TRACK_CONCURRENCY)
+
+            async def _one(metadata: Any) -> Any:
+                async with sem:
+                    return await downloader.download_track(metadata)
+
+            return await asyncio.gather(
+                *(_one(metadata) for _, metadata in songs_to_download),
+                return_exceptions=True,
             )
 
-            result = loop.run_until_complete(downloader.download_track(metadata))
+        results = loop.run_until_complete(_download_all())
+
+        # Django ORM is sync-only; process results in this sync context after
+        # the async batch finishes.
+        for (song, _metadata), result in zip(songs_to_download, results):
+            if isinstance(result, BaseException):
+                failed_count += 1
+                song.increment_failed_count()
+                song.save()
+                logger.warning(f"Failed to download '{song.name}': {result}")
+                continue
 
             if result.success and result.file_path:
                 dl_provider = FALLBACK_PROVIDER_MAP.get(
@@ -568,7 +587,6 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
                 )
                 downloaded_count += 1
                 logger.info(f"Downloaded '{song.name}' via {result.provider_used}")
-                # Regenerate M3U for any playlists containing this song
                 try:
                     from downloader.m3u_writer import regenerate_m3u_for_song
 
