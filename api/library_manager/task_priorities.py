@@ -7,10 +7,10 @@ causing circular imports during Django settings initialization.
 
 Priority values: Lower number = higher priority in Celery.
 
-NOTE: The PostgreSQL broker (kombu Django transport) uses FIFO ordering,
-so these priorities are NOT enforced at the broker level. Instead, they
-serve as documentation of intended ordering and are used for application-
-level decisions (e.g., queuing tracked artists before untracked ones).
+These priorities are honored by the Redis-protocol broker via
+``priority_steps=[0, 3, 6, 9]`` configured in settings. Each priority
+is bucketed into the largest step value ≤ priority, and workers drain
+lower-step buckets first.
 """
 
 

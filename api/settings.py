@@ -44,7 +44,6 @@ settings = dynaconf.DjangoDynaconf(
         "django.contrib.staticfiles",
         "django_celery_results",
         "django_celery_beat",
-        "kombu.transport.sqlalchemy",
         "library_manager",
         # Dev-only apps are appended conditionally below
     ],
@@ -94,15 +93,8 @@ settings = dynaconf.DjangoDynaconf(
             },
         }
     },
-    # Celery Configuration - SQLAlchemy + PostgreSQL broker
-    CELERY_BROKER_URL=(
-        f"sqlalchemy+postgresql://"
-        f"{os.getenv('POSTGRES_USER', 'slm_user')}:"
-        f"{os.getenv('POSTGRES_PASSWORD', 'slm_dev_password')}@"
-        f"{os.getenv('POSTGRES_HOST', 'localhost')}:"
-        f"{os.getenv('POSTGRES_PORT', '5432')}/"
-        f"{os.getenv('POSTGRES_DB', 'tunestash')}"
-    ),
+    # Celery Configuration — Redis-protocol broker (Valkey in production)
+    CELERY_BROKER_URL=os.getenv("CELERY_BROKER_URL", "redis://valkey:6379/0"),
     CELERY_RESULT_BACKEND="django-db",
     CELERY_ACCEPT_CONTENT=["json"],
     CELERY_TASK_SERIALIZER="json",
@@ -113,13 +105,16 @@ settings = dynaconf.DjangoDynaconf(
     CELERY_TASK_TIME_LIMIT=30 * 60,  # 30 minutes
     CELERY_BEAT_SCHEDULER="django_celery_beat.schedulers:DatabaseScheduler",
     CELERY_BEAT_SCHEDULE=CELERY_BEAT_SCHEDULE,
-    # Store additional task metadata
-    CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS={
-        "master_name": "mymaster",
+    # Retry broker connection forever on startup and at runtime so a transient
+    # DNS/network blip cannot leave the consumer loop silently wedged.
+    CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP=True,
+    CELERY_BROKER_CONNECTION_MAX_RETRIES=None,
+    # priority_steps activates priority routing on Redis-family brokers
+    # (the kombu Django/SQLAlchemy transport silently ignored it).
+    CELERY_BROKER_TRANSPORT_OPTIONS={
         "visibility_timeout": 3600,
-        "retry_policy": {
-            "timeout": 5.0,
-        },
+        "priority_steps": [0, 3, 6, 9],
+        "queue_order_strategy": "priority",
     },
 )
 

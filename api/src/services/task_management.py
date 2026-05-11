@@ -130,7 +130,8 @@ class TaskManagementService:
         3. Updates TaskHistory records to CANCELLED status
 
         Note: purge() clears the broker queue directly, which is necessary because
-        with PostgreSQL broker, tasks live in kombu_message table, not TaskResult.
+        queued-but-unstarted tasks live in the broker (Valkey/Redis lists), not
+        in TaskResult — only TaskResult holds the post-execution record.
         """
         try:
             from library_manager.models import TaskHistory

@@ -69,10 +69,10 @@ class TestSyncRegression:
         ), "CELERY_BROKER_URL should be configured"
         broker_url = getattr(settings, "CELERY_BROKER_URL")
 
-        # Should be using PostgreSQL as broker, not external AMQP broker
+        # Should be using a Redis-protocol broker (Valkey in prod)
         assert broker_url.startswith(
-            "sqlalchemy+postgresql://"
-        ), f"Expected PostgreSQL broker, got {broker_url}"
+            "redis://"
+        ), f"Expected Redis-protocol broker, got {broker_url}"
 
     @pytest.mark.django_db
     def test_celery_result_backend_configured(self):
