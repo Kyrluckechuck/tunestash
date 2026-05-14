@@ -173,6 +173,29 @@ overwrite = False
 print_exceptions = True
 
 # Logging configuration to reduce verbosity
+# File logging is enabled when TUNESTASH_SERVICE is set (per-service in compose).
+# Rotates daily at midnight, keeps 2 backups → today + yesterday + day-before = 72h.
+# Falls back silently to console-only if /config/logs is not writable, so the app
+# never fails to start over a logging permissions issue.
+_log_service = os.environ.get("TUNESTASH_SERVICE", "")
+_log_handlers = ["console"]
+_file_handler: dict | None = None
+if _log_service:
+    _log_dir = Path("/config/logs")
+    try:
+        _log_dir.mkdir(parents=True, exist_ok=True)
+        _file_handler = {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(_log_dir / f"{_log_service}.log"),
+            "when": "midnight",
+            "backupCount": 2,
+            "formatter": "verbose",
+            "encoding": "utf-8",
+        }
+        _log_handlers = ["console", "file"]
+    except OSError:
+        _file_handler = None
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -191,39 +214,40 @@ LOGGING = {
             "class": "logging.StreamHandler",
             "formatter": "simple",
         },
+        **({"file": _file_handler} if _file_handler else {}),
     },
     "root": {
-        "handlers": ["console"],
+        "handlers": _log_handlers,
         "level": "INFO",
     },
     "loggers": {
         "django": {
-            "handlers": ["console"],
+            "handlers": _log_handlers,
             "level": "WARNING",
             "propagate": False,
         },
         "django.request": {
-            "handlers": ["console"],
+            "handlers": _log_handlers,
             "level": "WARNING",
             "propagate": False,
         },
         "django.server": {
-            "handlers": ["console"],
+            "handlers": _log_handlers,
             "level": "WARNING",
             "propagate": False,
         },
         "django.db.backends": {
-            "handlers": ["console"],
+            "handlers": _log_handlers,
             "level": "ERROR",
             "propagate": False,
         },
         "celery": {
-            "handlers": ["console"],
+            "handlers": _log_handlers,
             "level": "WARNING",
             "propagate": False,
         },
         "library_manager": {
-            "handlers": ["console"],
+            "handlers": _log_handlers,
             "level": "INFO",
             "propagate": False,
         },
