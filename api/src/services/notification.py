@@ -28,8 +28,13 @@ class NotificationService:
     ALERT_COOKIES_EXPIRING_SOON = "cookies_expiring_soon"
     ALERT_COOKIES_EXPIRING_URGENT = "cookies_expiring_urgent"
     ALERT_PO_TOKEN_INVALID = "po_token_invalid"
+    ALERT_YOUTUBE_API_TRANSIENT = "youtube_api_transient"
     ALERT_SPOTIFY_OAUTH_FAILED = "spotify_oauth_failed"
     ALERT_HIGH_ERROR_RATE = "high_error_rate"
+
+    # Number of consecutive transient failures required before alerting.
+    # Hard auth failures (401/403/expired) bypass this and alert immediately.
+    TRANSIENT_FAILURE_STRIKE_THRESHOLD = 2
 
     COOKIE_ALERT_TYPES = [
         ALERT_COOKIES_EXPIRED,
@@ -131,27 +136,61 @@ class NotificationService:
                 results[self.ALERT_COOKIES_EXPIRING_SOON] = False
                 results[self.ALERT_COOKIES_EXPIRING_URGENT] = False
 
-        # PO token (only alert if configured but invalid)
+        # PO token: classify error as hard (auth) vs transient (API blip) and
+        # route to distinct alert types with different sensitivity. Hard errors
+        # alert instantly; transients require N consecutive failures.
         if auth_status.po_token_configured and not auth_status.po_token_valid:
             error_msg = auth_status.po_token_error_message or "Validation failed"
-            # Append the validator's underlying exception text when present so
-            # transient API failures vs real expiry are distinguishable from
-            # the alert itself, not just from container logs.
             details_suffix = (
                 f"\nDetails: {auth_status.po_token_details}"
                 if auth_status.po_token_details
                 else ""
             )
-            results[self.ALERT_PO_TOKEN_INVALID] = self._send(
-                title=f"{name}: PO Token Invalid",
-                body=f"PO token validation failed: {error_msg}. "
-                f"Premium audio quality may be unavailable.{details_suffix}",
-                alert_type=self.ALERT_PO_TOKEN_INVALID,
-                send_once=True,
-            )
+            if self._is_hard_po_token_error(error_msg):
+                # Real auth failure — alert immediately, drop any transient state
+                self._clear_alert_states([self.ALERT_YOUTUBE_API_TRANSIENT])
+                results[self.ALERT_PO_TOKEN_INVALID] = self._send(
+                    title=f"{name}: PO Token Invalid",
+                    body=f"PO token validation failed: {error_msg}. "
+                    f"Premium audio quality may be unavailable.{details_suffix}",
+                    alert_type=self.ALERT_PO_TOKEN_INVALID,
+                    send_once=True,
+                )
+                results[self.ALERT_YOUTUBE_API_TRANSIENT] = False
+            else:
+                # Transient — require N consecutive strikes before firing
+                count = self._increment_failure_counter(
+                    self.ALERT_YOUTUBE_API_TRANSIENT
+                )
+                if count >= self.TRANSIENT_FAILURE_STRIKE_THRESHOLD:
+                    results[self.ALERT_YOUTUBE_API_TRANSIENT] = self._send(
+                        title=f"{name}: YouTube API Transient Error",
+                        body=(
+                            f"YouTube validation has failed {count} consecutive "
+                            f"times. This is likely an anti-abuse throttle from "
+                            f"YouTube, not a real token issue — downloads "
+                            f"typically continue. Will auto-clear when validation "
+                            f"next succeeds.{details_suffix}"
+                        ),
+                        alert_type=self.ALERT_YOUTUBE_API_TRANSIENT,
+                        send_once=True,
+                    )
+                else:
+                    logger.info(
+                        f"[NOTIFY] Transient PO token error (strike {count}/"
+                        f"{self.TRANSIENT_FAILURE_STRIKE_THRESHOLD}) — holding "
+                        f"alert pending"
+                    )
+                    results[self.ALERT_YOUTUBE_API_TRANSIENT] = False
+                results[self.ALERT_PO_TOKEN_INVALID] = False
         else:
-            self._clear_alert_states([self.ALERT_PO_TOKEN_INVALID])
+            # Validation succeeded — clear both alert types AND the failure
+            # counter so the next transient blip starts a fresh strike count.
+            self._clear_alert_states(
+                [self.ALERT_PO_TOKEN_INVALID, self.ALERT_YOUTUBE_API_TRANSIENT]
+            )
             results[self.ALERT_PO_TOKEN_INVALID] = False
+            results[self.ALERT_YOUTUBE_API_TRANSIENT] = False
 
         # Spotify OAuth (only alert in user-authenticated mode)
         if (
@@ -288,8 +327,44 @@ class NotificationService:
             return True
 
     def _already_notified(self, alert_type: str) -> bool:
-        """Check if we've already sent a notification for this alert type."""
-        return NotificationState.objects.filter(alert_type=alert_type).exists()
+        """Check if we've already sent a notification for this alert type.
+
+        Rows with last_sent_at=None exist only to track consecutive_failures
+        for transient errors that haven't met the strike threshold — those
+        don't count as "notified" yet.
+        """
+        return NotificationState.objects.filter(
+            alert_type=alert_type, last_sent_at__isnull=False
+        ).exists()
+
+    @staticmethod
+    def _is_hard_po_token_error(error_message: str) -> bool:
+        """Classify a PO token error as a hard auth failure vs transient API blip.
+
+        Hard errors (token actually invalid/expired) come from the validator's
+        401/403 branch and produce error messages containing 'invalid or expired'
+        or 'authentication failed'. Anything else is treated as transient
+        (JSON parse on empty body, network timeout, 5xx, ytmusicapi parse error).
+        """
+        if not error_message:
+            return False
+        msg = error_message.lower()
+        return "invalid or expired" in msg or "authentication failed" in msg
+
+    def _increment_failure_counter(self, alert_type: str) -> int:
+        """Increment the consecutive_failures counter for a transient alert.
+
+        Creates the NotificationState row if it doesn't exist (with
+        last_sent_at=None to indicate no alert has actually fired). Returns
+        the new count.
+        """
+        state, _ = NotificationState.objects.get_or_create(
+            alert_type=alert_type,
+            defaults={"consecutive_failures": 0, "last_sent_at": None},
+        )
+        state.consecutive_failures += 1
+        state.save(update_fields=["consecutive_failures"])
+        return int(state.consecutive_failures)
 
     def _clear_alert_states(self, alert_types: list[str]) -> None:
         """Clear notification states so alerts can fire again.

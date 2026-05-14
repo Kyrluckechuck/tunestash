@@ -59,8 +59,35 @@ def _get_cookies_path() -> Optional[str]:
     return None
 
 
-def _build_ydl_opts(cookies_path: Optional[str] = None) -> dict:
-    """Build base yt-dlp options."""
+def _get_po_token() -> Optional[str]:
+    """Read the PO token from app settings.
+
+    Returns the bare token string (no client prefix). _build_ydl_opts handles
+    the yt-dlp `<client>.<context>+<token>` formatting.
+    """
+    try:
+        from lib.config_class import Config
+
+        token = Config().po_token
+        if token and token.strip():
+            return token.strip()
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning(f"[youtube] Failed to load PO token from config: {e}")
+    return None
+
+
+def _build_ydl_opts(
+    cookies_path: Optional[str] = None,
+    po_token: Optional[str] = None,
+) -> dict:
+    """Build base yt-dlp options.
+
+    When po_token is provided we forward it via extractor_args under both
+    mweb.gvs and web.gvs client signatures — yt-dlp picks whichever the
+    extractor needs per request. Cookies-only auth (no po_token) is the
+    fallback path; it still works but is heavily throttled by YouTube's
+    anti-abuse for non-POT clients.
+    """
     opts: dict = {
         "quiet": True,
         "no_warnings": True,
@@ -72,6 +99,15 @@ def _build_ydl_opts(cookies_path: Optional[str] = None) -> dict:
     }
     if cookies_path:
         opts["cookiefile"] = cookies_path
+    if po_token:
+        opts["extractor_args"] = {
+            "youtube": {
+                "po_token": [
+                    f"mweb.gvs+{po_token}",
+                    f"web.gvs+{po_token}",
+                ]
+            }
+        }
     return opts
 
 
@@ -80,6 +116,13 @@ class YouTubeMusicProvider(DownloadProvider):
 
     def __init__(self) -> None:
         self._cookies_path = _get_cookies_path()
+        self._po_token = _get_po_token()
+        if not self._po_token:
+            logger.warning(
+                "[youtube] No PO token configured — operating in cookies-only "
+                "mode, which YouTube heavily throttles. Set 'po_token' in "
+                "app settings to authenticate downloads."
+            )
 
     @property
     def name(self) -> str:
@@ -143,7 +186,7 @@ class YouTubeMusicProvider(DownloadProvider):
         # needs. Bumping to 10 candidates costs ~0.1s but doubles match
         # confidence sample size.
         search_query = f"ytsearch10:{artist} - {title}"
-        opts = _build_ydl_opts(self._cookies_path)
+        opts = _build_ydl_opts(self._cookies_path, self._po_token)
         opts["extract_flat"] = True
         opts["default_search"] = "ytsearch"
 
@@ -258,7 +301,7 @@ class YouTubeMusicProvider(DownloadProvider):
         # Output template without extension — yt-dlp adds it via post-processor
         output_template = str(output_path.with_suffix(""))
 
-        opts = _build_ydl_opts(self._cookies_path)
+        opts = _build_ydl_opts(self._cookies_path, self._po_token)
         opts.update(
             {
                 "format": "bestaudio/best",
