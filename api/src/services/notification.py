@@ -134,10 +134,18 @@ class NotificationService:
         # PO token (only alert if configured but invalid)
         if auth_status.po_token_configured and not auth_status.po_token_valid:
             error_msg = auth_status.po_token_error_message or "Validation failed"
+            # Append the validator's underlying exception text when present so
+            # transient API failures vs real expiry are distinguishable from
+            # the alert itself, not just from container logs.
+            details_suffix = (
+                f"\nDetails: {auth_status.po_token_details}"
+                if auth_status.po_token_details
+                else ""
+            )
             results[self.ALERT_PO_TOKEN_INVALID] = self._send(
                 title=f"{name}: PO Token Invalid",
                 body=f"PO token validation failed: {error_msg}. "
-                "Premium audio quality may be unavailable.",
+                f"Premium audio quality may be unavailable.{details_suffix}",
                 alert_type=self.ALERT_PO_TOKEN_INVALID,
                 send_once=True,
             )
