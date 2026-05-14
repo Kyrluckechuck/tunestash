@@ -30,6 +30,7 @@ class AuthenticationStatus:  # pylint: disable=too-many-instance-attributes
     po_token_configured: bool = False
     po_token_valid: bool = False
     po_token_error_message: Optional[str] = None
+    po_token_details: Optional[str] = None
 
     # Spotify authentication mode (for playlist access)
     spotify_user_auth_enabled: bool = False
@@ -270,6 +271,7 @@ class SystemHealthService:
             po_token_configured=po_token_configured,
             po_token_valid=po_token_result.valid,
             po_token_error_message=po_token_result.error_message,
+            po_token_details=po_token_result.details,
             spotify_user_auth_enabled=spotify_user_auth,
             spotify_auth_mode=spotify_mode,
             spotify_token_valid=spotify_token_status["valid"],
