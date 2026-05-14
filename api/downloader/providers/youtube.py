@@ -100,11 +100,23 @@ def _build_ydl_opts(
     if cookies_path:
         opts["cookiefile"] = cookies_path
     if po_token:
+        # Expand the POT client coverage. yt-dlp falls back through multiple
+        # clients (web → mweb → tv → tv_embedded) for different operations,
+        # and search calls in particular have been observed to use clients
+        # the original two formats didn't cover, producing 403s. Adding the
+        # tv/tv_embedded clients and the `player` context (vs only `gvs`)
+        # makes the POT usable across more of yt-dlp's fallback chain.
+        # The token was minted for browser context; entries for clients it
+        # doesn't apply to are silently ignored by yt-dlp.
         opts["extractor_args"] = {
             "youtube": {
                 "po_token": [
                     f"mweb.gvs+{po_token}",
                     f"web.gvs+{po_token}",
+                    f"tv.gvs+{po_token}",
+                    f"tv_embedded.gvs+{po_token}",
+                    f"mweb.player+{po_token}",
+                    f"web.player+{po_token}",
                 ]
             }
         }
