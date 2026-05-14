@@ -281,6 +281,22 @@ class SystemHealthService:
         )
 
     @staticmethod
+    def _is_hard_po_token_error(error_message: Optional[str]) -> bool:
+        """Classify a PO token validation error as hard auth vs transient blip.
+
+        Hard = token actually invalid/expired (validator's 401/403 branch).
+        Transient = YouTube API blip (empty body, JSON parse, 5xx) — those
+        recover on their own and shouldn't pause the entire downloads queue.
+
+        Mirrors the same classifier in NotificationService; intentionally
+        duplicated rather than imported across service boundaries.
+        """
+        if not error_message:
+            return False
+        msg = error_message.lower()
+        return "invalid or expired" in msg or "authentication failed" in msg
+
+    @staticmethod
     def is_download_capable(
         config: Optional[Config] = None,
     ) -> tuple[bool, Optional[str]]:
@@ -328,14 +344,29 @@ class SystemHealthService:
                     "This system requires YouTube Music Premium authentication.",
                 )
 
-            # Live-validate PO token against YouTube
+            # Live-validate PO token against YouTube. Treat hard auth failures
+            # (token invalid/expired) as blocking, but allow downloads to proceed
+            # on transient API blips (empty body, JSON parse, 5xx) — those are
+            # YouTube anti-abuse noise, not a real credential problem, and
+            # yt-dlp's downloads use a different code path that may still work.
+            # Individual task failures will surface real issues without pausing
+            # the whole queue.
             detector = SystemHealthService._get_detector(config)
             po_token_result = detector.validate_po_token_live()
             if not po_token_result.valid:
-                return (
-                    False,
-                    f"PO Token invalid: {po_token_result.error_message}. "
-                    "This system requires YouTube Music Premium authentication.",
+                if SystemHealthService._is_hard_po_token_error(
+                    po_token_result.error_message
+                ):
+                    return (
+                        False,
+                        f"PO Token invalid: {po_token_result.error_message}. "
+                        "This system requires YouTube Music Premium authentication.",
+                    )
+                logger.warning(
+                    "[AUTH] PO token validator returned transient failure "
+                    "(%s) — letting downloads proceed since yt-dlp uses a "
+                    "different auth path.",
+                    po_token_result.error_message,
                 )
 
         # Check storage health

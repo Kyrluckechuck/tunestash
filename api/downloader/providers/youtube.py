@@ -114,15 +114,33 @@ def _build_ydl_opts(
 class YouTubeMusicProvider(DownloadProvider):
     """Download provider using yt-dlp for YouTube Music."""
 
+    # Class-level flag so the no-POT warning fires once per process, not on
+    # every provider instantiation (which happens per task call).
+    _warned_no_po_token: bool = False
+
     def __init__(self) -> None:
         self._cookies_path = _get_cookies_path()
-        self._po_token = _get_po_token()
-        if not self._po_token:
+
+    @property
+    def _po_token(self) -> Optional[str]:
+        """Read the PO token lazily on each access.
+
+        Avoids two failure modes of caching the token at __init__:
+        1) During the brief boot window when the DB-backed AppSetting isn't
+           yet readable, a cached `None` would persist for the lifetime of
+           the provider instance — running that task in cookies-only mode.
+        2) UI-driven POT updates take effect on the next task without
+           requiring a worker restart.
+        """
+        token = _get_po_token()
+        if not token and not YouTubeMusicProvider._warned_no_po_token:
+            YouTubeMusicProvider._warned_no_po_token = True
             logger.warning(
                 "[youtube] No PO token configured — operating in cookies-only "
                 "mode, which YouTube heavily throttles. Set 'po_token' in "
                 "app settings to authenticate downloads."
             )
+        return token
 
     @property
     def name(self) -> str:
