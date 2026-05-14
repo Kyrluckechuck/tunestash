@@ -2,7 +2,7 @@ import type { Album } from '../../types/generated/graphql';
 import { SortableTableHeader } from '../ui/SortableTableHeader';
 import { ToggleStatusButton } from '../ui/ToggleStatusButton';
 import { ProviderBadges } from '../ui/ProviderBadges';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 
 export type AlbumSortField =
   | 'name'
@@ -52,6 +52,7 @@ export function AlbumsTable({
   pulseIds,
   checkingMetadataIds,
 }: AlbumsTableProps) {
+  const navigate = useNavigate();
   if (albums.length === 0) {
     return (
       <div className='bg-white dark:bg-slate-800 rounded shadow overflow-hidden'>
@@ -104,14 +105,39 @@ export function AlbumsTable({
               </span>
             </div>
             <div className='text-xs text-slate-500 dark:text-slate-400 space-y-1'>
-              {album.artist && (
-                <div>
-                  Artist:{' '}
-                  <span className='text-slate-700 dark:text-slate-300'>
-                    {album.artist}
-                  </span>
-                </div>
-              )}
+              {album.artist &&
+                (() => {
+                  const artistId = album.artistId;
+                  return (
+                    <div>
+                      Artist:{' '}
+                      {artistId ? (
+                        // Button (not Link) because the whole card is wrapped
+                        // in an outer <Link to=/albums/$albumId> — nested <a>
+                        // tags are invalid HTML. preventDefault/stopPropagation
+                        // keep the outer card click from also firing.
+                        <button
+                          type='button'
+                          onClick={e => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            navigate({
+                              to: '/artists/$artistId',
+                              params: { artistId: artistId.toString() },
+                            });
+                          }}
+                          className='text-blue-600 dark:text-blue-400 hover:underline'
+                        >
+                          {album.artist}
+                        </button>
+                      ) : (
+                        <span className='text-slate-700 dark:text-slate-300'>
+                          {album.artist}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               <div className='flex gap-4'>
                 <span>{formatAlbumValue(album.albumType)}</span>
                 <span>{album.totalTracks} tracks</span>
@@ -249,8 +275,8 @@ export function AlbumsTable({
                     <div className='text-sm font-medium'>
                       {album.artist && album.artistId ? (
                         <Link
-                          to='/artists'
-                          search={{ tab: undefined }}
+                          to='/artists/$artistId'
+                          params={{ artistId: album.artistId.toString() }}
                           className='text-blue-600 dark:text-blue-400 hover:text-blue-900 hover:underline'
                         >
                           {album.artist}

@@ -148,8 +148,8 @@ export const SongsTable: React.FC<SongsTableProps> = ({
             </div>
             <div className='text-xs text-slate-500 dark:text-slate-400'>
               <Link
-                to='/albums'
-                search={{ artistId: song.primaryArtistId }}
+                to='/artists/$artistId'
+                params={{ artistId: song.primaryArtistId.toString() }}
                 className='text-blue-600 dark:text-blue-400 hover:text-blue-900'
               >
                 {song.primaryArtist}
@@ -253,10 +253,10 @@ export const SongsTable: React.FC<SongsTableProps> = ({
                 </td>
                 <td className='px-6 py-4 whitespace-nowrap'>
                   <Link
-                    to='/albums'
-                    search={{ artistId: song.primaryArtistId }}
+                    to='/artists/$artistId'
+                    params={{ artistId: song.primaryArtistId.toString() }}
                     className='text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-900'
-                    title={`View albums by ${song.primaryArtist}`}
+                    title={`View ${song.primaryArtist}`}
                   >
                     {song.primaryArtist}
                   </Link>
