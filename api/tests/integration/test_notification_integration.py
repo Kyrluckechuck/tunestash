@@ -390,7 +390,7 @@ class TestFullNotificationCycle:
             cookies_error_message="Cookies expired",
             po_token_configured=True,
             po_token_valid=False,
-            po_token_error_message="Token rejected",
+            po_token_error_message="PO token appears to be invalid or expired - authentication failed",
             spotify_auth_mode="user-authenticated",
             spotify_token_valid=False,
             spotify_token_error_message="Refresh failed",

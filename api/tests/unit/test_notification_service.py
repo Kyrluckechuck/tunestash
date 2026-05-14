@@ -238,7 +238,12 @@ class TestPoTokenAlert:
         status.cookies_error_message = None
         status.po_token_configured = True
         status.po_token_valid = False
-        status.po_token_error_message = "Token rejected by YouTube"
+        # Use a "hard auth failure" pattern so the test exercises the
+        # ALERT_PO_TOKEN_INVALID path; transient API blips route to
+        # ALERT_YOUTUBE_API_TRANSIENT with a 2-strike threshold.
+        status.po_token_error_message = (
+            "PO token appears to be invalid or expired - authentication failed"
+        )
         status.spotify_auth_mode = "public"
         status.spotify_token_valid = True
 
@@ -277,6 +282,71 @@ class TestPoTokenAlert:
         ):
             result = service.check_and_notify_all()
             assert result[NotificationService.ALERT_PO_TOKEN_INVALID] is False
+
+
+class TestYouTubeApiTransientAlert:
+    """Tests for the 2-strike transient YouTube API error alert path."""
+
+    def _transient_status(self):
+        """Build an AuthenticationStatus mock for a transient PO token error."""
+        status = MagicMock()
+        status.cookies_valid = True
+        status.cookies_expire_in_days = 30
+        status.cookies_error_message = None
+        status.po_token_configured = True
+        status.po_token_valid = False
+        # Non-auth message routes to ALERT_YOUTUBE_API_TRANSIENT (2-strike path)
+        status.po_token_error_message = "Failed to validate PO token due to API error"
+        status.po_token_details = None
+        status.spotify_auth_mode = "public"
+        status.spotify_token_valid = True
+        return status
+
+    def test_first_transient_failure_does_not_alert(
+        self, service, notification_settings
+    ):
+        status = self._transient_status()
+        with (
+            patch(
+                "src.services.system_health.SystemHealthService.check_authentication_status",
+                return_value=status,
+            ),
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_apprise = MagicMock()
+            mock_apprise.notify.return_value = True
+            mock_apprise_cls.return_value = mock_apprise
+
+            result = service.check_and_notify_all()
+
+            # No alert fired yet — strike 1 of 2
+            assert result[NotificationService.ALERT_YOUTUBE_API_TRANSIENT] is False
+            assert result[NotificationService.ALERT_PO_TOKEN_INVALID] is False
+            assert mock_apprise.notify.call_count == 0
+
+    def test_second_transient_failure_alerts(self, service, notification_settings):
+        status = self._transient_status()
+        with (
+            patch(
+                "src.services.system_health.SystemHealthService.check_authentication_status",
+                return_value=status,
+            ),
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_apprise = MagicMock()
+            mock_apprise.notify.return_value = True
+            mock_apprise_cls.return_value = mock_apprise
+
+            # Strike 1: silent
+            service.check_and_notify_all()
+            # Strike 2: alert fires
+            result = service.check_and_notify_all()
+
+            assert result[NotificationService.ALERT_YOUTUBE_API_TRANSIENT] is True
+            assert result[NotificationService.ALERT_PO_TOKEN_INVALID] is False
+            assert mock_apprise.notify.call_count == 1
+            call_kwargs = mock_apprise.notify.call_args[1]
+            assert "Transient" in call_kwargs["title"]
 
 
 class TestSpotifyOAuthAlert:
@@ -815,7 +885,9 @@ class TestMultipleAlerts:
         status.cookies_error_message = "Expired"
         status.po_token_configured = True
         status.po_token_valid = False
-        status.po_token_error_message = "Invalid"
+        status.po_token_error_message = (
+            "PO token appears to be invalid or expired - authentication failed"
+        )
         status.spotify_auth_mode = "user-authenticated"
         status.spotify_token_valid = False
         status.spotify_token_error_message = "Revoked"
