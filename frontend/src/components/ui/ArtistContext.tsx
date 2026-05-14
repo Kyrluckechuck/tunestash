@@ -34,13 +34,23 @@ export function ArtistContext({
           >
             ← Back to Artists
           </Link>
-          <Link
-            to='/albums'
-            search={{ artistId }}
-            className='text-sm text-indigo-600 hover:text-indigo-800 underline'
-          >
-            View {contentType === 'songs' ? 'Albums' : 'Songs'}
-          </Link>
+          {contentType === 'songs' ? (
+            <Link
+              to='/albums'
+              search={{ artistId }}
+              className='text-sm text-indigo-600 hover:text-indigo-800 underline'
+            >
+              View Albums
+            </Link>
+          ) : (
+            <Link
+              to='/songs'
+              search={{ artistId, search: undefined }}
+              className='text-sm text-indigo-600 hover:text-indigo-800 underline'
+            >
+              View Songs
+            </Link>
+          )}
         </div>
       </div>
     </div>
