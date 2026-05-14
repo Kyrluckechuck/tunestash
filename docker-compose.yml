@@ -66,6 +66,7 @@ services:
       - POSTGRES_PORT=5432
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://valkey:6379/0}
       - HOME=/config
+      - TUNESTASH_SERVICE=web
     command: bash scripts/startup.sh
     depends_on:
       postgres:
@@ -84,6 +85,11 @@ services:
     volumes:
       - config_storage:/config
       - music_storage:/mnt/music_spotify
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     # Memory limits for API server
     deploy:
       resources:
@@ -122,6 +128,7 @@ services:
       - POSTGRES_PORT=5432
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://valkey:6379/0}
       - HOME=/config
+      - TUNESTASH_SERVICE=worker
     command: bash scripts/worker_startup.sh
     depends_on:
       postgres:
@@ -131,6 +138,11 @@ services:
     volumes:
       - config_storage:/config
       - music_storage:/mnt/music_spotify
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     restart: unless-stopped
     networks:
       - slm_net
@@ -154,6 +166,7 @@ services:
       - POSTGRES_PORT=5432
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://valkey:6379/0}
       - HOME=/config
+      - TUNESTASH_SERVICE=beat
     command: celery -A celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     depends_on:
       postgres:
@@ -163,6 +176,11 @@ services:
     volumes:
       - config_storage:/config
       - music_storage:/mnt/music_spotify
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     restart: unless-stopped
     networks:
       - slm_net
