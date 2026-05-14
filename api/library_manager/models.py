@@ -1690,8 +1690,16 @@ class NotificationState(models.Model):
     """
 
     alert_type: models.CharField = models.CharField(max_length=50, unique=True)
-    last_sent_at: models.DateTimeField = models.DateTimeField()
+    # Nullable so a row can exist purely to track consecutive_failures for a
+    # transient-error alert that hasn't met its strike threshold yet. Set to
+    # the dispatch time when an alert actually fires.
+    last_sent_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
     last_message: models.TextField = models.TextField(blank=True, default="")
+    # Tracks consecutive failures for transient-error alert types so they can
+    # require N strikes before firing. Reset to 0 on success.
+    consecutive_failures: models.PositiveIntegerField = models.PositiveIntegerField(
+        default=0
+    )
 
     class Meta(TypedModelMeta):
         app_label = "library_manager"
