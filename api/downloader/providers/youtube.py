@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -33,6 +34,14 @@ DURATION_TOLERANCE_MS = 10000
 
 # Request timeout for yt-dlp operations
 YTDLP_TIMEOUT = 60
+
+# yt-dlp's search code path (_extract_response in yt_dlp/extractor/youtube/_base.py)
+# explicitly does NOT retry on 403/429 — it treats them as permanent. In our case
+# they're transient YouTube per-IP quota windows. Retry once after a short backoff
+# to catch tracks that hit a brief throttle window. Keep this short to bound the
+# worker delay; one retry is enough to recover from short windows without
+# significantly slowing the worker during sustained throttles.
+SEARCH_RETRY_BACKOFF_SECONDS = 15
 
 YOUTUBE_CAPABILITIES = ProviderCapabilities(
     provider_type=ProviderType.REST_API,
@@ -221,8 +230,30 @@ class YouTubeMusicProvider(DownloadProvider):
         opts["default_search"] = "ytsearch"
 
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(search_query, download=False)
+            info = None
+            for attempt in range(2):  # 1 initial + 1 retry
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(search_query, download=False)
+                    break  # success — exit retry loop
+                except yt_dlp.utils.DownloadError as ydl_err:
+                    err_msg = str(ydl_err)
+                    is_throttle = "403" in err_msg or "429" in err_msg
+                    if attempt == 0 and is_throttle:
+                        code = "403" if "403" in err_msg else "429"
+                        # [SEARCH-THROTTLE] prefix makes these greppable in
+                        # /config/logs/worker.log so the operator can see how
+                        # many tracks are hitting YouTube's per-IP quota.
+                        logger.warning(
+                            f"[SEARCH-THROTTLE] Got HTTP {code} on search for "
+                            f"'{artist} - {title}', backing off "
+                            f"{SEARCH_RETRY_BACKOFF_SECONDS}s and retrying once"
+                        )
+                        time.sleep(SEARCH_RETRY_BACKOFF_SECONDS)
+                        continue
+                    # Not a throttle, or retry also failed — bubble up to the
+                    # outer handler which logs + returns None.
+                    raise
 
             if not info:
                 return None
@@ -294,7 +325,17 @@ class YouTubeMusicProvider(DownloadProvider):
             return None
 
         except Exception as e:
-            logger.error(f"[youtube] Search failed for '{artist} - {title}': {e}")
+            err_msg = str(e)
+            # Distinguish throttle-exhausted failures from other errors so
+            # operators can filter for the YouTube-anti-abuse pattern via
+            # grep [SEARCH-THROTTLE-EXHAUSTED] in /config/logs/worker.log.
+            if "403" in err_msg or "429" in err_msg:
+                logger.error(
+                    f"[SEARCH-THROTTLE-EXHAUSTED] Search for '{artist} - {title}' "
+                    f"failed after retry: {e}"
+                )
+            else:
+                logger.error(f"[youtube] Search failed for '{artist} - {title}': {e}")
             return None
 
     async def download_track(
