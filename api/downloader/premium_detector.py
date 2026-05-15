@@ -258,10 +258,13 @@ Connection: keep-alive"""
         self, force_refresh: bool = False
     ) -> PoTokenValidationResult:
         """
-        Validate PO token by actually testing it against YouTube Music API.
+        Validate the PO token by probing the real yt-dlp download path.
 
-        This performs a lightweight API call to verify the PO token works.
-        Results are cached for 30 minutes to avoid hammering YouTube.
+        Runs a metadata-only yt-dlp extraction of a known-stable video — the
+        same cookies + PO-token watch-page path real downloads use — so the
+        result reflects actual download capability rather than a proxy. (The
+        previous implementation tested ytmusicapi's account-info endpoint,
+        which nothing downloads through.) Results are cached for 30 minutes.
 
         Args:
             force_refresh: If True, bypass cache and re-validate
@@ -275,85 +278,50 @@ Connection: keep-alive"""
             assert self._last_po_token_validation is not None
             return self._last_po_token_validation
 
-        self.logger.info("Validating PO token against YouTube Music API...")
+        self.logger.info("Validating PO token via yt-dlp watch-page probe...")
 
-        # If no PO token provided, return invalid
-        if not self.po_token:
+        # Import here to avoid a module-level import cycle (youtube provider
+        # is a heavier import; this keeps premium_detector cheap to import).
+        from downloader.providers.youtube import YouTubeMusicProvider
+
+        ok, detail = YouTubeMusicProvider().probe_auth()
+
+        if ok:
             result = PoTokenValidationResult(
-                valid=False,
-                error_message="PO token not provided",
+                valid=True,
                 last_checked=time.time(),
-                can_authenticate=False,
+                can_authenticate=True,
+                details=detail,
             )
-            self._last_po_token_validation = result
-            return result
-
-        # Try to create YTMusic client with credentials
-        client = self._get_ytmusic_client()
-        if not client:
-            result = PoTokenValidationResult(
-                valid=False,
-                error_message="Failed to initialize YTMusic client with provided credentials",
-                last_checked=time.time(),
-                can_authenticate=False,
-                details="Check that cookies file exists and is valid",
+            self.logger.info("PO token validated successfully via yt-dlp probe")
+        else:
+            # Classify: only unambiguous auth signals are "hard" (instant alert
+            # + queue pause). A bare 403 on the watch path is ambiguous — it
+            # can be a transient throttle — so it stays "transient" and the
+            # notification strike threshold decides whether it is sustained.
+            detail_lower = (detail or "").lower()
+            is_hard = (
+                "sign in" in detail_lower
+                or "not configured" in detail_lower
+                or "login" in detail_lower
+                or "bot" in detail_lower
             )
-            self._last_po_token_validation = result
-            return result
-
-        # Test authentication by trying to get account info
-        try:
-            account_info = client.get_account_info()
-            if account_info and account_info.get("accountName"):
-                # Successfully authenticated
-                result = PoTokenValidationResult(
-                    valid=True,
-                    last_checked=time.time(),
-                    can_authenticate=True,
-                    details=f"Authenticated as: {account_info.get('accountName', 'Unknown')}",
-                )
-                self.logger.info(
-                    f"PO token validated successfully. Account: {account_info.get('accountName')}"
-                )
-            else:
-                # Got response but no account info - might be unauthenticated
-                result = PoTokenValidationResult(
-                    valid=False,
-                    error_message="PO token may be invalid - could not retrieve account information",
-                    last_checked=time.time(),
-                    can_authenticate=False,
-                    details="API returned empty or incomplete account info",
-                )
-                self.logger.warning(
-                    "PO token validation unclear - no account info returned"
-                )
-
-        except Exception as e:
-            # Authentication failed
-            error_str = str(e).lower()
-            if (
-                "unauthorized" in error_str
-                or "forbidden" in error_str
-                or "401" in error_str
-                or "403" in error_str
-            ):
+            if is_hard:
                 error_message = (
-                    "PO token appears to be invalid or expired - authentication failed"
+                    "PO token appears to be invalid or expired "
+                    "- authentication failed"
                 )
-                details = f"YouTube API error: {str(e)}"
             else:
                 error_message = "Failed to validate PO token due to API error"
-                details = f"Error: {str(e)}"
-
             result = PoTokenValidationResult(
                 valid=False,
                 error_message=error_message,
                 last_checked=time.time(),
                 can_authenticate=False,
-                details=details,
+                details=detail,
             )
             self.logger.warning(
-                f"PO token validation failed: {error_message} - {details}"
+                f"PO token validation failed: {error_message} - {detail}"
             )
 
         self._last_po_token_validation = result

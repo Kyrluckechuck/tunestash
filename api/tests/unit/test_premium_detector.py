@@ -106,6 +106,42 @@ class TestPremiumDetector:
 
         assert detector._is_cache_valid()
 
+    def test_validate_po_token_live_probe_success(self, detector):
+        """A successful yt-dlp watch-page probe yields a valid result."""
+        with patch(
+            "downloader.providers.youtube.YouTubeMusicProvider.probe_auth",
+            return_value=(True, "Resolved 22 formats for probe video"),
+        ):
+            result = detector.validate_po_token_live(force_refresh=True)
+
+        assert result.valid is True
+        assert result.can_authenticate is True
+        assert result.error_message is None
+
+    def test_validate_po_token_live_hard_failure(self, detector):
+        """An unambiguous auth signal classifies as a hard failure."""
+        with patch(
+            "downloader.providers.youtube.YouTubeMusicProvider.probe_auth",
+            return_value=(False, "ERROR: Sign in to confirm you're not a bot"),
+        ):
+            result = detector.validate_po_token_live(force_refresh=True)
+
+        assert result.valid is False
+        assert result.error_message is not None
+        # Hard string is what NotificationService._is_hard_po_token_error matches
+        assert "invalid or expired" in result.error_message
+
+    def test_validate_po_token_live_transient_failure(self, detector):
+        """A non-auth probe error (5xx/timeout/throttle) classifies as transient."""
+        with patch(
+            "downloader.providers.youtube.YouTubeMusicProvider.probe_auth",
+            return_value=(False, "HTTP Error 503: Service Unavailable"),
+        ):
+            result = detector.validate_po_token_live(force_refresh=True)
+
+        assert result.valid is False
+        assert result.error_message == "Failed to validate PO token due to API error"
+
     def test_analyze_account_info_no_data(self, detector):
         """Test account info analysis with no data."""
         result = detector._analyze_account_info({})
