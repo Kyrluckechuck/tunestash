@@ -32,9 +32,15 @@ class NotificationService:
     ALERT_SPOTIFY_OAUTH_FAILED = "spotify_oauth_failed"
     ALERT_HIGH_ERROR_RATE = "high_error_rate"
 
-    # Number of consecutive transient failures required before alerting.
-    # Hard auth failures (401/403/expired) bypass this and alert immediately.
-    TRANSIENT_FAILURE_STRIKE_THRESHOLD = 2
+    # Transient YouTube API failures escalate in two stages. At LOG_THRESHOLD
+    # consecutive failures we log a warning (visible in /config/logs) but stay
+    # silent — these are usually self-healing hiccups not worth a notification.
+    # Only at ALERT_THRESHOLD (~1h of sustained failure at the 15-min check
+    # cadence) do we send a notification, since by then it's a real problem
+    # worth investigating rather than a brief blip.
+    # Hard auth failures (401/403/expired) bypass both and alert immediately.
+    TRANSIENT_FAILURE_LOG_THRESHOLD = 2
+    TRANSIENT_FAILURE_ALERT_THRESHOLD = 4
 
     COOKIE_ALERT_TYPES = [
         ALERT_COOKIES_EXPIRED,
@@ -158,28 +164,40 @@ class NotificationService:
                 )
                 results[self.ALERT_YOUTUBE_API_TRANSIENT] = False
             else:
-                # Transient — require N consecutive strikes before firing
+                # Transient — escalate in two stages: log at LOG_THRESHOLD,
+                # only notify at ALERT_THRESHOLD (~1h of sustained failure).
                 count = self._increment_failure_counter(
                     self.ALERT_YOUTUBE_API_TRANSIENT
                 )
-                if count >= self.TRANSIENT_FAILURE_STRIKE_THRESHOLD:
+                if count >= self.TRANSIENT_FAILURE_ALERT_THRESHOLD:
                     results[self.ALERT_YOUTUBE_API_TRANSIENT] = self._send(
-                        title=f"{name}: YouTube API Transient Error",
+                        title=f"{name}: YouTube API Persistently Failing",
                         body=(
                             f"YouTube validation has failed {count} consecutive "
-                            f"times. This is likely an anti-abuse throttle from "
-                            f"YouTube, not a real token issue — downloads "
-                            f"typically continue. Will auto-clear when validation "
-                            f"next succeeds.{details_suffix}"
+                            f"checks (~{count * 15} minutes). Downloads usually "
+                            f"continue during transient YouTube issues, but a "
+                            f"failure this sustained is worth investigating — it "
+                            f"may indicate a real outage or a credential problem "
+                            f"the validator can't classify. Will auto-clear when "
+                            f"validation next succeeds.{details_suffix}"
                         ),
                         alert_type=self.ALERT_YOUTUBE_API_TRANSIENT,
                         send_once=True,
                     )
+                elif count >= self.TRANSIENT_FAILURE_LOG_THRESHOLD:
+                    # Persisting but not yet alert-worthy — log only.
+                    logger.warning(
+                        f"[NOTIFY] YouTube API validator transient failure "
+                        f"persisting (strike {count}/"
+                        f"{self.TRANSIENT_FAILURE_ALERT_THRESHOLD}) — logging "
+                        f"only, will notify if it reaches "
+                        f"{self.TRANSIENT_FAILURE_ALERT_THRESHOLD}"
+                    )
+                    results[self.ALERT_YOUTUBE_API_TRANSIENT] = False
                 else:
                     logger.info(
-                        f"[NOTIFY] Transient PO token error (strike {count}/"
-                        f"{self.TRANSIENT_FAILURE_STRIKE_THRESHOLD}) — holding "
-                        f"alert pending"
+                        f"[NOTIFY] Transient PO token error (strike {count}) "
+                        f"— holding"
                     )
                     results[self.ALERT_YOUTUBE_API_TRANSIENT] = False
                 results[self.ALERT_PO_TOKEN_INVALID] = False

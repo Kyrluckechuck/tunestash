@@ -285,7 +285,7 @@ class TestPoTokenAlert:
 
 
 class TestYouTubeApiTransientAlert:
-    """Tests for the 2-strike transient YouTube API error alert path."""
+    """Tests for the two-stage (log at 2, alert at 4) transient API path."""
 
     def _transient_status(self):
         """Build an AuthenticationStatus mock for a transient PO token error."""
@@ -295,16 +295,17 @@ class TestYouTubeApiTransientAlert:
         status.cookies_error_message = None
         status.po_token_configured = True
         status.po_token_valid = False
-        # Non-auth message routes to ALERT_YOUTUBE_API_TRANSIENT (2-strike path)
+        # Non-auth message routes to ALERT_YOUTUBE_API_TRANSIENT path
         status.po_token_error_message = "Failed to validate PO token due to API error"
         status.po_token_details = None
         status.spotify_auth_mode = "public"
         status.spotify_token_valid = True
         return status
 
-    def test_first_transient_failure_does_not_alert(
+    def test_transient_failures_below_alert_threshold_stay_silent(
         self, service, notification_settings
     ):
+        """Strikes 1-3 must not send a notification (log-only at 2-3)."""
         status = self._transient_status()
         with (
             patch(
@@ -317,14 +318,17 @@ class TestYouTubeApiTransientAlert:
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
 
-            result = service.check_and_notify_all()
+            # Strikes 1, 2, 3 — all below ALERT_THRESHOLD (4)
+            for _ in range(NotificationService.TRANSIENT_FAILURE_ALERT_THRESHOLD - 1):
+                result = service.check_and_notify_all()
+                assert result[NotificationService.ALERT_YOUTUBE_API_TRANSIENT] is False
 
-            # No alert fired yet — strike 1 of 2
-            assert result[NotificationService.ALERT_YOUTUBE_API_TRANSIENT] is False
-            assert result[NotificationService.ALERT_PO_TOKEN_INVALID] is False
             assert mock_apprise.notify.call_count == 0
 
-    def test_second_transient_failure_alerts(self, service, notification_settings):
+    def test_transient_failure_alerts_at_alert_threshold(
+        self, service, notification_settings
+    ):
+        """The notification fires once strikes reach ALERT_THRESHOLD (4)."""
         status = self._transient_status()
         with (
             patch(
@@ -337,16 +341,15 @@ class TestYouTubeApiTransientAlert:
             mock_apprise.notify.return_value = True
             mock_apprise_cls.return_value = mock_apprise
 
-            # Strike 1: silent
-            service.check_and_notify_all()
-            # Strike 2: alert fires
-            result = service.check_and_notify_all()
+            result = {}
+            for _ in range(NotificationService.TRANSIENT_FAILURE_ALERT_THRESHOLD):
+                result = service.check_and_notify_all()
 
             assert result[NotificationService.ALERT_YOUTUBE_API_TRANSIENT] is True
             assert result[NotificationService.ALERT_PO_TOKEN_INVALID] is False
             assert mock_apprise.notify.call_count == 1
             call_kwargs = mock_apprise.notify.call_args[1]
-            assert "Transient" in call_kwargs["title"]
+            assert "YouTube API" in call_kwargs["title"]
 
 
 class TestSpotifyOAuthAlert:
