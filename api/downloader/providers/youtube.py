@@ -43,6 +43,13 @@ YTDLP_TIMEOUT = 60
 # significantly slowing the worker during sustained throttles.
 SEARCH_RETRY_BACKOFF_SECONDS = 15
 
+# Fixed, ultra-stable video used by probe_auth() to validate that cookies + PO
+# token still authenticate the watch-page download path. "Never Gonna Give You
+# Up" — 1.5B+ views, actively maintained by the rights holder, not age- or
+# region-restricted. A fixed target keeps the probe deterministic: a probe
+# failure has one plausible cause (auth), no confounding per-video variables.
+PROBE_VIDEO_ID = "dQw4w9WgXcQ"
+
 YOUTUBE_CAPABILITIES = ProviderCapabilities(
     provider_type=ProviderType.REST_API,
     supports_search=True,
@@ -422,3 +429,31 @@ class YouTubeMusicProvider(DownloadProvider):
                 provider="youtube",
                 error=str(e),
             )
+
+    def probe_auth(self) -> tuple[bool, Optional[str]]:
+        """Probe YouTube auth by resolving stream info for a known-stable video.
+
+        Runs a metadata-only yt-dlp extraction (download=False) of PROBE_VIDEO_ID
+        using the same cookies + PO token a real download uses. This exercises
+        the watch-page player API in the GVS (get-video-stream) context — the
+        exact auth path downloads depend on — so a pass/fail genuinely reflects
+        download capability rather than acting as a proxy.
+
+        Returns:
+            (ok, detail) — detail is a short success note or the error string.
+        """
+        import yt_dlp
+
+        if not self._po_token:
+            return False, "PO token not configured"
+
+        opts = _build_ydl_opts(self._cookies_path, self._po_token)
+        url = f"https://www.youtube.com/watch?v={PROBE_VIDEO_ID}"
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            if info and info.get("formats"):
+                return True, f"Resolved {len(info['formats'])} formats for probe video"
+            return False, "Probe returned no playable formats"
+        except Exception as e:  # pylint: disable=broad-except
+            return False, str(e)
