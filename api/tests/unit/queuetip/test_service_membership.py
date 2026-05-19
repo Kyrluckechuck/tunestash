@@ -65,6 +65,15 @@ async def test_leave_owner_with_others_still_present_is_rejected():
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
+async def test_leave_sole_owner_must_delete_instead():
+    owner = await sync_to_async(Account.objects.create)(display_name="O")
+    p = await PlaylistService.create(owner, name="P", description="")
+    with pytest.raises(PermissionDeniedError):
+        await MembershipService.leave(owner, p.id)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
 async def test_kick_owner_removes_member_not_self():
     owner = await sync_to_async(Account.objects.create)(display_name="O")
     joiner = await sync_to_async(Account.objects.create)(display_name="J")

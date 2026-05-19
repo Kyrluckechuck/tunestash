@@ -69,6 +69,12 @@ class MembershipService:
                         "Owners cannot leave a playlist with other members. "
                         "Promote another owner or delete the playlist."
                     )
+                # Sole owner leaving would orphan the playlist (un-administrable
+                # but still discoverable via invite_token). Require an explicit
+                # delete instead.
+                raise PermissionDeniedError(
+                    "Delete the playlist instead of leaving as sole owner."
+                )
             membership.delete()
 
         await sync_to_async(_leave)()

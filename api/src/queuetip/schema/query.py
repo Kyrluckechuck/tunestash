@@ -7,7 +7,7 @@ from strawberry.types import Info
 from queuetip.permissions import require_member
 
 from ..context import QueuetipContext
-from ..errors import AuthRequiredError, NotFoundError
+from ..errors import AuthRequiredError, ValidationError
 from ..graphql_types import AccountType, PlaylistType
 from ..services.playlist import PlaylistService
 
@@ -53,6 +53,8 @@ class Query:
         The id path requires membership.
         """
         ctx = info.context
+        if invite_token is not None and id is not None:
+            raise ValidationError("Provide exactly one of id or inviteToken.")
         if invite_token is not None:
             playlist = await PlaylistService.get_by_invite_token(invite_token)
         elif id is not None:
@@ -61,6 +63,6 @@ class Query:
             playlist = await PlaylistService.get_by_id(int(id))
             await sync_to_async(require_member)(ctx.account, playlist)
         else:
-            raise NotFoundError("Provide either id or inviteToken.")
+            raise ValidationError("Provide either id or inviteToken.")
         members = await PlaylistService.list_memberships(playlist)
         return PlaylistType.from_model(playlist, members)
