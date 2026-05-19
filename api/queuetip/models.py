@@ -185,3 +185,58 @@ class BulkImportJob(models.Model):
 
     def __str__(self) -> str:
         return f"Import {self.status} for {self.playlist} ({self.source_url})"
+
+
+class ExportSnapshot(models.Model):
+    """Immutable materialization of a playlist's contributions to a tracklist."""
+
+    playlist = models.ForeignKey(
+        Playlist, on_delete=models.CASCADE, related_name="export_snapshots"
+    )
+    requested_by = models.ForeignKey(
+        Account, on_delete=models.PROTECT, related_name="export_snapshots"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    parameters = models.JSONField(default=dict)
+    rng_seed = models.BigIntegerField()
+    warning_message = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"ExportSnapshot {self.id} of {self.playlist}"
+
+
+class ExportSnapshotTrack(models.Model):
+    """One track in an ExportSnapshot, with the reason it's included."""
+
+    REASON_GUARANTEED = "guaranteed"
+    REASON_ROLLED_IN = "rolled_in"
+    REASON_TOPPED_UP = "topped_up"
+    REASON_CHOICES = [
+        (REASON_GUARANTEED, "Guaranteed (net >= t_high)"),
+        (REASON_ROLLED_IN, "Rolled in"),
+        (REASON_TOPPED_UP, "Topped up to min_size"),
+    ]
+
+    snapshot = models.ForeignKey(
+        ExportSnapshot, on_delete=models.CASCADE, related_name="tracks"
+    )
+    song = models.ForeignKey(
+        "library_manager.Song",
+        on_delete=models.PROTECT,
+        related_name="queuetip_export_tracks",
+    )
+    position = models.PositiveIntegerField()
+    inclusion_reason = models.CharField(max_length=16, choices=REASON_CHOICES)
+    roll_probability = models.FloatField()
+
+    class Meta:
+        ordering = ["position"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["snapshot", "position"],
+                name="queuetip_export_track_position_unique",
+            )
+        ]
