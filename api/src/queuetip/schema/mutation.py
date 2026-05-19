@@ -19,10 +19,13 @@ from ..graphql_types import (
     ContributionResult,
     ContributionType,
     EngineSettingsInput,
+    ExportOptionsInput,
+    ExportSnapshotType,
     PlaylistType,
 )
 from ..services.bulk_import import BulkImportService
 from ..services.contribution import ContributionService
+from ..services.export import ExportService
 from ..services.membership import MembershipService
 from ..services.playlist import PlaylistService
 from ..services.vote import VoteService
@@ -99,6 +102,21 @@ async def _build_playlist_type(playlist: Playlist) -> PlaylistType:
     """Compose a PlaylistType with pre-fetched memberships (no lazy load)."""
     members = await PlaylistService.list_memberships(playlist)
     return PlaylistType.from_model(playlist, members)
+
+
+async def _load_snapshot_with_tracks(snapshot) -> "ExportSnapshotType":
+    """Pre-fetch tracks (+song+artist) before composing the GraphQL type."""
+    from queuetip.models import ExportSnapshotTrack
+
+    def _load() -> list:
+        return list(
+            ExportSnapshotTrack.objects.filter(snapshot=snapshot)
+            .select_related("song", "song__primary_artist")
+            .order_by("position")
+        )
+
+    tracks = await sync_to_async(_load)()
+    return ExportSnapshotType.from_model(snapshot, tracks)
 
 
 async def _request_magic_link(
@@ -382,3 +400,18 @@ class Mutation:
         account = _require_account(info)
         job = await BulkImportService.start(account, int(playlist_id), url)
         return BulkImportJobType.from_model(job)
+
+    @strawberry.mutation
+    async def create_export(
+        self,
+        info: Info[QueuetipContext, None],
+        playlist_id: strawberry.ID,
+        options: ExportOptionsInput | None = None,
+    ) -> ExportSnapshotType:
+        """Materialize a playlist into a new ExportSnapshot."""
+        account = _require_account(info)
+        exclude_downvotes = bool(options and options.exclude_my_downvotes)
+        snapshot = await ExportService.create(
+            account, int(playlist_id), exclude_my_downvotes=exclude_downvotes
+        )
+        return await _load_snapshot_with_tracks(snapshot)

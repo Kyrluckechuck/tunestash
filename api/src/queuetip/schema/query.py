@@ -14,9 +14,11 @@ from ..graphql_types import (
     AccountType,
     BulkImportJobType,
     CatalogSearchResultType,
+    ExportSnapshotType,
     PlaylistType,
 )
 from ..services.bulk_import import BulkImportService
+from ..services.export import ExportService
 from ..services.playlist import PlaylistService
 
 
@@ -25,6 +27,21 @@ def _require_account(info: Info[QueuetipContext, None]) -> Account:
     if ctx.account is None:
         raise AuthRequiredError("Sign in to perform this action.")
     return ctx.account
+
+
+async def _load_snapshot_with_tracks(snapshot) -> ExportSnapshotType:
+    """Pre-fetch tracks (+song+artist) before composing the GraphQL type."""
+    from queuetip.models import ExportSnapshotTrack
+
+    def _load():
+        return list(
+            ExportSnapshotTrack.objects.filter(snapshot=snapshot)
+            .select_related("song", "song__primary_artist")
+            .order_by("position")
+        )
+
+    tracks = await sync_to_async(_load)()
+    return ExportSnapshotType.from_model(snapshot, tracks)
 
 
 @strawberry.type
@@ -110,3 +127,24 @@ class Query:
         account = _require_account(info)
         job = await BulkImportService.get(account, int(id))
         return BulkImportJobType.from_model(job)
+
+    @strawberry.field
+    async def export(
+        self, info: Info[QueuetipContext, None], id: strawberry.ID
+    ) -> ExportSnapshotType:
+        """Fetch a single ExportSnapshot. Caller must be a playlist member."""
+        account = _require_account(info)
+        snapshot = await ExportService.get(account, int(id))
+        return await _load_snapshot_with_tracks(snapshot)
+
+    @strawberry.field
+    async def my_playlist_exports(
+        self, info: Info[QueuetipContext, None], playlist_id: strawberry.ID
+    ) -> list[ExportSnapshotType]:
+        """List a playlist's exports (newest first). Caller must be a member."""
+        account = _require_account(info)
+        snapshots = await ExportService.list_for_playlist(account, int(playlist_id))
+        result: list[ExportSnapshotType] = []
+        for s in snapshots:
+            result.append(await _load_snapshot_with_tracks(s))
+        return result

@@ -125,9 +125,9 @@ class ExportService:
                 raise NotFoundError(f"No playlist with id={playlist_id}")
             require_member(account, playlist)
             return list(
-                ExportSnapshot.objects.filter(playlist=playlist).select_related(
-                    "requested_by"
-                )
+                ExportSnapshot.objects.filter(playlist=playlist)
+                .select_related("requested_by")
+                .order_by("-created_at")
             )
 
         return await sync_to_async(_list)()
