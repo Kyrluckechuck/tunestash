@@ -51,5 +51,9 @@ def verify(token: str) -> Response:
 def logout() -> Response:
     """Clear the session cookie."""
     response = Response(status_code=204)
-    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie(
+        SESSION_COOKIE,
+        samesite="lax",
+        secure=not settings.DEBUG,
+    )
     return response

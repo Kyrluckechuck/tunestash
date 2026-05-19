@@ -1,5 +1,6 @@
 import httpx
 import pytest
+from asgiref.sync import sync_to_async
 
 from queuetip.models import Account
 from src.queuetip.app import app
@@ -80,3 +81,18 @@ async def test_tunestash_admin_schema_is_not_mounted(async_client):
     async with async_client as client:
         response = await client.post("/graphql", json={"query": "{ artists { id } }"})
     assert response.json().get("errors")
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_logout_clears_session_cookie():
+    account = await sync_to_async(Account.objects.create)(display_name="Jo")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
+        client.cookies.set(SESSION_COOKIE, make_session_token(account.id))
+        response = await client.post("/auth/logout")
+    assert response.status_code == 204
+    set_cookie_header = response.headers.get("set-cookie", "")
+    assert SESSION_COOKIE in set_cookie_header

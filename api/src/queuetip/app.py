@@ -43,6 +43,20 @@ def create_queuetip_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    from django.db import close_old_connections  # noqa: E402
+
+    @app.middleware("http")
+    async def _close_stale_db_connections(request, call_next):
+        # The long-lived ASGI process has no Django request cycle, so
+        # CONN_HEALTH_CHECKS never fires. Reap stale connections per request,
+        # mirroring celery_app.py's task_prerun hook.
+        close_old_connections()
+        try:
+            response = await call_next(request)
+        finally:
+            close_old_connections()
+        return response
+
     from .context import get_context
     from .routes import router as auth_router
     from .schema import schema
