@@ -79,3 +79,6 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.dummy.DummyCache",
     }
 }
+
+# Use in-memory email backend so mailoutbox fixture works in tests
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
