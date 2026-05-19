@@ -45,6 +45,7 @@ settings = dynaconf.DjangoDynaconf(
         "django_celery_results",
         "django_celery_beat",
         "library_manager",
+        "queuetip",
         # Dev-only apps are appended conditionally below
     ],
     # API-specific middleware (simpler than full web app)
@@ -265,3 +266,23 @@ STORAGES = {
 
 # Note: Using STORAGES configuration above instead of deprecated DEFAULT_FILE_STORAGE and STATICFILES_STORAGE
 # The Django deprecation warnings for these settings are unavoidable in Django 5.0 when using dynaconf
+
+# ── Queuetip ────────────────────────────────────────────────────────────────
+# Public base URL of the Queuetip ASGI process — used to build magic-link URLs.
+QUEUETIP_PUBLIC_URL = os.getenv("QUEUETIP_PUBLIC_URL", "http://localhost:5050")
+# Origin of the Queuetip frontend — used for CORS on the public process.
+QUEUETIP_FRONTEND_URL = os.getenv("QUEUETIP_FRONTEND_URL", "http://localhost:3001")
+
+# Email — magic-link delivery. Console backend by default (links print to logs);
+# set `email_host` in settings.yaml to switch to real SMTP delivery.
+_email_host = settings.get("email_host", None)
+if _email_host:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = _email_host
+    EMAIL_PORT = int(settings.get("email_port", 587))
+    EMAIL_HOST_USER = settings.get("email_host_user", "")
+    EMAIL_HOST_PASSWORD = settings.get("email_host_password", "")
+    EMAIL_USE_TLS = bool(settings.get("email_use_tls", True))
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = settings.get("default_from_email", "Queuetip <queuetip@localhost>")
