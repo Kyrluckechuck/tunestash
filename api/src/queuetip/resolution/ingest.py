@@ -15,13 +15,22 @@ from src.queuetip.resolution.candidate import TrackCandidate
 from src.queuetip.resolution.errors import TrackNotFoundError
 
 
+def _deezer_id_from(source_id: str) -> int:
+    try:
+        return int(source_id)
+    except (TypeError, ValueError) as exc:
+        raise TrackNotFoundError(f"Invalid Deezer track id: {source_id!r}") from exc
+
+
 def _find_existing_song(candidate: TrackCandidate) -> Song | None:
     if candidate.source == "spotify" and candidate.source_id:
         song = Song.objects.filter(gid=candidate.source_id).first()
         if song:
             return song
     if candidate.source == "deezer" and candidate.source_id:
-        song = Song.objects.filter(deezer_id=int(candidate.source_id)).first()
+        song = Song.objects.filter(
+            deezer_id=_deezer_id_from(candidate.source_id)
+        ).first()
         if song:
             return song
     if candidate.isrc:
@@ -67,7 +76,7 @@ def _create_song(candidate: TrackCandidate) -> Song:
     if candidate.source == "spotify" and candidate.source_id:
         gid = candidate.source_id
     elif candidate.source == "deezer" and candidate.source_id:
-        deezer_id = int(candidate.source_id)
+        deezer_id = _deezer_id_from(candidate.source_id)
     else:
         # Apple (no Song-supported id) — resolve via ISRC -> Deezer.
         if candidate.isrc:
@@ -75,6 +84,11 @@ def _create_song(candidate: TrackCandidate) -> Song:
             if result and result.deezer_id:
                 deezer_id = result.deezer_id
                 artist_deezer_id = result.artist_deezer_id
+                # The resolved deezer_id may already belong to an existing Song
+                # (one added earlier without ISRC stored) — check before creating.
+                existing = Song.objects.filter(deezer_id=deezer_id).first()
+                if existing:
+                    return existing
 
     if gid is None and deezer_id is None:
         raise TrackNotFoundError(

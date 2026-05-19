@@ -1,6 +1,10 @@
 """Queuetip Phase 0 — the resolution interface.
 
 Public functions: catalog_search, resolve_link, resolve_playlist, ingest_track.
+
+Async/sync note: catalog_search is async; resolve_link, resolve_playlist, and
+ingest_track are synchronous (blocking network + Django ORM) and must be wrapped
+with asgiref.sync.sync_to_async when called from an async context.
 """
 
 from src.queuetip.resolution.candidate import TrackCandidate

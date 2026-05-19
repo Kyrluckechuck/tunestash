@@ -64,3 +64,58 @@ def test_resolve_apple_playlist_http_500():
         ctor.return_value.__enter__.return_value = client
         with pytest.raises(AppleResolverError):
             apple.resolve_apple_playlist(URL)
+
+
+def test_amp_get_retries_once_on_401_then_succeeds():
+    """First attempt returns 401; second (after token refresh) succeeds."""
+    track_body = {"data": [_track("Retry Song", "Retry Artist", "ISRC1", "t1")]}
+    client = MagicMock()
+    client.get.side_effect = [
+        _amp_resp({}, status=401),
+        _amp_resp(track_body, status=200),
+    ]
+    tokens = iter(["TOKEN_1", "TOKEN_2"])
+    with (
+        patch("src.queuetip.resolution.apple.httpx.Client") as ctor,
+        patch("src.queuetip.resolution.apple.get_token", side_effect=tokens),
+    ):
+        ctor.return_value.__enter__.return_value = client
+        result = apple.resolve_apple_playlist(URL)
+    assert client.get.call_count == 2
+    assert len(result) == 1
+    assert result[0].track_name == "Retry Song"
+
+
+def test_amp_get_raises_on_double_401():
+    """Both attempts return 401 — raise_for_status on the second raises AppleResolverError."""
+    r401_first = _amp_resp({}, status=401)
+    r401_second = _amp_resp({}, status=401)
+    r401_second.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "401", request=MagicMock(), response=r401_second
+    )
+    client = MagicMock()
+    client.get.side_effect = [r401_first, r401_second]
+    tokens = iter(["TOKEN_1", "TOKEN_2"])
+    with (
+        patch("src.queuetip.resolution.apple.httpx.Client") as ctor,
+        patch("src.queuetip.resolution.apple.get_token", side_effect=tokens),
+    ):
+        ctor.return_value.__enter__.return_value = client
+        with pytest.raises(AppleResolverError):
+            apple.resolve_apple_playlist(URL)
+
+
+def test_resolve_apple_track_album_url_uses_i_param():
+    """resolve_apple_track with ?i= album URL resolves via the song id (456), not album id (123)."""
+    album_url = "https://music.apple.com/us/album/some-album/123?i=456"
+    song_body = {"data": [_track("Album Track", "Band", "ISRC99", "456")]}
+    with patch(
+        "src.queuetip.resolution.apple._amp_get", return_value=song_body
+    ) as mock_get:
+        result = apple.resolve_apple_track(album_url)
+    assert result.track_name == "Album Track"
+    called_path = mock_get.call_args[0][0]
+    assert called_path.endswith(
+        "/songs/456"
+    ), f"Expected path ending in /songs/456, got: {called_path!r}"
+    assert "123" not in called_path

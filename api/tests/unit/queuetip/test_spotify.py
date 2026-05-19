@@ -3,7 +3,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 import spotipy
 
-from src.queuetip.resolution.errors import EditorialPlaylistError, TrackNotFoundError
+from src.queuetip.resolution.errors import (
+    EditorialPlaylistError,
+    ResolutionError,
+    TrackNotFoundError,
+)
 from src.queuetip.resolution.spotify import (
     resolve_spotify_playlist,
     resolve_spotify_track,
@@ -76,3 +80,9 @@ def test_resolve_spotify_track_happy_path():
 def test_resolve_spotify_track_bad_url():
     with pytest.raises(TrackNotFoundError):
         resolve_spotify_track("https://open.spotify.com/album/xyz")
+
+
+def test_resolve_spotify_playlist_missing_credentials():
+    with patch("src.queuetip.resolution.spotify.get_setting", return_value=None):
+        with pytest.raises(ResolutionError):
+            resolve_spotify_playlist("https://open.spotify.com/playlist/abc")

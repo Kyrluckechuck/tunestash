@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from src.services.catalog_search import CatalogSearchTrack
+if TYPE_CHECKING:
+    from src.services.catalog_search import CatalogSearchTrack
 
 
 @dataclass
