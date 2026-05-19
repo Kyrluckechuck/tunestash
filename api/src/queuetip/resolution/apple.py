@@ -16,9 +16,12 @@ from typing import TypedDict
 
 import httpx
 
-from src.queuetip.resolution.errors import (  # noqa: F401
+from src.queuetip.resolution.candidate import TrackCandidate
+from src.queuetip.resolution.errors import (
     AppleResolverError,
     PlaylistNotFoundError,
+    ResolutionError,
+    TrackNotFoundError,
 )
 
 _AMP_BASE = "https://amp-api.music.apple.com"
@@ -79,3 +82,99 @@ def get_token(page_url: str, force_refresh: bool = False) -> str:
         _TOKEN_CACHE["token"] = _fetch_token(page_url)
         _TOKEN_CACHE["fetched_at"] = now
     return _TOKEN_CACHE["token"]
+
+
+_PLAYLIST_PATH_RE = re.compile(
+    r"music\.apple\.com/([a-z]{2})/playlist/[^/]+/(pl\.[A-Za-z0-9-]+)"
+)
+_STOREFRONT_RE = re.compile(r"music\.apple\.com/([a-z]{2})/")
+_SONG_URL_RE = re.compile(r"music\.apple\.com/[a-z]{2}/song/[^/]+/(\d+)")
+_ALBUM_TRACK_RE = re.compile(r"[?&]i=(\d+)")
+
+
+def _amp_get(
+    path: str,
+    page_url: str,
+    not_found_exc: type[ResolutionError] = PlaylistNotFoundError,
+) -> dict:
+    """GET an Amp-API path, refreshing the token once on a 401."""
+    for attempt in (1, 2):
+        token = get_token(page_url, force_refresh=(attempt == 2))
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.get(
+                    f"{_AMP_BASE}{path}",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Origin": _MUSIC_ORIGIN,
+                        "User-Agent": _UA,
+                    },
+                )
+        except httpx.RequestError as exc:
+            raise AppleResolverError(f"Apple Music network error: {exc}") from exc
+        if resp.status_code == 401 and attempt == 1:
+            continue
+        if resp.status_code == 404:
+            raise not_found_exc(
+                "Apple Music resource not found — check the URL is public"
+            )
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise AppleResolverError(f"Apple Music HTTP {resp.status_code}") from exc
+        return resp.json()
+    raise AppleResolverError("Apple Amp-API auth failed after token refresh")
+
+
+def _candidate_from_apple(item: dict) -> TrackCandidate:
+    attrs = item.get("attributes", {})
+    artist = attrs.get("artistName", "Unknown Artist")
+    return TrackCandidate(
+        track_name=attrs.get("name", "Unknown Track"),
+        artist_name=artist,
+        source="apple",
+        isrc=attrs.get("isrc"),
+        source_id=str(item.get("id")) if item.get("id") else None,
+        # Apple's tracks endpoint returns `artistName` as a single (possibly joined)
+        # string — there is no per-artist list — so all_artists holds one element
+        # and must NOT be split on `&`/`,`.
+        all_artists=[artist],
+    )
+
+
+def resolve_apple_playlist(url: str) -> list[TrackCandidate]:
+    match = _PLAYLIST_PATH_RE.search(url)
+    if not match:
+        raise PlaylistNotFoundError(f"Not an Apple Music playlist URL: {url}")
+    storefront, playlist_id = match.group(1), match.group(2)
+    path = f"/v1/catalog/{storefront}/playlists/{playlist_id}/tracks?limit=100"
+    candidates: list[TrackCandidate] = []
+    while path:
+        body = _amp_get(path, url)
+        candidates.extend(_candidate_from_apple(t) for t in body.get("data", []))
+        nxt = body.get("next")  # relative path; `limit` is intentionally dropped
+        path = nxt or None
+    return candidates
+
+
+def resolve_apple_track(url: str) -> TrackCandidate:
+    sf_match = _STOREFRONT_RE.search(url)
+    album_track_match = _ALBUM_TRACK_RE.search(url)
+    song_match = _SONG_URL_RE.search(url)
+    storefront = sf_match.group(1) if sf_match else None
+    song_id = (
+        album_track_match.group(1)
+        if album_track_match
+        else song_match.group(1) if song_match else None
+    )
+    if not storefront or not song_id:
+        raise TrackNotFoundError(f"Not an Apple Music song URL: {url}")
+    body = _amp_get(
+        f"/v1/catalog/{storefront}/songs/{song_id}",
+        url,
+        not_found_exc=TrackNotFoundError,
+    )
+    data = body.get("data", [])
+    if not data:
+        raise TrackNotFoundError(f"Apple Music song not found: {url}")
+    return _candidate_from_apple(data[0])
