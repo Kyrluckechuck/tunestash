@@ -15,6 +15,7 @@ from ..context import QueuetipContext
 from ..email import send_magic_link_email
 from ..errors import AuthRequiredError, ValidationError
 from ..graphql_types import EngineSettingsInput, PlaylistType
+from ..services.membership import MembershipService
 from ..services.playlist import PlaylistService
 
 # Pragmatic email shape check — rejects obvious garbage before we create a row
@@ -216,3 +217,47 @@ class Mutation:
         account = _require_account(info)
         await PlaylistService.delete(account, int(id))
         return DeletePlaylistResult(deleted=True)
+
+    @strawberry.mutation
+    async def join_playlist(
+        self, info: Info[QueuetipContext, None], invite_token: str
+    ) -> PlaylistType:
+        """Join a playlist using its invite token. Idempotent."""
+        account = _require_account(info)
+        await MembershipService.join(account, invite_token)
+        playlist = await PlaylistService.get_by_invite_token(invite_token)
+        return await _build_playlist_type(playlist)
+
+    @strawberry.mutation
+    async def leave_playlist(
+        self, info: Info[QueuetipContext, None], id: strawberry.ID
+    ) -> DeletePlaylistResult:
+        """Leave a playlist. Owners with other members must promote/delete first."""
+        account = _require_account(info)
+        await MembershipService.leave(account, int(id))
+        return DeletePlaylistResult(deleted=True)
+
+    @strawberry.mutation
+    async def kick_member(
+        self,
+        info: Info[QueuetipContext, None],
+        playlist_id: strawberry.ID,
+        account_id: strawberry.ID,
+    ) -> DeletePlaylistResult:
+        """Owner-only. Remove another account's membership."""
+        actor = _require_account(info)
+        await MembershipService.kick(actor, int(playlist_id), int(account_id))
+        return DeletePlaylistResult(deleted=True)
+
+    @strawberry.mutation
+    async def promote_member(
+        self,
+        info: Info[QueuetipContext, None],
+        playlist_id: strawberry.ID,
+        account_id: strawberry.ID,
+    ) -> PlaylistType:
+        """Owner-only. Promote a member to owner role (co-owner)."""
+        actor = _require_account(info)
+        await MembershipService.promote(actor, int(playlist_id), int(account_id))
+        playlist = await PlaylistService.get_by_id(int(playlist_id))
+        return await _build_playlist_type(playlist)
