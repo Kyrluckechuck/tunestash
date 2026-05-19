@@ -294,3 +294,88 @@ async def test_my_playlist_exports_returns_newest_first():
     # Newest (second) should come first in the list
     ids = [e["id"] for e in exports]
     assert ids.index(second_id) < ids.index(first_id)
+
+
+# ---------------------------------------------------------------------------
+# REST endpoint: GET /exports/{snapshot_id}.m3u
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_m3u_download_happy_path():
+    """Owner can download the m3u for their own snapshot."""
+    owner, playlist = await _setup_playlist()
+    await _add_song(playlist, owner, guaranteed=True)
+
+    async with _authed_client(owner.id) as client:
+        created = await _gql(
+            client,
+            _CREATE_EXPORT_QUERY,
+            {"playlistId": str(playlist.id)},
+        )
+        snapshot_id = created["data"]["createExport"]["id"]
+
+        resp = await client.get(f"/exports/{snapshot_id}.m3u")
+
+    assert resp.status_code == 200
+    assert "audio/x-mpegurl" in resp.headers["content-type"]
+    assert resp.text.startswith("#EXTM3U")
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_m3u_download_no_cookie_returns_401():
+    """Request without a session cookie is rejected with 401."""
+    owner, playlist = await _setup_playlist()
+    await _add_song(playlist, owner, guaranteed=True)
+
+    async with _authed_client(owner.id) as client:
+        created = await _gql(
+            client,
+            _CREATE_EXPORT_QUERY,
+            {"playlistId": str(playlist.id)},
+        )
+        snapshot_id = created["data"]["createExport"]["id"]
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as anon_client:
+        resp = await anon_client.get(f"/exports/{snapshot_id}.m3u")
+
+    assert resp.status_code == 401
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_m3u_download_non_member_returns_403():
+    """A valid session for a non-member account is rejected with 403."""
+    owner, playlist = await _setup_playlist()
+    await _add_song(playlist, owner, guaranteed=True)
+
+    async with _authed_client(owner.id) as client:
+        created = await _gql(
+            client,
+            _CREATE_EXPORT_QUERY,
+            {"playlistId": str(playlist.id)},
+        )
+        snapshot_id = created["data"]["createExport"]["id"]
+
+    outsider = await sync_to_async(Account.objects.create)(display_name="Outsider")
+    async with _authed_client(outsider.id) as client:
+        resp = await client.get(f"/exports/{snapshot_id}.m3u")
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_m3u_download_unknown_snapshot_returns_404():
+    """Requesting a non-existent snapshot id returns 404."""
+    owner, _ = await _setup_playlist()
+
+    async with _authed_client(owner.id) as client:
+        resp = await client.get("/exports/999999.m3u")
+
+    assert resp.status_code == 404
