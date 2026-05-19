@@ -1,6 +1,9 @@
 """Strawberry GraphQL types for Queuetip."""
 
 import datetime
+import json
+
+from django.conf import settings as dj_settings
 
 import strawberry
 
@@ -8,6 +11,8 @@ from queuetip.models import (
     Account,
     BulkImportJob,
     Contribution,
+    ExportSnapshot,
+    ExportSnapshotTrack,
     Playlist,
     PlaylistMembership,
     Vote,
@@ -229,4 +234,69 @@ class BulkImportJobType:
             error=job.error,
             created_at=job.created_at,
             finished_at=job.finished_at,
+        )
+
+
+@strawberry.type
+class ExportSnapshotTrackType:
+    """One track in a materialized snapshot."""
+
+    id: strawberry.ID
+    song: SongRef
+    position: int
+    inclusion_reason: str
+    roll_probability: float
+
+    @classmethod
+    def from_model(cls, t: ExportSnapshotTrack) -> "ExportSnapshotTrackType":
+        return cls(
+            id=strawberry.ID(str(t.id)),
+            song=SongRef(
+                id=strawberry.ID(str(t.song.id)),
+                title=t.song.name,
+                artist=t.song.primary_artist.name,
+                isrc=t.song.isrc or None,
+            ),
+            position=t.position,
+            inclusion_reason=t.inclusion_reason,
+            roll_probability=t.roll_probability,
+        )
+
+
+@strawberry.input
+class ExportOptionsInput:
+    """Personal filters applied to one export. v1 has just the downvote filter."""
+
+    exclude_my_downvotes: bool = False
+
+
+@strawberry.type
+class ExportSnapshotType:
+    """A materialized export — immutable artifact, replayable from its seed."""
+
+    id: strawberry.ID
+    requested_by: AccountType
+    created_at: datetime.datetime
+    parameters: str  # JSON-stringified, opaque to clients
+    rng_seed: str  # rendered as str to avoid JS number-precision issues with BigInt
+    warning_message: str
+    tracks: list[ExportSnapshotTrackType]
+    m3u_url: str
+
+    @classmethod
+    def from_model(
+        cls, snapshot: ExportSnapshot, tracks: list[ExportSnapshotTrack]
+    ) -> "ExportSnapshotType":
+        base = getattr(
+            dj_settings, "QUEUETIP_PUBLIC_URL", "http://localhost:5050"
+        ).rstrip("/")
+        return cls(
+            id=strawberry.ID(str(snapshot.id)),
+            requested_by=AccountType.from_model(snapshot.requested_by),
+            created_at=snapshot.created_at,
+            parameters=json.dumps(snapshot.parameters or {}),
+            rng_seed=str(snapshot.rng_seed),
+            warning_message=snapshot.warning_message,
+            tracks=[ExportSnapshotTrackType.from_model(t) for t in tracks],
+            m3u_url=f"{base}/exports/{snapshot.id}.m3u",
         )
