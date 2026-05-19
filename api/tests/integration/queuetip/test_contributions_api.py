@@ -161,3 +161,38 @@ async def test_remove_contribution_by_non_member_rejected():
             {"id": str(contribution.id)},
         )
     assert "errors" in result
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_bulk_import_playlist_queues_job_and_is_queryable():
+    owner, playlist = await _setup_playlist()
+    with patch("queuetip.tasks.bulk_import_playlist.delay") as delay:
+        async with _authed_client(owner.id) as client:
+            queued = await _gql(
+                client,
+                """
+                mutation($p: ID!, $u: String!) {
+                  bulkImportPlaylist(playlistId: $p, url: $u) {
+                    id status sourceUrl
+                  }
+                }
+                """,
+                {
+                    "p": str(playlist.id),
+                    "u": "https://open.spotify.com/playlist/abc",
+                },
+            )
+        delay.assert_called_once()
+        job = queued["data"]["bulkImportPlaylist"]
+        assert job["status"] == "pending"
+        assert job["sourceUrl"] == "https://open.spotify.com/playlist/abc"
+
+        async with _authed_client(owner.id) as client:
+            polled = await _gql(
+                client,
+                "query($id: ID!) { bulkImportJob(id: $id) { id status sourceUrl } }",
+                {"id": job["id"]},
+            )
+        assert polled["data"]["bulkImportJob"]["id"] == job["id"]
+        assert polled["data"]["bulkImportJob"]["status"] == "pending"

@@ -15,11 +15,13 @@ from ..context import QueuetipContext
 from ..email import send_magic_link_email
 from ..errors import AuthRequiredError, NotFoundError, ValidationError
 from ..graphql_types import (
+    BulkImportJobType,
     ContributionResult,
     ContributionType,
     EngineSettingsInput,
     PlaylistType,
 )
+from ..services.bulk_import import BulkImportService
 from ..services.contribution import ContributionService
 from ..services.membership import MembershipService
 from ..services.playlist import PlaylistService
@@ -365,3 +367,18 @@ class Mutation:
         account = _require_account(info)
         await VoteService.clear_vote(account, int(contribution_id))
         return await _load_contribution_view(int(contribution_id))
+
+    @strawberry.mutation
+    async def bulk_import_playlist(
+        self,
+        info: Info[QueuetipContext, None],
+        playlist_id: strawberry.ID,
+        url: str,
+    ) -> BulkImportJobType:
+        """Queue an async import of a public Spotify/Apple playlist URL.
+
+        Returns the BulkImportJob; poll `bulkImportJob(id)` for progress.
+        """
+        account = _require_account(info)
+        job = await BulkImportService.start(account, int(playlist_id), url)
+        return BulkImportJobType.from_model(job)

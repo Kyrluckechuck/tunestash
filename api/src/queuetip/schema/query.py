@@ -4,13 +4,27 @@ import strawberry
 from asgiref.sync import sync_to_async
 from strawberry.types import Info
 
+from queuetip.models import Account
 from queuetip.permissions import require_member
 from src.queuetip.resolution.catalog import catalog_search as _catalog_search
 
 from ..context import QueuetipContext
 from ..errors import AuthRequiredError, ValidationError
-from ..graphql_types import AccountType, CatalogSearchResultType, PlaylistType
+from ..graphql_types import (
+    AccountType,
+    BulkImportJobType,
+    CatalogSearchResultType,
+    PlaylistType,
+)
+from ..services.bulk_import import BulkImportService
 from ..services.playlist import PlaylistService
+
+
+def _require_account(info: Info[QueuetipContext, None]) -> Account:
+    ctx = info.context
+    if ctx.account is None:
+        raise AuthRequiredError("Sign in to perform this action.")
+    return ctx.account
 
 
 @strawberry.type
@@ -87,3 +101,12 @@ class Query:
             )
             for hit in hits
         ]
+
+    @strawberry.field
+    async def bulk_import_job(
+        self, info: Info[QueuetipContext, None], id: strawberry.ID
+    ) -> BulkImportJobType:
+        """Look up a bulk-import job by id. Caller must be a playlist member."""
+        account = _require_account(info)
+        job = await BulkImportService.get(account, int(id))
+        return BulkImportJobType.from_model(job)
