@@ -43,6 +43,9 @@ class AuthenticationStatus:  # pylint: disable=too-many-instance-attributes
     spotify_token_expired: bool = False
     spotify_token_expires_in_hours: Optional[int] = None
     spotify_token_error_message: Optional[str] = None
+    # True when the refresh failure is a transient Spotify/network blip
+    # (5xx, 429, timeout) rather than a dead refresh token needing re-auth.
+    spotify_token_error_transient: bool = False
 
 
 class SystemHealthService:
@@ -80,6 +83,26 @@ class SystemHealthService:
             return False
 
     @staticmethod
+    def _is_transient_spotify_refresh_error(exc: Exception) -> bool:
+        """Classify a Spotify token-refresh failure as transient vs hard.
+
+        Hard = the refresh token itself is dead and the user must
+        re-authenticate. Spotify returns HTTP 400 (invalid_grant) or 401
+        for that case.
+
+        Transient = a Spotify-side or network blip (5xx, 429, request
+        timeout, connection error) that the next periodic check will
+        almost always recover from on its own. Anything without an HTTP
+        response attached (timeouts, connection resets) is transient by
+        definition — there is no status code to inspect.
+        """
+        import requests
+
+        if isinstance(exc, requests.HTTPError) and exc.response is not None:
+            return exc.response.status_code not in (400, 401)
+        return True
+
+    @staticmethod
     def _check_spotify_oauth_token_status() -> Dict[str, Any]:
         """
         Check Spotify OAuth token validity and expiration status.
@@ -93,6 +116,7 @@ class SystemHealthService:
             - expired: bool - Whether token is expired
             - expires_in_hours: Optional[int] - Hours until expiration
             - error_message: Optional[str] - Error message if any
+            - transient: bool - Whether an error (if any) is a transient blip
         """
         import logging
 
@@ -120,14 +144,30 @@ class SystemHealthService:
                     token = SpotifyOAuthService.save_tokens(new_token_data)
                     logger.info("Successfully refreshed Spotify OAuth token")
                 except Exception as refresh_error:
-                    logger.error(
-                        f"Failed to refresh Spotify OAuth token: {refresh_error}"
+                    transient = SystemHealthService._is_transient_spotify_refresh_error(
+                        refresh_error
                     )
+                    logger.error(
+                        f"Failed to refresh Spotify OAuth token "
+                        f"({'transient' if transient else 'hard'}): "
+                        f"{refresh_error}"
+                    )
+                    if transient:
+                        error_message = (
+                            f"Spotify token refresh failed temporarily "
+                            f"({refresh_error}). Will retry automatically."
+                        )
+                    else:
+                        error_message = (
+                            "Spotify OAuth token has expired and refresh "
+                            "failed. Please re-authenticate."
+                        )
                     return {
                         "valid": False,
                         "expired": True,
                         "expires_in_hours": None,
-                        "error_message": "Spotify OAuth token has expired and refresh failed. Please re-authenticate.",
+                        "error_message": error_message,
+                        "transient": transient,
                     }
 
             # Token is now valid (either it was valid, or we just refreshed it)
@@ -142,6 +182,7 @@ class SystemHealthService:
                 "expired": False,
                 "expires_in_hours": hours_until_expiry,
                 "error_message": None,
+                "transient": False,
             }
 
         except SpotifyOAuthToken.DoesNotExist:
@@ -151,14 +192,19 @@ class SystemHealthService:
                 "expired": False,
                 "expires_in_hours": None,
                 "error_message": None,
+                "transient": False,
             }
         except Exception as e:
+            # An error checking the token itself (e.g. DB hiccup) is not a
+            # credential problem — treat it as transient so it doesn't tell
+            # the user to re-authenticate.
             logger.error(f"Error checking Spotify OAuth token status: {e}")
             return {
                 "valid": False,
                 "expired": False,
                 "expires_in_hours": None,
                 "error_message": f"Error checking token: {str(e)}",
+                "transient": True,
             }
 
     @staticmethod
@@ -278,6 +324,7 @@ class SystemHealthService:
             spotify_token_expired=spotify_token_status["expired"],
             spotify_token_expires_in_hours=spotify_token_status["expires_in_hours"],
             spotify_token_error_message=spotify_token_status["error_message"],
+            spotify_token_error_transient=spotify_token_status["transient"],
         )
 
     @staticmethod

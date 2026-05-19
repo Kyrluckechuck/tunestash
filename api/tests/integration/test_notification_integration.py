@@ -394,6 +394,7 @@ class TestFullNotificationCycle:
             spotify_auth_mode="user-authenticated",
             spotify_token_valid=False,
             spotify_token_error_message="Refresh failed",
+            spotify_token_error_transient=False,
         )
 
         with (
