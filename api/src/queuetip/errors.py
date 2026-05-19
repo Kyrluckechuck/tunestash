@@ -16,4 +16,13 @@ class NotFoundError(Exception):
     """A referenced playlist / account / contribution does not exist."""
 
 
-__all__ = ["AuthRequiredError", "NotFoundError", "PermissionDeniedError"]
+class ValidationError(Exception):
+    """Caller-supplied input is malformed or violates a domain rule."""
+
+
+__all__ = [
+    "AuthRequiredError",
+    "NotFoundError",
+    "PermissionDeniedError",
+    "ValidationError",
+]

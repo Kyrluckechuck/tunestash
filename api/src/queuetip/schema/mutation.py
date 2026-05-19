@@ -6,11 +6,16 @@ from django.db import IntegrityError, transaction
 
 import strawberry
 from asgiref.sync import sync_to_async
+from strawberry.types import Info
 
-from queuetip.models import Account, AuthIdentity
+from queuetip.models import Account, AuthIdentity, Playlist
 
 from ..auth import make_magic_link_token
+from ..context import QueuetipContext
 from ..email import send_magic_link_email
+from ..errors import AuthRequiredError, ValidationError
+from ..graphql_types import EngineSettingsInput, PlaylistType
+from ..services.playlist import PlaylistService
 
 # Pragmatic email shape check — rejects obvious garbage before we create a row
 # or hand the address to the mail backend. Not a full RFC 5322 validation.
@@ -27,6 +32,34 @@ class RequestMagicLinkResult:
 
     sent: bool
     message: str
+
+
+@strawberry.type
+class DeletePlaylistResult:
+    """Outcome of a delete-style mutation."""
+
+    deleted: bool
+
+
+@strawberry.type
+class RegenerateInviteResult:
+    """The new invite token after regeneration."""
+
+    invite_token: str
+
+
+def _require_account(info: Info[QueuetipContext, None]) -> Account:
+    """Return the signed-in account, or raise AuthRequiredError."""
+    ctx = info.context
+    if ctx.account is None:
+        raise AuthRequiredError("Sign in to perform this action.")
+    return ctx.account
+
+
+async def _build_playlist_type(playlist: Playlist) -> PlaylistType:
+    """Compose a PlaylistType with pre-fetched memberships (no lazy load)."""
+    members = await PlaylistService.list_memberships(playlist)
+    return PlaylistType.from_model(playlist, members)
 
 
 async def _request_magic_link(
@@ -115,3 +148,71 @@ class Mutation:
     ) -> RequestMagicLinkResult:
         """Request a magic-link sign-in email. Creates an account if needed."""
         return await _request_magic_link(email, display_name)
+
+    @strawberry.mutation
+    async def create_playlist(
+        self,
+        info: Info[QueuetipContext, None],
+        name: str,
+        description: str = "",
+    ) -> PlaylistType:
+        """Create a new playlist owned by the current account."""
+        account = _require_account(info)
+        if not name.strip():
+            raise ValidationError("Playlist name cannot be empty.")
+        playlist = await PlaylistService.create(
+            account, name=name, description=description
+        )
+        return await _build_playlist_type(playlist)
+
+    @strawberry.mutation
+    async def update_playlist_settings(
+        self,
+        info: Info[QueuetipContext, None],
+        id: strawberry.ID,
+        name: str | None = None,
+        description: str | None = None,
+        engine: EngineSettingsInput | None = None,
+    ) -> PlaylistType:
+        """Owner-only partial update of name/description/engine knobs."""
+        account = _require_account(info)
+        kwargs: dict = {}
+        if name is not None:
+            kwargs["name"] = name
+        if description is not None:
+            kwargs["description"] = description
+        if engine is not None:
+            if engine.min_size is not None:
+                kwargs["min_size"] = engine.min_size
+            # `max_size` uses strawberry.UNSET to distinguish "unchanged" from
+            # "explicitly null". Only forward to the service when set.
+            if engine.max_size is not strawberry.UNSET:
+                kwargs["max_size"] = engine.max_size
+            if engine.t_high is not None:
+                kwargs["t_high"] = engine.t_high
+            if engine.t_low is not None:
+                kwargs["t_low"] = engine.t_low
+            if engine.base is not None:
+                kwargs["base"] = engine.base
+            if engine.p_floor is not None:
+                kwargs["p_floor"] = engine.p_floor
+        playlist = await PlaylistService.update_settings(account, int(id), **kwargs)
+        return await _build_playlist_type(playlist)
+
+    @strawberry.mutation
+    async def regenerate_invite_token(
+        self, info: Info[QueuetipContext, None], id: strawberry.ID
+    ) -> RegenerateInviteResult:
+        """Owner-only. Generate a new invite token (invalidates the old one)."""
+        account = _require_account(info)
+        token = await PlaylistService.regenerate_invite_token(account, int(id))
+        return RegenerateInviteResult(invite_token=token)
+
+    @strawberry.mutation
+    async def delete_playlist(
+        self, info: Info[QueuetipContext, None], id: strawberry.ID
+    ) -> DeletePlaylistResult:
+        """Owner-only. Permanently delete the playlist."""
+        account = _require_account(info)
+        await PlaylistService.delete(account, int(id))
+        return DeletePlaylistResult(deleted=True)
