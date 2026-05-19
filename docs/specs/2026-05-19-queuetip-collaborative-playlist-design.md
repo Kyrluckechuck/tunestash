@@ -1,10 +1,11 @@
-# Songboard — Collaborative Playlist Program Design
+# Queuetip — Collaborative Playlist Program Design
 
 **Status:** Design approved — program-level spec
 **Date:** 2026-05-19
 **Type:** Multi-phase program. Each phase below gets its own spec → plan → implementation cycle; this document is the umbrella design.
 
-> **Naming:** "Songboard" is a placeholder. Replace throughout once a real name is chosen.
+> **Naming:** "Queuetip" is a **semi-tentative working name** — it may still change.
+> Treat it as the working title throughout.
 
 ## Overview
 
@@ -37,14 +38,14 @@ re-implementing it.
 
 **Decision: shared codebase, separate public deployment (Option A).**
 
-Songboard lives **inside the TuneStash repository** as a new Django app (`songboard`),
+Queuetip lives **inside the TuneStash repository** as a new Django app (`queuetip`),
 sharing TuneStash's models, database, and Celery broker. This makes the contributed-song
-foreign key (`Contribution.song → library_manager.Song`) possible and lets Songboard
+foreign key (`Contribution.song → library_manager.Song`) possible and lets Queuetip
 call TuneStash's resolution services in-process — no internal HTTP API.
 
-The **public-facing surface runs as a separate ASGI process** (a new `songboard`
+The **public-facing surface runs as a separate ASGI process** (a new `queuetip`
 container in the Docker stack, built from the same image, different `command:`). This
-process mounts **only** Songboard's GraphQL schema and its own magic-link auth — it does
+process mounts **only** Queuetip's GraphQL schema and its own magic-link auth — it does
 **not** mount TuneStash's admin schema.
 
 **Rationale — fail-safe over fail-open:** TuneStash has no auth and assumes a trusted
@@ -53,13 +54,13 @@ process*, not of remembering an authorization guard on every admin mutation. A n
 mutation added in the future is automatically unreachable from the internet because it
 was never in the public schema.
 
-**Deployment:** Songboard runs on the same host as TuneStash, exposed publicly via a
+**Deployment:** Queuetip runs on the same host as TuneStash, exposed publicly via a
 reverse proxy / Cloudflare Tunnel. TuneStash's admin API stays unexposed. Optional
-hardening: a reduced-privilege database role for the Songboard process.
+hardening: a reduced-privilege database role for the Queuetip process.
 
 ```
-Internet ──▶ [songboard container]  ── shared DB / Celery ──▶ [web / worker / beat]
-             public GraphQL + auth                            TuneStash admin (unexposed)
+Internet ──▶ [queuetip container]  ── shared DB / Celery ──▶ [web / worker / beat]
+             public GraphQL + auth                           TuneStash admin (unexposed)
 ```
 
 ## Phases
@@ -68,8 +69,8 @@ Each phase is an independent spec → plan → build cycle.
 
 | Phase | Deliverable |
 |-------|-------------|
-| **0** | TuneStash resolution service interface (catalog search, provider search, link resolve, playlist resolve, ingest) + index backfill |
-| **1** | Songboard core: accounts (magic-link), playlists, invite links, contribution cascade, voting, bulk playlist import |
+| **0** | TuneStash resolution service interface (catalog search, link resolve, playlist resolve, ingest) + index backfill |
+| **1** | Queuetip core: accounts (magic-link), playlists, invite links, contribution cascade, voting, bulk playlist import |
 | **2** | Selection engine + m3u export — **first end-to-end usable product** |
 | **3** | Spotify export (per-user Spotify OAuth grant) |
 | **4** | Apple Music export (MusicKit; requires a paid Apple Developer account, ~$99/yr) |
@@ -79,9 +80,9 @@ Phase 2 is the first point the product is genuinely usable; it is a valid stoppi
 
 ## Data Model
 
-New Django app `songboard`, same database as TuneStash.
+New Django app `queuetip`, same database as TuneStash.
 
-- **`Account`** — a Songboard user. `display_name`, `created_at`. No relationship to
+- **`Account`** — a Queuetip user. `display_name`, `created_at`. No relationship to
   TuneStash's operator. Identity is *not* stored as columns here — see `AuthIdentity`.
 - **`AuthIdentity`** — `account`, `provider` (`magic_link`, later `google`, `spotify`),
   provider-specific identifier (e.g. email), `created_at`. An `Account` has one or more.
@@ -164,15 +165,17 @@ shared state. Engine-knob changes are owner-only because they reshape communal o
 
 ## Contribution & Voting UX
 
-**Search cascade** — one search box, three tiers:
+**Search cascade** — two tiers:
 
-1. Instant catalog search against TuneStash's local index.
-2. An explicit "search streaming providers" action for catalog misses (slower
-   provider fan-out).
-3. A "paste a link" field for direct URL resolution.
+1. **Search** — one search box backed by TuneStash's catalog search (Deezer-backed;
+   flags results already in the library). This single call covers what was originally
+   imagined as separate "local index" and "provider search" tiers — TuneStash's search
+   *is* a provider search with library enrichment (see Phase 0 spec).
+2. **Paste a link** — a field for direct URL resolution: Spotify, Apple, or Deezer track
+   URLs (YouTube Music is not supported — see Phase 0 spec).
 
-Tiers 2 and 3 are deliberate user actions — a friend never waits on a provider API they
-did not invoke.
+The paste field is a deliberate fallback for when search misses; a friend never waits on
+a provider API they did not invoke.
 
 **Duplicate song:** adding a song already in the pool is not an error. The UI warns
 "This song is already in the playlist" and offers a yes/no: *upvote the existing
@@ -194,7 +197,7 @@ below). Behaviour:
 - m3u file upload is **not** an import source in v1 — streaming playlist URLs only.
 
 Because a single import can queue hundreds of downloads, this is the heaviest
-contributor to the Songboard download burst — reinforcing the dedicated-queue / rate
+contributor to the Queuetip download burst — reinforcing the dedicated-queue / rate
 limit consideration in Phase 0.
 
 **Seeing songs:** v1 lists all contributions with vote tallies, refreshed on load and on
@@ -213,23 +216,25 @@ an ordinary voter on their own song.
   votes remain — they are communal once cast, and removing them would distort the pool.
   Attribution shows a former member.
 - **Catalog safety:** `Contribution.song` uses `on_delete=PROTECT` — TuneStash cannot
-  delete a `Song` still referenced by a Songboard playlist.
+  delete a `Song` still referenced by a Queuetip playlist.
 - **Delete playlist:** owner-only; cascades contributions, votes, snapshots, memberships.
 
 ## Phase 0 — TuneStash Resolution Interface
 
 Five in-process functions (no HTTP — same codebase), reusing existing TuneStash code
-where possible:
+where possible. Detailed and **empirically validated** in the Phase 0 spec.
 
-- `catalog_search(query) → [Song]` — extends the existing `catalog_search.py` service.
-- `provider_search(query) → [candidate]` — provider fan-out for catalog misses.
-- `resolve_link(url) → candidate` — canonicalize a pasted Spotify/Apple/YouTube URL.
-- `resolve_playlist(url) → [candidate]` — expand a public Spotify/Apple playlist URL
-  into its tracks. Built on TuneStash's existing `ExternalList` / `ExternalListTrack`
-  models and `external_list.py` service, which already ingest external playlists and
-  resolve their tracks across platforms.
-- `ingest_track(candidate) → Song` — create a `Song` row with cross-platform IDs /
-  mappings. This is the index backfill.
+- `catalog_search(query)` — Deezer-backed track search with `in_library` flagging
+  (wraps the existing `catalog_search.py` service; the imagined separate
+  `provider_search` folds into this).
+- `resolve_link(url)` — resolve a pasted Spotify / Apple / Deezer track URL. YouTube
+  Music is **not** supported (it exposes no ISRC).
+- `resolve_playlist(url)` — expand a public Spotify/Apple playlist URL into tracks via
+  source-specific resolvers: Spotify via client-credentials, Apple via an anonymous
+  Amp-API token. Does **not** use TuneStash's `ExternalList` (which models re-syncing
+  lists, not one-shot imports).
+- `ingest_track(candidate)` — create a `Song` row with cross-platform IDs / mappings.
+  This is the index backfill.
 
 **Ingest depth — identity + queued download:**
 
@@ -237,17 +242,22 @@ where possible:
   the `Contribution` and voting are available at once.
 - It then **queues an async TuneStash download** (Celery) so the audio enters the
   library / Navidrome. The download never blocks contribution or voting.
-- **Download success is not a Songboard gate.** Export to Spotify/Apple needs only the
-  track identity; local-file m3u simply skips missing audio. Songboard treats download
+- **Download success is not a Queuetip gate.** Export to Spotify/Apple needs only the
+  track identity; local-file m3u simply skips missing audio. Queuetip treats download
   state as informational.
 - **Load consideration:** a burst of contributions causes a burst of downloads. Phase 0
-  should consider a dedicated Celery queue or rate limit so Songboard traffic does not
+  should consider a dedicated Celery queue or rate limit so Queuetip traffic does not
   starve TuneStash's own library-sync work.
 
 ## Auth
 
 **v1: magic-link only.** The public process emails a one-time login link; no passwords,
 no third-party dependency. Stored as an `AuthIdentity` row with `provider=magic_link`.
+
+Magic-link is implemented with a **maintained library** (e.g. `django-sesame`, which
+works with a custom user model) rather than hand-rolled. Email *delivery* uses Django's
+built-in email framework and requires an SMTP / transactional-email backend to be
+configured in Phase 1 — TuneStash has none today.
 
 OAuth (Google, Spotify) is a later convenience phase. Because OAuth requires registering
 a developer app per provider — and Phase 3's Spotify export already requires a Spotify
@@ -296,8 +306,9 @@ this phase is taken up.
 
 ## Open Questions / Deferred Details
 
-- Final project name.
+- Confirm the project name (currently the semi-tentative "Queuetip").
 - Exact personal-filter set for exports (Phase 2 spec).
 - m3u flavor — extended metadata list vs local-file paths (Phase 2 spec).
-- Dedicated Celery queue vs rate limit for Songboard-triggered downloads (Phase 0 spec).
+- Dedicated Celery queue vs rate limit for Queuetip-triggered downloads (Phase 0 spec).
 - Reduced-privilege DB role for the public process (deployment hardening).
+- Email backend choice for magic-link delivery (Phase 1 spec).
