@@ -4,7 +4,14 @@ import datetime
 
 import strawberry
 
-from queuetip.models import Account, Playlist, PlaylistMembership
+from queuetip.models import (
+    Account,
+    BulkImportJob,
+    Contribution,
+    Playlist,
+    PlaylistMembership,
+    Vote,
+)
 
 
 @strawberry.type
@@ -105,4 +112,121 @@ class PlaylistType:
                 p_floor=playlist.p_floor,
             ),
             members=[MembershipType.from_model(m) for m in memberships],
+        )
+
+
+@strawberry.type
+class VoteType:
+    """One vote on a contribution."""
+
+    account: AccountType
+    value: int
+    created_at: datetime.datetime
+
+    @classmethod
+    def from_model(cls, v: Vote) -> "VoteType":
+        return cls(
+            account=AccountType.from_model(v.account),
+            value=v.value,
+            created_at=v.created_at,
+        )
+
+
+@strawberry.type
+class SongRef:
+    """Minimal song identity exposed to the public API.
+
+    Avoids leaking TuneStash's full Song shape (downloaded/file_path etc.).
+    Phase 2 may expand this.
+    """
+
+    id: strawberry.ID
+    title: str
+    artist: str
+    isrc: str | None
+
+
+@strawberry.type
+class ContributionType:
+    """A contributed song in a playlist, with its votes."""
+
+    id: strawberry.ID
+    song: SongRef
+    contributed_by: AccountType
+    created_at: datetime.datetime
+    votes: list[VoteType]
+    net_score: int
+
+    @classmethod
+    def from_model(
+        cls, contribution: Contribution, votes: list[Vote]
+    ) -> "ContributionType":
+        song = contribution.song
+        return cls(
+            id=strawberry.ID(str(contribution.id)),
+            song=SongRef(
+                id=strawberry.ID(str(song.id)),
+                title=song.name,
+                artist=song.primary_artist.name,
+                isrc=song.isrc or None,
+            ),
+            contributed_by=AccountType.from_model(contribution.contributed_by),
+            created_at=contribution.created_at,
+            votes=[VoteType.from_model(v) for v in votes],
+            net_score=sum(v.value for v in votes),
+        )
+
+
+@strawberry.type
+class ContributionResult:
+    """Outcome of a contribute mutation.
+
+    `already_present=True` means the song was already in the playlist — the
+    client can show "upvote existing?" UX. The returned `contribution` is the
+    existing row in that case.
+    """
+
+    contribution: ContributionType
+    already_present: bool
+
+
+@strawberry.type
+class CatalogSearchResultType:
+    """One catalog search hit, with library-presence flag."""
+
+    deezer_id: str
+    title: str
+    artist: str
+    isrc: str | None
+    in_library: bool
+
+
+@strawberry.type
+class BulkImportJobType:
+    """An async bulk-import run's state, for polling."""
+
+    id: strawberry.ID
+    source_url: str
+    status: str
+    added_count: int
+    skipped_count: int
+    unresolved_count: int
+    unresolved_titles: list[str]
+    error: str
+    created_at: datetime.datetime
+    finished_at: datetime.datetime | None
+
+    @classmethod
+    def from_model(cls, job: BulkImportJob) -> "BulkImportJobType":
+        return cls(
+            id=strawberry.ID(str(job.id)),
+            source_url=job.source_url,
+            status=job.status,
+            added_count=job.added_count,
+            skipped_count=job.skipped_count,
+            unresolved_count=job.unresolved_count,
+            unresolved_titles=list(job.unresolved_titles or []),
+            error=job.error,
+            created_at=job.created_at,
+            finished_at=job.finished_at,
         )
