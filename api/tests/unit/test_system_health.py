@@ -241,3 +241,49 @@ class TestSystemHealthService:
             assert "malformed" in reason.lower()
         finally:
             temp_path.unlink()
+
+
+class TestSpotifyRefreshErrorClassification:
+    """Tests for transient vs hard classification of Spotify refresh errors."""
+
+    @staticmethod
+    def _http_error(status_code: int) -> Exception:
+        import requests
+
+        response = requests.Response()
+        response.status_code = status_code
+        return requests.HTTPError(response=response)
+
+    def test_503_is_transient(self):
+        """A 503 from Spotify's token endpoint is a transient blip."""
+        exc = self._http_error(503)
+        assert SystemHealthService._is_transient_spotify_refresh_error(exc) is True
+
+    def test_429_is_transient(self):
+        """A 429 rate-limit response is transient."""
+        exc = self._http_error(429)
+        assert SystemHealthService._is_transient_spotify_refresh_error(exc) is True
+
+    def test_400_invalid_grant_is_hard(self):
+        """A 400 (invalid_grant — dead refresh token) is a hard failure."""
+        exc = self._http_error(400)
+        assert SystemHealthService._is_transient_spotify_refresh_error(exc) is False
+
+    def test_401_is_hard(self):
+        """A 401 (bad client credentials) is a hard failure."""
+        exc = self._http_error(401)
+        assert SystemHealthService._is_transient_spotify_refresh_error(exc) is False
+
+    def test_timeout_without_response_is_transient(self):
+        """A request timeout has no HTTP response and is transient."""
+        import requests
+
+        exc = requests.Timeout("Request timed out")
+        assert SystemHealthService._is_transient_spotify_refresh_error(exc) is True
+
+    def test_connection_error_is_transient(self):
+        """A connection error has no HTTP response and is transient."""
+        import requests
+
+        exc = requests.ConnectionError("Connection refused")
+        assert SystemHealthService._is_transient_spotify_refresh_error(exc) is True

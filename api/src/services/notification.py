@@ -30,6 +30,7 @@ class NotificationService:
     ALERT_PO_TOKEN_INVALID = "po_token_invalid"
     ALERT_YOUTUBE_API_TRANSIENT = "youtube_api_transient"
     ALERT_SPOTIFY_OAUTH_FAILED = "spotify_oauth_failed"
+    ALERT_SPOTIFY_OAUTH_TRANSIENT = "spotify_oauth_transient"
     ALERT_HIGH_ERROR_RATE = "high_error_rate"
 
     # Transient YouTube API failures escalate in two stages. At LOG_THRESHOLD
@@ -210,7 +211,12 @@ class NotificationService:
             results[self.ALERT_PO_TOKEN_INVALID] = False
             results[self.ALERT_YOUTUBE_API_TRANSIENT] = False
 
-        # Spotify OAuth (only alert in user-authenticated mode)
+        # Spotify OAuth (only alert in user-authenticated mode). A failed
+        # token refresh is classified hard (refresh token revoked → user
+        # must re-authenticate) vs transient (Spotify 5xx/429, timeout).
+        # Hard failures alert immediately; transients use the same
+        # two-stage strike logic as the YouTube transient path so a brief
+        # Spotify-side outage doesn't fire a "re-authenticate" alarm.
         if (
             auth_status.spotify_auth_mode == "user-authenticated"
             and not auth_status.spotify_token_valid
@@ -218,16 +224,60 @@ class NotificationService:
             error_msg = (
                 auth_status.spotify_token_error_message or "Token refresh failed"
             )
-            results[self.ALERT_SPOTIFY_OAUTH_FAILED] = self._send(
-                title=f"{name}: Spotify OAuth Failed",
-                body=f"Spotify OAuth token is invalid: {error_msg}. "
-                "Private playlist syncing will fail until re-authenticated.",
-                alert_type=self.ALERT_SPOTIFY_OAUTH_FAILED,
-                send_once=True,
-            )
+            if auth_status.spotify_token_error_transient:
+                count = self._increment_failure_counter(
+                    self.ALERT_SPOTIFY_OAUTH_TRANSIENT
+                )
+                if count >= self.TRANSIENT_FAILURE_ALERT_THRESHOLD:
+                    results[self.ALERT_SPOTIFY_OAUTH_TRANSIENT] = self._send(
+                        title=f"{name}: Spotify OAuth Persistently Failing",
+                        body=(
+                            f"Spotify token refresh has failed {count} "
+                            f"consecutive checks (~{count * 15} minutes). "
+                            f"This is usually a brief Spotify-side outage, "
+                            f"but a failure this sustained is worth checking "
+                            f"— the refresh token may genuinely need "
+                            f"re-authentication. Last error: {error_msg}. "
+                            f"Will auto-clear when the next refresh succeeds."
+                        ),
+                        alert_type=self.ALERT_SPOTIFY_OAUTH_TRANSIENT,
+                        send_once=True,
+                    )
+                elif count >= self.TRANSIENT_FAILURE_LOG_THRESHOLD:
+                    logger.warning(
+                        f"[NOTIFY] Spotify OAuth refresh transient failure "
+                        f"persisting (strike {count}/"
+                        f"{self.TRANSIENT_FAILURE_ALERT_THRESHOLD}) — logging "
+                        f"only, will notify if it reaches "
+                        f"{self.TRANSIENT_FAILURE_ALERT_THRESHOLD}"
+                    )
+                    results[self.ALERT_SPOTIFY_OAUTH_TRANSIENT] = False
+                else:
+                    logger.info(
+                        f"[NOTIFY] Transient Spotify OAuth error "
+                        f"(strike {count}) — holding"
+                    )
+                    results[self.ALERT_SPOTIFY_OAUTH_TRANSIENT] = False
+                results[self.ALERT_SPOTIFY_OAUTH_FAILED] = False
+            else:
+                # Real auth failure — alert immediately, drop transient state
+                self._clear_alert_states([self.ALERT_SPOTIFY_OAUTH_TRANSIENT])
+                results[self.ALERT_SPOTIFY_OAUTH_FAILED] = self._send(
+                    title=f"{name}: Spotify OAuth Failed",
+                    body=f"Spotify OAuth token is invalid: {error_msg}. "
+                    "Private playlist syncing will fail until re-authenticated.",
+                    alert_type=self.ALERT_SPOTIFY_OAUTH_FAILED,
+                    send_once=True,
+                )
+                results[self.ALERT_SPOTIFY_OAUTH_TRANSIENT] = False
         else:
-            self._clear_alert_states([self.ALERT_SPOTIFY_OAUTH_FAILED])
+            # Token valid — clear both alert types AND the transient
+            # counter so the next blip starts a fresh strike count.
+            self._clear_alert_states(
+                [self.ALERT_SPOTIFY_OAUTH_FAILED, self.ALERT_SPOTIFY_OAUTH_TRANSIENT]
+            )
             results[self.ALERT_SPOTIFY_OAUTH_FAILED] = False
+            results[self.ALERT_SPOTIFY_OAUTH_TRANSIENT] = False
 
         return results
 

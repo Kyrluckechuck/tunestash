@@ -365,6 +365,7 @@ class TestSpotifyOAuthAlert:
         status.spotify_auth_mode = "user-authenticated"
         status.spotify_token_valid = False
         status.spotify_token_error_message = "Refresh token revoked"
+        status.spotify_token_error_transient = False
 
         with (
             patch(
@@ -382,6 +383,116 @@ class TestSpotifyOAuthAlert:
             assert result[NotificationService.ALERT_SPOTIFY_OAUTH_FAILED] is True
             call_kwargs = mock_apprise.notify.call_args[1]
             assert "Spotify OAuth" in call_kwargs["title"]
+
+    def test_transient_failure_no_alert_below_threshold(
+        self, service, notification_settings
+    ):
+        """A single transient Spotify refresh blip logs but does not notify."""
+        status = MagicMock()
+        status.cookies_valid = True
+        status.cookies_expire_in_days = 30
+        status.cookies_error_message = None
+        status.po_token_configured = False
+        status.po_token_valid = False
+        status.spotify_auth_mode = "user-authenticated"
+        status.spotify_token_valid = False
+        status.spotify_token_error_message = "503 Service Unavailable"
+        status.spotify_token_error_transient = True
+
+        with (
+            patch(
+                "src.services.system_health.SystemHealthService.check_authentication_status",
+                return_value=status,
+            ),
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_apprise = MagicMock()
+            mock_apprise.notify.return_value = True
+            mock_apprise_cls.return_value = mock_apprise
+
+            result = service.check_and_notify_all()
+
+            assert result[NotificationService.ALERT_SPOTIFY_OAUTH_TRANSIENT] is False
+            assert result[NotificationService.ALERT_SPOTIFY_OAUTH_FAILED] is False
+            mock_apprise.notify.assert_not_called()
+
+    def test_transient_failure_alerts_after_threshold(
+        self, service, notification_settings
+    ):
+        """Sustained transient failures escalate to a notification at strike 4."""
+        status = MagicMock()
+        status.cookies_valid = True
+        status.cookies_expire_in_days = 30
+        status.cookies_error_message = None
+        status.po_token_configured = False
+        status.po_token_valid = False
+        status.spotify_auth_mode = "user-authenticated"
+        status.spotify_token_valid = False
+        status.spotify_token_error_message = "503 Service Unavailable"
+        status.spotify_token_error_transient = True
+
+        with (
+            patch(
+                "src.services.system_health.SystemHealthService.check_authentication_status",
+                return_value=status,
+            ),
+            patch("apprise.Apprise") as mock_apprise_cls,
+        ):
+            mock_apprise = MagicMock()
+            mock_apprise.notify.return_value = True
+            mock_apprise_cls.return_value = mock_apprise
+
+            for _ in range(NotificationService.TRANSIENT_FAILURE_ALERT_THRESHOLD - 1):
+                result = service.check_and_notify_all()
+                assert (
+                    result[NotificationService.ALERT_SPOTIFY_OAUTH_TRANSIENT] is False
+                )
+
+            result = service.check_and_notify_all()
+            assert result[NotificationService.ALERT_SPOTIFY_OAUTH_TRANSIENT] is True
+            call_kwargs = mock_apprise.notify.call_args[1]
+            assert "Persistently Failing" in call_kwargs["title"]
+
+    def test_transient_counter_resets_when_token_recovers(
+        self, service, notification_settings
+    ):
+        """A successful refresh clears the transient strike counter."""
+        failing = MagicMock()
+        failing.cookies_valid = True
+        failing.cookies_expire_in_days = 30
+        failing.cookies_error_message = None
+        failing.po_token_configured = False
+        failing.po_token_valid = False
+        failing.spotify_auth_mode = "user-authenticated"
+        failing.spotify_token_valid = False
+        failing.spotify_token_error_message = "503 Service Unavailable"
+        failing.spotify_token_error_transient = True
+
+        recovered = MagicMock()
+        recovered.cookies_valid = True
+        recovered.cookies_expire_in_days = 30
+        recovered.cookies_error_message = None
+        recovered.po_token_configured = False
+        recovered.po_token_valid = False
+        recovered.spotify_auth_mode = "user-authenticated"
+        recovered.spotify_token_valid = True
+
+        with patch(
+            "src.services.system_health.SystemHealthService.check_authentication_status",
+            return_value=failing,
+        ):
+            service.check_and_notify_all()
+            service.check_and_notify_all()
+
+        with patch(
+            "src.services.system_health.SystemHealthService.check_authentication_status",
+            return_value=recovered,
+        ):
+            service.check_and_notify_all()
+
+        assert not NotificationState.objects.filter(
+            alert_type=NotificationService.ALERT_SPOTIFY_OAUTH_TRANSIENT
+        ).exists()
 
     def test_no_alert_in_public_mode(self, service, notification_settings):
         status = MagicMock()
@@ -894,6 +1005,7 @@ class TestMultipleAlerts:
         status.spotify_auth_mode = "user-authenticated"
         status.spotify_token_valid = False
         status.spotify_token_error_message = "Revoked"
+        status.spotify_token_error_transient = False
 
         with (
             patch(
