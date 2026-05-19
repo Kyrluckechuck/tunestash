@@ -39,3 +39,21 @@ async def test_request_magic_link_existing_account_reuses_it(mailoutbox):
     assert result.sent is True
     assert await sync_to_async(Account.objects.count)() == 1
     assert len(mailoutbox) == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_request_magic_link_rejects_invalid_email(mailoutbox):
+    result = await _request_magic_link("not-an-email", "Newbie")
+    assert result.sent is False
+    assert await sync_to_async(Account.objects.count)() == 0
+    assert len(mailoutbox) == 0
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_request_magic_link_rejects_overlong_display_name(mailoutbox):
+    result = await _request_magic_link("new@example.com", "x" * 121)
+    assert result.sent is False
+    assert await sync_to_async(Account.objects.count)() == 0
+    assert len(mailoutbox) == 0

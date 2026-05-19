@@ -17,14 +17,14 @@ def _request_with_cookies(cookies: dict) -> Request:
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 async def test_get_context_anonymous_without_cookie():
     ctx = await get_context(_request_with_cookies({}))
     assert ctx.account is None
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 async def test_get_context_resolves_account_from_session_cookie():
     account = await sync_to_async(Account.objects.create)(display_name="Jo")
     token = auth.make_session_token(account.id)
@@ -34,7 +34,7 @@ async def test_get_context_resolves_account_from_session_cookie():
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 async def test_get_context_ignores_invalid_session_cookie():
     ctx = await get_context(_request_with_cookies({auth.SESSION_COOKIE: "garbage"}))
     assert ctx.account is None
