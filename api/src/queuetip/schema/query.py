@@ -5,10 +5,11 @@ from asgiref.sync import sync_to_async
 from strawberry.types import Info
 
 from queuetip.permissions import require_member
+from src.queuetip.resolution.catalog import catalog_search as _catalog_search
 
 from ..context import QueuetipContext
 from ..errors import AuthRequiredError, ValidationError
-from ..graphql_types import AccountType, PlaylistType
+from ..graphql_types import AccountType, CatalogSearchResultType, PlaylistType
 from ..services.playlist import PlaylistService
 
 
@@ -66,3 +67,23 @@ class Query:
             raise ValidationError("Provide either id or inviteToken.")
         members = await PlaylistService.list_memberships(playlist)
         return PlaylistType.from_model(playlist, members)
+
+    @strawberry.field
+    async def catalog_search(
+        self, query: str, limit: int = 10
+    ) -> list[CatalogSearchResultType]:
+        """Deezer-backed track search, with in-library flagging. No auth required."""
+        if not query.strip():
+            return []
+        limit = max(1, min(50, limit))
+        hits = await _catalog_search(query, limit=limit)
+        return [
+            CatalogSearchResultType(
+                deezer_id=hit.provider_id,
+                title=hit.name,
+                artist=hit.artist_name,
+                isrc=getattr(hit, "isrc", None),
+                in_library=hit.in_library,
+            )
+            for hit in hits
+        ]
