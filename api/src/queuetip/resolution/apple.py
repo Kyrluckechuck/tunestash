@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import re
 import time
-from typing import TypedDict
+from typing import Optional, TypedDict
 
-import httpx
+import httpx  # pylint: disable=import-error
 
 from src.queuetip.resolution.candidate import TrackCandidate
 from src.queuetip.resolution.errors import (
@@ -81,7 +81,9 @@ def get_token(page_url: str, force_refresh: bool = False) -> str:
     if force_refresh or _TOKEN_CACHE["token"] is None or stale:
         _TOKEN_CACHE["token"] = _fetch_token(page_url)
         _TOKEN_CACHE["fetched_at"] = now
-    return _TOKEN_CACHE["token"]
+    token = _TOKEN_CACHE["token"]
+    assert token is not None  # set unconditionally in the branch above
+    return token
 
 
 _PLAYLIST_PATH_RE = re.compile(
@@ -99,7 +101,7 @@ def _amp_get(
 ) -> dict:
     """GET an Amp-API path, refreshing the token once on a 401."""
     for attempt in (1, 2):
-        token = get_token(page_url, force_refresh=(attempt == 2))
+        token = get_token(page_url, force_refresh=attempt == 2)
         try:
             with httpx.Client(timeout=20.0) as client:
                 resp = client.get(
@@ -122,7 +124,7 @@ def _amp_get(
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise AppleResolverError(f"Apple Music HTTP {resp.status_code}") from exc
-        return resp.json()
+        return dict(resp.json())
     raise AppleResolverError("Apple Amp-API auth failed after token refresh")
 
 
@@ -147,12 +149,16 @@ def resolve_apple_playlist(url: str) -> list[TrackCandidate]:
     if not match:
         raise PlaylistNotFoundError(f"Not an Apple Music playlist URL: {url}")
     storefront, playlist_id = match.group(1), match.group(2)
-    path = f"/v1/catalog/{storefront}/playlists/{playlist_id}/tracks?limit=100"
+    path: Optional[str] = (
+        f"/v1/catalog/{storefront}/playlists/{playlist_id}/tracks?limit=100"
+    )
     candidates: list[TrackCandidate] = []
     while path:
         body = _amp_get(path, url)
         candidates.extend(_candidate_from_apple(t) for t in body.get("data", []))
-        nxt = body.get("next")  # relative path; `limit` is intentionally dropped
+        nxt: Optional[str] = body.get(
+            "next"
+        )  # relative path; `limit` is intentionally dropped
         path = nxt or None
     return candidates
 
