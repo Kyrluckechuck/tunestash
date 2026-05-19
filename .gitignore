@@ -126,8 +126,8 @@ frontend/src/graphql/generated/
 # Local docker compose overrides
 docker-compose.override.yml
 
-# Cache directories
-.cache/
+# Cache directories (matches both a .cache dir and a stray .cache file)
+.cache
 .parcel-cache/
 .eslintcache
 
@@ -148,3 +148,6 @@ $RECYCLE.BIN/
 
 # Git worktrees
 .worktrees/
+
+# Claude Code local state (per-developer permissions, runtime locks)
+.claude/
