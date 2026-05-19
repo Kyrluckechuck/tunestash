@@ -264,7 +264,7 @@ class Playlist(models.Model):
         Account, on_delete=models.PROTECT, related_name="created_playlists"
     )
     invite_token = models.CharField(
-        max_length=64, unique=True, db_index=True, default=generate_invite_token
+        max_length=64, unique=True, default=generate_invite_token
     )
     created_at = models.DateTimeField(auto_now_add=True)
     min_size = models.PositiveSmallIntegerField(default=0)

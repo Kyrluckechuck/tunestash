@@ -66,7 +66,8 @@ schema change.
 - `name` — `CharField`
 - `description` — `TextField(blank=True)`
 - `created_by` — FK → `Account`, `on_delete=PROTECT`, `related_name="created_playlists"`
-- `invite_token` — `CharField(unique=True, db_index=True)`, default
+- `invite_token` — `CharField(unique=True)` (the unique constraint already
+  indexes it), default
   `secrets.token_urlsafe(16)`
 - `created_at`
 - Engine knobs (used by the Phase 2 selection engine; stored now so Phase 2 needs no
