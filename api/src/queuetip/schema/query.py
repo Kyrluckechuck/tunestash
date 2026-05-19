@@ -12,9 +12,9 @@ class Query:
     """Root query for the Queuetip public API."""
 
     @strawberry.field
-    def me(self, info: Info) -> AccountType | None:
+    def me(self, info: Info[QueuetipContext, None]) -> AccountType | None:
         """Return the currently signed-in account, or null if anonymous."""
-        ctx: QueuetipContext = info.context
+        ctx = info.context
         if ctx.account is None:
             return None
         return AccountType.from_model(ctx.account)

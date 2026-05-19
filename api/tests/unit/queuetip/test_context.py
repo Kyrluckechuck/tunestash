@@ -1,8 +1,8 @@
 import pytest
 from asgiref.sync import sync_to_async
-from queuetip.models import Account
 from starlette.requests import Request
 
+from queuetip.models import Account
 from src.queuetip import auth
 from src.queuetip.context import get_context
 

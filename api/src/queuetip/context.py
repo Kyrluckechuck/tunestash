@@ -7,8 +7,9 @@ Resolves the current Account from the signed session cookie. Resolvers read
 from dataclasses import dataclass
 
 from asgiref.sync import sync_to_async
-from queuetip.models import Account
 from starlette.requests import Request
+
+from queuetip.models import Account
 
 from .auth import SESSION_COOKIE, InvalidTokenError, read_session_token
 

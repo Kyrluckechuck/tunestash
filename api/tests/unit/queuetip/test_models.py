@@ -1,6 +1,8 @@
 from django.db import IntegrityError
 
 import pytest
+from tests.factories import ArtistFactory, SongFactory
+
 from queuetip.models import (
     Account,
     AuthIdentity,
@@ -9,7 +11,6 @@ from queuetip.models import (
     PlaylistMembership,
     Vote,
 )
-from tests.factories import ArtistFactory, SongFactory
 
 
 @pytest.mark.django_db
