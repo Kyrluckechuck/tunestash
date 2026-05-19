@@ -8,15 +8,22 @@ import strawberry
 from asgiref.sync import sync_to_async
 from strawberry.types import Info
 
-from queuetip.models import Account, AuthIdentity, Playlist
+from queuetip.models import Account, AuthIdentity, Contribution, Playlist, Vote
 
 from ..auth import make_magic_link_token
 from ..context import QueuetipContext
 from ..email import send_magic_link_email
-from ..errors import AuthRequiredError, ValidationError
-from ..graphql_types import EngineSettingsInput, PlaylistType
+from ..errors import AuthRequiredError, NotFoundError, ValidationError
+from ..graphql_types import (
+    ContributionResult,
+    ContributionType,
+    EngineSettingsInput,
+    PlaylistType,
+)
+from ..services.contribution import ContributionService
 from ..services.membership import MembershipService
 from ..services.playlist import PlaylistService
+from ..services.vote import VoteService
 
 # Pragmatic email shape check — rejects obvious garbage before we create a row
 # or hand the address to the mail backend. Not a full RFC 5322 validation.
@@ -55,6 +62,35 @@ def _require_account(info: Info[QueuetipContext, None]) -> Account:
     if ctx.account is None:
         raise AuthRequiredError("Sign in to perform this action.")
     return ctx.account
+
+
+async def _list_votes(contribution: Contribution) -> list[Vote]:
+    """Fetch the votes for a contribution (pre-fetching account)."""
+    return await sync_to_async(
+        lambda: list(
+            Vote.objects.filter(contribution=contribution).select_related("account")
+        )
+    )()
+
+
+async def _load_contribution_view(contribution_id: int) -> ContributionType:
+    """Reload a contribution with all relations needed for the GraphQL type."""
+
+    def _load() -> tuple[Contribution, list[Vote]]:
+        c = (
+            Contribution.objects.select_related(
+                "song", "song__primary_artist", "contributed_by"
+            )
+            .filter(id=contribution_id)
+            .first()
+        )
+        if c is None:
+            raise NotFoundError(f"No contribution with id={contribution_id}")
+        votes = list(Vote.objects.filter(contribution=c).select_related("account"))
+        return c, votes
+
+    contribution, votes = await sync_to_async(_load)()
+    return ContributionType.from_model(contribution, votes)
 
 
 async def _build_playlist_type(playlist: Playlist) -> PlaylistType:
@@ -261,3 +297,71 @@ class Mutation:
         await MembershipService.promote(actor, int(playlist_id), int(account_id))
         playlist = await PlaylistService.get_by_id(int(playlist_id))
         return await _build_playlist_type(playlist)
+
+    @strawberry.mutation
+    async def contribute_from_search(
+        self,
+        info: Info[QueuetipContext, None],
+        playlist_id: strawberry.ID,
+        deezer_track_id: str,
+    ) -> ContributionResult:
+        """Contribute a song picked from `catalogSearch` (by Deezer track id)."""
+        account = _require_account(info)
+        contribution, already_present = (
+            await ContributionService.contribute_from_search(
+                account, int(playlist_id), deezer_track_id
+            )
+        )
+        votes = await _list_votes(contribution)
+        return ContributionResult(
+            contribution=ContributionType.from_model(contribution, votes),
+            already_present=already_present,
+        )
+
+    @strawberry.mutation
+    async def contribute_from_link(
+        self,
+        info: Info[QueuetipContext, None],
+        playlist_id: strawberry.ID,
+        url: str,
+    ) -> ContributionResult:
+        """Contribute a song by pasting its Spotify / Apple / Deezer URL."""
+        account = _require_account(info)
+        contribution, already_present = await ContributionService.contribute_from_link(
+            account, int(playlist_id), url
+        )
+        votes = await _list_votes(contribution)
+        return ContributionResult(
+            contribution=ContributionType.from_model(contribution, votes),
+            already_present=already_present,
+        )
+
+    @strawberry.mutation
+    async def remove_contribution(
+        self, info: Info[QueuetipContext, None], id: strawberry.ID
+    ) -> DeletePlaylistResult:
+        """Remove a contribution. Owner may remove any; member only their own."""
+        account = _require_account(info)
+        await ContributionService.remove_contribution(account, int(id))
+        return DeletePlaylistResult(deleted=True)
+
+    @strawberry.mutation
+    async def cast_vote(
+        self,
+        info: Info[QueuetipContext, None],
+        contribution_id: strawberry.ID,
+        value: int,
+    ) -> ContributionType:
+        """Cast a +1 or -1 vote on a contribution. Re-cast replaces the value."""
+        account = _require_account(info)
+        await VoteService.cast_vote(account, int(contribution_id), value)
+        return await _load_contribution_view(int(contribution_id))
+
+    @strawberry.mutation
+    async def clear_vote(
+        self, info: Info[QueuetipContext, None], contribution_id: strawberry.ID
+    ) -> ContributionType:
+        """Clear the caller's vote on a contribution. Idempotent."""
+        account = _require_account(info)
+        await VoteService.clear_vote(account, int(contribution_id))
+        return await _load_contribution_view(int(contribution_id))
