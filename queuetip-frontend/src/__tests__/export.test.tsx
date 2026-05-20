@@ -1,0 +1,175 @@
+import React from "react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import { MockedProvider } from "@apollo/client/testing";
+
+import { CreateExportDialog } from "@/features/playlist/CreateExportDialog";
+import { ExportPage } from "@/routes/exports.$id";
+import { CreateExportDocument, ExportDocument } from "@/types/generated/graphql";
+
+const mockNavigate = vi.fn();
+
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    Link: ({
+      children,
+      ...props
+    }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children?: React.ReactNode }) => (
+      <a {...props}>{children}</a>
+    ),
+    Navigate: () => <div data-testid="navigate" />,
+    useRouter: () => ({ navigate: mockNavigate }),
+    createFileRoute: () => () => ({ options: {}, useParams: () => ({ id: "5" }) }),
+  };
+});
+
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock("@/lib/auth", () => ({
+  useMe: () => ({
+    account: { id: "1", displayName: "Owner" },
+    loading: false,
+  }),
+}));
+
+const PLAYLIST_ID = "7";
+const SNAPSHOT_ID = "5";
+
+describe("CreateExportDialog", () => {
+  it("clicking Create export calls createExport mutation and navigates to snapshot page", async () => {
+    const user = userEvent.setup();
+
+    const createExportMock = {
+      request: {
+        query: CreateExportDocument,
+        variables: {
+          playlistId: PLAYLIST_ID,
+          options: { excludeMyDownvotes: false },
+        },
+      },
+      result: {
+        data: {
+          createExport: {
+            __typename: "ExportSnapshotType",
+            id: SNAPSHOT_ID,
+            m3uUrl: `http://localhost:5050/exports/${SNAPSHOT_ID}.m3u`,
+            warningMessage: "",
+          },
+        },
+      },
+    };
+
+    render(
+      <MockedProvider mocks={[createExportMock]}>
+        <CreateExportDialog playlistId={PLAYLIST_ID} open onOpenChange={vi.fn()} />
+      </MockedProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /create export/i }));
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: "/exports/$id",
+        params: { id: SNAPSHOT_ID },
+      });
+    });
+  });
+});
+
+describe("ExportPage", () => {
+  const exportMock = {
+    request: {
+      query: ExportDocument,
+      variables: { id: SNAPSHOT_ID },
+    },
+    result: {
+      data: {
+        export: {
+          __typename: "ExportSnapshotType",
+          id: SNAPSHOT_ID,
+          createdAt: "2026-05-19T12:00:00Z",
+          parameters: '{"exclude_my_downvotes": false}',
+          rngSeed: "1234567890",
+          warningMessage: "",
+          m3uUrl: `http://localhost:5050/exports/${SNAPSHOT_ID}.m3u`,
+          requestedBy: {
+            __typename: "AccountType",
+            id: "1",
+            displayName: "Owner",
+          },
+          playlist: {
+            __typename: "PlaylistType",
+            id: "7",
+            name: "Friday Mix",
+            description: "A chill set",
+          },
+          tracks: [
+            {
+              __typename: "ExportSnapshotTrackType",
+              id: "101",
+              position: 0,
+              inclusionReason: "guaranteed",
+              rollProbability: 1.0,
+              song: {
+                __typename: "SongRef",
+                id: "500",
+                title: "Bohemian Rhapsody",
+                artist: "Queen",
+                isrc: "GBUM71029604",
+              },
+            },
+            {
+              __typename: "ExportSnapshotTrackType",
+              id: "102",
+              position: 1,
+              inclusionReason: "rolled",
+              rollProbability: 0.72,
+              song: {
+                __typename: "SongRef",
+                id: "501",
+                title: "Let It Be",
+                artist: "The Beatles",
+                isrc: "GBAYE6800013",
+              },
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  it("renders both tracks in position order with m3u download link", async () => {
+    render(
+      <MockedProvider mocks={[exportMock]}>
+        <ExportPage />
+      </MockedProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Bohemian Rhapsody")).toBeInTheDocument();
+    });
+
+    // Both tracks present
+    expect(screen.getByText("Bohemian Rhapsody")).toBeInTheDocument();
+    expect(screen.getByText("Let It Be")).toBeInTheDocument();
+
+    // Position labels (1-indexed)
+    expect(screen.getByText("1.")).toBeInTheDocument();
+    expect(screen.getByText("2.")).toBeInTheDocument();
+
+    // m3u download link has the right href
+    const downloadLink = screen.getByRole("link", { name: /download m3u/i });
+    expect(downloadLink).toHaveAttribute(
+      "href",
+      `http://localhost:5050/exports/${SNAPSHOT_ID}.m3u`,
+    );
+  });
+});

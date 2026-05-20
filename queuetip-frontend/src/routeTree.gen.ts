@@ -13,6 +13,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PlaylistsIndexRouteImport } from './routes/playlists.index'
 import { Route as PlaylistsIdRouteImport } from './routes/playlists.$id'
+import { Route as ExportsIdRouteImport } from './routes/exports.$id'
 
 const SignInRoute = SignInRouteImport.update({
   id: '/sign-in',
@@ -34,16 +35,23 @@ const PlaylistsIdRoute = PlaylistsIdRouteImport.update({
   path: '/playlists/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExportsIdRoute = ExportsIdRouteImport.update({
+  id: '/exports/$id',
+  path: '/exports/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
+  '/exports/$id': typeof ExportsIdRoute
   '/playlists/$id': typeof PlaylistsIdRoute
   '/playlists/': typeof PlaylistsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
+  '/exports/$id': typeof ExportsIdRoute
   '/playlists/$id': typeof PlaylistsIdRoute
   '/playlists': typeof PlaylistsIndexRoute
 }
@@ -51,20 +59,33 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
+  '/exports/$id': typeof ExportsIdRoute
   '/playlists/$id': typeof PlaylistsIdRoute
   '/playlists/': typeof PlaylistsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/sign-in' | '/playlists/$id' | '/playlists/'
+  fullPaths:
+    | '/'
+    | '/sign-in'
+    | '/exports/$id'
+    | '/playlists/$id'
+    | '/playlists/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/sign-in' | '/playlists/$id' | '/playlists'
-  id: '__root__' | '/' | '/sign-in' | '/playlists/$id' | '/playlists/'
+  to: '/' | '/sign-in' | '/exports/$id' | '/playlists/$id' | '/playlists'
+  id:
+    | '__root__'
+    | '/'
+    | '/sign-in'
+    | '/exports/$id'
+    | '/playlists/$id'
+    | '/playlists/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SignInRoute: typeof SignInRoute
+  ExportsIdRoute: typeof ExportsIdRoute
   PlaylistsIdRoute: typeof PlaylistsIdRoute
   PlaylistsIndexRoute: typeof PlaylistsIndexRoute
 }
@@ -99,12 +120,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlaylistsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/exports/$id': {
+      id: '/exports/$id'
+      path: '/exports/$id'
+      fullPath: '/exports/$id'
+      preLoaderRoute: typeof ExportsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SignInRoute: SignInRoute,
+  ExportsIdRoute: ExportsIdRoute,
   PlaylistsIdRoute: PlaylistsIdRoute,
   PlaylistsIndexRoute: PlaylistsIndexRoute,
 }

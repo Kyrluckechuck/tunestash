@@ -13,6 +13,7 @@ import { ContributionRow } from "@/features/playlist/ContributionRow";
 import { MemberList } from "@/features/playlist/MemberList";
 import { BulkImportDialog } from "@/features/playlist/BulkImportDialog";
 import { ContributeDialog } from "@/features/playlist/ContributeDialog";
+import { CreateExportDialog } from "@/features/playlist/CreateExportDialog";
 
 function PlaylistDetailContent({ id }: { id: string }) {
   const { account } = useMe();
@@ -21,6 +22,7 @@ function PlaylistDetailContent({ id }: { id: string }) {
   });
   const [contributeOpen, setContributeOpen] = React.useState(false);
   const [bulkImportOpen, setBulkImportOpen] = React.useState(false);
+  const [exportOpen, setExportOpen] = React.useState(false);
 
   if (loading || !data) return <p className="container py-8 text-muted-foreground">Loading…</p>;
   if (!data.playlist) {
@@ -52,6 +54,9 @@ function PlaylistDetailContent({ id }: { id: string }) {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Contributions</CardTitle>
             <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setExportOpen(true)}>
+                Create export
+              </Button>
               <Button size="sm" variant="outline" onClick={() => setBulkImportOpen(true)}>
                 Bulk import
               </Button>
@@ -111,6 +116,11 @@ function PlaylistDetailContent({ id }: { id: string }) {
         playlistId={id}
         open={contributeOpen}
         onOpenChange={setContributeOpen}
+      />
+      <CreateExportDialog
+        playlistId={id}
+        open={exportOpen}
+        onOpenChange={setExportOpen}
       />
     </div>
   );
