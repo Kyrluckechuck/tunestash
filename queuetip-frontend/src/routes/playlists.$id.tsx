@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContributionRow } from "@/features/playlist/ContributionRow";
 import { MemberList } from "@/features/playlist/MemberList";
+import { BulkImportDialog } from "@/features/playlist/BulkImportDialog";
 import { ContributeDialog } from "@/features/playlist/ContributeDialog";
 
 function PlaylistDetailContent({ id }: { id: string }) {
@@ -19,6 +20,7 @@ function PlaylistDetailContent({ id }: { id: string }) {
     variables: { id },
   });
   const [contributeOpen, setContributeOpen] = React.useState(false);
+  const [bulkImportOpen, setBulkImportOpen] = React.useState(false);
 
   if (loading || !data) return <p className="container py-8 text-muted-foreground">Loading…</p>;
   if (!data.playlist) {
@@ -49,9 +51,14 @@ function PlaylistDetailContent({ id }: { id: string }) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Contributions</CardTitle>
-            <Button size="sm" onClick={() => setContributeOpen(true)}>
-              Contribute
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setBulkImportOpen(true)}>
+                Bulk import
+              </Button>
+              <Button size="sm" onClick={() => setContributeOpen(true)}>
+                Contribute
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {contributions.length === 0 ? (
@@ -95,6 +102,11 @@ function PlaylistDetailContent({ id }: { id: string }) {
         </Card>
       </aside>
 
+      <BulkImportDialog
+        playlistId={id}
+        open={bulkImportOpen}
+        onOpenChange={setBulkImportOpen}
+      />
       <ContributeDialog
         playlistId={id}
         open={contributeOpen}

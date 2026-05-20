@@ -1,0 +1,25 @@
+mutation BulkImportPlaylist($playlistId: ID!, $url: String!) {
+  bulkImportPlaylist(playlistId: $playlistId, url: $url) {
+    id
+    status
+    sourceUrl
+    addedCount
+    skippedCount
+    unresolvedCount
+    unresolvedTitles
+    error
+  }
+}
+
+query BulkImportJob($id: ID!) {
+  bulkImportJob(id: $id) {
+    id
+    status
+    addedCount
+    skippedCount
+    unresolvedCount
+    unresolvedTitles
+    error
+    finishedAt
+  }
+}
