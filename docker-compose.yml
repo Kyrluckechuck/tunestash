@@ -140,6 +140,17 @@ services:
         reservations:
           memory: 256M
 
+  queuetip-frontend:
+    image: ${QUEUETIP_FRONTEND_IMAGE:-ghcr.io/kyrluckechuck/queuetip-frontend:latest}
+    depends_on:
+      queuetip:
+        condition: service_healthy
+    networks:
+      - slm_net
+    ports:
+      - "${QUEUETIP_FRONTEND_PORT:-3001}:80"
+    restart: unless-stopped
+
   frontend:
     # Nginx frontend service - serves static files and proxies API
     image: ${FRONTEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash-frontend:latest}

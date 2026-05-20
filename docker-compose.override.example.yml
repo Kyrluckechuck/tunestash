@@ -54,6 +54,24 @@ services:
       - python_packages:/app/.venv
       - pip_cache:/root/.cache/pip
 
+  queuetip-frontend-dev:
+    build:
+      context: ./queuetip-frontend
+      target: development
+    command: yarn dev --host 0.0.0.0 --port 3001
+    volumes:
+      - ./queuetip-frontend:/app
+      - /app/node_modules
+    ports:
+      - "3001:3001"
+    depends_on:
+      queuetip:
+        condition: service_healthy
+    environment:
+      - VITE_QUEUETIP_GRAPHQL_URL=http://localhost:5050/graphql
+    networks:
+      - slm_net
+
   # Disable main frontend service in favor of frontend-dev
   frontend:
     profiles:

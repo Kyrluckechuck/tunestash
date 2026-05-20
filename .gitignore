@@ -34,6 +34,7 @@ package-lock.json
 **/package-lock.json
 yarn.lock
 !frontend/yarn.lock
+!queuetip-frontend/yarn.lock
 !pnpm-lock.yaml
 
 # Editor
