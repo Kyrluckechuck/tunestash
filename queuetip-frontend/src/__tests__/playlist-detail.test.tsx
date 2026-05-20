@@ -51,6 +51,15 @@ const playlistDetailMock = {
         name: "Friday Mix",
         description: "A chill playlist",
         inviteToken: "tok-abc",
+        engineSettings: {
+          __typename: "EngineSettings",
+          minSize: 5,
+          maxSize: null,
+          tHigh: 20,
+          tLow: 5,
+          base: 0.5,
+          pFloor: 0.1,
+        },
         createdBy: { __typename: "AccountType", id: "1", displayName: "Owner" },
         members: [
           {

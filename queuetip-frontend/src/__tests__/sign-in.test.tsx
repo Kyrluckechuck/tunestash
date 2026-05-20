@@ -14,6 +14,10 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
     Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
       <a href={to} className={className}>{children}</a>
     ),
+    createFileRoute: () => () => ({
+      options: {},
+      useSearch: () => ({ next: undefined }),
+    }),
   };
 });
 

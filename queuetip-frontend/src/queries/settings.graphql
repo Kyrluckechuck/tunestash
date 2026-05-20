@@ -1,0 +1,54 @@
+mutation UpdatePlaylistSettings(
+  $id: ID!
+  $name: String
+  $description: String
+  $engine: EngineSettingsInput
+) {
+  updatePlaylistSettings(
+    id: $id
+    name: $name
+    description: $description
+    engine: $engine
+  ) {
+    id
+    name
+    description
+  }
+}
+
+mutation RegenerateInviteToken($id: ID!) {
+  regenerateInviteToken(id: $id) {
+    inviteToken
+  }
+}
+
+mutation DeletePlaylist($id: ID!) {
+  deletePlaylist(id: $id) {
+    deleted
+  }
+}
+
+mutation LeavePlaylist($id: ID!) {
+  leavePlaylist(id: $id) {
+    deleted
+  }
+}
+
+mutation KickMember($playlistId: ID!, $accountId: ID!) {
+  kickMember(playlistId: $playlistId, accountId: $accountId) {
+    deleted
+  }
+}
+
+mutation PromoteMember($playlistId: ID!, $accountId: ID!) {
+  promoteMember(playlistId: $playlistId, accountId: $accountId) {
+    id
+    members {
+      account {
+        id
+        displayName
+      }
+      role
+    }
+  }
+}

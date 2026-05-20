@@ -2,6 +2,7 @@ import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation } from "@apollo/client";
 import { CheckCircle2 } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 import { RequestMagicLinkDocument } from "@/types/generated/graphql";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/card";
 
 export function SignInPage() {
+  const { next } = Route.useSearch();
   const [email, setEmail] = React.useState("");
   const [displayName, setDisplayName] = React.useState("");
   const [sent, setSent] = React.useState<{ message: string } | null>(null);
@@ -51,7 +53,16 @@ export function SignInPage() {
             <CardTitle>Check your email</CardTitle>
             <CardDescription>{sent.message}</CardDescription>
           </CardHeader>
-          <CardFooter>
+          <CardFooter className="flex flex-col items-start gap-3">
+            {next ? (
+              <p className="text-sm text-muted-foreground flex items-center gap-1">
+                <ExternalLink className="h-3 w-3 shrink-0" />
+                After signing in, return to:{" "}
+                <a href={next} className="underline hover:text-foreground break-all">
+                  {next}
+                </a>
+              </p>
+            ) : null}
             <Button
               variant="ghost"
               onClick={() => {
@@ -120,4 +131,7 @@ export function SignInPage() {
 
 export const Route = createFileRoute("/sign-in")({
   component: SignInPage,
+  validateSearch: (search: Record<string, unknown>): { next?: string } => ({
+    next: typeof search.next === "string" ? search.next : undefined,
+  }),
 });

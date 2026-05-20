@@ -8,6 +8,14 @@ query PlaylistDetail($id: ID!) {
       id
       displayName
     }
+    engineSettings {
+      minSize
+      maxSize
+      tHigh
+      tLow
+      base
+      pFloor
+    }
     members {
       account {
         id
