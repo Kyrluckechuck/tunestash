@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignInRouteImport } from './routes/sign-in'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PlaylistsIndexRouteImport } from './routes/playlists.index'
 import { Route as PlaylistsIdRouteImport } from './routes/playlists.$id'
@@ -19,6 +20,11 @@ import { Route as ExportsIdRouteImport } from './routes/exports.$id'
 const SignInRoute = SignInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -49,6 +55,7 @@ const ExportsIdRoute = ExportsIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/exports/$id': typeof ExportsIdRoute
   '/join/$token': typeof JoinTokenRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/exports/$id': typeof ExportsIdRoute
   '/join/$token': typeof JoinTokenRoute
@@ -66,6 +74,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/exports/$id': typeof ExportsIdRoute
   '/join/$token': typeof JoinTokenRoute
@@ -76,6 +85,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/settings'
     | '/sign-in'
     | '/exports/$id'
     | '/join/$token'
@@ -84,6 +94,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/settings'
     | '/sign-in'
     | '/exports/$id'
     | '/join/$token'
@@ -92,6 +103,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/settings'
     | '/sign-in'
     | '/exports/$id'
     | '/join/$token'
@@ -101,6 +113,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   ExportsIdRoute: typeof ExportsIdRoute
   JoinTokenRoute: typeof JoinTokenRoute
@@ -115,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/sign-in'
       fullPath: '/sign-in'
       preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -157,6 +177,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   ExportsIdRoute: ExportsIdRoute,
   JoinTokenRoute: JoinTokenRoute,

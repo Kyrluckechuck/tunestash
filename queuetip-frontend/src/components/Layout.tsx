@@ -23,6 +23,9 @@ export function Layout() {
                 <span className="text-sm text-muted-foreground">
                   {account.displayName}
                 </span>
+                <Link to="/settings">
+                  <Button variant="ghost" size="sm">Settings</Button>
+                </Link>
                 <Button variant="outline" size="sm" onClick={handleSignOut}>
                   Sign out
                 </Button>

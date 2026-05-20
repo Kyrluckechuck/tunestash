@@ -96,6 +96,7 @@ const signedInMeMock = (id: string, displayName: string) => ({
         id,
         displayName,
         createdAt: "2026-05-19T00:00:00Z",
+        externalServices: [],
       },
     },
   },

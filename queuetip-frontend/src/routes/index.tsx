@@ -1,9 +1,27 @@
+import * as React from "react";
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
+import { toast } from "sonner";
+
 import { useMe } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 
 function Home() {
   const { account, loading } = useMe();
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("spotify_linked") === "1") {
+      toast.success("Spotify linked!");
+      params.delete("spotify_linked");
+      const newSearch = params.toString();
+      window.history.replaceState(
+        {},
+        "",
+        window.location.pathname + (newSearch ? `?${newSearch}` : ""),
+      );
+    }
+  }, []);
+
   if (loading) return null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (account) return <Navigate to={"/playlists" as any} />;

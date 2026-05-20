@@ -29,6 +29,7 @@ const meMock = {
         id: "1",
         displayName: "Owner",
         createdAt: "2026-05-19T00:00:00Z",
+        externalServices: [],
       },
     },
   },

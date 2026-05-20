@@ -25,6 +25,7 @@ describe("RequireAuth", () => {
               id: "1",
               displayName: "Jo",
               createdAt: "2026-05-19T00:00:00Z",
+              externalServices: [],
             },
           },
         },
