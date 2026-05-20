@@ -16,10 +16,12 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
 type Documents = {
     "mutation RequestMagicLink($email: String!, $displayName: String) {\n  requestMagicLink(email: $email, displayName: $displayName) {\n    sent\n    message\n  }\n}": typeof types.RequestMagicLinkDocument,
     "query Me {\n  me {\n    id\n    displayName\n    createdAt\n  }\n}": typeof types.MeDocument,
+    "query MyPlaylists {\n  myPlaylists {\n    id\n    name\n    description\n    createdAt\n    members {\n      account {\n        id\n        displayName\n      }\n      role\n    }\n  }\n}\n\nmutation CreatePlaylist($name: String!, $description: String) {\n  createPlaylist(name: $name, description: $description) {\n    id\n    name\n  }\n}": typeof types.MyPlaylistsDocument,
 };
 const documents: Documents = {
     "mutation RequestMagicLink($email: String!, $displayName: String) {\n  requestMagicLink(email: $email, displayName: $displayName) {\n    sent\n    message\n  }\n}": types.RequestMagicLinkDocument,
     "query Me {\n  me {\n    id\n    displayName\n    createdAt\n  }\n}": types.MeDocument,
+    "query MyPlaylists {\n  myPlaylists {\n    id\n    name\n    description\n    createdAt\n    members {\n      account {\n        id\n        displayName\n      }\n      role\n    }\n  }\n}\n\nmutation CreatePlaylist($name: String!, $description: String) {\n  createPlaylist(name: $name, description: $description) {\n    id\n    name\n  }\n}": types.MyPlaylistsDocument,
 };
 
 /**
@@ -44,6 +46,10 @@ export function graphql(source: "mutation RequestMagicLink($email: String!, $dis
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "query Me {\n  me {\n    id\n    displayName\n    createdAt\n  }\n}"): (typeof documents)["query Me {\n  me {\n    id\n    displayName\n    createdAt\n  }\n}"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "query MyPlaylists {\n  myPlaylists {\n    id\n    name\n    description\n    createdAt\n    members {\n      account {\n        id\n        displayName\n      }\n      role\n    }\n  }\n}\n\nmutation CreatePlaylist($name: String!, $description: String) {\n  createPlaylist(name: $name, description: $description) {\n    id\n    name\n  }\n}"): (typeof documents)["query MyPlaylists {\n  myPlaylists {\n    id\n    name\n    description\n    createdAt\n    members {\n      account {\n        id\n        displayName\n      }\n      role\n    }\n  }\n}\n\nmutation CreatePlaylist($name: String!, $description: String) {\n  createPlaylist(name: $name, description: $description) {\n    id\n    name\n  }\n}"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};
