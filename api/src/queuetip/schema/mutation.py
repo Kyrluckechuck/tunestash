@@ -22,6 +22,7 @@ from queuetip.models import (
 )
 
 from ..auth import make_magic_link_token
+from ..client_ip import get_client_ip
 from ..context import QueuetipContext
 from ..email import send_magic_link_email
 from ..errors import AuthRequiredError, NotFoundError, ValidationError
@@ -215,10 +216,13 @@ async def _request_magic_link(
     if identity is None:
         clean_name = display_name.strip() if display_name else ""
         if not clean_name:
+            # Don't reveal whether the email is registered: an attacker could
+            # enumerate accounts by observing which addresses return "no account"
+            # vs "check your email". Both paths return a consistent message.
             return RequestMagicLinkResult(
                 sent=False,
-                message="No account exists for that email. "
-                "Provide a display name to sign up.",
+                message="If that email is registered, a sign-in link has been sent. "
+                "If you're new, provide a display name to sign up.",
             )
         if len(clean_name) > _DISPLAY_NAME_MAX:
             return RequestMagicLinkResult(
@@ -277,9 +281,7 @@ class Mutation:
     ) -> RequestMagicLinkResult:
         """Request a magic-link sign-in email. Creates an account if needed."""
         req = info.context.request
-        ip = (
-            req.client.host if req is not None and req.client is not None else "unknown"
-        )
+        ip = get_client_ip(req) if req is not None else "unknown"
         return await _request_magic_link(email, display_name, ip=ip)
 
     @strawberry.mutation

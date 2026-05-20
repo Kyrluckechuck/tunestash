@@ -160,3 +160,16 @@ async def test_introspection_enabled_in_debug_mode(async_client):
     # In DEBUG mode (tests), introspection must succeed
     assert "data" in body
     assert body["data"] is not None
+
+
+@pytest.mark.asyncio
+async def test_security_headers_present_on_health(async_client):
+    """The security-headers middleware must attach hardening headers to all responses."""
+    async with async_client as client:
+        response = await client.get("/health")
+    assert response.status_code == 200
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert response.headers.get("x-frame-options") == "DENY"
+    assert response.headers.get("referrer-policy") == "same-origin"
+    assert response.headers.get("permissions-policy") == "interest-cohort=()"
+    # HSTS is only set outside DEBUG — test env runs with DEBUG=True, so absent here.

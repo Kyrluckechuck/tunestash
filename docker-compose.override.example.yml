@@ -121,7 +121,7 @@ services:
       python -c 'import watchdog; print(\"Watchdog installed successfully\")' &&
       echo '👷 Starting Celery worker with auto-restart on code changes...';
       python -m watchdog.watchmedo auto-restart --directory=/app --pattern='*.py' --recursive --
-      celery -A celery_app worker --loglevel=info --queues=downloads,metadata,celery --concurrency=2
+      celery -A celery_app worker --loglevel=info --queues=downloads,metadata,celery,queuetip,queuetip-downloads --concurrency=2
       "
     environment:
       - INSTALL_DEV_DEPS=true

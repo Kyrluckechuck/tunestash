@@ -44,6 +44,24 @@ def create_queuetip_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def _security_headers(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        # Hardening headers for the public-facing process. The frontend's reverse
+        # proxy may set additional headers (CSP); these are the backend's baseline.
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault("Permissions-Policy", "interest-cohort=()")
+        if not dj_settings.DEBUG:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
+        return response
+
     from django.db import close_old_connections  # noqa: E402
 
     @app.middleware("http")

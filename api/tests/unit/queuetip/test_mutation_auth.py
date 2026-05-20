@@ -24,6 +24,9 @@ async def test_request_magic_link_creates_account_for_new_email(mailoutbox):
 async def test_request_magic_link_unknown_email_without_name_does_not_send(mailoutbox):
     result = await _request_magic_link("ghost@example.com", None)
     assert result.sent is False
+    # Message must not reveal whether the email is registered (enumeration hardening).
+    assert "no account" not in result.message.lower()
+    assert "sign up" in result.message.lower()
     assert await sync_to_async(Account.objects.count)() == 0
     assert len(mailoutbox) == 0
 

@@ -272,6 +272,14 @@ STORAGES = {
 QUEUETIP_PUBLIC_URL = os.getenv("QUEUETIP_PUBLIC_URL", "http://localhost:5050")
 # Origin of the Queuetip frontend — used for CORS on the public process.
 QUEUETIP_FRONTEND_URL = os.getenv("QUEUETIP_FRONTEND_URL", "http://localhost:3001")
+# Trusted reverse-proxy IPs/CIDRs for X-Forwarded-For parsing. When the
+# direct connection comes from one of these addresses, the XFF header is
+# trusted and the real client IP is extracted from it. Accepts individual IPs
+# and CIDR blocks (e.g. "10.0.0.0/8"). Empty by default — safe for deployments
+# that expose the process directly. Example production values:
+#   ["127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+# For Cloudflare Tunnel, add Cloudflare's published IPv4/IPv6 ranges instead.
+QUEUETIP_TRUSTED_PROXIES: list[str] = []
 
 # Email — magic-link delivery. Console backend by default (links print to logs);
 # set `email_host` in settings.yaml to switch to real SMTP delivery.
