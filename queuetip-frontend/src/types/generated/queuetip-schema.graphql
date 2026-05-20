@@ -1,0 +1,156 @@
+type AccountType {
+  id: ID!
+  displayName: String!
+  createdAt: DateTime!
+}
+
+type BulkImportJobType {
+  id: ID!
+  sourceUrl: String!
+  status: String!
+  addedCount: Int!
+  skippedCount: Int!
+  unresolvedCount: Int!
+  unresolvedTitles: [String!]!
+  error: String!
+  createdAt: DateTime!
+  finishedAt: DateTime
+}
+
+type CatalogSearchResultType {
+  deezerId: String!
+  title: String!
+  artist: String!
+  isrc: String
+  inLibrary: Boolean!
+}
+
+type ContributionResult {
+  contribution: ContributionType!
+  alreadyPresent: Boolean!
+}
+
+type ContributionType {
+  id: ID!
+  song: SongRef!
+  contributedBy: AccountType!
+  createdAt: DateTime!
+  votes: [VoteType!]!
+  netScore: Int!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+type DeletePlaylistResult {
+  deleted: Boolean!
+}
+
+type EngineSettings {
+  minSize: Int!
+  maxSize: Int
+  tHigh: Int!
+  tLow: Int!
+  base: Float!
+  pFloor: Float!
+}
+
+input EngineSettingsInput {
+  minSize: Int = null
+  maxSize: Int
+  tHigh: Int = null
+  tLow: Int = null
+  base: Float = null
+  pFloor: Float = null
+}
+
+input ExportOptionsInput {
+  excludeMyDownvotes: Boolean! = false
+}
+
+type ExportSnapshotTrackType {
+  id: ID!
+  song: SongRef!
+  position: Int!
+  inclusionReason: String!
+  rollProbability: Float!
+}
+
+type ExportSnapshotType {
+  id: ID!
+  requestedBy: AccountType!
+  createdAt: DateTime!
+  parameters: String!
+  rngSeed: String!
+  warningMessage: String!
+  tracks: [ExportSnapshotTrackType!]!
+  m3uUrl: String!
+}
+
+type MembershipType {
+  account: AccountType!
+  role: String!
+  joinedAt: DateTime!
+}
+
+type Mutation {
+  requestMagicLink(email: String!, displayName: String = null): RequestMagicLinkResult!
+  createPlaylist(name: String!, description: String! = ""): PlaylistType!
+  updatePlaylistSettings(id: ID!, name: String = null, description: String = null, engine: EngineSettingsInput = null): PlaylistType!
+  regenerateInviteToken(id: ID!): RegenerateInviteResult!
+  deletePlaylist(id: ID!): DeletePlaylistResult!
+  joinPlaylist(inviteToken: String!): PlaylistType!
+  leavePlaylist(id: ID!): DeletePlaylistResult!
+  kickMember(playlistId: ID!, accountId: ID!): DeletePlaylistResult!
+  promoteMember(playlistId: ID!, accountId: ID!): PlaylistType!
+  contributeFromSearch(playlistId: ID!, deezerTrackId: String!): ContributionResult!
+  contributeFromLink(playlistId: ID!, url: String!): ContributionResult!
+  removeContribution(id: ID!): DeletePlaylistResult!
+  castVote(contributionId: ID!, value: Int!): ContributionType!
+  clearVote(contributionId: ID!): ContributionType!
+  bulkImportPlaylist(playlistId: ID!, url: String!): BulkImportJobType!
+  createExport(playlistId: ID!, options: ExportOptionsInput = null): ExportSnapshotType!
+}
+
+type PlaylistType {
+  id: ID!
+  name: String!
+  description: String!
+  inviteToken: String!
+  createdBy: AccountType!
+  createdAt: DateTime!
+  engineSettings: EngineSettings!
+  members: [MembershipType!]!
+}
+
+type Query {
+  me: AccountType
+  myPlaylists: [PlaylistType!]!
+  playlist(id: ID = null, inviteToken: String = null): PlaylistType!
+  catalogSearch(query: String!, limit: Int! = 10): [CatalogSearchResultType!]!
+  bulkImportJob(id: ID!): BulkImportJobType!
+  export(id: ID!): ExportSnapshotType!
+  myPlaylistExports(playlistId: ID!): [ExportSnapshotType!]!
+}
+
+type RegenerateInviteResult {
+  inviteToken: String!
+}
+
+type RequestMagicLinkResult {
+  sent: Boolean!
+  message: String!
+}
+
+type SongRef {
+  id: ID!
+  title: String!
+  artist: String!
+  isrc: String
+}
+
+type VoteType {
+  account: AccountType!
+  value: Int!
+  createdAt: DateTime!
+}

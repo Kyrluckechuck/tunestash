@@ -1,0 +1,6 @@
+mutation RequestMagicLink($email: String!, $displayName: String) {
+  requestMagicLink(email: $email, displayName: $displayName) {
+    sent
+    message
+  }
+}

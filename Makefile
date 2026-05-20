@@ -180,7 +180,7 @@ test-migrations:
 	cd api && python manage.py showmigrations
 
 # GraphQL Schema & Type Generation
-.PHONY: graphql-generate graphql-generate-local graphql-schema-fetch
+.PHONY: graphql-generate graphql-generate-local graphql-schema-fetch queuetip-graphql-generate
 
 graphql-generate-local:
 	@echo "📝 Generating GraphQL types from local schema file (no server needed)..."
@@ -198,6 +198,12 @@ graphql-schema-fetch:
 	fi
 
 graphql-generate: graphql-generate-local
+
+queuetip-graphql-generate:
+	@echo "Exporting Queuetip schema and generating types..."
+	@docker compose exec -T web bash -c "cd /app && python manage.py shell -c \"from strawberry.printer import print_schema; from src.queuetip.schema import schema; print(print_schema(schema))\"" 2>/dev/null | python3 -c "import sys; lines = sys.stdin.readlines(); start = next((i for i, l in enumerate(lines) if l.strip().startswith(('type ', 'schema {', 'directive ', 'enum ', 'input ', 'scalar ', 'interface '))), 0); sys.stdout.write(''.join(lines[start:]))" > queuetip-frontend/src/types/generated/queuetip-schema.graphql
+	@cd queuetip-frontend && yarn generate
+	@echo "Done."
 
 # Linting and Code Quality
 lint: lint-api lint-frontend
