@@ -1,21 +1,25 @@
 import * as React from "react";
-import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@apollo/client";
 import { Plus } from "lucide-react";
 
 import { MyPlaylistsDocument } from "@/types/generated/graphql";
-import { useMe } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { NewPlaylistDialog } from "@/features/playlists/NewPlaylistDialog";
+import { RequireAuth } from "@/components/RequireAuth";
 
 export function PlaylistsIndex() {
-  const { account, loading: meLoading } = useMe();
-  const { data, loading } = useQuery(MyPlaylistsDocument, { skip: !account });
-  const [open, setOpen] = React.useState(false);
+  return (
+    <RequireAuth>
+      <PlaylistsIndexContent />
+    </RequireAuth>
+  );
+}
 
-  if (meLoading) return null;
-  if (!account) return <Navigate to="/sign-in" />;
+function PlaylistsIndexContent() {
+  const { data, loading } = useQuery(MyPlaylistsDocument);
+  const [open, setOpen] = React.useState(false);
 
   const playlists = data?.myPlaylists ?? [];
 
