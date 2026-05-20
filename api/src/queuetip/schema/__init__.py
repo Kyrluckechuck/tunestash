@@ -1,6 +1,7 @@
 """Queuetip public GraphQL schema."""
 
 import logging
+from typing import Any
 
 from django.conf import settings as dj_settings
 
@@ -46,7 +47,7 @@ def _should_mask_error(error: GraphQLError) -> bool:
     return True
 
 
-_extensions = [
+_extensions: list[Any] = [
     QueryDepthLimiter(max_depth=10),
     MaxAliasesLimiter(max_alias_count=15),
     MaskErrors(
