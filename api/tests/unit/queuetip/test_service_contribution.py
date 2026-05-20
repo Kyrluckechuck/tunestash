@@ -6,6 +6,7 @@ from tests.factories import ArtistFactory, SongFactory
 
 from queuetip.models import Account, Contribution
 from queuetip.permissions import PermissionDeniedError
+from src.queuetip.errors import NotFoundError
 from src.queuetip.resolution.errors import UnsupportedURLError
 from src.queuetip.services.contribution import ContributionService
 from src.queuetip.services.membership import MembershipService
@@ -186,3 +187,48 @@ async def test_contribute_from_link_resolution_failure_propagates():
             )
     count = await sync_to_async(Contribution.objects.filter(playlist=playlist).count)()
     assert count == 0
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_list_for_playlist_returns_contributions():
+    owner = await sync_to_async(Account.objects.create)(display_name="O")
+    member = await sync_to_async(Account.objects.create)(display_name="M")
+    playlist = await PlaylistService.create(owner, name="P", description="")
+    await MembershipService.join(member, playlist.invite_token)
+    song1 = await _make_song("Song A")
+    song2 = await _make_song("Song B")
+    with (
+        patch("src.queuetip.services.contribution.resolve_link") as resolve,
+        patch("src.queuetip.services.contribution.ingest_track") as ingest,
+    ):
+        resolve.return_value = object()
+        ingest.return_value = song1
+        await ContributionService.contribute_from_link(owner, playlist.id, _DEEZER_URL)
+        ingest.return_value = song2
+        await ContributionService.contribute_from_link(member, playlist.id, _DEEZER_URL)
+
+    contributions = await ContributionService.list_for_playlist(owner, playlist.id)
+    assert len(contributions) == 2
+    titles = {c.song.name for c in contributions}
+    assert titles == {"Song A", "Song B"}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_list_for_playlist_non_member_raises():
+    owner = await sync_to_async(Account.objects.create)(display_name="O")
+    outsider = await sync_to_async(Account.objects.create)(display_name="X")
+    playlist = await PlaylistService.create(owner, name="P", description="")
+
+    with pytest.raises(PermissionDeniedError):
+        await ContributionService.list_for_playlist(outsider, playlist.id)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_list_for_playlist_unknown_playlist_raises():
+    owner = await sync_to_async(Account.objects.create)(display_name="O")
+
+    with pytest.raises(NotFoundError):
+        await ContributionService.list_for_playlist(owner, 99999)

@@ -131,6 +131,7 @@ type Query {
   bulkImportJob(id: ID!): BulkImportJobType!
   export(id: ID!): ExportSnapshotType!
   myPlaylistExports(playlistId: ID!): [ExportSnapshotType!]!
+  playlistContributions(playlistId: ID!): [ContributionType!]!
 }
 
 type RegenerateInviteResult {

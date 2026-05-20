@@ -72,6 +72,30 @@ class ContributionService:
         )
 
     @staticmethod
+    async def list_for_playlist(
+        account: Account, playlist_id: int
+    ) -> list[Contribution]:
+        """Return all contributions for a playlist, ordered by net score desc.
+
+        Caller must be a member. Prefetches song, primary_artist, and votes so
+        callers can safely iterate without additional DB queries.
+        """
+
+        def _list() -> list[Contribution]:
+            playlist = Playlist.objects.filter(id=playlist_id).first()
+            if playlist is None:
+                raise NotFoundError(f"No playlist with id={playlist_id}")
+            require_member(account, playlist)
+            return list(
+                Contribution.objects.filter(playlist=playlist)
+                .select_related("contributed_by", "song", "song__primary_artist")
+                .prefetch_related("votes", "votes__account")
+                .order_by("-id")
+            )
+
+        return await sync_to_async(_list)()
+
+    @staticmethod
     async def remove_contribution(account: Account, contribution_id: int) -> None:
         """Owner may remove any contribution; member may remove their own only."""
 

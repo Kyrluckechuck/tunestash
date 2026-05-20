@@ -14,10 +14,12 @@ from ..graphql_types import (
     AccountType,
     BulkImportJobType,
     CatalogSearchResultType,
+    ContributionType,
     ExportSnapshotType,
     PlaylistType,
 )
 from ..services.bulk_import import BulkImportService
+from ..services.contribution import ContributionService
 from ..services.export import ExportService
 from ..services.playlist import PlaylistService
 
@@ -148,3 +150,16 @@ class Query:
         for s in snapshots:
             result.append(await _load_snapshot_with_tracks(s))
         return result
+
+    @strawberry.field
+    async def playlist_contributions(
+        self, info: Info[QueuetipContext, None], playlist_id: strawberry.ID
+    ) -> list[ContributionType]:
+        """Contributions for a playlist, ordered newest-first. Caller must be a member."""
+        account = _require_account(info)
+        contributions = await ContributionService.list_for_playlist(
+            account, int(playlist_id)
+        )
+        return [
+            ContributionType.from_model(c, list(c.votes.all())) for c in contributions
+        ]
