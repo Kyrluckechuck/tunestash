@@ -5,6 +5,8 @@ django-sesame, which is coupled to AUTH_USER_MODEL — Queuetip's Account is a
 standalone model, not the project user model.
 """
 
+from dataclasses import dataclass
+
 from django.core import signing
 
 # Cookie carrying the session token on the public process.
@@ -21,6 +23,14 @@ class InvalidTokenError(Exception):
     """Raised when a token is malformed, tampered with, or expired."""
 
 
+@dataclass(frozen=True)
+class SessionPayload:
+    """Decoded session token payload."""
+
+    account_id: int
+    session_epoch: int
+
+
 def make_magic_link_token(account_id: int) -> str:
     """Sign a short-lived token identifying an account for magic-link login."""
     return signing.dumps({"aid": account_id}, salt=_MAGIC_SALT)
@@ -35,15 +45,27 @@ def read_magic_link_token(token: str) -> int:
     return int(data["aid"])
 
 
-def make_session_token(account_id: int) -> str:
-    """Sign a long-lived session token identifying an account."""
-    return signing.dumps({"aid": account_id}, salt=_SESSION_SALT)
+def make_session_token(account_id: int, session_epoch: int = 0) -> str:
+    """Sign a long-lived session token embedding the account id and epoch.
+
+    The epoch allows all existing sessions to be invalidated atomically by
+    bumping Account.session_epoch (see signOutEverywhere mutation).
+    """
+    return signing.dumps({"aid": account_id, "ep": session_epoch}, salt=_SESSION_SALT)
 
 
-def read_session_token(token: str) -> int:
-    """Return the account id from a session token, or raise InvalidTokenError."""
+def read_session_token(token: str) -> SessionPayload:
+    """Return the decoded session payload, or raise InvalidTokenError.
+
+    Legacy tokens (without the ``ep`` field, issued before session epoch was
+    added) are treated as epoch 0 for backward compatibility. As long as the
+    account's session_epoch is still 0, they continue to work.
+    """
     try:
         data = signing.loads(token, salt=_SESSION_SALT, max_age=SESSION_MAX_AGE)
     except signing.BadSignature as exc:
         raise InvalidTokenError(str(exc)) from exc
-    return int(data["aid"])
+    return SessionPayload(
+        account_id=int(data["aid"]),
+        session_epoch=int(data.get("ep", 0)),
+    )

@@ -372,10 +372,46 @@ async def test_m3u_download_non_member_returns_403():
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_m3u_download_unknown_snapshot_returns_404():
-    """Requesting a non-existent snapshot id returns 404."""
+    """Requesting a well-formed but non-existent snapshot UUID returns 404."""
     owner, _ = await _setup_playlist()
 
     async with _authed_client(owner.id) as client:
-        resp = await client.get("/exports/999999.m3u")
+        resp = await client.get("/exports/00000000-0000-0000-0000-000000000000.m3u")
 
     assert resp.status_code == 404
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_m3u_download_invalid_uuid_returns_400():
+    """Requesting a non-UUID snapshot id returns 400."""
+    owner, _ = await _setup_playlist()
+
+    async with _authed_client(owner.id) as client:
+        resp = await client.get("/exports/not-a-uuid.m3u")
+
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_export_id_is_uuid_format():
+    """createExport returns an id that matches UUID format."""
+    import re
+
+    uuid_re = re.compile(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    )
+    owner, playlist = await _setup_playlist()
+    await _add_song(playlist, owner, guaranteed=True)
+
+    async with _authed_client(owner.id) as client:
+        result = await _gql(
+            client,
+            _CREATE_EXPORT_QUERY,
+            {"playlistId": str(playlist.id)},
+        )
+
+    assert "errors" not in result, result.get("errors")
+    snapshot_id = result["data"]["createExport"]["id"]
+    assert uuid_re.match(snapshot_id), f"Expected UUID, got: {snapshot_id!r}"

@@ -152,7 +152,7 @@ class Query:
     ) -> ExportSnapshotType:
         """Fetch a single ExportSnapshot. Caller must be a playlist member."""
         account = _require_account(info)
-        snapshot = await ExportService.get(account, int(id))
+        snapshot = await ExportService.get(account, str(id))
         return await _load_snapshot_with_tracks(snapshot)
 
     @strawberry.field

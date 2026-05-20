@@ -5,6 +5,7 @@ import re
 from typing import cast
 
 from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.utils import timezone
 
 import strawberry
@@ -105,6 +106,13 @@ class DeletePlaylistResult:
     """Outcome of a delete-style mutation."""
 
     deleted: bool
+
+
+@strawberry.type
+class SignOutEverywhereResult:
+    """Outcome of the signOutEverywhere mutation."""
+
+    success: bool
 
 
 @strawberry.type
@@ -504,7 +512,7 @@ class Mutation:
         """Push an ExportSnapshot to a real Spotify playlist on the caller's account."""
         account = _require_account(info)
         result = await SpotifyExportService.export(
-            account, int(snapshot_id), playlist_name=playlist_name
+            account, str(snapshot_id), playlist_name=playlist_name
         )
         return SpotifyExportResultType(
             spotify_playlist_url=result.spotify_playlist_url,
@@ -512,3 +520,21 @@ class Mutation:
             skipped_count=result.skipped_count,
             skipped_titles=result.skipped_titles,
         )
+
+    @strawberry.mutation
+    async def sign_out_everywhere(
+        self, info: Info[QueuetipContext, None]
+    ) -> SignOutEverywhereResult:
+        """Invalidate all active sessions for the current account by bumping the
+        session epoch. The current session is immediately invalidated — subsequent
+        requests with the same cookie will be treated as anonymous.
+        """
+        account = _require_account(info)
+
+        def _bump_epoch() -> None:
+            Account.objects.filter(id=account.id).update(
+                session_epoch=F("session_epoch") + 1
+            )
+
+        await sync_to_async(_bump_epoch)()
+        return SignOutEverywhereResult(success=True)

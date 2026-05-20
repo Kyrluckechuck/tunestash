@@ -13,6 +13,7 @@ from strawberry.extensions import (
     MaxAliasesLimiter,
     QueryDepthLimiter,
 )
+from strawberry.types.execution import ExecutionContext
 
 from ..errors import (
     AuthRequiredError,
@@ -25,13 +26,14 @@ from .query import Query
 
 logger = logging.getLogger(__name__)
 
-# Exceptions whose messages are intentionally user-facing and must pass through.
-_USER_FACING_ERRORS = (
-    AuthRequiredError,
-    PermissionDeniedError,
-    ValidationError,
-    NotFoundError,
-)
+# Errors whose messages are safe to pass through to the client unchanged.
+_PASS_THROUGH_ERRORS = (AuthRequiredError, ValidationError)
+
+# Errors that reveal existence side-channels — message is replaced at the
+# GraphQL boundary with a single unified string so callers cannot distinguish
+# "not found" from "forbidden". The original message is preserved in logs.
+_EXISTENCE_DISCLOSURE_ERRORS = (NotFoundError, PermissionDeniedError)
+_UNIFIED_MESSAGE = "Not found or not allowed."
 
 
 def _should_mask_error(error: GraphQLError) -> bool:
@@ -40,11 +42,33 @@ def _should_mask_error(error: GraphQLError) -> bool:
     if original is None:
         # Validation/syntax errors from graphql-core — safe to surface as-is.
         return False
-    if isinstance(original, _USER_FACING_ERRORS):
+    if isinstance(original, (*_PASS_THROUGH_ERRORS, *_EXISTENCE_DISCLOSURE_ERRORS)):
         return False
     # Unknown exception: mask the message and log the original for diagnosis.
     logger.exception("Unhandled exception in GraphQL resolver", exc_info=original)
     return True
+
+
+class QueuetipSchema(strawberry.Schema):
+    """Schema subclass that replaces existence-disclosure error messages.
+
+    NotFoundError and PermissionDeniedError are unified into a single message
+    so callers cannot probe for resource existence via error text. The original
+    informative message is preserved server-side in the exception object and
+    standard logging.
+    """
+
+    def process_errors(
+        self,
+        errors: list[GraphQLError],
+        execution_context: ExecutionContext | None = None,
+    ) -> None:
+        for error in errors:
+            original = error.original_error
+            if isinstance(original, _EXISTENCE_DISCLOSURE_ERRORS):
+                # graphql-core stores message in __slots__ — direct assignment works.
+                error.message = _UNIFIED_MESSAGE
+        super().process_errors(errors, execution_context)
 
 
 _extensions: list[Any] = [
@@ -59,4 +83,4 @@ _extensions: list[Any] = [
 if not getattr(dj_settings, "DEBUG", True):
     _extensions.append(DisableIntrospection())
 
-schema = strawberry.Schema(query=Query, mutation=Mutation, extensions=_extensions)
+schema = QueuetipSchema(query=Query, mutation=Mutation, extensions=_extensions)

@@ -231,4 +231,5 @@ async def test_export_to_spotify_without_link_returns_error():
 
     assert "errors" in result
     error_messages = " ".join(e["message"] for e in result["errors"])
-    assert "Spotify" in error_messages
+    # NotFoundError messages are unified at the GraphQL boundary (Fix 2).
+    assert "not found or not allowed" in error_messages.lower()

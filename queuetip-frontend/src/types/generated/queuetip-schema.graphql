@@ -119,6 +119,11 @@ type Mutation {
   bulkImportPlaylist(playlistId: ID!, url: String!): BulkImportJobType!
   createExport(playlistId: ID!, options: ExportOptionsInput = null): ExportSnapshotType!
   exportToSpotify(snapshotId: ID!, playlistName: String = null): SpotifyExportResultType!
+  signOutEverywhere: SignOutEverywhereResult!
+}
+
+type SignOutEverywhereResult {
+  success: Boolean!
 }
 
 type PlaylistType {

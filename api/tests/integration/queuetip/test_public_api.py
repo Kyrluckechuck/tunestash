@@ -173,3 +173,41 @@ async def test_security_headers_present_on_health(async_client):
     assert response.headers.get("referrer-policy") == "same-origin"
     assert response.headers.get("permissions-policy") == "interest-cohort=()"
     # HSTS is only set outside DEBUG — test env runs with DEBUG=True, so absent here.
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_sign_out_everywhere_invalidates_old_session():
+    """After signOutEverywhere, a follow-up request with the old session returns me=null."""
+    from asgiref.sync import sync_to_async
+
+    account = await sync_to_async(Account.objects.create)(display_name="Jo")
+    old_token = make_session_token(account.id, session_epoch=0)
+
+    transport = httpx.ASGITransport(app=app)
+
+    # Sign out everywhere using old session
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        cookies={SESSION_COOKIE: old_token},
+    ) as client:
+        resp = await client.post(
+            "/graphql",
+            json={
+                "query": "mutation { signOutEverywhere { success } }",
+            },
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "errors" not in body, body.get("errors")
+    assert body["data"]["signOutEverywhere"]["success"] is True
+
+    # Follow-up request with the OLD token: me must be null
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        cookies={SESSION_COOKIE: old_token},
+    ) as client:
+        resp2 = await client.post("/graphql", json={"query": "{ me { id } }"})
+    assert resp2.json()["data"]["me"] is None

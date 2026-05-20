@@ -5,6 +5,7 @@ TuneStash's database; `Contribution.song` is a real FK into `library_manager`.
 """
 
 import secrets
+import uuid
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -25,6 +26,7 @@ class Account(models.Model):
 
     display_name: models.CharField = models.CharField(max_length=120)
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    session_epoch: models.PositiveIntegerField = models.PositiveIntegerField(default=0)
 
     if TYPE_CHECKING:
         id: int
@@ -263,6 +265,9 @@ class BulkImportJob(models.Model):
 class ExportSnapshot(models.Model):
     """Immutable materialization of a playlist's contributions to a tracklist."""
 
+    id: uuid.UUID = models.UUIDField(  # type: ignore[assignment]
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
     playlist: models.ForeignKey = models.ForeignKey(
         Playlist, on_delete=models.CASCADE, related_name="export_snapshots"
     )
@@ -275,7 +280,6 @@ class ExportSnapshot(models.Model):
     warning_message: models.TextField = models.TextField(blank=True)
 
     if TYPE_CHECKING:
-        id: int
         playlist_id: int
         requested_by_id: int
         tracks: "models.Manager[ExportSnapshotTrack]"
@@ -316,7 +320,7 @@ class ExportSnapshotTrack(models.Model):
 
     if TYPE_CHECKING:
         id: int
-        snapshot_id: int
+        snapshot_id: uuid.UUID
         song_id: int
 
     class Meta(TypedModelMeta):

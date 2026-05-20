@@ -1,9 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MockedProvider } from "@apollo/client/testing";
 
 import { SettingsPage } from "@/routes/settings";
-import { MeDocument } from "@/types/generated/graphql";
+import { MeDocument, SignOutEverywhereDocument } from "@/types/generated/graphql";
+
+const mockNavigate = vi.fn();
 
 vi.mock("@tanstack/react-router", async (orig) => {
   const actual = await (orig as () => Promise<typeof import("@tanstack/react-router")>)();
@@ -11,7 +13,13 @@ vi.mock("@tanstack/react-router", async (orig) => {
     ...actual,
     Navigate: () => <div data-testid="navigate" />,
     createFileRoute: () => () => ({ options: {} }),
+    useNavigate: () => mockNavigate,
   };
+});
+
+vi.mock("@/lib/auth", async (orig) => {
+  const actual = await (orig as () => Promise<typeof import("@/lib/auth")>)();
+  return { ...actual, signOut: vi.fn().mockResolvedValue(undefined) };
 });
 
 const meWithSpotify = (
@@ -36,6 +44,11 @@ const meWithSpotify = (
   },
 });
 
+const signOutEverywhereMock = {
+  request: { query: SignOutEverywhereDocument },
+  result: { data: { signOutEverywhere: { __typename: "SignOutEverywhereResult", success: true } } },
+};
+
 describe("SettingsPage", () => {
   it("shows the Link Spotify button when not linked", async () => {
     const mock = meWithSpotify([]);
@@ -58,5 +71,19 @@ describe("SettingsPage", () => {
     );
     expect(await screen.findByText(/linked ✓/i)).toBeInTheDocument();
     expect(screen.getByText(/alice42/)).toBeInTheDocument();
+  });
+
+  it("sign out everywhere button calls the mutation and navigates to sign-in", async () => {
+    const mock = meWithSpotify([]);
+    render(
+      <MockedProvider mocks={[mock, mock, signOutEverywhereMock]}>
+        <SettingsPage />
+      </MockedProvider>,
+    );
+
+    const btn = await screen.findByRole("button", { name: /sign out everywhere/i });
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: "/sign-in" }));
   });
 });

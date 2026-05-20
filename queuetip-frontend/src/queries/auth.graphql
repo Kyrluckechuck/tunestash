@@ -4,3 +4,9 @@ mutation RequestMagicLink($email: String!, $displayName: String) {
     message
   }
 }
+
+mutation SignOutEverywhere {
+  signOutEverywhere {
+    success
+  }
+}

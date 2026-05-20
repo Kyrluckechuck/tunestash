@@ -47,7 +47,7 @@ class SpotifyExportService:
     @staticmethod
     async def export(
         account: Account,
-        snapshot_id: int,
+        snapshot_id: str,
         playlist_name: str | None = None,
     ) -> SpotifyExportResult:
         # Membership + snapshot existence handled by ExportService.get.

@@ -136,7 +136,9 @@ async def test_non_owner_cannot_update_settings():
             {"id": str(p.id)},
         )
     assert "errors" in result
-    assert any("owner" in e["message"].lower() for e in result["errors"])
+    assert any(
+        "not found or not allowed" in e["message"].lower() for e in result["errors"]
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -276,3 +278,42 @@ async def test_delete_playlist_cascades_contributions_votes_snapshots():
         )()
         == 0
     )
+
+
+_PLAYLIST_QUERY = """
+query FetchPlaylist($id: ID!) {
+  playlist(id: $id) { id name }
+}
+"""
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_error_messages_uniform_for_not_found_vs_permission():
+    """Both NotFoundError and PermissionDeniedError reach the client as the same
+    message so callers cannot probe for resource existence.
+    """
+    owner = await sync_to_async(Account.objects.create)(display_name="Owner")
+    p = await sync_to_async(Playlist.objects.create)(name="Private", created_by=owner)
+    await sync_to_async(PlaylistMembership.objects.create)(
+        playlist=p, account=owner, role="owner"
+    )
+
+    outsider = await sync_to_async(Account.objects.create)(display_name="X")
+
+    async with _authed_client(outsider.id) as client:
+        # NotFoundError path: playlist 99999999 does not exist
+        not_found_result = await _gql(client, _PLAYLIST_QUERY, {"id": "99999999"})
+        # PermissionDeniedError path: playlist exists but outsider is not a member
+        permission_result = await _gql(client, _PLAYLIST_QUERY, {"id": str(p.id)})
+
+    expected = "not found or not allowed"
+    assert "errors" in not_found_result
+    assert any(
+        expected in e["message"].lower() for e in not_found_result["errors"]
+    ), f"Expected '{expected}' in: {not_found_result['errors']}"
+
+    assert "errors" in permission_result
+    assert any(
+        expected in e["message"].lower() for e in permission_result["errors"]
+    ), f"Expected '{expected}' in: {permission_result['errors']}"

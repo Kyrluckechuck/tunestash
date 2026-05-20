@@ -102,7 +102,7 @@ class ExportService:
         return await sync_to_async(_create)()
 
     @staticmethod
-    async def get(account: Account, snapshot_id: int) -> ExportSnapshot:
+    async def get(account: Account, snapshot_id: str) -> ExportSnapshot:
         def _get() -> ExportSnapshot:
             snap = (
                 ExportSnapshot.objects.select_related("playlist", "requested_by")

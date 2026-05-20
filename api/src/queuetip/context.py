@@ -26,14 +26,26 @@ class QueuetipContext(BaseContext):
 
 
 async def get_context(request: Request) -> QueuetipContext:
-    """Build the GraphQL context, resolving the session cookie to an Account."""
+    """Build the GraphQL context, resolving the session cookie to an Account.
+
+    Validates the session epoch in the token against Account.session_epoch.
+    A mismatch (e.g. after signOutEverywhere bumped the epoch) treats the
+    request as anonymous.
+    """
     account: Account | None = None
     token = request.cookies.get(SESSION_COOKIE)
     if token:
         try:
-            account_id = read_session_token(token)
+            payload = read_session_token(token)
         except InvalidTokenError:
-            account_id = None
-        if account_id is not None:
-            account = await sync_to_async(Account.objects.filter(id=account_id).first)()
+            payload = None
+        if payload is not None:
+            db_account = await sync_to_async(
+                Account.objects.filter(id=payload.account_id).first
+            )()
+            if (
+                db_account is not None
+                and db_account.session_epoch == payload.session_epoch
+            ):
+                account = db_account
     return QueuetipContext(account=account)

@@ -5,6 +5,7 @@ Phase 1 returns a plain success page; Phase 2 will redirect to the frontend.
 """
 
 import datetime as dt
+import uuid
 from typing import cast
 
 from django.conf import settings
@@ -40,6 +41,8 @@ router = APIRouter()
 @router.get("/auth/verify")
 def verify(token: str) -> Response:
     """Verify a magic-link token, set the session cookie, confirm sign-in."""
+    from queuetip.models import Account as _Account
+
     try:
         account_id = read_magic_link_token(token)
     except InvalidTokenError:
@@ -49,13 +52,16 @@ def verify(token: str) -> Response:
             status_code=400,
         )
 
+    account = _Account.objects.filter(id=account_id).first()
+    session_epoch = account.session_epoch if account is not None else 0
+
     response = HTMLResponse(
         "<h1>You're signed in to Queuetip.</h1>"
         "<p>You can close this tab and return to the app.</p>"
     )
     response.set_cookie(
         SESSION_COOKIE,
-        make_session_token(account_id),
+        make_session_token(account_id, session_epoch=session_epoch),
         max_age=SESSION_MAX_AGE,
         httponly=True,
         samesite="lax",
@@ -77,9 +83,10 @@ def logout() -> Response:
 
 
 @router.get("/exports/{snapshot_id}.m3u")
-async def export_m3u(snapshot_id: int, request: Request) -> Response:
+async def export_m3u(snapshot_id: str, request: Request) -> Response:
     """Stream the m3u for a snapshot. Member-only, session-cookie auth.
 
+    400 if snapshot_id is not a valid UUID.
     401 if no/invalid session cookie. 403 if the caller is not a member of
     the snapshot's playlist. 404 if no such snapshot.
     """
@@ -88,21 +95,26 @@ async def export_m3u(snapshot_id: int, request: Request) -> Response:
 
     from .m3u import render_m3u
 
+    try:
+        snapshot_uuid = uuid.UUID(snapshot_id)
+    except ValueError:
+        return Response(status_code=400)
+
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return Response(status_code=401)
     try:
-        account_id = read_session_token(token)
+        session_payload = read_session_token(token)
     except InvalidTokenError:
         return Response(status_code=401)
 
     def _load_and_render() -> tuple[int, str | None]:
-        account = Account.objects.filter(id=account_id).first()
+        account = Account.objects.filter(id=session_payload.account_id).first()
         if account is None:
             return 401, None
         snap = (
             ExportSnapshot.objects.select_related("playlist")
-            .filter(id=snapshot_id)
+            .filter(id=snapshot_uuid)
             .first()
         )
         if snap is None:
@@ -137,13 +149,13 @@ async def spotify_start(request: Request) -> Response:
     if not session_token:
         return Response(status_code=401)
     try:
-        account_id = read_session_token(session_token)
+        start_payload = read_session_token(session_token)
     except InvalidTokenError:
         return Response(status_code=401)
 
     try:
         nonce = _derive_nonce(session_token)
-        state = make_state_token(account_id, session_nonce=nonce)
+        state = make_state_token(start_payload.account_id, session_nonce=nonce)
         url = build_authorize_url(state=state, redirect_uri=_queuetip_callback_uri())
     except SpotifyOAuthError as exc:
         return HTMLResponse(
