@@ -20,7 +20,7 @@ export function Layout() {
           <nav className="flex items-center gap-2">
             {loading ? null : account ? (
               <>
-                <span className="text-sm text-muted-foreground">
+                <span className="hidden sm:inline text-sm text-muted-foreground">
                   {account.displayName}
                 </span>
                 <Link to="/settings">

@@ -65,6 +65,7 @@ async def test_verify_route_sets_session_cookie(async_client):
         response = await client.get("/auth/verify", params={"token": token})
     assert response.status_code == 200
     assert SESSION_COOKIE in response.cookies
+    assert "Open Queuetip" in response.text
 
 
 @pytest.mark.asyncio
@@ -72,6 +73,7 @@ async def test_verify_route_rejects_bad_token(async_client):
     async with async_client as client:
         response = await client.get("/auth/verify", params={"token": "garbage"})
     assert response.status_code == 400
+    assert "Back to sign-in" in response.text
 
 
 @pytest.mark.asyncio

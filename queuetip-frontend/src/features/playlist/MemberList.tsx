@@ -28,7 +28,7 @@ export function MemberList({
           key={m.account.id}
           className="flex items-center justify-between text-sm gap-2"
         >
-          <span className="truncate">
+          <span className="min-w-0 break-words">
             {m.account.displayName}
             {m.account.id === currentAccountId ? " (you)" : ""}
           </span>

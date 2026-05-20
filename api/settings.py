@@ -281,10 +281,16 @@ QUEUETIP_FRONTEND_URL = os.getenv("QUEUETIP_FRONTEND_URL", "http://localhost:300
 # For Cloudflare Tunnel, add Cloudflare's published IPv4/IPv6 ranges instead.
 QUEUETIP_TRUSTED_PROXIES: list[str] = []
 
-# Email — magic-link delivery. Console backend by default (links print to logs);
-# set `email_host` in settings.yaml to switch to real SMTP delivery.
+# Email — magic-link delivery. Resolution order:
+#   1. DJANGO_EMAIL_BACKEND env var (escape hatch for dev: force console backend
+#      without editing settings.yaml — useful when SMTP isn't reachable locally).
+#   2. settings.yaml `email_host` → SMTP backend with the related SMTP settings.
+#   3. Otherwise → console backend (links print to the container logs).
+_email_backend_env = os.getenv("DJANGO_EMAIL_BACKEND")
 _email_host = settings.get("email_host", None)
-if _email_host:
+if _email_backend_env:
+    EMAIL_BACKEND = _email_backend_env
+elif _email_host:
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
     EMAIL_HOST = _email_host
     EMAIL_PORT = int(settings.get("email_port", 587))

@@ -232,3 +232,53 @@ async def test_list_for_playlist_unknown_playlist_raises():
 
     with pytest.raises(NotFoundError):
         await ContributionService.list_for_playlist(owner, 99999)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_contribute_from_link_returned_contribution_has_prefetched_relations():
+    """Regression: the returned Contribution must have song, song.primary_artist,
+    and contributed_by relations pre-loaded so async resolvers can traverse
+    them without triggering a SynchronousOnlyOperation lazy load."""
+    owner = await sync_to_async(Account.objects.create)(display_name="Regress User")
+    playlist = await PlaylistService.create(owner, name="P", description="")
+    song = await _make_song()
+    with (
+        patch("src.queuetip.services.contribution.resolve_link"),
+        patch("src.queuetip.services.contribution.ingest_track", return_value=song),
+    ):
+        contribution, _ = await ContributionService.contribute_from_link(
+            owner, playlist.id, _DEEZER_URL
+        )
+
+    # Accessing these from async context without sync_to_async wrapping is the
+    # exact pattern that raised SynchronousOnlyOperation before the fix.
+    name = contribution.song.name
+    artist_name = contribution.song.primary_artist.name
+    contributor_name = contribution.contributed_by.display_name
+
+    assert name == song.name
+    assert artist_name == song.primary_artist.name
+    assert contributor_name == owner.display_name
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_contribute_from_link_duplicate_returned_contribution_has_prefetched_relations():
+    """Same regression for the alreadyPresent=True (dedup) path."""
+    owner = await sync_to_async(Account.objects.create)(display_name="Regress User 2")
+    playlist = await PlaylistService.create(owner, name="P", description="")
+    song = await _make_song()
+    with (
+        patch("src.queuetip.services.contribution.resolve_link"),
+        patch("src.queuetip.services.contribution.ingest_track", return_value=song),
+    ):
+        await ContributionService.contribute_from_link(owner, playlist.id, _DEEZER_URL)
+        contribution, already_present = await ContributionService.contribute_from_link(
+            owner, playlist.id, _DEEZER_URL
+        )
+
+    assert already_present is True
+    # Relation access from async context — must not raise.
+    assert contribution.song.primary_artist.name == song.primary_artist.name
+    assert contribution.contributed_by.display_name == owner.display_name

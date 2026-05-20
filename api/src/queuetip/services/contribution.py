@@ -24,6 +24,19 @@ def _deezer_track_url(deezer_id: str) -> str:
     return f"https://www.deezer.com/track/{deezer_id}"
 
 
+def _reload_with_relations(contribution_id: int) -> Contribution:
+    """Refetch a contribution with song + primary_artist + contributed_by pre-loaded.
+
+    The caller (an async GraphQL resolver) will traverse `contribution.song.
+    primary_artist.name` to build the ContributionType — those traversals MUST
+    NOT trigger lazy ORM loads from the async context (Django raises
+    SynchronousOnlyOperation). Pre-fetching here avoids that.
+    """
+    return Contribution.objects.select_related(
+        "contributed_by", "song", "song__primary_artist"
+    ).get(id=contribution_id)
+
+
 class ContributionService:
     """Stateless namespace for contribution operations."""
 
@@ -59,8 +72,11 @@ class ContributionService:
                     )
             except IntegrityError:
                 contribution = Contribution.objects.get(playlist=playlist, song=song)
-                return contribution, True
-            return contribution, False
+                return _reload_with_relations(contribution.id), True
+            # Reload with relations so the resolver can safely traverse
+            # contribution.song.primary_artist.name without triggering lazy
+            # ORM access from the async resolver context.
+            return _reload_with_relations(contribution.id), False
 
         return await sync_to_async(_contribute)()
 

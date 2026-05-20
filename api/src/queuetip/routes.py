@@ -37,28 +37,74 @@ from .spotify_oauth import (
 
 router = APIRouter()
 
+_VERIFY_SUCCESS_HTML = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signed in — Queuetip</title>
+<style>
+  :root {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+  body {{ margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #fafafa; color: #0a0a0a; }}
+  .card {{ max-width: 28rem; padding: 2rem; background: white; border: 1px solid #e5e5e5; border-radius: 0.5rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); text-align: center; }}
+  .check {{ width: 3rem; height: 3rem; margin: 0 auto 1rem; color: #16a34a; }}
+  h1 {{ font-size: 1.5rem; font-weight: 600; margin: 0 0 0.5rem; }}
+  p {{ color: #525252; margin: 0 0 1.5rem; }}
+  a.btn {{ display: inline-block; background: #0a0a0a; color: white; text-decoration: none; padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 500; font-size: 0.875rem; }}
+  a.btn:hover {{ background: #262626; }}
+</style></head><body>
+  <div class="card">
+    <svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="9 12 12 15 17 10"/></svg>
+    <h1>You're signed in to Queuetip</h1>
+    <p>You can close this tab and head back to the app.</p>
+    <a class="btn" href="{frontend_url}">Open Queuetip</a>
+  </div>
+</body></html>"""
+
+_VERIFY_ERROR_HTML = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign-in failed — Queuetip</title>
+<style>
+  :root {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+  body {{ margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #fafafa; color: #0a0a0a; }}
+  .card {{ max-width: 28rem; padding: 2rem; background: white; border: 1px solid #e5e5e5; border-radius: 0.5rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); text-align: center; }}
+  .x-icon {{ width: 3rem; height: 3rem; margin: 0 auto 1rem; color: #dc2626; }}
+  h1 {{ font-size: 1.5rem; font-weight: 600; margin: 0 0 0.5rem; }}
+  p {{ color: #525252; margin: 0 0 1.5rem; }}
+  a.btn {{ display: inline-block; background: #0a0a0a; color: white; text-decoration: none; padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 500; font-size: 0.875rem; }}
+  a.btn:hover {{ background: #262626; }}
+</style></head><body>
+  <div class="card">
+    <svg class="x-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    <h1>Sign-in link expired</h1>
+    <p>This link is invalid or has expired. Request a new one to sign in.</p>
+    <a class="btn" href="{frontend_url}/sign-in">Back to sign-in</a>
+  </div>
+</body></html>"""
+
 
 @router.get("/auth/verify")
 def verify(token: str) -> Response:
     """Verify a magic-link token, set the session cookie, confirm sign-in."""
     from queuetip.models import Account as _Account
 
+    frontend_url = getattr(
+        settings, "QUEUETIP_FRONTEND_URL", "http://localhost:3001"
+    ).rstrip("/")
+
     try:
         account_id = read_magic_link_token(token)
     except InvalidTokenError:
         return HTMLResponse(
-            "<h1>This sign-in link is invalid or has expired.</h1>"
-            "<p>Request a new one to sign in.</p>",
+            _VERIFY_ERROR_HTML.format(frontend_url=frontend_url),
             status_code=400,
         )
 
     account = _Account.objects.filter(id=account_id).first()
     session_epoch = account.session_epoch if account is not None else 0
 
-    response = HTMLResponse(
-        "<h1>You're signed in to Queuetip.</h1>"
-        "<p>You can close this tab and return to the app.</p>"
-    )
+    response = HTMLResponse(_VERIFY_SUCCESS_HTML.format(frontend_url=frontend_url))
     response.set_cookie(
         SESSION_COOKIE,
         make_session_token(account_id, session_epoch=session_epoch),

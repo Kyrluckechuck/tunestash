@@ -116,9 +116,9 @@ function PlaylistDetailContent({ id }: { id: string }) {
   }
 
   return (
-    <div className="container py-8 grid lg:grid-cols-[1fr_280px] gap-6">
+    <div className="container py-8 grid lg:grid-cols-[1fr_320px] gap-6">
       <div>
-        <header className="mb-4 flex items-start justify-between gap-4">
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">{playlist.name}</h1>
             {playlist.description ? (
@@ -159,7 +159,7 @@ function PlaylistDetailContent({ id }: { id: string }) {
         </header>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle>Contributions</CardTitle>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => setExportOpen(true)}>
