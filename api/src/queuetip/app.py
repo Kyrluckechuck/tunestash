@@ -22,9 +22,10 @@ django.setup()
 
 from django.conf import settings as dj_settings  # noqa: E402
 
-from fastapi import FastAPI  # noqa: E402
+from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import PlainTextResponse  # noqa: E402
+from fastapi.responses import PlainTextResponse, Response  # noqa: E402
+from starlette.middleware.base import RequestResponseEndpoint  # noqa: E402
 from strawberry.fastapi import GraphQLRouter  # noqa: E402
 
 
@@ -46,7 +47,9 @@ def create_queuetip_app() -> FastAPI:
     from django.db import close_old_connections  # noqa: E402
 
     @app.middleware("http")
-    async def _close_stale_db_connections(request, call_next):
+    async def _close_stale_db_connections(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         # The long-lived ASGI process has no Django request cycle, so
         # CONN_HEALTH_CHECKS never fires. Reap stale connections per request,
         # mirroring celery_app.py's task_prerun hook.
@@ -62,7 +65,8 @@ def create_queuetip_app() -> FastAPI:
     from .schema import schema
 
     app.include_router(
-        GraphQLRouter(schema, context_getter=get_context), prefix="/graphql"
+        GraphQLRouter(schema, context_getter=get_context),  # type: ignore[arg-type]
+        prefix="/graphql",
     )
     app.include_router(auth_router)
 

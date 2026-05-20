@@ -5,8 +5,14 @@ TuneStash's database; `Contribution.song` is a real FK into `library_manager`.
 """
 
 import secrets
+from typing import TYPE_CHECKING
 
 from django.db import models
+
+if TYPE_CHECKING:
+    from django_stubs_ext.db.models import TypedModelMeta
+else:
+    TypedModelMeta = type
 
 
 def generate_invite_token() -> str:
@@ -17,8 +23,15 @@ def generate_invite_token() -> str:
 class Account(models.Model):
     """A Queuetip user. Unrelated to TuneStash's operator; not AUTH_USER_MODEL."""
 
-    display_name = models.CharField(max_length=120)
-    created_at = models.DateTimeField(auto_now_add=True)
+    display_name: models.CharField = models.CharField(max_length=120)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        id: int
+        external_service_links: "models.Manager[ExternalServiceLink]"
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
 
     def __str__(self) -> str:
         return self.display_name
@@ -30,14 +43,21 @@ class AuthIdentity(models.Model):
     PROVIDER_MAGIC_LINK = "magic_link"
     PROVIDER_CHOICES = [(PROVIDER_MAGIC_LINK, "Magic link")]
 
-    account = models.ForeignKey(
+    account: models.ForeignKey = models.ForeignKey(
         Account, on_delete=models.CASCADE, related_name="identities"
     )
-    provider = models.CharField(max_length=32, choices=PROVIDER_CHOICES)
-    identifier = models.CharField(max_length=254)
-    created_at = models.DateTimeField(auto_now_add=True)
+    provider: models.CharField = models.CharField(
+        max_length=32, choices=PROVIDER_CHOICES
+    )
+    identifier: models.CharField = models.CharField(max_length=254)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
+    if TYPE_CHECKING:
+        id: int
+        account_id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
         constraints = [
             models.UniqueConstraint(
                 fields=["provider", "identifier"],
@@ -52,21 +72,40 @@ class AuthIdentity(models.Model):
 class Playlist(models.Model):
     """A collaborative playlist. Engine knobs are stored now, used in Phase 2."""
 
-    name = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
-    created_by = models.ForeignKey(
+    name: models.CharField = models.CharField(max_length=200)
+    description: models.TextField = models.TextField(blank=True)
+    created_by: models.ForeignKey = models.ForeignKey(
         Account, on_delete=models.PROTECT, related_name="created_playlists"
     )
-    invite_token = models.CharField(
+    invite_token: models.CharField = models.CharField(
         max_length=64, unique=True, default=generate_invite_token
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    min_size = models.PositiveSmallIntegerField(default=0)
-    max_size = models.PositiveSmallIntegerField(null=True, blank=True)
-    t_high = models.PositiveSmallIntegerField(default=3)
-    t_low = models.PositiveSmallIntegerField(default=3)
-    base = models.FloatField(default=0.85)
-    p_floor = models.FloatField(default=0.15)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    min_size: models.PositiveSmallIntegerField = models.PositiveSmallIntegerField(
+        default=0
+    )
+    max_size: models.PositiveSmallIntegerField = models.PositiveSmallIntegerField(
+        null=True, blank=True
+    )
+    t_high: models.PositiveSmallIntegerField = models.PositiveSmallIntegerField(
+        default=3
+    )
+    t_low: models.PositiveSmallIntegerField = models.PositiveSmallIntegerField(
+        default=3
+    )
+    base: models.FloatField = models.FloatField(default=0.85)
+    p_floor: models.FloatField = models.FloatField(default=0.15)
+
+    if TYPE_CHECKING:
+        id: int
+        created_by_id: int
+        memberships: "models.Manager[PlaylistMembership]"
+        contributions: "models.Manager[Contribution]"
+        import_jobs: "models.Manager[BulkImportJob]"
+        export_snapshots: "models.Manager[ExportSnapshot]"
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
 
     def __str__(self) -> str:
         return self.name
@@ -79,16 +118,24 @@ class PlaylistMembership(models.Model):
     ROLE_MEMBER = "member"
     ROLE_CHOICES = [(ROLE_OWNER, "Owner"), (ROLE_MEMBER, "Member")]
 
-    playlist = models.ForeignKey(
+    playlist: models.ForeignKey = models.ForeignKey(
         Playlist, on_delete=models.CASCADE, related_name="memberships"
     )
-    account = models.ForeignKey(
+    account: models.ForeignKey = models.ForeignKey(
         Account, on_delete=models.CASCADE, related_name="memberships"
     )
-    role = models.CharField(max_length=16, choices=ROLE_CHOICES, default=ROLE_MEMBER)
-    joined_at = models.DateTimeField(auto_now_add=True)
+    role: models.CharField = models.CharField(
+        max_length=16, choices=ROLE_CHOICES, default=ROLE_MEMBER
+    )
+    joined_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
+    if TYPE_CHECKING:
+        id: int
+        playlist_id: int
+        account_id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
         constraints = [
             models.UniqueConstraint(
                 fields=["playlist", "account"], name="queuetip_membership_unique"
@@ -102,20 +149,28 @@ class PlaylistMembership(models.Model):
 class Contribution(models.Model):
     """One song contributed to a playlist."""
 
-    playlist = models.ForeignKey(
+    playlist: models.ForeignKey = models.ForeignKey(
         Playlist, on_delete=models.CASCADE, related_name="contributions"
     )
-    song = models.ForeignKey(
+    song: models.ForeignKey = models.ForeignKey(
         "library_manager.Song",
         on_delete=models.PROTECT,
         related_name="queuetip_contributions",
     )
-    contributed_by = models.ForeignKey(
+    contributed_by: models.ForeignKey = models.ForeignKey(
         Account, on_delete=models.PROTECT, related_name="contributions"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
+    if TYPE_CHECKING:
+        id: int
+        playlist_id: int
+        song_id: int
+        contributed_by_id: int
+        votes: "models.Manager[Vote]"
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
         constraints = [
             models.UniqueConstraint(
                 fields=["playlist", "song"], name="queuetip_contribution_unique"
@@ -129,14 +184,22 @@ class Contribution(models.Model):
 class Vote(models.Model):
     """A +1/-1 vote by an Account on a Contribution. No row = no vote."""
 
-    contribution = models.ForeignKey(
+    contribution: models.ForeignKey = models.ForeignKey(
         Contribution, on_delete=models.CASCADE, related_name="votes"
     )
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="votes")
-    value = models.SmallIntegerField()
-    created_at = models.DateTimeField(auto_now_add=True)
+    account: models.ForeignKey = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="votes"
+    )
+    value: models.SmallIntegerField = models.SmallIntegerField()
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
+    if TYPE_CHECKING:
+        id: int
+        contribution_id: int
+        account_id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
         constraints = [
             models.UniqueConstraint(
                 fields=["contribution", "account"], name="queuetip_vote_unique"
@@ -165,23 +228,33 @@ class BulkImportJob(models.Model):
         (STATUS_FAILED, "Failed"),
     ]
 
-    playlist = models.ForeignKey(
+    playlist: models.ForeignKey = models.ForeignKey(
         Playlist, on_delete=models.CASCADE, related_name="import_jobs"
     )
-    requested_by = models.ForeignKey(
+    requested_by: models.ForeignKey = models.ForeignKey(
         Account, on_delete=models.PROTECT, related_name="import_jobs"
     )
-    source_url = models.URLField(max_length=500)
-    status = models.CharField(
+    source_url: models.URLField = models.URLField(max_length=500)
+    status: models.CharField = models.CharField(
         max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING
     )
-    added_count = models.PositiveIntegerField(default=0)
-    skipped_count = models.PositiveIntegerField(default=0)
-    unresolved_count = models.PositiveIntegerField(default=0)
-    unresolved_titles = models.JSONField(default=list)
-    error = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    finished_at = models.DateTimeField(null=True, blank=True)
+    added_count: models.PositiveIntegerField = models.PositiveIntegerField(default=0)
+    skipped_count: models.PositiveIntegerField = models.PositiveIntegerField(default=0)
+    unresolved_count: models.PositiveIntegerField = models.PositiveIntegerField(
+        default=0
+    )
+    unresolved_titles: models.JSONField = models.JSONField(default=list)
+    error: models.TextField = models.TextField(blank=True)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    finished_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+
+    if TYPE_CHECKING:
+        id: int
+        playlist_id: int
+        requested_by_id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
 
     def __str__(self) -> str:
         return f"Import {self.status} for {self.playlist} ({self.source_url})"
@@ -190,18 +263,25 @@ class BulkImportJob(models.Model):
 class ExportSnapshot(models.Model):
     """Immutable materialization of a playlist's contributions to a tracklist."""
 
-    playlist = models.ForeignKey(
+    playlist: models.ForeignKey = models.ForeignKey(
         Playlist, on_delete=models.CASCADE, related_name="export_snapshots"
     )
-    requested_by = models.ForeignKey(
+    requested_by: models.ForeignKey = models.ForeignKey(
         Account, on_delete=models.PROTECT, related_name="export_snapshots"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    parameters = models.JSONField(default=dict)
-    rng_seed = models.BigIntegerField()
-    warning_message = models.TextField(blank=True)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    parameters: models.JSONField = models.JSONField(default=dict)
+    rng_seed: models.BigIntegerField = models.BigIntegerField()
+    warning_message: models.TextField = models.TextField(blank=True)
 
-    class Meta:
+    if TYPE_CHECKING:
+        id: int
+        playlist_id: int
+        requested_by_id: int
+        tracks: "models.Manager[ExportSnapshotTrack]"
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
@@ -220,19 +300,27 @@ class ExportSnapshotTrack(models.Model):
         (REASON_TOPPED_UP, "Topped up to min_size"),
     ]
 
-    snapshot = models.ForeignKey(
+    snapshot: models.ForeignKey = models.ForeignKey(
         ExportSnapshot, on_delete=models.CASCADE, related_name="tracks"
     )
-    song = models.ForeignKey(
+    song: models.ForeignKey = models.ForeignKey(
         "library_manager.Song",
         on_delete=models.PROTECT,
         related_name="queuetip_export_tracks",
     )
-    position = models.PositiveIntegerField()
-    inclusion_reason = models.CharField(max_length=16, choices=REASON_CHOICES)
-    roll_probability = models.FloatField()
+    position: models.PositiveIntegerField = models.PositiveIntegerField()
+    inclusion_reason: models.CharField = models.CharField(
+        max_length=16, choices=REASON_CHOICES
+    )
+    roll_probability: models.FloatField = models.FloatField()
 
-    class Meta:
+    if TYPE_CHECKING:
+        id: int
+        snapshot_id: int
+        song_id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
         ordering = ["position"]
         constraints = [
             models.UniqueConstraint(
@@ -253,19 +341,24 @@ class ExternalServiceLink(models.Model):
     SERVICE_SPOTIFY = "spotify"
     SERVICE_CHOICES = [(SERVICE_SPOTIFY, "Spotify")]
 
-    account = models.ForeignKey(
+    account: models.ForeignKey = models.ForeignKey(
         Account, on_delete=models.CASCADE, related_name="external_service_links"
     )
-    service = models.CharField(max_length=16, choices=SERVICE_CHOICES)
-    access_token = models.TextField()
-    refresh_token = models.TextField()
-    expires_at = models.DateTimeField()
-    scope = models.CharField(max_length=512, blank=True)
-    service_user_id = models.CharField(max_length=255)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    service: models.CharField = models.CharField(max_length=16, choices=SERVICE_CHOICES)
+    access_token: models.TextField = models.TextField()
+    refresh_token: models.TextField = models.TextField()
+    expires_at: models.DateTimeField = models.DateTimeField()
+    scope: models.CharField = models.CharField(max_length=512, blank=True)
+    service_user_id: models.CharField = models.CharField(max_length=255)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField = models.DateTimeField(auto_now=True)
 
-    class Meta:
+    if TYPE_CHECKING:
+        id: int
+        account_id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
         constraints = [
             models.UniqueConstraint(
                 fields=["account", "service"],

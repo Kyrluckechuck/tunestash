@@ -4,7 +4,7 @@ import strawberry
 from asgiref.sync import sync_to_async
 from strawberry.types import Info
 
-from queuetip.models import Account
+from queuetip.models import Account, ExportSnapshot
 from queuetip.permissions import require_member
 from src.queuetip.resolution.catalog import catalog_search as _catalog_search
 
@@ -31,7 +31,7 @@ def _require_account(info: Info[QueuetipContext, None]) -> Account:
     return ctx.account
 
 
-async def _load_snapshot_with_tracks(snapshot) -> ExportSnapshotType:
+async def _load_snapshot_with_tracks(snapshot: ExportSnapshot) -> ExportSnapshotType:
     """Pre-fetch tracks (+song+artist) and playlist members before composing the GraphQL type."""
     from queuetip.models import ExportSnapshot, ExportSnapshotTrack, PlaylistMembership
 
@@ -68,7 +68,7 @@ class Query:
             return None
         account = ctx.account
         links = await sync_to_async(
-            lambda: list(account.external_service_links.all())  # type: ignore[attr-defined]
+            lambda: list(account.external_service_links.all())
         )()
         return AccountType.from_model(account, links=links)
 

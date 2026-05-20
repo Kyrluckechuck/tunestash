@@ -2,6 +2,7 @@
 
 import datetime
 import json
+from typing import cast
 
 from django.conf import settings as dj_settings
 
@@ -87,7 +88,7 @@ class MembershipType:
     @classmethod
     def from_model(cls, m: PlaylistMembership) -> "MembershipType":
         return cls(
-            account=AccountType.from_model(m.account),
+            account=AccountType.from_model(cast(Account, m.account)),
             role=m.role,
             joined_at=m.joined_at,
         )
@@ -114,7 +115,7 @@ class EngineSettingsInput:
     """
 
     min_size: int | None = None
-    max_size: int | None = strawberry.UNSET  # type: ignore[assignment]
+    max_size: int | None = strawberry.UNSET
     t_high: int | None = None
     t_low: int | None = None
     base: float | None = None
@@ -145,7 +146,7 @@ class PlaylistType:
             name=playlist.name,
             description=playlist.description,
             invite_token=playlist.invite_token,
-            created_by=AccountType.from_model(playlist.created_by),
+            created_by=AccountType.from_model(cast(Account, playlist.created_by)),
             created_at=playlist.created_at,
             engine_settings=EngineSettings(
                 min_size=playlist.min_size,
@@ -170,7 +171,7 @@ class VoteType:
     @classmethod
     def from_model(cls, v: Vote) -> "VoteType":
         return cls(
-            account=AccountType.from_model(v.account),
+            account=AccountType.from_model(cast(Account, v.account)),
             value=v.value,
             created_at=v.created_at,
         )
@@ -205,16 +206,20 @@ class ContributionType:
     def from_model(
         cls, contribution: Contribution, votes: list[Vote]
     ) -> "ContributionType":
-        song = contribution.song
+        from library_manager.models import Song
+
+        song = cast(Song, contribution.song)
         return cls(
             id=strawberry.ID(str(contribution.id)),
             song=SongRef(
                 id=strawberry.ID(str(song.id)),
                 title=song.name,
-                artist=song.primary_artist.name,
+                artist=song.primary_artist.name,  # type: ignore[attr-defined]
                 isrc=song.isrc or None,
             ),
-            contributed_by=AccountType.from_model(contribution.contributed_by),
+            contributed_by=AccountType.from_model(
+                cast(Account, contribution.contributed_by)
+            ),
             created_at=contribution.created_at,
             votes=[VoteType.from_model(v) for v in votes],
             net_score=sum(v.value for v in votes),
@@ -288,13 +293,16 @@ class ExportSnapshotTrackType:
 
     @classmethod
     def from_model(cls, t: ExportSnapshotTrack) -> "ExportSnapshotTrackType":
+        from library_manager.models import Song
+
+        song = cast(Song, t.song)
         return cls(
             id=strawberry.ID(str(t.id)),
             song=SongRef(
-                id=strawberry.ID(str(t.song.id)),
-                title=t.song.name,
-                artist=t.song.primary_artist.name,
-                isrc=t.song.isrc or None,
+                id=strawberry.ID(str(song.id)),
+                title=song.name,
+                artist=song.primary_artist.name,  # type: ignore[attr-defined]
+                isrc=song.isrc or None,
             ),
             position=t.position,
             inclusion_reason=t.inclusion_reason,
@@ -335,12 +343,14 @@ class ExportSnapshotType:
         ).rstrip("/")
         return cls(
             id=strawberry.ID(str(snapshot.id)),
-            requested_by=AccountType.from_model(snapshot.requested_by),
+            requested_by=AccountType.from_model(cast(Account, snapshot.requested_by)),
             created_at=snapshot.created_at,
             parameters=json.dumps(snapshot.parameters or {}),
             rng_seed=str(snapshot.rng_seed),
             warning_message=snapshot.warning_message,
             tracks=[ExportSnapshotTrackType.from_model(t) for t in tracks],
             m3u_url=f"{base}/exports/{snapshot.id}.m3u",
-            playlist=PlaylistType.from_model(snapshot.playlist, playlist_members),
+            playlist=PlaylistType.from_model(
+                cast(Playlist, snapshot.playlist), playlist_members
+            ),
         )

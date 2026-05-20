@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from django.db import IntegrityError, transaction
 
 from asgiref.sync import sync_to_async
@@ -107,7 +109,7 @@ class ContributionService:
             )
             if contribution is None:
                 raise NotFoundError(f"No contribution with id={contribution_id}")
-            membership = get_membership(account, contribution.playlist)
+            membership = get_membership(account, cast(Playlist, contribution.playlist))
             if membership is None:
                 raise PermissionDeniedError("You must be a member of this playlist.")
             is_owner = membership.role == PlaylistMembership.ROLE_OWNER

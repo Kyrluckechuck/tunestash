@@ -5,6 +5,7 @@ Phase 1 returns a plain success page; Phase 2 will redirect to the frontend.
 """
 
 import datetime as dt
+from typing import cast
 
 from django.conf import settings
 from django.utils import timezone
@@ -81,7 +82,7 @@ async def export_m3u(snapshot_id: int, request: Request) -> Response:
     401 if no/invalid session cookie. 403 if the caller is not a member of
     the snapshot's playlist. 404 if no such snapshot.
     """
-    from queuetip.models import Account, ExportSnapshot
+    from queuetip.models import Account, ExportSnapshot, Playlist
     from queuetip.permissions import PermissionDeniedError, require_member
 
     from .m3u import render_m3u
@@ -106,7 +107,7 @@ async def export_m3u(snapshot_id: int, request: Request) -> Response:
         if snap is None:
             return 404, None
         try:
-            require_member(account, snap.playlist)
+            require_member(account, cast(Playlist, snap.playlist))
         except PermissionDeniedError:
             return 403, None
         return 200, render_m3u(snap)

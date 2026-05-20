@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
+from typing import cast
 
 from django.utils import timezone
 
 import httpx
 from asgiref.sync import sync_to_async
 
-from queuetip.models import Account, ExportSnapshot, ExternalServiceLink
+from queuetip.models import Account, ExportSnapshot, ExternalServiceLink, Playlist
 
 from ..errors import NotFoundError
 from ..services.export import ExportService
@@ -87,7 +88,7 @@ async def _ensure_fresh_token(link: ExternalServiceLink) -> str:
     if link.expires_at > timezone.now() + dt.timedelta(
         seconds=TOKEN_REFRESH_LEEWAY_SECONDS
     ):
-        return link.access_token
+        return str(link.access_token)
 
     def _refresh_and_save() -> str:
         try:
@@ -103,7 +104,7 @@ async def _ensure_fresh_token(link: ExternalServiceLink) -> str:
             seconds=int(tokens["expires_in"])
         )
         link.save(update_fields=["access_token", "refresh_token", "expires_at"])
-        return link.access_token
+        return str(link.access_token)
 
     return await sync_to_async(_refresh_and_save)()
 
@@ -116,9 +117,12 @@ def _collect_track_uris(snapshot: ExportSnapshot) -> tuple[list[str], list[str]]
         "position"
     )
     for track in tracks:
-        gid = (track.song.gid or "").strip()
-        title = track.song.name
-        artist = track.song.primary_artist.name if track.song.primary_artist_id else ""
+        from library_manager.models import Song
+
+        song = cast(Song, track.song)
+        gid = (song.gid or "").strip()
+        title = song.name
+        artist = song.primary_artist.name if song.primary_artist_id else ""  # type: ignore[attr-defined]
         if not gid:
             skipped.append(f"{artist} — {title}".strip(" —"))
             continue
@@ -128,7 +132,7 @@ def _collect_track_uris(snapshot: ExportSnapshot) -> tuple[list[str], list[str]]
 
 def _default_playlist_name(snapshot: ExportSnapshot) -> str:
     when = snapshot.created_at.strftime("%Y-%m-%d %H:%M")
-    return f"{snapshot.playlist.name} — {when}"
+    return f"{cast(Playlist, snapshot.playlist).name} — {when}"
 
 
 def _create_playlist(access_token: str, user_id: str, name: str) -> tuple[str, str]:

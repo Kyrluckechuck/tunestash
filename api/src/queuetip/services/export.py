@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from typing import cast
 
 from django.db import transaction
 
@@ -110,7 +111,7 @@ class ExportService:
             )
             if snap is None:
                 raise NotFoundError(f"No snapshot with id={snapshot_id}")
-            require_member(account, snap.playlist)
+            require_member(account, cast(Playlist, snap.playlist))
             return snap
 
         return await sync_to_async(_get)()

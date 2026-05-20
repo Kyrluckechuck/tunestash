@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from asgiref.sync import sync_to_async
 
 from queuetip.models import Account, BulkImportJob, Playlist
@@ -52,7 +54,7 @@ class BulkImportService:
             )
             if job is None:
                 raise NotFoundError(f"No bulk-import job with id={job_id}")
-            require_member(account, job.playlist)
+            require_member(account, cast(Playlist, job.playlist))
             return job
 
         return await sync_to_async(_get)()

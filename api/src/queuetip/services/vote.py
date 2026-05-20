@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from asgiref.sync import sync_to_async
 
-from queuetip.models import Account, Contribution, Vote
+from queuetip.models import Account, Contribution, Playlist, Vote
 from queuetip.permissions import require_member
 
 from ..errors import NotFoundError, ValidationError
@@ -26,7 +28,7 @@ class VoteService:
             )
             if contribution is None:
                 raise NotFoundError(f"No contribution with id={contribution_id}")
-            require_member(account, contribution.playlist)
+            require_member(account, cast(Playlist, contribution.playlist))
             vote, _ = Vote.objects.update_or_create(
                 contribution=contribution,
                 account=account,
@@ -46,7 +48,7 @@ class VoteService:
             )
             if contribution is None:
                 raise NotFoundError(f"No contribution with id={contribution_id}")
-            require_member(account, contribution.playlist)
+            require_member(account, cast(Playlist, contribution.playlist))
             Vote.objects.filter(contribution=contribution, account=account).delete()
 
         await sync_to_async(_clear)()

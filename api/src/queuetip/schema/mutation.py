@@ -1,6 +1,7 @@
 """Queuetip GraphQL Mutation type."""
 
 import re
+from typing import cast
 
 from django.db import IntegrityError, transaction
 
@@ -8,7 +9,14 @@ import strawberry
 from asgiref.sync import sync_to_async
 from strawberry.types import Info
 
-from queuetip.models import Account, AuthIdentity, Contribution, Playlist, Vote
+from queuetip.models import (
+    Account,
+    AuthIdentity,
+    Contribution,
+    ExportSnapshot,
+    Playlist,
+    Vote,
+)
 
 from ..auth import make_magic_link_token
 from ..context import QueuetipContext
@@ -106,7 +114,7 @@ async def _build_playlist_type(playlist: Playlist) -> PlaylistType:
     return PlaylistType.from_model(playlist, members)
 
 
-async def _load_snapshot_with_tracks(snapshot) -> "ExportSnapshotType":
+async def _load_snapshot_with_tracks(snapshot: ExportSnapshot) -> "ExportSnapshotType":
     """Pre-fetch tracks (+song+artist) and playlist members before composing the GraphQL type."""
     from queuetip.models import ExportSnapshot, ExportSnapshotTrack, PlaylistMembership
 
@@ -196,10 +204,11 @@ async def _request_magic_link(
                     sent=False,
                     message="Something went wrong signing up. Please try again.",
                 )
-            account = identity.account
+            account = cast(Account, identity.account)
     else:
-        account = identity.account
+        account = cast(Account, identity.account)
 
+    assert account is not None
     token = make_magic_link_token(account.id)
     await sync_to_async(send_magic_link_email)(email, token)
     return RequestMagicLinkResult(

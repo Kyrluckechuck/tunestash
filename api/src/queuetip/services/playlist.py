@@ -133,7 +133,7 @@ class PlaylistService:
             require_owner(account, playlist)
             playlist.invite_token = generate_invite_token()
             playlist.save(update_fields=["invite_token"])
-            return playlist.invite_token
+            return str(playlist.invite_token)
 
         return await sync_to_async(_regen)()
 

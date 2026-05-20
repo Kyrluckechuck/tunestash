@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from django.utils import timezone
 
@@ -70,7 +70,7 @@ def bulk_import_playlist(job_id: int) -> dict[str, Any]:
 
     added = skipped = unresolved = 0
     unresolved_titles: list[str] = []
-    playlist: Playlist = job.playlist
+    playlist: Playlist = cast(Playlist, job.playlist)
 
     for candidate in candidates:
         try:

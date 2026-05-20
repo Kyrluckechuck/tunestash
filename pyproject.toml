@@ -112,9 +112,17 @@ disable_error_code = ["attr-defined"]
 [[tool.mypy.overrides]]
 module = [
     "library_manager.models",
-    "library_manager.helpers", 
+    "library_manager.helpers",
+    "queuetip.models",
 ]
-disable_error_code = ["var-annotated", "attr-defined"]
+disable_error_code = ["var-annotated", "attr-defined", "no-any-return"]
+
+# Queuetip Celery tasks use @shared_task decorator which has no type stubs
+[[tool.mypy.overrides]]
+module = [
+    "queuetip.tasks",
+]
+disable_error_code = ["misc"]
 
 # Django management commands, signals, and Celery tasks
 [[tool.mypy.overrides]]
@@ -298,6 +306,10 @@ good-names = ["i", "j", "k", "ex", "Run", "_", "id", "db"]
 
 [tool.pylint.django]
 load-plugins = ["pylint_django"] 
+
+[tool.pylint.typecheck]
+# httpx is a dependency installed in Docker/CI but not locally; suppress false E0401
+ignored-modules = ["httpx"]
 
 [tool.pylint.master]
 # Ensure Django is configured and project path is on sys.path during linting

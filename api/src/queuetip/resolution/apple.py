@@ -62,8 +62,6 @@ def _fetch_token(page_url: str) -> str:
                     "Apple Music API token not found in bundle — structure changed"
                 )
             return token_match.group(0)
-    except AppleResolverError:
-        raise
     except httpx.HTTPStatusError as exc:
         raise AppleResolverError(
             f"Apple Music HTTP {exc.response.status_code} fetching token"

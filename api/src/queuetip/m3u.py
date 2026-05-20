@@ -10,7 +10,9 @@ is used as the duration.
 
 from __future__ import annotations
 
-from queuetip.models import ExportSnapshot
+from typing import cast
+
+from queuetip.models import ExportSnapshot, ExportSnapshotTrack, Playlist
 
 
 def render_m3u(snapshot: ExportSnapshot) -> str:
@@ -22,19 +24,21 @@ def render_m3u(snapshot: ExportSnapshot) -> str:
     """
     lines: list[str] = [
         "#EXTM3U",
-        f'# Queuetip export — playlist "{snapshot.playlist.name}" — snapshot {snapshot.id}',
+        f'# Queuetip export — playlist "{cast(Playlist, snapshot.playlist).name}" — snapshot {snapshot.id}',
     ]
     tracks = snapshot.tracks.select_related("song", "song__primary_artist").order_by(
         "position"
     )
-    for track in tracks:
-        song = track.song
+    for track in cast(list[ExportSnapshotTrack], tracks):
+        from library_manager.models import Song
+
+        song = cast(Song, track.song)
         file_path = song.file_path
         if not song.downloaded or not file_path:
             continue
         artist_name = (
-            song.primary_artist.name
-            if song.primary_artist_id and song.primary_artist
+            song.primary_artist.name  # type: ignore[attr-defined]
+            if song.primary_artist_id and song.primary_artist  # type: ignore[attr-defined]
             else ""
         )
         lines.append(f"#EXTINF:-1,{artist_name} - {song.name}")
