@@ -120,6 +120,7 @@ COPY ./api/src /app/src
 COPY ./api/downloader /app/downloader
 COPY ./api/lib /app/lib
 COPY ./api/library_manager /app/library_manager
+COPY ./api/queuetip /app/queuetip
 COPY ./api/celery_app.py /app/celery_app.py
 COPY ./api/celery_beat_schedule.py /app/celery_beat_schedule.py
 COPY ./api/manage.py /app/manage.py
