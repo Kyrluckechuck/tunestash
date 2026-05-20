@@ -1,3 +1,4 @@
+import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@apollo/client";
 import { Copy } from "lucide-react";
@@ -10,12 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContributionRow } from "@/features/playlist/ContributionRow";
 import { MemberList } from "@/features/playlist/MemberList";
+import { ContributeDialog } from "@/features/playlist/ContributeDialog";
 
 function PlaylistDetailContent({ id }: { id: string }) {
   const { account } = useMe();
   const { data, loading, refetch } = useQuery(PlaylistDetailDocument, {
     variables: { id },
   });
+  const [contributeOpen, setContributeOpen] = React.useState(false);
 
   if (loading || !data) return <p className="container py-8 text-muted-foreground">Loading…</p>;
   if (!data.playlist) {
@@ -44,8 +47,11 @@ function PlaylistDetailContent({ id }: { id: string }) {
         </header>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Contributions</CardTitle>
+            <Button size="sm" onClick={() => setContributeOpen(true)}>
+              Contribute
+            </Button>
           </CardHeader>
           <CardContent>
             {contributions.length === 0 ? (
@@ -88,6 +94,12 @@ function PlaylistDetailContent({ id }: { id: string }) {
           </CardContent>
         </Card>
       </aside>
+
+      <ContributeDialog
+        playlistId={id}
+        open={contributeOpen}
+        onOpenChange={setContributeOpen}
+      />
     </div>
   );
 }
