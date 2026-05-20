@@ -240,3 +240,38 @@ class ExportSnapshotTrack(models.Model):
                 name="queuetip_export_track_position_unique",
             )
         ]
+
+
+class ExternalServiceLink(models.Model):
+    """A linked external-service identity (Spotify, future: Apple) per Account.
+
+    Stores OAuth tokens for pushing exports to the user's own external account.
+    Tokens are plain text in DB for v1 (matches TuneStash's existing pattern);
+    encryption-at-rest is a future hardening.
+    """
+
+    SERVICE_SPOTIFY = "spotify"
+    SERVICE_CHOICES = [(SERVICE_SPOTIFY, "Spotify")]
+
+    account = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="external_service_links"
+    )
+    service = models.CharField(max_length=16, choices=SERVICE_CHOICES)
+    access_token = models.TextField()
+    refresh_token = models.TextField()
+    expires_at = models.DateTimeField()
+    scope = models.CharField(max_length=512, blank=True)
+    service_user_id = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account", "service"],
+                name="queuetip_external_service_link_unique",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.account} → {self.service} ({self.service_user_id})"
