@@ -14,6 +14,10 @@ def _no_real_downloads():
     with (
         patch("src.queuetip.resolution.ingest.download_deezer_track") as dz,
         patch("src.queuetip.resolution.ingest.download_track_by_spotify_gid") as sp,
+        patch(
+            "src.queuetip.resolution.ingest.enrich_song_cross_platform",
+            side_effect=lambda song: song,
+        ),
     ):
         yield {"deezer": dz, "spotify": sp}
 
@@ -71,3 +75,18 @@ def test_ingest_unresolvable_apple_song_raises(_no_real_downloads):
     ):
         with pytest.raises(TrackNotFoundError):
             ingest_track(cand)
+
+
+def test_ingest_calls_enrich_after_create(_no_real_downloads):
+    """enrich_song_cross_platform is called after song creation."""
+    cand = TrackCandidate(
+        "Enrich Me", "Artist", "spotify", isrc="ISRCENRICH", source_id="gid_enrich"
+    )
+    with patch(
+        "src.queuetip.resolution.ingest.enrich_song_cross_platform",
+        side_effect=lambda song: song,
+    ) as mock_enrich:
+        result = ingest_track(cand)
+    mock_enrich.assert_called_once()
+    called_song = mock_enrich.call_args[0][0]
+    assert called_song.id == result.id

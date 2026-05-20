@@ -11,6 +11,7 @@ from __future__ import annotations
 from library_manager.models import Artist, Song, TrackingTier
 from library_manager.tasks import download_deezer_track, download_track_by_spotify_gid
 from src.providers.deezer import DeezerMetadataProvider
+from src.queuetip.enrichment import enrich_song_cross_platform
 from src.queuetip.resolution.candidate import TrackCandidate
 from src.queuetip.resolution.errors import TrackNotFoundError
 
@@ -121,5 +122,6 @@ def ingest_track(candidate: TrackCandidate) -> Song:
     song = _find_existing_song(candidate)
     if song is None:
         song = _create_song(candidate)
+    song = enrich_song_cross_platform(song)
     _queue_download(song)
     return song

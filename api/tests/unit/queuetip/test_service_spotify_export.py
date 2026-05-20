@@ -37,8 +37,14 @@ async def _setup_snapshot_with_tracks(track_specs: list[dict]):
     for i, spec in enumerate(track_specs):
         song = await sync_to_async(SongFactory)(primary_artist=artist)
         if "gid" in spec:
-            song.gid = spec["gid"]
-            await sync_to_async(song.save)()
+            song.gid = spec["gid"] or None
+        if "deezer_id" in spec:
+            song.deezer_id = spec["deezer_id"]
+        if "isrc" in spec:
+            song.isrc = spec["isrc"]
+        if "youtube_id" in spec:
+            song.youtube_id = spec["youtube_id"]
+        await sync_to_async(song.save)()
         await sync_to_async(ExportSnapshotTrack.objects.create)(
             snapshot=snapshot,
             song=song,
@@ -78,6 +84,16 @@ def _make_add_resp() -> MagicMock:
     return MagicMock(status_code=201, json=lambda: {}, text="")
 
 
+def _make_tracks_resp(gids: list[str | None]) -> MagicMock:
+    """Mock response for GET /v1/tracks?ids=... where None means stale/missing."""
+    items = [{"id": g, "name": f"Track {g}"} if g is not None else None for g in gids]
+    return MagicMock(
+        status_code=200,
+        json=lambda: {"tracks": items},
+        text="",
+    )
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_export_happy_path():
@@ -87,10 +103,17 @@ async def test_export_happy_path():
     )
     await sync_to_async(_fresh_link)(owner)
 
-    with patch(
-        "src.queuetip.services.spotify_export.httpx.post",
-        side_effect=[_make_create_resp(), _make_add_resp()],
-    ) as mock_post:
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["g1", "g2", "g3"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp(), _make_add_resp()],
+        ) as mock_post,
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
+    ):
         result = await SpotifyExportService.export(owner, snapshot.id)
 
     assert result.added_count == 3
@@ -103,13 +126,18 @@ async def test_export_happy_path():
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_export_some_tracks_skipped():
-    """4 tracks, 1 with empty gid: added=3, skipped=1, skipped_titles contains the song."""
+    """4 tracks, 1 with empty gid: after pre-flight passes remaining 3, skipped=1."""
     owner, snapshot = await _setup_snapshot_with_tracks(
-        [{"gid": "g1"}, {"gid": "g2"}, {"gid": ""}, {"gid": "g4"}]
+        [
+            {"gid": "g1"},
+            {"gid": "g2"},
+            {"gid": None, "deezer_id": 5001},
+            {"gid": "g4"},
+        ]
     )
     await sync_to_async(_fresh_link)(owner)
 
-    # Retrieve the song with empty gid to check its title in skipped_titles
+    # Retrieve the song with no gid to check its title in skipped_titles
     tracks = await sync_to_async(
         lambda: list(
             ExportSnapshotTrack.objects.filter(snapshot=snapshot)
@@ -119,9 +147,16 @@ async def test_export_some_tracks_skipped():
     )()
     skipped_song = tracks[2].song
 
-    with patch(
-        "src.queuetip.services.spotify_export.httpx.post",
-        side_effect=[_make_create_resp(), _make_add_resp()],
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["g1", "g2", "g4"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp(), _make_add_resp()],
+        ),
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
     ):
         result = await SpotifyExportService.export(owner, snapshot.id)
 
@@ -148,9 +183,16 @@ async def test_export_refreshes_expired_token():
         "src.queuetip.services.spotify_export.refresh_access_token",
         return_value=new_tokens,
     ):
-        with patch(
-            "src.queuetip.services.spotify_export.httpx.post",
-            side_effect=[_make_create_resp(), _make_add_resp()],
+        with (
+            patch(
+                "src.queuetip.services.spotify_export.httpx.get",
+                return_value=_make_tracks_resp(["g1"]),
+            ),
+            patch(
+                "src.queuetip.services.spotify_export.httpx.post",
+                side_effect=[_make_create_resp(), _make_add_resp()],
+            ),
+            patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
         ):
             result = await SpotifyExportService.export(owner, snapshot.id)
 
@@ -211,11 +253,133 @@ async def test_export_raises_spotify_export_error_on_create_failure():
 
     error_resp = MagicMock(status_code=401, text="Unauthorized")
 
-    with patch(
-        "src.queuetip.services.spotify_export.httpx.post",
-        return_value=error_resp,
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["g1"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            return_value=error_resp,
+        ),
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
     ):
         with pytest.raises(
             SpotifyExportError, match="Creating Spotify playlist failed"
         ):
             await SpotifyExportService.export(owner, snapshot.id)
+
+
+# ── New tests for enrichment + pre-flight validation ─────────────────────────
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_export_auto_enriches_missing_gid():
+    """Song with deezer_id+isrc but no gid: enrichment fills gid, song ends up in added_count."""
+    owner, snapshot = await _setup_snapshot_with_tracks(
+        [{"gid": None, "deezer_id": 9001, "isrc": "ISRCENRICH"}]
+    )
+    await sync_to_async(_fresh_link)(owner)
+
+    # Simulate enrichment writing the gid to the DB.
+    async def _mock_enrich(snap):
+        tracks = await sync_to_async(
+            lambda: list(snap.tracks.select_related("song").order_by("position"))
+        )()
+        for track in tracks:
+            await sync_to_async(
+                lambda t=track: t.song.__class__.objects.filter(id=t.song.id).update(
+                    gid="ENRICHED_GID"
+                )
+            )()
+
+    with (
+        patch(
+            "src.queuetip.services.spotify_export._enrich_missing_gids",
+            side_effect=_mock_enrich,
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["ENRICHED_GID"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp(), _make_add_resp()],
+        ),
+    ):
+        result = await SpotifyExportService.export(owner, snapshot.id)
+
+    assert result.added_count == 1
+    assert result.skipped_count == 0
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_export_stale_gid_goes_to_skipped():
+    """Song with gid STALE123: /v1/tracks returns null → song in skipped_titles."""
+    owner, snapshot = await _setup_snapshot_with_tracks([{"gid": "STALE123"}])
+    await sync_to_async(_fresh_link)(owner)
+
+    with (
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp([None]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp()],
+        ),
+    ):
+        result = await SpotifyExportService.export(owner, snapshot.id)
+
+    assert result.added_count == 0
+    assert result.skipped_count == 1
+    assert len(result.skipped_titles) == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_export_mix_enriched_stale_valid():
+    """3 tracks: one enriched OK, one stale gid, one good gid. added=2, skipped=1."""
+    owner, snapshot = await _setup_snapshot_with_tracks(
+        [
+            {"gid": None, "deezer_id": 1111, "isrc": "ISRCMIX"},
+            {"gid": "STALE_MIX"},
+            {"gid": "GOOD_MIX"},
+        ]
+    )
+    await sync_to_async(_fresh_link)(owner)
+
+    # Simulate enrichment writing gid for the first track.
+    async def _mock_enrich(snap):
+        tracks = await sync_to_async(
+            lambda: list(snap.tracks.select_related("song").order_by("position"))
+        )()
+        first_song = tracks[0].song
+        await sync_to_async(
+            lambda: first_song.__class__.objects.filter(id=first_song.id).update(
+                gid="ENRICHED_MIX"
+            )
+        )()
+
+    with (
+        patch(
+            "src.queuetip.services.spotify_export._enrich_missing_gids",
+            side_effect=_mock_enrich,
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            # Pre-flight sees ENRICHED_MIX (ok), STALE_MIX (null), GOOD_MIX (ok).
+            return_value=_make_tracks_resp(["ENRICHED_MIX", None, "GOOD_MIX"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp(), _make_add_resp()],
+        ),
+    ):
+        result = await SpotifyExportService.export(owner, snapshot.id)
+
+    assert result.added_count == 2
+    assert result.skipped_count == 1
