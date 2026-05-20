@@ -22,12 +22,14 @@ from ..graphql_types import (
     ExportOptionsInput,
     ExportSnapshotType,
     PlaylistType,
+    SpotifyExportResultType,
 )
 from ..services.bulk_import import BulkImportService
 from ..services.contribution import ContributionService
 from ..services.export import ExportService
 from ..services.membership import MembershipService
 from ..services.playlist import PlaylistService
+from ..services.spotify_export import SpotifyExportService
 from ..services.vote import VoteService
 
 # Pragmatic email shape check — rejects obvious garbage before we create a row
@@ -425,3 +427,22 @@ class Mutation:
             account, int(playlist_id), exclude_my_downvotes=exclude_downvotes
         )
         return await _load_snapshot_with_tracks(snapshot)
+
+    @strawberry.mutation
+    async def export_to_spotify(
+        self,
+        info: Info[QueuetipContext, None],
+        snapshot_id: strawberry.ID,
+        playlist_name: str | None = None,
+    ) -> SpotifyExportResultType:
+        """Push an ExportSnapshot to a real Spotify playlist on the caller's account."""
+        account = _require_account(info)
+        result = await SpotifyExportService.export(
+            account, int(snapshot_id), playlist_name=playlist_name
+        )
+        return SpotifyExportResultType(
+            spotify_playlist_url=result.spotify_playlist_url,
+            added_count=result.added_count,
+            skipped_count=result.skipped_count,
+            skipped_titles=result.skipped_titles,
+        )

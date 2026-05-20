@@ -3,5 +3,10 @@ query Me {
     id
     displayName
     createdAt
+    externalServices {
+      service
+      serviceUserId
+      linkedAt
+    }
   }
 }

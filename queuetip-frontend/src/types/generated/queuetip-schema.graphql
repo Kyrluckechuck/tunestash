@@ -2,6 +2,7 @@ type AccountType {
   id: ID!
   displayName: String!
   createdAt: DateTime!
+  externalServices: [ExternalServiceLinkType!]!
 }
 
 type BulkImportJobType {
@@ -88,6 +89,12 @@ type ExportSnapshotType {
   playlist: PlaylistType!
 }
 
+type ExternalServiceLinkType {
+  service: String!
+  serviceUserId: String!
+  linkedAt: DateTime!
+}
+
 type MembershipType {
   account: AccountType!
   role: String!
@@ -111,6 +118,7 @@ type Mutation {
   clearVote(contributionId: ID!): ContributionType!
   bulkImportPlaylist(playlistId: ID!, url: String!): BulkImportJobType!
   createExport(playlistId: ID!, options: ExportOptionsInput = null): ExportSnapshotType!
+  exportToSpotify(snapshotId: ID!, playlistName: String = null): SpotifyExportResultType!
 }
 
 type PlaylistType {
@@ -149,6 +157,13 @@ type SongRef {
   title: String!
   artist: String!
   isrc: String
+}
+
+type SpotifyExportResultType {
+  spotifyPlaylistUrl: String!
+  addedCount: Int!
+  skippedCount: Int!
+  skippedTitles: [String!]!
 }
 
 type VoteType {

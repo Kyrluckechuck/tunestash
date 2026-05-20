@@ -13,10 +13,36 @@ from queuetip.models import (
     Contribution,
     ExportSnapshot,
     ExportSnapshotTrack,
+    ExternalServiceLink,
     Playlist,
     PlaylistMembership,
     Vote,
 )
+
+
+@strawberry.type
+class ExternalServiceLinkType:
+    """Summary of a linked external service (no secrets exposed)."""
+
+    service: str
+    service_user_id: str
+    linked_at: datetime.datetime
+
+    @classmethod
+    def from_model(cls, link: ExternalServiceLink) -> "ExternalServiceLinkType":
+        return cls(
+            service=link.service,
+            service_user_id=link.service_user_id,
+            linked_at=link.created_at,
+        )
+
+
+@strawberry.type
+class SpotifyExportResultType:
+    spotify_playlist_url: str
+    added_count: int
+    skipped_count: int
+    skipped_titles: list[str]
 
 
 @strawberry.type
@@ -26,14 +52,27 @@ class AccountType:
     id: strawberry.ID
     display_name: str
     created_at: datetime.datetime
+    external_services: list[ExternalServiceLinkType]
 
     @classmethod
-    def from_model(cls, account: Account) -> "AccountType":
-        """Build an AccountType from a Django Account row."""
+    def from_model(
+        cls,
+        account: Account,
+        links: list[ExternalServiceLink] | None = None,
+    ) -> "AccountType":
+        """Build an AccountType from a Django Account row.
+
+        Pass pre-fetched ``links`` to avoid a lazy ORM hit in async resolvers.
+        Callers that omit ``links`` (e.g. nested conversions) get an empty list,
+        which is correct — those sites don't need external-service data.
+        """
         return cls(
             id=strawberry.ID(str(account.id)),
             display_name=account.display_name,
             created_at=account.created_at,
+            external_services=[
+                ExternalServiceLinkType.from_model(lnk) for lnk in (links or [])
+            ],
         )
 
 

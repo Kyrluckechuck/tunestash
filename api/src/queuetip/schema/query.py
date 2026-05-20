@@ -61,12 +61,16 @@ class Query:
     """Root query for the Queuetip public API."""
 
     @strawberry.field
-    def me(self, info: Info[QueuetipContext, None]) -> AccountType | None:
+    async def me(self, info: Info[QueuetipContext, None]) -> AccountType | None:
         """Return the currently signed-in account, or null if anonymous."""
         ctx = info.context
         if ctx.account is None:
             return None
-        return AccountType.from_model(ctx.account)
+        account = ctx.account
+        links = await sync_to_async(
+            lambda: list(account.external_service_links.all())  # type: ignore[attr-defined]
+        )()
+        return AccountType.from_model(account, links=links)
 
     @strawberry.field
     async def my_playlists(
