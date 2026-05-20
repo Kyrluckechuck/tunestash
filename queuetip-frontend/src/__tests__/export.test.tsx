@@ -6,7 +6,11 @@ import { MockedProvider } from "@apollo/client/testing";
 
 import { CreateExportDialog } from "@/features/playlist/CreateExportDialog";
 import { ExportPage } from "@/routes/exports.$id";
-import { CreateExportDocument, ExportDocument } from "@/types/generated/graphql";
+import {
+  CreateExportDocument,
+  ExportDocument,
+  ExportToSpotifyDocument,
+} from "@/types/generated/graphql";
 
 const mockNavigate = vi.fn();
 
@@ -33,9 +37,15 @@ vi.mock("sonner", () => ({
   },
 }));
 
+const mockAccount = {
+  id: "1",
+  displayName: "Owner",
+  externalServices: [] as Array<{ service: string; serviceUserId: string; linkedAt: string }>,
+};
+
 vi.mock("@/lib/auth", () => ({
   useMe: () => ({
-    account: { id: "1", displayName: "Owner" },
+    account: mockAccount,
     loading: false,
   }),
 }));
@@ -171,5 +181,58 @@ describe("ExportPage", () => {
       "href",
       `http://localhost:5050/exports/${SNAPSHOT_ID}.m3u`,
     );
+  });
+
+  it("shows 'Link Spotify' when Spotify is not linked", async () => {
+    render(
+      <MockedProvider mocks={[exportMock]}>
+        <ExportPage />
+      </MockedProvider>,
+    );
+
+    await screen.findByText("Bohemian Rhapsody");
+    expect(screen.getByRole("button", { name: /link spotify/i })).toBeInTheDocument();
+  });
+
+  it("calls exportToSpotify mutation when 'Export to Spotify' is clicked", async () => {
+    const user = userEvent.setup();
+    const exportResultFn = vi.fn(() => ({
+      data: {
+        exportToSpotify: {
+          __typename: "SpotifyExportResultType",
+          spotifyPlaylistUrl: "https://open.spotify.com/playlist/abc",
+          addedCount: 2,
+          skippedCount: 0,
+          skippedTitles: [],
+        },
+      },
+    }));
+
+    const spotifyMock = {
+      request: {
+        query: ExportToSpotifyDocument,
+        variables: { snapshotId: SNAPSHOT_ID },
+      },
+      result: exportResultFn,
+    };
+
+    // Temporarily set externalServices to include spotify
+    mockAccount.externalServices = [
+      { service: "spotify", serviceUserId: "alice42", linkedAt: "2026-05-19T00:00:00Z" },
+    ];
+
+    render(
+      <MockedProvider mocks={[exportMock, spotifyMock]}>
+        <ExportPage />
+      </MockedProvider>,
+    );
+
+    await screen.findByText("Bohemian Rhapsody");
+    await user.click(screen.getByRole("button", { name: /export to spotify/i }));
+
+    await waitFor(() => expect(exportResultFn).toHaveBeenCalled());
+
+    // Restore for isolation
+    mockAccount.externalServices = [];
   });
 });

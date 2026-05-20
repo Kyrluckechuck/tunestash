@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@apollo/client";
-import { AlertTriangle, Download } from "lucide-react";
+import { useMutation, useQuery } from "@apollo/client";
+import { AlertTriangle, Download, Music } from "lucide-react";
+import { toast } from "sonner";
 
-import { ExportDocument } from "@/types/generated/graphql";
+import { ExportDocument, ExportToSpotifyDocument } from "@/types/generated/graphql";
+import { useMe } from "@/lib/auth";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +13,32 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 function ExportPageContent({ id }: { id: string }) {
   const { data, loading } = useQuery(ExportDocument, { variables: { id } });
+  const { account } = useMe();
+  const spotifyLinked =
+    account?.externalServices.some((l) => l.service === "spotify") ?? false;
+  const [exportToSpotify, { loading: exporting }] = useMutation(ExportToSpotifyDocument);
+
+  async function handleSpotifyExport() {
+    try {
+      const { data: result } = await exportToSpotify({ variables: { snapshotId: id } });
+      const exportResult = result?.exportToSpotify;
+      if (!exportResult) {
+        toast.error("Export failed.");
+        return;
+      }
+      const skipNote =
+        exportResult.skippedCount > 0 ? ` (${exportResult.skippedCount} skipped)` : "";
+      toast.success(`Exported to Spotify${skipNote}.`, {
+        action: {
+          label: "Open",
+          onClick: () => window.open(exportResult.spotifyPlaylistUrl, "_blank"),
+        },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Could not export to Spotify.";
+      toast.error(message);
+    }
+  }
 
   if (loading || !data) {
     return <p className="container py-8 text-muted-foreground">Loading…</p>;
@@ -36,6 +64,17 @@ function ExportPageContent({ id }: { id: string }) {
               <Download className="h-4 w-4 mr-2" /> Download m3u
             </Button>
           </a>
+          {spotifyLinked ? (
+            <Button onClick={handleSpotifyExport} disabled={exporting} variant="outline">
+              <Music className="h-4 w-4 mr-2" /> {exporting ? "Exporting…" : "Export to Spotify"}
+            </Button>
+          ) : (
+            <Link to="/settings">
+              <Button variant="ghost" size="sm" title="Link Spotify to enable">
+                Link Spotify
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 
