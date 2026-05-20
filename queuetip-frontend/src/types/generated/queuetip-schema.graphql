@@ -85,6 +85,7 @@ type ExportSnapshotType {
   warningMessage: String!
   tracks: [ExportSnapshotTrackType!]!
   m3uUrl: String!
+  playlist: PlaylistType!
 }
 
 type MembershipType {

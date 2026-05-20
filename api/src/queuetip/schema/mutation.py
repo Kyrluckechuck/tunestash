@@ -105,18 +105,28 @@ async def _build_playlist_type(playlist: Playlist) -> PlaylistType:
 
 
 async def _load_snapshot_with_tracks(snapshot) -> "ExportSnapshotType":
-    """Pre-fetch tracks (+song+artist) before composing the GraphQL type."""
-    from queuetip.models import ExportSnapshotTrack
+    """Pre-fetch tracks (+song+artist) and playlist members before composing the GraphQL type."""
+    from queuetip.models import ExportSnapshot, ExportSnapshotTrack, PlaylistMembership
 
-    def _load() -> list:
-        return list(
-            ExportSnapshotTrack.objects.filter(snapshot=snapshot)
+    def _load() -> tuple[ExportSnapshot, list, list]:
+        # Re-fetch snapshot with playlist__created_by to avoid lazy-load in conversion
+        snap = ExportSnapshot.objects.select_related(
+            "playlist", "playlist__created_by", "requested_by"
+        ).get(id=snapshot.id)
+        tracks = list(
+            ExportSnapshotTrack.objects.filter(snapshot=snap)
             .select_related("song", "song__primary_artist")
             .order_by("position")
         )
+        members = list(
+            PlaylistMembership.objects.filter(playlist=snap.playlist)
+            .select_related("account")
+            .order_by("joined_at")
+        )
+        return snap, tracks, members
 
-    tracks = await sync_to_async(_load)()
-    return ExportSnapshotType.from_model(snapshot, tracks)
+    snap, tracks, members = await sync_to_async(_load)()
+    return ExportSnapshotType.from_model(snap, tracks, members)
 
 
 async def _request_magic_link(

@@ -282,10 +282,14 @@ class ExportSnapshotType:
     warning_message: str
     tracks: list[ExportSnapshotTrackType]
     m3u_url: str
+    playlist: PlaylistType
 
     @classmethod
     def from_model(
-        cls, snapshot: ExportSnapshot, tracks: list[ExportSnapshotTrack]
+        cls,
+        snapshot: ExportSnapshot,
+        tracks: list[ExportSnapshotTrack],
+        playlist_members: list[PlaylistMembership],
     ) -> "ExportSnapshotType":
         base = getattr(
             dj_settings, "QUEUETIP_PUBLIC_URL", "http://localhost:5050"
@@ -299,4 +303,5 @@ class ExportSnapshotType:
             warning_message=snapshot.warning_message,
             tracks=[ExportSnapshotTrackType.from_model(t) for t in tracks],
             m3u_url=f"{base}/exports/{snapshot.id}.m3u",
+            playlist=PlaylistType.from_model(snapshot.playlist, playlist_members),
         )
