@@ -3,10 +3,20 @@
 import httpx
 import pytest
 from asgiref.sync import sync_to_async
+from tests.factories import ArtistFactory, SongFactory
 
-from queuetip.models import Account, Playlist, PlaylistMembership
+from queuetip.models import (
+    Account,
+    Contribution,
+    ExportSnapshot,
+    ExportSnapshotTrack,
+    Playlist,
+    PlaylistMembership,
+    Vote,
+)
 from src.queuetip.app import app
 from src.queuetip.auth import SESSION_COOKIE, make_session_token
+from src.queuetip.services.export import ExportService
 
 
 def _authed_client(account_id: int) -> httpx.AsyncClient:
@@ -93,14 +103,14 @@ async def test_anonymous_playlist_by_invite_token_returns_metadata():
             client,
             """
             query($t: String!) {
-              playlist(inviteToken: $t) {
+              playlistByInviteToken(inviteToken: $t) {
                 name members { account { displayName } }
               }
             }
             """,
             {"t": p.invite_token},
         )
-    assert result["data"]["playlist"]["name"] == "Public Mix"
+    assert result["data"]["playlistByInviteToken"]["name"] == "Public Mix"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -161,3 +171,108 @@ async def test_owner_can_kick_and_promote():
         PlaylistMembership.objects.filter(playlist=p, account=other).exists
     )()
     assert exists is False
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_playlist_by_invite_token_does_not_expose_engine_settings():
+    """playlistByInviteToken returns PlaylistPreviewType which has no engineSettings field."""
+    owner = await sync_to_async(Account.objects.create)(display_name="O")
+    p = await sync_to_async(Playlist.objects.create)(
+        name="Secret Settings", created_by=owner, t_high=7, p_floor=0.05
+    )
+    await sync_to_async(PlaylistMembership.objects.create)(
+        playlist=p, account=owner, role="owner"
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
+        # Attempt to request engineSettings on the preview type — schema should reject it
+        result = await client.post(
+            "/graphql",
+            json={
+                "query": """
+                query($t: String!) {
+                  playlistByInviteToken(inviteToken: $t) {
+                    id name engineSettings { tHigh }
+                  }
+                }
+                """,
+                "variables": {"t": p.invite_token},
+            },
+        )
+    body = result.json()
+    assert (
+        "errors" in body
+    ), "Schema should reject engineSettings on PlaylistPreviewType"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_delete_playlist_cascades_contributions_votes_snapshots():
+    """deletePlaylist removes all child rows (contributions, votes, snapshots, memberships)."""
+    owner = await sync_to_async(Account.objects.create)(display_name="Owner")
+    playlist = await sync_to_async(Playlist.objects.create)(
+        name="To Delete", created_by=owner
+    )
+    await sync_to_async(PlaylistMembership.objects.create)(
+        playlist=playlist, account=owner, role="owner"
+    )
+
+    # Add two contributions with votes
+    contributions = []
+    for i in range(2):
+        artist = await sync_to_async(ArtistFactory)()
+        song = await sync_to_async(SongFactory)(primary_artist=artist)
+        c = await sync_to_async(Contribution.objects.create)(
+            playlist=playlist, song=song, contributed_by=owner
+        )
+        await sync_to_async(Vote.objects.create)(contribution=c, account=owner, value=1)
+        contributions.append(c)
+
+    # Create an export snapshot (result not needed; side-effect is the DB rows)
+    await ExportService.create(owner, playlist.id)
+    playlist_id = playlist.id
+
+    # Delete via GraphQL
+    async with _authed_client(owner.id) as client:
+        result = await _gql(
+            client,
+            "mutation($id: ID!) { deletePlaylist(id: $id) { deleted } }",
+            {"id": str(playlist_id)},
+        )
+    assert result["data"]["deletePlaylist"]["deleted"] is True
+
+    # All child rows must be gone
+    assert await sync_to_async(Playlist.objects.filter(id=playlist_id).count)() == 0
+    assert (
+        await sync_to_async(
+            Contribution.objects.filter(playlist_id=playlist_id).count
+        )()
+        == 0
+    )
+    assert (
+        await sync_to_async(
+            Vote.objects.filter(contribution__playlist_id=playlist_id).count
+        )()
+        == 0
+    )
+    assert (
+        await sync_to_async(
+            ExportSnapshot.objects.filter(playlist_id=playlist_id).count
+        )()
+        == 0
+    )
+    assert (
+        await sync_to_async(
+            ExportSnapshotTrack.objects.filter(snapshot__playlist_id=playlist_id).count
+        )()
+        == 0
+    )
+    assert (
+        await sync_to_async(
+            PlaylistMembership.objects.filter(playlist_id=playlist_id).count
+        )()
+        == 0
+    )

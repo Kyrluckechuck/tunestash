@@ -9,13 +9,14 @@ from queuetip.permissions import require_member
 from src.queuetip.resolution.catalog import catalog_search as _catalog_search
 
 from ..context import QueuetipContext
-from ..errors import AuthRequiredError, ValidationError
+from ..errors import AuthRequiredError
 from ..graphql_types import (
     AccountType,
     BulkImportJobType,
     CatalogSearchResultType,
     ContributionType,
     ExportSnapshotType,
+    PlaylistPreviewType,
     PlaylistType,
 )
 from ..services.bulk_import import BulkImportService
@@ -91,29 +92,30 @@ class Query:
     async def playlist(
         self,
         info: Info[QueuetipContext, None],
-        id: strawberry.ID | None = None,
-        invite_token: str | None = None,
+        id: strawberry.ID,
     ) -> PlaylistType:
-        """Look up a playlist by id (auth required) or invite token (anonymous OK).
-
-        The invite-token path is the unauthenticated "preview before joining"
-        experience: anyone with the link can read playlist metadata + members.
-        The id path requires membership.
-        """
+        """Look up a playlist by id. Caller must be a member."""
         ctx = info.context
-        if invite_token is not None and id is not None:
-            raise ValidationError("Provide exactly one of id or inviteToken.")
-        if invite_token is not None:
-            playlist = await PlaylistService.get_by_invite_token(invite_token)
-        elif id is not None:
-            if ctx.account is None:
-                raise AuthRequiredError("Sign in to look up a playlist by id.")
-            playlist = await PlaylistService.get_by_id(int(id))
-            await sync_to_async(require_member)(ctx.account, playlist)
-        else:
-            raise ValidationError("Provide either id or inviteToken.")
+        if ctx.account is None:
+            raise AuthRequiredError("Sign in to look up a playlist by id.")
+        playlist = await PlaylistService.get_by_id(int(id))
+        await sync_to_async(require_member)(ctx.account, playlist)
         members = await PlaylistService.list_memberships(playlist)
         return PlaylistType.from_model(playlist, members)
+
+    @strawberry.field
+    async def playlist_by_invite_token(
+        self,
+        invite_token: str,
+    ) -> PlaylistPreviewType:
+        """Look up a playlist preview by invite token. Anonymous-OK.
+
+        Returns only public metadata and members — no engine_settings.
+        This is the "preview before joining" experience for invite links.
+        """
+        playlist = await PlaylistService.get_by_invite_token(invite_token)
+        members = await PlaylistService.list_memberships(playlist)
+        return PlaylistPreviewType.from_model(playlist, members)
 
     @strawberry.field
     async def catalog_search(

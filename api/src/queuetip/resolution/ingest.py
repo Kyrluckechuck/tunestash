@@ -106,13 +106,25 @@ def _create_song(candidate: TrackCandidate) -> Song:
     )
 
 
+_QUEUETIP_DOWNLOAD_QUEUE = "queuetip-downloads"
+_QUEUETIP_DOWNLOAD_PRIORITY = 9  # Highest priority; these are user-triggered.
+
+
 def _queue_download(song: Song) -> None:
     if song.downloaded:
         return
     if song.deezer_id:
-        download_deezer_track.delay(song.id)
+        download_deezer_track.apply_async(
+            args=[song.id],
+            queue=_QUEUETIP_DOWNLOAD_QUEUE,
+            priority=_QUEUETIP_DOWNLOAD_PRIORITY,
+        )
     elif song.gid:
-        download_track_by_spotify_gid.delay(song.gid)
+        download_track_by_spotify_gid.apply_async(
+            args=[song.gid],
+            queue=_QUEUETIP_DOWNLOAD_QUEUE,
+            priority=_QUEUETIP_DOWNLOAD_PRIORITY,
+        )
     # youtube-only songs: no single-track download task exists for that source.
     # Queuing a download is never a gate for ingest, so a silent skip is correct.
 

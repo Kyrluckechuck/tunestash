@@ -73,7 +73,9 @@ async def test_start_503_when_spotify_not_configured():
 @pytest.mark.asyncio
 async def test_callback_upserts_external_service_link():
     account = await sync_to_async(Account.objects.create)(display_name="Jo")
-    state = spotify_oauth.make_state_token(account.id)
+    session_token = make_session_token(account.id)
+    nonce = spotify_oauth._derive_nonce(session_token)
+    state = spotify_oauth.make_state_token(account.id, session_nonce=nonce)
     tokens = {
         "access_token": "AT",
         "refresh_token": "RT",
@@ -90,6 +92,7 @@ async def test_callback_upserts_external_service_link():
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
         ) as client:
+            client.cookies.set(SESSION_COOKIE, session_token)
             response = await client.get(
                 "/auth/spotify/callback",
                 params={"code": "CODE", "state": state},
@@ -125,7 +128,9 @@ async def test_callback_updates_existing_link():
         service_user_id="old_user",
     )
 
-    state = spotify_oauth.make_state_token(account.id)
+    session_token = make_session_token(account.id)
+    nonce = spotify_oauth._derive_nonce(session_token)
+    state = spotify_oauth.make_state_token(account.id, session_nonce=nonce)
     tokens = {
         "access_token": "NEW_AT",
         "refresh_token": "NEW_RT",
@@ -140,6 +145,7 @@ async def test_callback_updates_existing_link():
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
         ) as client:
+            client.cookies.set(SESSION_COOKIE, session_token)
             response = await client.get(
                 "/auth/spotify/callback",
                 params={"code": "CODE2", "state": state},

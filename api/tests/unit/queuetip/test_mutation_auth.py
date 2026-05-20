@@ -2,7 +2,7 @@ import pytest
 from asgiref.sync import sync_to_async
 
 from queuetip.models import Account, AuthIdentity
-from src.queuetip.schema.mutation import _request_magic_link
+from src.queuetip.schema.mutation import _check_magic_link_throttle, _request_magic_link
 
 
 @pytest.mark.django_db(transaction=True)
@@ -57,3 +57,31 @@ async def test_request_magic_link_rejects_overlong_display_name(mailoutbox):
     assert result.sent is False
     assert await sync_to_async(Account.objects.count)() == 0
     assert len(mailoutbox) == 0
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_magic_link_throttled_after_per_email_limit(mailoutbox):
+    """6th rapid request for the same email returns throttle message on the 6th call."""
+    email = "throttle-test@example.com"
+    ip = "10.0.0.1"
+
+    # First 5 calls exhaust the per-email window budget
+    for _ in range(5):
+        await sync_to_async(_check_magic_link_throttle)(email, ip)
+
+    # 6th call via _request_magic_link should be rejected by the throttle
+    result = await _request_magic_link(email, "Throttled User", ip=ip)
+    assert result.sent is False
+    assert "too many" in result.message.lower()
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_magic_link_different_emails_not_throttled(mailoutbox):
+    """Different emails are rate-limited independently — one full budget each."""
+    for i in range(5):
+        email = f"user{i}@example.com"
+        result = await _request_magic_link(email, f"User {i}", ip="10.0.0.2")
+        # Each unique email should succeed (or fail for unrelated reasons, not throttle)
+        assert "too many" not in result.message.lower()

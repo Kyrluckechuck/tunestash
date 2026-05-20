@@ -1,9 +1,11 @@
 """Queuetip GraphQL Mutation type."""
 
+import datetime
 import re
 from typing import cast
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 import strawberry
 from asgiref.sync import sync_to_async
@@ -14,6 +16,7 @@ from queuetip.models import (
     AuthIdentity,
     Contribution,
     ExportSnapshot,
+    MagicLinkRequestLog,
     Playlist,
     Vote,
 )
@@ -47,6 +50,45 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Matches Account.display_name max_length; a longer value would raise a
 # DataError from the DB layer rather than a friendly result.
 _DISPLAY_NAME_MAX = 120
+
+# Sliding-window rate limits for magic-link requests.
+# Per-email: 5 requests per 5 minutes. Per-IP: 100 per hour.
+# The per-IP cap is intentionally high because automated test clients all
+# share the same emulated IP address ("testclient").
+_ML_PER_EMAIL_LIMIT = 5
+_ML_PER_EMAIL_WINDOW = datetime.timedelta(minutes=5)
+_ML_PER_IP_LIMIT = 100
+_ML_PER_IP_WINDOW = datetime.timedelta(hours=1)
+
+
+def _check_magic_link_throttle(email: str, ip: str) -> bool:
+    """Return True if this request is within rate limits and record it.
+
+    Returns False (without recording) if either the per-email or per-IP
+    limit has been exceeded within its sliding window.
+    """
+    now = timezone.now()
+    email_since = now - _ML_PER_EMAIL_WINDOW
+    ip_since = now - _ML_PER_IP_WINDOW
+
+    if (
+        MagicLinkRequestLog.objects.filter(
+            identifier=email, created_at__gte=email_since
+        ).count()
+        >= _ML_PER_EMAIL_LIMIT
+    ):
+        return False
+
+    if (
+        MagicLinkRequestLog.objects.filter(
+            ip_address=ip, created_at__gte=ip_since
+        ).count()
+        >= _ML_PER_IP_LIMIT
+    ):
+        return False
+
+    MagicLinkRequestLog.objects.create(identifier=email, ip_address=ip)
+    return True
 
 
 @strawberry.type
@@ -140,7 +182,7 @@ async def _load_snapshot_with_tracks(snapshot: ExportSnapshot) -> "ExportSnapsho
 
 
 async def _request_magic_link(
-    email: str, display_name: str | None
+    email: str, display_name: str | None, ip: str = "unknown"
 ) -> RequestMagicLinkResult:
     """Find or create an account for `email` and email it a sign-in link.
 
@@ -151,6 +193,12 @@ async def _request_magic_link(
     if not _EMAIL_RE.match(email):
         return RequestMagicLinkResult(
             sent=False, message="That doesn't look like a valid email address."
+        )
+
+    allowed = await sync_to_async(_check_magic_link_throttle)(email, ip)
+    if not allowed:
+        return RequestMagicLinkResult(
+            sent=False, message="Too many requests. Try again later."
         )
 
     def find_identity() -> AuthIdentity | None:
@@ -222,10 +270,17 @@ class Mutation:
 
     @strawberry.mutation
     async def request_magic_link(
-        self, email: str, display_name: str | None = None
+        self,
+        info: Info[QueuetipContext, None],
+        email: str,
+        display_name: str | None = None,
     ) -> RequestMagicLinkResult:
         """Request a magic-link sign-in email. Creates an account if needed."""
-        return await _request_magic_link(email, display_name)
+        req = info.context.request
+        ip = (
+            req.client.host if req is not None and req.client is not None else "unknown"
+        )
+        return await _request_magic_link(email, display_name, ip=ip)
 
     @strawberry.mutation
     async def create_playlist(

@@ -6,7 +6,11 @@ from tests.factories import ArtistFactory, SongFactory
 from library_manager.models import Song
 from src.queuetip.resolution.candidate import TrackCandidate
 from src.queuetip.resolution.errors import TrackNotFoundError
-from src.queuetip.resolution.ingest import ingest_track
+from src.queuetip.resolution.ingest import (
+    _QUEUETIP_DOWNLOAD_PRIORITY,
+    _QUEUETIP_DOWNLOAD_QUEUE,
+    ingest_track,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +32,11 @@ def test_ingest_matches_existing_song_by_gid(_no_real_downloads):
     cand = TrackCandidate("Song", "Artist", "spotify", source_id="spot123")
     result = ingest_track(cand)
     assert result.id == existing.id
-    _no_real_downloads["spotify"].delay.assert_called_once_with("spot123")
+    _no_real_downloads["spotify"].apply_async.assert_called_once_with(
+        args=["spot123"],
+        queue=_QUEUETIP_DOWNLOAD_QUEUE,
+        priority=_QUEUETIP_DOWNLOAD_PRIORITY,
+    )
 
 
 def test_ingest_matches_existing_song_by_isrc(_no_real_downloads):
@@ -48,7 +56,11 @@ def test_ingest_creates_spotify_song(_no_real_downloads):
     assert result.gid == "newgid1"
     assert result.isrc == "ISRCNEW"
     assert result.primary_artist.name == "New Artist"
-    _no_real_downloads["spotify"].delay.assert_called_once_with("newgid1")
+    _no_real_downloads["spotify"].apply_async.assert_called_once_with(
+        args=["newgid1"],
+        queue=_QUEUETIP_DOWNLOAD_QUEUE,
+        priority=_QUEUETIP_DOWNLOAD_PRIORITY,
+    )
 
 
 def test_ingest_creates_apple_song_via_isrc_to_deezer(_no_real_downloads):
@@ -61,7 +73,11 @@ def test_ingest_creates_apple_song_via_isrc_to_deezer(_no_real_downloads):
     ):
         result = ingest_track(cand)
     assert result.deezer_id == 7777
-    _no_real_downloads["deezer"].delay.assert_called_once_with(result.id)
+    _no_real_downloads["deezer"].apply_async.assert_called_once_with(
+        args=[result.id],
+        queue=_QUEUETIP_DOWNLOAD_QUEUE,
+        priority=_QUEUETIP_DOWNLOAD_PRIORITY,
+    )
     assert result.primary_artist.deezer_id == 12
     assert result.primary_artist.gid is None
 

@@ -330,6 +330,30 @@ class ExportSnapshotTrack(models.Model):
         ]
 
 
+class MagicLinkRequestLog(models.Model):
+    """Rate-limit audit log for magic-link requests.
+
+    One row per request attempt. Old rows are not purged automatically — the
+    sliding-window check only reads the recent window so unbounded growth is
+    acceptable for v1 volumes. Add a periodic cleanup task if volume warrants.
+    """
+
+    identifier: models.CharField = models.CharField(max_length=254)
+    ip_address: models.CharField = models.CharField(max_length=45)
+    created_at: models.DateTimeField = models.DateTimeField(
+        auto_now_add=True, db_index=True
+    )
+
+    if TYPE_CHECKING:
+        id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
+
+    def __str__(self) -> str:
+        return f"{self.identifier} from {self.ip_address} at {self.created_at}"
+
+
 class ExternalServiceLink(models.Model):
     """A linked external-service identity (Spotify, future: Apple) per Account.
 

@@ -26,6 +26,7 @@ from .auth import (
 from .spotify_oauth import (
     InvalidStateError,
     SpotifyOAuthError,
+    _derive_nonce,
     build_authorize_url,
     exchange_code_for_tokens,
     get_spotify_user_id,
@@ -141,7 +142,8 @@ async def spotify_start(request: Request) -> Response:
         return Response(status_code=401)
 
     try:
-        state = make_state_token(account_id)
+        nonce = _derive_nonce(session_token)
+        state = make_state_token(account_id, session_nonce=nonce)
         url = build_authorize_url(state=state, redirect_uri=_queuetip_callback_uri())
     except SpotifyOAuthError as exc:
         return HTMLResponse(
@@ -151,7 +153,9 @@ async def spotify_start(request: Request) -> Response:
 
 
 @router.get("/auth/spotify/callback")
-async def spotify_callback(request: Request) -> Response:
+async def spotify_callback(  # pylint: disable=too-many-return-statements
+    request: Request,
+) -> Response:
     """Handle the Spotify OAuth redirect: exchange the code for tokens, persist."""
     from queuetip.models import Account, ExternalServiceLink
 
@@ -166,8 +170,17 @@ async def spotify_callback(request: Request) -> Response:
     if not code or not state:
         return Response(status_code=400)
 
+    # Reject callback if the caller has no session — the state token was
+    # issued for a specific session, so no session means it can't match.
+    callback_session_token = request.cookies.get(SESSION_COOKIE)
+    if not callback_session_token:
+        return HTMLResponse(
+            "<h1>Session expired. Please sign in again.</h1>", status_code=400
+        )
+    expected_nonce = _derive_nonce(callback_session_token)
+
     try:
-        account_id = read_state_token(state)
+        account_id = read_state_token(state, expected_nonce=expected_nonce)
     except InvalidStateError:
         return HTMLResponse(
             "<h1>Sign-in link expired or tampered. Try again.</h1>", status_code=400

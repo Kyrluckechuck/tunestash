@@ -3,10 +3,15 @@
 Independent of TuneStash's operator-OAuth at `src.routes.auth` — this flow
 links each Queuetip Account to its own Spotify identity. State tokens are
 signed via django.core.signing with a 5-minute max-age.
+
+State tokens include a session nonce (first 16 hex chars of SHA-256 of the
+session cookie value) so a token issued for one session cannot be replayed
+from a different session (CSRF binding).
 """
 
 from __future__ import annotations
 
+import hashlib
 import urllib.parse
 from typing import Any
 
@@ -23,6 +28,16 @@ SPOTIFY_API_BASE = "https://api.spotify.com/v1"
 OAUTH_SCOPES = ["playlist-modify-private", "playlist-modify-public"]
 _STATE_SALT = "queuetip.spotify.oauth-state"
 STATE_MAX_AGE = 300  # 5 minutes
+
+
+def _derive_nonce(session_token: str) -> str:
+    """Derive a short, stable nonce from a session token.
+
+    Uses the first 16 hex characters (64 bits) of SHA-256.  Short enough to
+    keep the state token compact; long enough to make cross-session replay
+    computationally infeasible.
+    """
+    return hashlib.sha256(session_token.encode()).hexdigest()[:16]
 
 
 class SpotifyOAuthError(Exception):
@@ -51,15 +66,29 @@ def get_credentials() -> tuple[str, str]:
     return client_id, client_secret
 
 
-def make_state_token(account_id: int) -> str:
-    return signing.dumps({"aid": account_id}, salt=_STATE_SALT)
+def make_state_token(account_id: int, session_nonce: str) -> str:
+    """Sign a state token binding `account_id` to the caller's session nonce.
+
+    The nonce must be derived from the current session cookie via
+    `_derive_nonce()` before calling this function.
+    """
+    return signing.dumps({"aid": account_id, "nonce": session_nonce}, salt=_STATE_SALT)
 
 
-def read_state_token(token: str) -> int:
+def read_state_token(token: str, expected_nonce: str) -> int:
+    """Verify and decode a state token; raises InvalidStateError on any mismatch.
+
+    Verifies signature, expiry (STATE_MAX_AGE), and that the embedded nonce
+    matches `expected_nonce` (i.e. the nonce derived from the callback caller's
+    session cookie).  A mismatch means the callback came from a different
+    session than the one that initiated the flow.
+    """
     try:
         data = signing.loads(token, salt=_STATE_SALT, max_age=STATE_MAX_AGE)
     except signing.BadSignature as exc:
         raise InvalidStateError(str(exc)) from exc
+    if data.get("nonce") != expected_nonce:
+        raise InvalidStateError("Session nonce mismatch — possible CSRF.")
     return int(data["aid"])
 
 

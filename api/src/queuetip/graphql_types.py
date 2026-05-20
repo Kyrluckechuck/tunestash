@@ -123,6 +123,39 @@ class EngineSettingsInput:
 
 
 @strawberry.type
+class PlaylistPreviewType:
+    """Minimal playlist data returned to anonymous invite-link visitors.
+
+    Intentionally omits engine_settings — those are internal owner config
+    that guests don't need to see before joining.
+    """
+
+    id: strawberry.ID
+    name: str
+    description: str
+    invite_token: str
+    created_by: AccountType
+    created_at: datetime.datetime
+    members: list[MembershipType]
+
+    @classmethod
+    def from_model(
+        cls,
+        playlist: Playlist,
+        memberships: list[PlaylistMembership],
+    ) -> "PlaylistPreviewType":
+        return cls(
+            id=strawberry.ID(str(playlist.id)),
+            name=playlist.name,
+            description=playlist.description,
+            invite_token=playlist.invite_token,
+            created_by=AccountType.from_model(cast(Account, playlist.created_by)),
+            created_at=playlist.created_at,
+            members=[MembershipType.from_model(m) for m in memberships],
+        )
+
+
+@strawberry.type
 class PlaylistType:
     """A Queuetip playlist with engine knobs and member list."""
 

@@ -96,3 +96,67 @@ async def test_logout_clears_session_cookie():
     assert response.status_code == 204
     set_cookie_header = response.headers.get("set-cookie", "")
     assert SESSION_COOKIE in set_cookie_header
+
+
+def test_schema_has_depth_and_alias_extensions():
+    """Verify QueryDepthLimiter and MaxAliasesLimiter are registered on the schema."""
+    from strawberry.extensions import MaxAliasesLimiter, QueryDepthLimiter
+
+    from src.queuetip.schema import schema
+
+    # Both extensions are instantiated as instances of their respective classes.
+    assert any(
+        isinstance(ext, QueryDepthLimiter) for ext in schema.extensions
+    ), "QueryDepthLimiter not found in schema extensions"
+    assert any(
+        isinstance(ext, MaxAliasesLimiter) for ext in schema.extensions
+    ), "MaxAliasesLimiter not found in schema extensions"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_normal_depth_query_succeeds(async_client):
+    """A well-formed shallow query must not be blocked by the depth limiter."""
+    async with async_client as client:
+        response = await client.post("/graphql", json={"query": "{ me { id } }"})
+    assert response.status_code == 200
+    data = response.json()
+    assert "errors" not in data or data.get("data") is not None
+
+
+@pytest.mark.asyncio
+async def test_error_masking_hides_unexpected_exceptions(async_client):
+    """Unhandled resolver exceptions must be replaced with a generic message."""
+    from unittest.mock import AsyncMock, patch
+
+    from src.queuetip.schema.query import Query
+
+    with patch.object(Query, "me", new_callable=lambda: property(lambda self: None)):
+        # Patch catalog_search to raise an unexpected error
+        with patch(
+            "src.queuetip.schema.query._catalog_search",
+            new=AsyncMock(side_effect=ZeroDivisionError("boom")),
+        ):
+            async with async_client as client:
+                response = await client.post(
+                    "/graphql",
+                    json={"query": '{ catalogSearch(query: "test") { title } }'},
+                )
+    body = response.json()
+    assert "errors" in body
+    # The original "boom" message must not appear
+    error_messages = [e.get("message", "") for e in body["errors"]]
+    assert all("boom" not in msg for msg in error_messages)
+    assert any("internal server error" in msg.lower() for msg in error_messages)
+
+
+@pytest.mark.asyncio
+async def test_introspection_enabled_in_debug_mode(async_client):
+    """Introspection must work when DEBUG=True (default in tests)."""
+    introspection_query = "{ __schema { types { name } } }"
+    async with async_client as client:
+        response = await client.post("/graphql", json={"query": introspection_query})
+    body = response.json()
+    # In DEBUG mode (tests), introspection must succeed
+    assert "data" in body
+    assert body["data"] is not None
