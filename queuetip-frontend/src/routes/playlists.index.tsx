@@ -53,9 +53,8 @@ function PlaylistsIndexContent() {
                   {p.members.length} member{p.members.length === 1 ? "" : "s"}
                 </span>
                 <Link
-                  // @ts-expect-error route /playlists/$id lands in Task 6
                   to="/playlists/$id"
-                  params={{ id: p.id } as never}
+                  params={{ id: p.id }}
                   className="text-sm underline-offset-4 hover:underline"
                 >
                   Open →

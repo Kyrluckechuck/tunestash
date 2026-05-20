@@ -39,7 +39,6 @@ export function NewPlaylistDialog({ open, onOpenChange }: Props) {
       setDescription("");
       toast.success("Playlist created.");
       if (id) {
-        // @ts-expect-error route /playlists/$id lands in Task 6
         await router.navigate({ to: "/playlists/$id", params: { id } });
       }
     } catch {
