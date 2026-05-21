@@ -1,8 +1,10 @@
 """Unit tests for the Queuetip Spotify OAuth state-signing helpers."""
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
+from asgiref.sync import sync_to_async
 
 from src.queuetip import spotify_oauth
 
@@ -61,3 +63,27 @@ def test_get_credentials_raises_when_missing():
     ):
         with pytest.raises(spotify_oauth.SpotifyOAuthError, match="not configured"):
             spotify_oauth.get_credentials()
+
+
+def test_build_authorize_url_works_via_sync_to_async():
+    """Regression: the /auth/spotify/start route is async and must invoke
+    build_authorize_url through sync_to_async. get_setting() reads from the DB,
+    which raises SynchronousOnlyOperation in an async event loop. The registry
+    silently swallows that exception and returns the default ("") — making the
+    failure look like a false "Spotify is not configured" 503 to the user.
+
+    Pin the contract: when wrapped in sync_to_async, build_authorize_url must
+    successfully read credentials and produce a valid Spotify authorize URL.
+    """
+
+    async def call_from_async() -> str:
+        with patch.object(
+            spotify_oauth, "get_credentials", return_value=("real-id", "real-secret")
+        ):
+            return await sync_to_async(spotify_oauth.build_authorize_url)(
+                state="s", redirect_uri="http://localhost:5050/auth/spotify/callback"
+            )
+
+    url = asyncio.run(call_from_async())
+    assert "client_id=real-id" in url
+    assert url.startswith("https://accounts.spotify.com/authorize")

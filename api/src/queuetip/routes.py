@@ -202,7 +202,14 @@ async def spotify_start(request: Request) -> Response:
     try:
         nonce = _derive_nonce(session_token)
         state = make_state_token(start_payload.account_id, session_nonce=nonce)
-        url = build_authorize_url(state=state, redirect_uri=_queuetip_callback_uri())
+        # build_authorize_url reads Spotify creds from the app_settings registry,
+        # which queries the DB synchronously. Must be wrapped in sync_to_async
+        # from this async route, or Django raises SynchronousOnlyOperation that
+        # the registry silently swallows, returning empty strings → false
+        # "not configured" error.
+        url = await sync_to_async(build_authorize_url)(
+            state=state, redirect_uri=_queuetip_callback_uri()
+        )
     except SpotifyOAuthError as exc:
         return HTMLResponse(
             f"<h1>Spotify is not configured</h1><p>{exc}</p>", status_code=503
