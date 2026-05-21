@@ -6,10 +6,17 @@ Implements just enough of the Subsonic API to:
   * read a playlist's current contents (getPlaylist)
   * create / update / delete a playlist
 
-Auth is salted-MD5 — the lowest common denominator that works against every
-Subsonic-compatible server. The password lives encrypted at rest (Fernet);
-this client takes the *plaintext* and computes a fresh salt + token per
-request, so the password never leaves memory in long-lived form.
+Auth supports two modes:
+  * `password` (classic Subsonic): salted-MD5 token computed per-request from
+    the user's plaintext password. Works against every Subsonic implementation
+    in existence — it's the protocol's baseline auth.
+  * `api_key` (OpenSubsonic): `apiKey=` URL parameter carrying a long-lived
+    token the user generated in Navidrome's UI. Works on Navidrome 0.50+ and
+    other OpenSubsonic-aware servers. Cleaner: no password storage, password
+    rotation has no impact on the connection.
+
+Either way the secret lives Fernet-encrypted at rest; the client receives
+the plaintext and uses it for the duration of one short-lived instance.
 
 Response format: we always request `f=json` so callers can work in dicts
 rather than juggling Subsonic's quirky XML namespace.
@@ -40,6 +47,9 @@ logger = logging.getLogger(__name__)
 API_VERSION = "1.16.1"
 CLIENT_NAME = "queuetip"
 DEFAULT_TIMEOUT = 15.0
+
+AUTH_PASSWORD = "password"
+AUTH_API_KEY = "api_key"
 
 
 class SubsonicError(Exception):
@@ -80,13 +90,18 @@ class SubsonicClient:
         server_url: str,
         username: str,
         password: str,
+        auth_mode: str = AUTH_PASSWORD,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         # Trim a trailing slash so callers can write `<base>/rest/...` without
         # producing double slashes that some Subsonic servers reject.
         self.server_url = server_url.rstrip("/")
         self.username = username
+        # In api_key mode `password` carries the API key. Stored under the
+        # same attribute so the rest of the client doesn't fork on auth_mode
+        # — only the request-signing step in `_get` differs.
         self._password = password
+        self._auth_mode = auth_mode
         self._timeout = timeout
 
     # ── Public endpoints ────────────────────────────────────────────────────
@@ -196,6 +211,26 @@ class SubsonicClient:
             params.append(("songIdToAdd", sid))
         self._get("updatePlaylist", params=params)
 
+    def _auth_params(self) -> list[tuple[str, str]]:
+        """Build the auth-related query params per the configured auth_mode.
+
+        Classic Subsonic uses `u` + per-request salted-MD5 `t` + `s`.
+        OpenSubsonic API-key auth uses a single `apiKey` param and OMITS the
+        `u` parameter (Navidrome's implementation treats apiKey as
+        self-identifying — the server resolves the user from the key).
+        """
+        if self._auth_mode == AUTH_API_KEY:
+            return [("apiKey", self._password)]
+        salt = secrets.token_hex(8)
+        token = hashlib.md5(  # nosec: B324 — Subsonic protocol mandates MD5
+            (self._password + salt).encode("utf-8")
+        ).hexdigest()
+        return [
+            ("u", self.username),
+            ("t", token),
+            ("s", salt),
+        ]
+
     def delete_playlist(self, playlist_id: str) -> None:
         """Remove a playlist from the server.
 
@@ -217,19 +252,14 @@ class SubsonicClient:
         params: list[tuple[str, str]] | dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Perform a Subsonic REST call, decode JSON, validate the envelope."""
-        salt = secrets.token_hex(8)
-        token = hashlib.md5(  # nosec: B324 — Subsonic protocol mandates MD5
-            (self._password + salt).encode("utf-8")
-        ).hexdigest()
-
-        query: list[tuple[str, str]] = [
-            ("u", self.username),
-            ("t", token),
-            ("s", salt),
-            ("v", API_VERSION),
-            ("c", CLIENT_NAME),
-            ("f", "json"),
-        ]
+        query: list[tuple[str, str]] = list(self._auth_params())
+        query.extend(
+            [
+                ("v", API_VERSION),
+                ("c", CLIENT_NAME),
+                ("f", "json"),
+            ]
+        )
         if isinstance(params, dict):
             query.extend(params.items())
         elif params is not None:

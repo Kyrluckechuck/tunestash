@@ -43,6 +43,9 @@ export function SubsonicConnectionSection() {
   const [serverUrl, setServerUrl] = React.useState("");
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [authMode, setAuthMode] = React.useState<"password" | "api_key">(
+    "password",
+  );
 
   const [addConn, { loading: adding }] = useMutation(
     AddSubsonicConnectionDocument,
@@ -66,6 +69,7 @@ export function SubsonicConnectionSection() {
     setServerUrl("");
     setUsername("");
     setPassword("");
+    setAuthMode("password");
     setShowForm(false);
   }
 
@@ -79,9 +83,12 @@ export function SubsonicConnectionSection() {
             label: label || existing.label,
             serverUrl: serverUrl || existing.serverUrl,
             username: username || existing.username,
-            // Only send password when the user typed one; null leaves the
-            // stored Fernet-encrypted credential untouched.
+            // Only send password/key when the user typed one; null leaves
+            // the stored Fernet-encrypted credential untouched.
             password: password || null,
+            // Send authMode only when it changed — switching modes also
+            // requires a fresh credential in the new format.
+            authMode: authMode !== existing.authMode ? authMode : null,
           },
         });
         toast.success("Subsonic connection updated.");
@@ -92,6 +99,7 @@ export function SubsonicConnectionSection() {
             serverUrl,
             username,
             password,
+            authMode,
           },
         });
         toast.success("Subsonic connection added.");
@@ -181,6 +189,7 @@ export function SubsonicConnectionSection() {
                   setServerUrl(existing.serverUrl);
                   setUsername(existing.username);
                   setPassword("");
+                  setAuthMode(existing.authMode as "password" | "api_key");
                   setShowForm(true);
                 }}
                 size="sm"
@@ -220,18 +229,50 @@ export function SubsonicConnectionSection() {
               />
             </div>
             <div className="space-y-1">
+              <Label>Authentication</Label>
+              <div className="flex gap-3 text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="auth-mode"
+                    value="password"
+                    checked={authMode === "password"}
+                    onChange={() => setAuthMode("password")}
+                  />
+                  <span>Password (classic Subsonic)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="auth-mode"
+                    value="api_key"
+                    checked={authMode === "api_key"}
+                    onChange={() => setAuthMode("api_key")}
+                  />
+                  <span>API key (OpenSubsonic / Navidrome 0.50+)</span>
+                </label>
+              </div>
+            </div>
+            <div className="space-y-1">
               <Label htmlFor="sub-user">Username</Label>
               <Input
                 id="sub-user"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                required={!existing}
+                required={!existing && authMode === "password"}
                 autoComplete="username"
               />
+              {authMode === "api_key" ? (
+                <p className="text-xs text-muted-foreground">
+                  Optional with API-key auth — Navidrome resolves the user
+                  from the key itself.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1">
               <Label htmlFor="sub-pass">
-                Password{existing ? " (leave blank to keep current)" : ""}
+                {authMode === "api_key" ? "API key" : "Password"}
+                {existing ? " (leave blank to keep current)" : ""}
               </Label>
               <Input
                 id="sub-pass"
@@ -239,8 +280,15 @@ export function SubsonicConnectionSection() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required={!existing}
-                autoComplete="current-password"
+                autoComplete={
+                  authMode === "api_key" ? "off" : "current-password"
+                }
               />
+              {authMode === "api_key" ? (
+                <p className="text-xs text-muted-foreground">
+                  Generate in Navidrome under Settings → Personal → API key.
+                </p>
+              ) : null}
             </div>
             <div className="flex gap-2">
               <Button type="submit" disabled={adding || updating}>

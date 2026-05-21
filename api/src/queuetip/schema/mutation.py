@@ -607,17 +607,21 @@ class Mutation:
         server_url: str,
         username: str,
         password: str,
+        auth_mode: str = SubsonicConnection.AUTH_PASSWORD,
     ) -> SubsonicConnectionType:
         """Save a Subsonic-compatible server connection for the current user
         and immediately probe it (ping + OpenSubsonic extension detection).
 
+        `auth_mode` is "password" (classic Subsonic, salted-MD5) or
+        "api_key" (OpenSubsonic — Navidrome 0.50+ etc.). In API-key mode the
+        `password` parameter carries the API key generated in Navidrome's UI.
         MVP: one connection per account. Adding a second replaces the first
         — destructive intent must be explicit, so this is enforced by the
         unique_together constraint rather than silent overwrite.
         """
         account = _require_account(info)
         conn = await sync_to_async(_create_subsonic_connection)(
-            account, label, server_url, username, password
+            account, label, server_url, username, password, auth_mode
         )
         # Probe synchronously so the user sees status immediately. Failures
         # don't roll back the row — they're recorded for diagnosis.
@@ -633,16 +637,17 @@ class Mutation:
         server_url: str | None = None,
         username: str | None = None,
         password: str | None = None,
+        auth_mode: str | None = None,
     ) -> SubsonicConnectionType:
         """Patch fields on an existing connection. Pass `password` only when
-        rotating credentials — null leaves the stored encrypted password
-        alone. Re-probes after any change."""
+        rotating credentials — null leaves the stored encrypted secret alone.
+        Pass `auth_mode` to switch between password and API-key auth (the
+        caller MUST also pass the new credential matching the new mode).
+        Re-probes after any change."""
         account = _require_account(info)
         conn = await sync_to_async(_update_subsonic_connection)(
-            account, int(id), label, server_url, username, password
+            account, int(id), label, server_url, username, password, auth_mode
         )
-        # If they rotated the password we have the plaintext; otherwise we
-        # need to decrypt to probe. The probe path handles both.
         await sync_to_async(_probe_subsonic_connection)(conn, password)
         return SubsonicConnectionType.from_model(conn)
 
@@ -821,17 +826,24 @@ def _create_subsonic_connection(
     server_url: str,
     username: str,
     password: str,
+    auth_mode: str = SubsonicConnection.AUTH_PASSWORD,
 ) -> SubsonicConnection:
-    """Persist a new SubsonicConnection with the password encrypted."""
+    """Persist a new SubsonicConnection with the secret Fernet-encrypted."""
     if not server_url.strip():
         raise ValidationError("server_url is required")
-    if not username.strip():
-        raise ValidationError("username is required")
+    if not username.strip() and auth_mode == SubsonicConnection.AUTH_PASSWORD:
+        # API-key auth in OpenSubsonic identifies the user from the key alone,
+        # so username can be empty for that mode. For password auth we need it.
+        raise ValidationError("username is required for password auth")
     if not password:
-        raise ValidationError("password is required")
+        raise ValidationError("password (or API key) is required")
+    if auth_mode not in (
+        SubsonicConnection.AUTH_PASSWORD,
+        SubsonicConnection.AUTH_API_KEY,
+    ):
+        raise ValidationError(f"Invalid auth_mode: {auth_mode!r}")
     # Hard-replace any prior connection — the model is unique_together on
-    # account, so a second add must clobber. Doing this explicitly produces
-    # a clearer behaviour than relying on the IntegrityError path.
+    # account, so a second add must clobber.
     SubsonicConnection.objects.filter(account=account).delete()
     return SubsonicConnection.objects.create(
         account=account,
@@ -839,6 +851,7 @@ def _create_subsonic_connection(
         server_url=server_url.strip(),
         username=username.strip(),
         password_encrypted=encrypt_secret(password),
+        auth_mode=auth_mode,
     )
 
 
@@ -849,6 +862,7 @@ def _update_subsonic_connection(
     server_url: str | None,
     username: str | None,
     password: str | None,
+    auth_mode: str | None,
 ) -> SubsonicConnection:
     conn = SubsonicConnection.objects.filter(id=conn_id, account=account).first()
     if conn is None:
@@ -861,6 +875,13 @@ def _update_subsonic_connection(
         conn.username = username.strip() or conn.username
     if password:
         conn.password_encrypted = encrypt_secret(password)
+    if auth_mode is not None:
+        if auth_mode not in (
+            SubsonicConnection.AUTH_PASSWORD,
+            SubsonicConnection.AUTH_API_KEY,
+        ):
+            raise ValidationError(f"Invalid auth_mode: {auth_mode!r}")
+        conn.auth_mode = auth_mode
     conn.save()
     return conn
 
@@ -892,6 +913,7 @@ def _probe_subsonic_connection(
         server_url=conn.server_url,
         username=conn.username,
         password=plaintext_password,
+        auth_mode=conn.auth_mode,
     )
     try:
         client.ping()
@@ -999,6 +1021,7 @@ def _remove_target(account: Account, target_id: int, delete_remote: bool) -> Non
                 server_url=conn.server_url,
                 username=conn.username,
                 password=password,
+                auth_mode=conn.auth_mode,
             )
             client.delete_playlist(target.remote_playlist_id)
         except (CryptoError, SubsonicError):

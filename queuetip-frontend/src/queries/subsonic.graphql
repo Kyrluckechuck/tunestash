@@ -3,6 +3,7 @@ fragment SubsonicConnectionFields on SubsonicConnectionType {
   label
   serverUrl
   username
+  authMode
   verificationStatus
   verificationError
   lastVerifiedAt
@@ -45,12 +46,14 @@ mutation AddSubsonicConnection(
   $serverUrl: String!
   $username: String!
   $password: String!
+  $authMode: String! = "password"
 ) {
   addSubsonicConnection(
     label: $label
     serverUrl: $serverUrl
     username: $username
     password: $password
+    authMode: $authMode
   ) {
     ...SubsonicConnectionFields
   }
@@ -62,6 +65,7 @@ mutation UpdateSubsonicConnection(
   $serverUrl: String
   $username: String
   $password: String
+  $authMode: String
 ) {
   updateSubsonicConnection(
     id: $id
@@ -69,6 +73,7 @@ mutation UpdateSubsonicConnection(
     serverUrl: $serverUrl
     username: $username
     password: $password
+    authMode: $authMode
   ) {
     ...SubsonicConnectionFields
   }

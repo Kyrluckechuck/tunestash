@@ -60,6 +60,10 @@ class SubsonicConnectionType:
     label: str
     server_url: str
     username: str
+    # "password" (classic Subsonic salted-MD5) or "api_key" (OpenSubsonic).
+    # Surfaced so the UI can show which mode is in use and label the secret
+    # field appropriately ("Password" vs "API key").
+    auth_mode: str
     verification_status: str
     verification_error: str
     last_verified_at: datetime.datetime | None
@@ -73,6 +77,7 @@ class SubsonicConnectionType:
             label=conn.label,
             server_url=conn.server_url,
             username=conn.username,
+            auth_mode=conn.auth_mode,
             verification_status=conn.verification_status,
             verification_error=conn.verification_error,
             last_verified_at=conn.last_verified_at,

@@ -448,13 +448,29 @@ class SubsonicConnection(models.Model):
         (STATUS_UNKNOWN, "Not verified"),
     ]
 
+    # Authentication mode against the Subsonic server. "password" uses the
+    # classic salted-MD5 dance (works against every implementation). "api_key"
+    # uses OpenSubsonic's `apiKey=` URL param — cleaner, no password stored,
+    # works on Navidrome 0.50+ and other modern OpenSubsonic-aware servers.
+    AUTH_PASSWORD = "password"
+    AUTH_API_KEY = "api_key"
+    AUTH_MODE_CHOICES = [
+        (AUTH_PASSWORD, "Password"),
+        (AUTH_API_KEY, "API key (OpenSubsonic)"),
+    ]
+
     account: models.ForeignKey = models.ForeignKey(
         Account, on_delete=models.CASCADE, related_name="subsonic_connections"
     )
     label: models.CharField = models.CharField(max_length=80)
     server_url: models.URLField = models.URLField(max_length=500)
     username: models.CharField = models.CharField(max_length=120)
+    # Holds either the user's password OR their OpenSubsonic API key,
+    # depending on auth_mode. Fernet-encrypted at rest either way.
     password_encrypted: models.BinaryField = models.BinaryField()
+    auth_mode: models.CharField = models.CharField(
+        max_length=16, choices=AUTH_MODE_CHOICES, default=AUTH_PASSWORD
+    )
     last_verified_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
     verification_status: models.CharField = models.CharField(
         max_length=16, choices=STATUS_CHOICES, default=STATUS_UNKNOWN

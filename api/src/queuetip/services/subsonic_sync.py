@@ -99,6 +99,7 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
         server_url=connection.server_url,
         username=connection.username,
         password=password,
+        auth_mode=connection.auth_mode,
     )
 
     # Collect the queuetip-side track set (contributions ordered by creation).
