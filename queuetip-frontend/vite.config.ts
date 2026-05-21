@@ -47,7 +47,10 @@ export default defineConfig({
           });
         },
       },
-      "/exports": {
+      // Only proxy actual m3u downloads to the backend. The frontend has its
+      // own /exports/<id> route (the export detail page) — proxying that
+      // would 404 because the backend only registers /exports/<id>.m3u.
+      "^/exports/.+\\.m3u$": {
         target: BACKEND_TARGET,
         changeOrigin: true,
         rewrite: (p) => p,
