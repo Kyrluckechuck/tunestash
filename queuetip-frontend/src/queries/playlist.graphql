@@ -1,0 +1,80 @@
+query PlaylistDetail($id: ID!) {
+  playlist(id: $id) {
+    id
+    name
+    description
+    inviteToken
+    createdBy {
+      id
+      displayName
+    }
+    engineSettings {
+      minSize
+      maxSize
+      tHigh
+      tLow
+      base
+      pFloor
+    }
+    members {
+      account {
+        id
+        displayName
+      }
+      role
+    }
+  }
+  playlistContributions(playlistId: $id) {
+    id
+    netScore
+    createdAt
+    contributedBy {
+      id
+      displayName
+    }
+    song {
+      id
+      title
+      artist
+      isrc
+    }
+    votes {
+      account {
+        id
+      }
+      value
+    }
+  }
+}
+
+mutation CastVote($contributionId: ID!, $value: Int!) {
+  castVote(contributionId: $contributionId, value: $value) {
+    id
+    netScore
+    votes {
+      account {
+        id
+      }
+      value
+    }
+  }
+}
+
+mutation ClearVote($contributionId: ID!) {
+  clearVote(contributionId: $contributionId) {
+    id
+    netScore
+    votes {
+      account {
+        id
+      }
+      value
+    }
+  }
+}
+
+mutation RemoveContribution($id: ID!) {
+  removeContribution(id: $id) {
+    deleted
+  }
+}

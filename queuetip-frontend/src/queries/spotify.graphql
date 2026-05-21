@@ -1,0 +1,8 @@
+mutation ExportToSpotify($snapshotId: ID!, $playlistName: String) {
+  exportToSpotify(snapshotId: $snapshotId, playlistName: $playlistName) {
+    spotifyPlaylistUrl
+    addedCount
+    skippedCount
+    skippedTitles
+  }
+}

@@ -1,0 +1,39 @@
+mutation CreateExport($playlistId: ID!, $options: ExportOptionsInput) {
+  createExport(playlistId: $playlistId, options: $options) {
+    id
+    m3uUrl
+    warningMessage
+  }
+}
+
+query Export($id: ID!) {
+  export(id: $id) {
+    id
+    createdAt
+    parameters
+    rngSeed
+    warningMessage
+    m3uUrl
+    requestedBy {
+      id
+      displayName
+    }
+    playlist {
+      id
+      name
+      description
+    }
+    tracks {
+      id
+      position
+      inclusionReason
+      rollProbability
+      song {
+        id
+        title
+        artist
+        isrc
+      }
+    }
+  }
+}
