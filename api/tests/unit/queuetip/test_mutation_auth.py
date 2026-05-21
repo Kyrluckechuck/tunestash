@@ -7,7 +7,8 @@ from src.queuetip.schema.mutation import _check_magic_link_throttle, _request_ma
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_request_magic_link_creates_account_for_new_email(mailoutbox):
+async def test_request_magic_link_creates_account_for_new_email(mailoutbox, settings):
+    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = False
     result = await _request_magic_link("New@Example.com", "Newbie")
     assert result.sent is True
     identity = await sync_to_async(
@@ -88,3 +89,62 @@ async def test_magic_link_different_emails_not_throttled(mailoutbox):
         result = await _request_magic_link(email, f"User {i}", ip="10.0.0.2")
         # Each unique email should succeed (or fail for unrelated reasons, not throttle)
         assert "too many" not in result.message.lower()
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_signup_blocked_when_email_not_in_allowlist(mailoutbox, settings):
+    """With the allowlist enforced (default), an un-approved email cannot sign up."""
+    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = True
+    result = await _request_magic_link(
+        "uninvited@example.com", "New Person", ip="10.0.0.99"
+    )
+    assert result.sent is False
+    assert (
+        "approved" in result.message.lower() or "registered" in result.message.lower()
+    )
+    assert await sync_to_async(Account.objects.count)() == 0
+    assert len(mailoutbox) == 0
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_signup_succeeds_when_email_is_allowlisted(mailoutbox, settings):
+    """An allowlisted email can create a new account."""
+    from queuetip.models import QueuetipSignupAllowlist
+
+    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = True
+    await sync_to_async(QueuetipSignupAllowlist.objects.create)(
+        email="invited@example.com"
+    )
+    result = await _request_magic_link(
+        "invited@example.com", "Invited Person", ip="10.0.0.99"
+    )
+    assert result.sent is True
+    assert await sync_to_async(Account.objects.count)() == 1
+    assert len(mailoutbox) == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_signup_works_when_allowlist_disabled(mailoutbox, settings):
+    """When QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST=False, any email may sign up."""
+    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = False
+    result = await _request_magic_link("anyone@example.com", "Anyone", ip="10.0.0.99")
+    assert result.sent is True
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_existing_account_signin_not_blocked_by_allowlist(mailoutbox, settings):
+    """An already-existing account can sign in even if not on the allowlist."""
+    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = True
+    account = await sync_to_async(Account.objects.create)(display_name="Existing")
+    await sync_to_async(AuthIdentity.objects.create)(
+        account=account,
+        provider=AuthIdentity.PROVIDER_MAGIC_LINK,
+        identifier="existing@example.com",
+    )
+    result = await _request_magic_link("existing@example.com", None, ip="10.0.0.99")
+    assert result.sent is True
+    assert len(mailoutbox) == 1

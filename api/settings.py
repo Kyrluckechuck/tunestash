@@ -300,3 +300,10 @@ elif _email_host:
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 DEFAULT_FROM_EMAIL = settings.get("default_from_email", "Queuetip <queuetip@localhost>")
+
+# Sign-up gate. When True (default), only emails on the QueuetipSignupAllowlist
+# can create new accounts. Existing accounts always sign in normally.
+# Set to False to allow open sign-ups (e.g. for personal local-only use).
+QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = (
+    os.getenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "true").lower() != "false"
+)

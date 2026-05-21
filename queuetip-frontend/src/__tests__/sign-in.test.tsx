@@ -55,4 +55,30 @@ describe("SignInPage", () => {
 
     expect(await screen.findByRole("heading", { name: /check your email/i })).toBeInTheDocument();
   });
+
+  it("shows an inline error and re-enables the submit button when the mutation throws", async () => {
+    const user = userEvent.setup();
+    const errorMock = [
+      {
+        request: {
+          query: RequestMagicLinkDocument,
+          variables: { email: "bad@example.com", displayName: null },
+        },
+        error: new Error("Internal server error"),
+      },
+    ];
+
+    render(
+      <MockedProvider mocks={errorMock}>
+        <SignInPage />
+      </MockedProvider>,
+    );
+
+    await user.type(screen.getByLabelText(/email/i), "bad@example.com");
+    await user.click(screen.getByRole("button", { name: /send sign-in link/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Internal server error");
+    // Button should be re-enabled (not stuck in Sending... state)
+    expect(screen.getByRole("button", { name: /send sign-in link/i })).not.toBeDisabled();
+  });
 });

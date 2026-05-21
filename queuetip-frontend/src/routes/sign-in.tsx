@@ -29,18 +29,24 @@ export function SignInPage() {
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    const result = await requestMagicLink({
-      variables: { email, displayName: displayName || null },
-    });
-    const payload = result.data?.requestMagicLink;
-    if (!payload) {
-      setError("Something went wrong. Please try again.");
-      return;
-    }
-    if (payload.sent) {
-      setSent({ message: payload.message });
-    } else {
-      setError(payload.message);
+    try {
+      const result = await requestMagicLink({
+        variables: { email, displayName: displayName || null },
+      });
+      const payload = result.data?.requestMagicLink;
+      if (!payload) {
+        setError("Something went wrong. Please try again.");
+        return;
+      }
+      if (payload.sent) {
+        setSent({ message: payload.message });
+      } else {
+        setError(payload.message);
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      setError(message);
     }
   }
 

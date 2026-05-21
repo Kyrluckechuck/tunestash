@@ -334,6 +334,29 @@ class ExportSnapshotTrack(models.Model):
         ]
 
 
+class QueuetipSignupAllowlist(models.Model):
+    """Operator-managed allowlist of emails that may sign up to Queuetip.
+
+    Gated by the `QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST` setting (default True).
+    Existing accounts (those with an `AuthIdentity` row) sign in normally —
+    the allowlist only affects new signups.
+    """
+
+    email: models.EmailField = models.EmailField(unique=True, max_length=254)
+    note: models.CharField = models.CharField(max_length=200, blank=True)
+    added_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
+        ordering = ["-added_at"]
+
+    def __str__(self) -> str:
+        return self.email
+
+
 class MagicLinkRequestLog(models.Model):
     """Rate-limit audit log for magic-link requests.
 

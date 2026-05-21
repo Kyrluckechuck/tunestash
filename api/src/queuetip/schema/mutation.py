@@ -4,6 +4,7 @@ import datetime
 import re
 from typing import cast
 
+from django.conf import settings as dj_settings
 from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
@@ -190,7 +191,22 @@ async def _load_snapshot_with_tracks(snapshot: ExportSnapshot) -> "ExportSnapsho
     return ExportSnapshotType.from_model(snap, tracks, members)
 
 
-async def _request_magic_link(
+def _is_email_allowed(email: str) -> bool:
+    """Return True if `email` may create a new Queuetip account.
+
+    When the allowlist is disabled via QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST=False,
+    all emails are permitted. Otherwise only emails with a matching row in
+    QueuetipSignupAllowlist pass. Existing accounts bypass this entirely because
+    the identity lookup short-circuits before this is called.
+    """
+    if not getattr(dj_settings, "QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", True):
+        return True
+    from queuetip.models import QueuetipSignupAllowlist  # local import avoids circular
+
+    return QueuetipSignupAllowlist.objects.filter(email=email).exists()
+
+
+async def _request_magic_link(  # pylint: disable=too-many-return-statements
     email: str, display_name: str | None, ip: str = "unknown"
 ) -> RequestMagicLinkResult:
     """Find or create an account for `email` and email it a sign-in link.
@@ -237,6 +253,16 @@ async def _request_magic_link(
                 sent=False,
                 message=f"Display name is too long "
                 f"(max {_DISPLAY_NAME_MAX} characters).",
+            )
+
+        allowed = await sync_to_async(_is_email_allowed)(email)
+        if not allowed:
+            # Neutral message — indistinguishable from the unknown-email branch so
+            # observers cannot determine whether an email is allowlisted or not.
+            return RequestMagicLinkResult(
+                sent=False,
+                message="If that email is registered, a sign-in link has been sent. "
+                "If you're new and your email is approved, you'll get a link too.",
             )
 
         def create_account() -> Account | None:

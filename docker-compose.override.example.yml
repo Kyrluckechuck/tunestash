@@ -54,6 +54,10 @@ services:
       - python_packages:/app/.venv
       - pip_cache:/root/.cache/pip
 
+  queuetip:
+    environment:
+      - DJANGO_EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+
   queuetip-frontend-dev:
     build:
       context: ./queuetip-frontend

@@ -51,7 +51,11 @@ Services that auto-start in dev:
 
 ## Magic-Link in Dev
 
-The dev environment uses Django's console email backend — magic-link URLs print to the `queuetip` container logs instead of being sent via SMTP.
+The dev environment uses Django's console email backend — magic-link URLs print to the `queuetip` container logs instead of being sent via SMTP. This is controlled by the `DJANGO_EMAIL_BACKEND` env var set in `docker-compose.override.yml`:
+
+```yaml
+- DJANGO_EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+```
 
 To retrieve a sign-in link:
 
@@ -60,6 +64,39 @@ docker compose logs queuetip --since 30s | grep verify
 ```
 
 Copy the full `http://...` URL from the log output and open it in your browser.
+
+## Sign-Up Allowlist (Invite-Only Rollout)
+
+By default, new account creation is gated by an operator-managed allowlist. Only emails with a row in `QueuetipSignupAllowlist` can sign up. Existing accounts (those with an `AuthIdentity` row) sign in normally regardless of the allowlist — the gate only applies to new signups.
+
+Clients receive a neutral message on rejection to avoid email enumeration.
+
+### Managing the allowlist
+
+**Via Django admin** (preferred for UI access):
+
+```
+http://localhost:5000/admin/queuetip/queuetipsignupallowlist/
+```
+
+**Via management command** (useful from the command line or CI):
+
+```bash
+docker compose exec web python manage.py queuetip_allow_email alice@example.com
+docker compose exec web python manage.py queuetip_allow_email alice@example.com --note "Cousin"
+```
+
+The command is idempotent — running it again for the same email updates the note.
+
+### Disabling the gate (open sign-ups)
+
+Set the `QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST` env var to `false` on the `queuetip` container:
+
+```yaml
+- QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST=false
+```
+
+This is the escape hatch for personal or local-only deployments where open sign-ups are acceptable.
 
 ## Required Environment Variables for Production
 
