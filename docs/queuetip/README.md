@@ -143,9 +143,13 @@ Add the following to the existing Spotify Dev App's **Redirect URIs** list:
 <QUEUETIP_PUBLIC_URL>/auth/spotify/callback
 ```
 
-**Local development**: `http://127.0.0.1:5050/auth/spotify/callback` — Spotify hard-rejects `localhost` for new app registrations (matches TuneStash's `spotify_redirect_uri` convention).
+**Local development**: `http://127.0.0.1:3001/auth/spotify/callback`
 
-**Production**: `https://queuetip.example.com/auth/spotify/callback`
+- The browser only ever talks to the Vite dev server (`:3001`), which proxies `/auth` and `/graphql` to the backend container internally. Single origin → no CORS, no cookie mismatches, and the redirect_uri matches the host the user is browsing on.
+- Spotify hard-rejects `localhost` for new app registrations — must be `127.0.0.1` (matches TuneStash's `spotify_redirect_uri` convention).
+- The backend reads `X-Forwarded-Host` (set by the Vite proxy / production nginx) to build the redirect_uri at request time, so it adapts to whatever origin the user lands on.
+
+**Production**: `https://queuetip.example.com/auth/spotify/callback` — nginx serves the static build and proxies `/auth` + `/graphql` to the `queuetip` ASGI container.
 
 The required scopes (`playlist-modify-private`, `playlist-modify-public`) are requested at runtime and do not need to be pre-configured in the dashboard.
 

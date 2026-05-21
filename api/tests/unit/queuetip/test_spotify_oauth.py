@@ -1,11 +1,13 @@
 """Unit tests for the Queuetip Spotify OAuth state-signing helpers."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 from asgiref.sync import sync_to_async
 
+from src.queuetip import routes as queuetip_routes
 from src.queuetip import spotify_oauth
 
 _NONCE_A = spotify_oauth._derive_nonce("session-token-A")
@@ -87,3 +89,59 @@ def test_build_authorize_url_works_via_sync_to_async():
     url = asyncio.run(call_from_async())
     assert "client_id=real-id" in url
     assert url.startswith("https://accounts.spotify.com/authorize")
+
+
+def _fake_request(headers=None, scheme="http"):
+    """Build a minimal Request stand-in for `_queuetip_callback_uri`."""
+    return SimpleNamespace(
+        headers={k.lower(): v for k, v in (headers or {}).items()},
+        url=SimpleNamespace(scheme=scheme),
+    )
+
+
+def test_callback_uri_prefers_x_forwarded_host():
+    """When the Vite proxy / nginx sets X-Forwarded-Host, the callback URI
+    must reflect the browser-facing host so it matches Spotify's allowlist."""
+    req = _fake_request(
+        headers={"X-Forwarded-Host": "127.0.0.1:3001", "Host": "queuetip:5000"}
+    )
+    assert (
+        queuetip_routes._queuetip_callback_uri(req)
+        == "http://127.0.0.1:3001/auth/spotify/callback"
+    )
+
+
+def test_callback_uri_falls_back_to_host_header():
+    """If only Host is present (no proxy), use it."""
+    req = _fake_request(headers={"Host": "queuetip.example.com"})
+    assert (
+        queuetip_routes._queuetip_callback_uri(req)
+        == "http://queuetip.example.com/auth/spotify/callback"
+    )
+
+
+def test_callback_uri_respects_x_forwarded_proto():
+    """HTTPS termination at the proxy should produce an https:// redirect URI."""
+    req = _fake_request(
+        headers={
+            "X-Forwarded-Host": "queuetip.example.com",
+            "X-Forwarded-Proto": "https",
+        }
+    )
+    assert (
+        queuetip_routes._queuetip_callback_uri(req)
+        == "https://queuetip.example.com/auth/spotify/callback"
+    )
+
+
+def test_callback_uri_falls_back_to_setting_when_no_request():
+    """Background callers without a request (tests, tasks) use QUEUETIP_PUBLIC_URL."""
+    with patch.object(
+        queuetip_routes,
+        "settings",
+        SimpleNamespace(QUEUETIP_PUBLIC_URL="https://prod.example.com/"),
+    ):
+        assert (
+            queuetip_routes._queuetip_callback_uri(None)
+            == "https://prod.example.com/auth/spotify/callback"
+        )

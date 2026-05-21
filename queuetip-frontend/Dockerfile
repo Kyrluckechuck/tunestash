@@ -20,6 +20,10 @@ RUN yarn build
 
 FROM nginx:alpine AS production
 COPY --from=build /app/dist /usr/share/nginx/html
+# Single-origin nginx config: serves the static build + proxies /graphql,
+# /auth/, /exports/ to the queuetip backend container. Mirrors TuneStash's
+# frontend/nginx.conf so the browser never sees a cross-origin request.
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN apk add --no-cache wget
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

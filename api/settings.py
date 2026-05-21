@@ -269,11 +269,16 @@ STORAGES = {
 
 # ── Queuetip ────────────────────────────────────────────────────────────────
 # Public base URL of the Queuetip ASGI process — used to build magic-link URLs.
-# Defaults use 127.0.0.1 (not 'localhost') because Spotify OAuth rejects
-# 'localhost' redirect URIs for new app registrations. Matches TuneStash's
-# spotify_redirect_uri default convention.
-QUEUETIP_PUBLIC_URL = os.getenv("QUEUETIP_PUBLIC_URL", "http://127.0.0.1:5050")
-# Origin of the Queuetip frontend — used for CORS on the public process.
+# Browser-facing base URL for the Queuetip stack — used in magic-link emails,
+# m3u download URLs, and as the Spotify OAuth redirect_uri fallback when
+# X-Forwarded-Host is absent. In dev this points at the Vite proxy (3001),
+# which forwards /graphql, /auth, /exports to the backend container — same
+# pattern TuneStash uses for its frontend↔backend interaction. 127.0.0.1
+# (not 'localhost') because Spotify OAuth hard-rejects 'localhost'.
+QUEUETIP_PUBLIC_URL = os.getenv("QUEUETIP_PUBLIC_URL", "http://127.0.0.1:3001")
+# Same value as QUEUETIP_PUBLIC_URL in single-origin dev/prod setups —
+# kept as a separate setting in case a future deployment splits the API
+# host from the frontend host. Used for CORS allowlist + post-OAuth redirect.
 QUEUETIP_FRONTEND_URL = os.getenv("QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001")
 # Trusted reverse-proxy IPs/CIDRs for X-Forwarded-For parsing. When the
 # direct connection comes from one of these addresses, the XFF header is

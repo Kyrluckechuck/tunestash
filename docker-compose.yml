@@ -112,8 +112,12 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://valkey:6379/0}
       - HOME=/config
       - TUNESTASH_SERVICE=queuetip
-      - QUEUETIP_PUBLIC_URL=${QUEUETIP_PUBLIC_URL:-http://localhost:5050}
-      - QUEUETIP_FRONTEND_URL=${QUEUETIP_FRONTEND_URL:-http://localhost:3001}
+      # Set these to your actual public URLs in production (e.g.
+      # https://queuetip.example.com). The fallback uses 127.0.0.1:3001
+      # because production stacks should override this in .env — the dev
+      # default just keeps a non-broken value for ad-hoc prod compose runs.
+      - QUEUETIP_PUBLIC_URL=${QUEUETIP_PUBLIC_URL:-http://127.0.0.1:3001}
+      - QUEUETIP_FRONTEND_URL=${QUEUETIP_FRONTEND_URL:-http://127.0.0.1:3001}
     command: uvicorn src.queuetip.app:app --host 0.0.0.0 --port 5000
     depends_on:
       postgres:

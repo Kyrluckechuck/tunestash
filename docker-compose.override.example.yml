@@ -72,7 +72,8 @@ services:
       queuetip:
         condition: service_healthy
     environment:
-      - VITE_QUEUETIP_GRAPHQL_URL=http://127.0.0.1:5050/graphql
+      # Frontend uses '/graphql' (relative); Vite proxies it to this target.
+      - QUEUETIP_BACKEND_TARGET=http://queuetip:5000
     networks:
       - slm_net
 

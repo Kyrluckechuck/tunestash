@@ -10,7 +10,9 @@ const errorLink = onError(({ networkError }) => {
 });
 
 const httpLink = createHttpLink({
-  uri: import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "http://127.0.0.1:5050/graphql",
+  // Same-origin '/graphql' — Vite dev proxy (or nginx in prod) forwards to
+  // the backend. Keeps cookies, CORS, and OAuth allowlist on one origin.
+  uri: import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "/graphql",
   credentials: "include",
 });
 

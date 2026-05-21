@@ -9,9 +9,12 @@ export function useMe() {
 }
 
 export async function signOut(): Promise<void> {
-  const url = (import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "http://127.0.0.1:5050/graphql")
-    .replace(/\/graphql\/?$/, "");
-  await fetch(`${url}/auth/logout`, {
+  // Same-origin: Vite dev proxy (or nginx in prod) forwards /auth to backend.
+  const base = (import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "/graphql").replace(
+    /\/graphql\/?$/,
+    "",
+  );
+  await fetch(`${base}/auth/logout`, {
     method: "POST",
     credentials: "include",
   });

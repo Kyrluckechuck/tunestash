@@ -183,8 +183,26 @@ async def export_m3u(snapshot_id: str, request: Request) -> Response:
     )
 
 
-def _queuetip_callback_uri() -> str:
-    base = getattr(settings, "QUEUETIP_PUBLIC_URL", "http://127.0.0.1:5050").rstrip("/")
+def _queuetip_callback_uri(request: Request | None = None) -> str:
+    """Build the Spotify OAuth callback URI for this request.
+
+    Mirrors TuneStash's pattern in `src/routes/auth.py`: prefer the
+    X-Forwarded-Host set by the Vite dev proxy / nginx in production, so the
+    URI matches the origin the browser is actually on (and therefore the URI
+    whitelisted in the Spotify dashboard). Falls back to QUEUETIP_PUBLIC_URL
+    for callers without a request (e.g. tests, background tasks).
+
+    The same URI is sent on the authorize step AND on the token-exchange step;
+    Spotify requires byte-equality between them, so both code paths must
+    derive the URI the same way for the same request.
+    """
+    if request is not None:
+        forwarded_host = request.headers.get("x-forwarded-host")
+        host = forwarded_host or request.headers.get("host")
+        scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+        if host:
+            return f"{scheme}://{host}/auth/spotify/callback"
+    base = getattr(settings, "QUEUETIP_PUBLIC_URL", "http://127.0.0.1:3001").rstrip("/")
     return f"{base}/auth/spotify/callback"
 
 
@@ -208,7 +226,7 @@ async def spotify_start(request: Request) -> Response:
         # the registry silently swallows, returning empty strings → false
         # "not configured" error.
         url = await sync_to_async(build_authorize_url)(
-            state=state, redirect_uri=_queuetip_callback_uri()
+            state=state, redirect_uri=_queuetip_callback_uri(request)
         )
     except SpotifyOAuthError as exc:
         return HTMLResponse(
@@ -253,7 +271,7 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
 
     try:
         tokens = await sync_to_async(exchange_code_for_tokens)(
-            code, _queuetip_callback_uri()
+            code, _queuetip_callback_uri(request)
         )
         spotify_user_id = await sync_to_async(get_spotify_user_id)(
             tokens["access_token"]

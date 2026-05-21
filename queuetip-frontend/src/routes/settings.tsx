@@ -23,8 +23,12 @@ function SettingsPageContent() {
   );
 
   function handleLinkSpotify() {
+    // Same-origin: Vite dev proxy (or nginx in prod) forwards /auth to backend.
+    // Browser navigation to /auth/spotify/start lands here, gets proxied to the
+    // backend, which 302s the user to accounts.spotify.com with a redirect_uri
+    // built from X-Forwarded-Host — so it matches whatever origin the user is on.
     const base = (
-      import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "http://127.0.0.1:5050/graphql"
+      import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "/graphql"
     ).replace(/\/graphql\/?$/, "");
     window.location.assign(`${base}/auth/spotify/start`);
   }
