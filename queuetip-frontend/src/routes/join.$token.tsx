@@ -30,7 +30,7 @@ export function JoinPage() {
     return <p className="container py-8 text-muted-foreground">Loading…</p>;
   }
 
-  const playlist = data?.playlist;
+  const playlist = data?.playlistByInviteToken;
   if (!playlist) {
     return (
       <div className="container py-8">

@@ -22,6 +22,15 @@ from queuetip.models import (
 
 
 @strawberry.type
+class PublicSettingsType:
+    """Operator-visible runtime settings exposed to the public frontend.
+    Only contains booleans/flags that affect UI rendering — no secrets,
+    no operator-specific values."""
+
+    signup_allowlist_enforced: bool
+
+
+@strawberry.type
 class ExternalServiceLinkType:
     """Summary of a linked external service (no secrets exposed)."""
 

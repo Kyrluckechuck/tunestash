@@ -18,6 +18,7 @@ from ..graphql_types import (
     ExportSnapshotType,
     PlaylistPreviewType,
     PlaylistType,
+    PublicSettingsType,
 )
 from ..services.bulk_import import BulkImportService
 from ..services.contribution import ContributionService
@@ -72,6 +73,15 @@ class Query:
             lambda: list(account.external_service_links.all())
         )()
         return AccountType.from_model(account, links=links)
+
+    @strawberry.field
+    def public_settings(self) -> PublicSettingsType:
+        """Frontend-visible runtime config. No auth required."""
+        from src.queuetip.schema.mutation import _signup_allowlist_required
+
+        return PublicSettingsType(
+            signup_allowlist_enforced=_signup_allowlist_required(),
+        )
 
     @strawberry.field
     async def my_playlists(

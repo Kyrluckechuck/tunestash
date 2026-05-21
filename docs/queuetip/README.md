@@ -98,6 +98,16 @@ Set the `QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST` env var to `false` on the `queuetip`
 
 This is the escape hatch for personal or local-only deployments where open sign-ups are acceptable.
 
+### Frontend signal
+
+The gate state is also exposed to the frontend via the public `publicSettings.signupAllowlistEnforced` GraphQL field (no auth required). When `signupAllowlistEnforced` is `true`, the UI:
+
+- removes the "Sign up" button from the landing page and shows an "invite-only" notice,
+- adds a note next to the sign-up link on /sign-in, and
+- renders an informational alert at the top of /sign-up so invited users know to check their approval status before submitting.
+
+The `/sign-up` form stays usable — allowlisted users still need it to register. Only the env var toggle controls both backend enforcement and the UI signal in one place.
+
 ## Required Environment Variables for Production
 
 ### Application settings (`config/settings.yaml`)

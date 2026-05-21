@@ -1,0 +1,5 @@
+query PublicSettings {
+  publicSettings {
+    signupAllowlistEnforced
+  }
+}

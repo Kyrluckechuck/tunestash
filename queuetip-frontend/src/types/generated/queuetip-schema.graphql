@@ -122,8 +122,14 @@ type Mutation {
   signOutEverywhere: SignOutEverywhereResult!
 }
 
-type SignOutEverywhereResult {
-  success: Boolean!
+type PlaylistPreviewType {
+  id: ID!
+  name: String!
+  description: String!
+  inviteToken: String!
+  createdBy: AccountType!
+  createdAt: DateTime!
+  members: [MembershipType!]!
 }
 
 type PlaylistType {
@@ -137,10 +143,16 @@ type PlaylistType {
   members: [MembershipType!]!
 }
 
+type PublicSettingsType {
+  signupAllowlistEnforced: Boolean!
+}
+
 type Query {
   me: AccountType
+  publicSettings: PublicSettingsType!
   myPlaylists: [PlaylistType!]!
-  playlist(id: ID = null, inviteToken: String = null): PlaylistType!
+  playlist(id: ID!): PlaylistType!
+  playlistByInviteToken(inviteToken: String!): PlaylistPreviewType!
   catalogSearch(query: String!, limit: Int! = 10): [CatalogSearchResultType!]!
   bulkImportJob(id: ID!): BulkImportJobType!
   export(id: ID!): ExportSnapshotType!
@@ -155,6 +167,10 @@ type RegenerateInviteResult {
 type RequestMagicLinkResult {
   sent: Boolean!
   message: String!
+}
+
+type SignOutEverywhereResult {
+  success: Boolean!
 }
 
 type SongRef {

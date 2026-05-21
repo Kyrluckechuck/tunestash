@@ -3,10 +3,12 @@ import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import { useMe } from "@/lib/auth";
+import { usePublicSettings } from "@/lib/public-settings";
 import { Button } from "@/components/ui/button";
 
-function Home() {
+export function Home() {
   const { account, loading } = useMe();
+  const { signupAllowlistEnforced } = usePublicSettings();
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -35,12 +37,19 @@ function Home() {
         <Link to="/sign-in">
           <Button size="lg">Sign in</Button>
         </Link>
-        <Link to="/sign-up">
-          <Button size="lg" variant="outline">
-            Sign up
-          </Button>
-        </Link>
+        {!signupAllowlistEnforced && (
+          <Link to="/sign-up">
+            <Button size="lg" variant="outline">
+              Sign up
+            </Button>
+          </Link>
+        )}
       </div>
+      {signupAllowlistEnforced && (
+        <p className="text-sm text-muted-foreground">
+          Sign-ups are currently invite-only.
+        </p>
+      )}
     </div>
   );
 }

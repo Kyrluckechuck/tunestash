@@ -61,8 +61,8 @@ const playlistMock = {
   },
   result: {
     data: {
-      playlist: {
-        __typename: "PlaylistType",
+      playlistByInviteToken: {
+        __typename: "PlaylistPreviewType",
         id: "42",
         name: "Friday Mix",
         description: "A chill playlist",

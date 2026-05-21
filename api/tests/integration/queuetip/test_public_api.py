@@ -100,6 +100,37 @@ async def test_logout_clears_session_cookie():
     assert SESSION_COOKIE in set_cookie_header
 
 
+@pytest.mark.asyncio
+async def test_public_settings_allowlist_enforced_by_default(async_client):
+    """publicSettings.signupAllowlistEnforced is true when env var is absent or 'true'."""
+    import os
+
+    # Ensure the env var is not set to false (default behavior)
+    os.environ.pop("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", None)
+    async with async_client as client:
+        response = await client.post(
+            "/graphql",
+            json={"query": "{ publicSettings { signupAllowlistEnforced } }"},
+        )
+    data = response.json()
+    assert "errors" not in data, data.get("errors")
+    assert data["data"]["publicSettings"]["signupAllowlistEnforced"] is True
+
+
+@pytest.mark.asyncio
+async def test_public_settings_allowlist_disabled_via_env(async_client, monkeypatch):
+    """publicSettings.signupAllowlistEnforced is false when env var set to 'false'."""
+    monkeypatch.setenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "false")
+    async with async_client as client:
+        response = await client.post(
+            "/graphql",
+            json={"query": "{ publicSettings { signupAllowlistEnforced } }"},
+        )
+    data = response.json()
+    assert "errors" not in data, data.get("errors")
+    assert data["data"]["publicSettings"]["signupAllowlistEnforced"] is False
+
+
 def test_schema_has_depth_and_alias_extensions():
     """Verify QueryDepthLimiter and MaxAliasesLimiter are registered on the schema."""
     from strawberry.extensions import MaxAliasesLimiter, QueryDepthLimiter

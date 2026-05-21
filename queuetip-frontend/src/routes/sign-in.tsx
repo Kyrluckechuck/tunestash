@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation } from "@apollo/client";
 
 import { RequestMagicLinkDocument } from "@/types/generated/graphql";
+import { usePublicSettings } from "@/lib/public-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +22,7 @@ export function SignInPage() {
   const [email, setEmail] = React.useState("");
   const [sent, setSent] = React.useState<{ message: string } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const { signupAllowlistEnforced } = usePublicSettings();
 
   const [requestMagicLink, { loading }] = useMutation(RequestMagicLinkDocument);
 
@@ -98,8 +100,9 @@ export function SignInPage() {
                 search={next ? { next } : undefined}
                 className="underline hover:text-foreground"
               >
-                Sign up instead
+                Sign up
               </Link>
+              {signupAllowlistEnforced && " — invite-only during rollout."}
             </p>
           </CardContent>
           <CardFooter className="flex justify-between">

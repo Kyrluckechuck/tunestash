@@ -4,7 +4,22 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MockedProvider } from "@apollo/client/testing";
 
-import { RequestMagicLinkDocument } from "@/types/generated/graphql";
+import {
+  PublicSettingsDocument,
+  RequestMagicLinkDocument,
+} from "@/types/generated/graphql";
+
+const publicSettingsMock = (enforced: boolean) => ({
+  request: { query: PublicSettingsDocument },
+  result: {
+    data: {
+      publicSettings: {
+        __typename: "PublicSettingsType",
+        signupAllowlistEnforced: enforced,
+      },
+    },
+  },
+});
 
 // Mock TanStack Router's Link so we don't need a full router context in tests
 vi.mock("@tanstack/react-router", async (importOriginal) => {
@@ -82,5 +97,29 @@ describe("SignUpPage", () => {
     expect(submit).toBeDisabled();
     await user.type(screen.getByLabelText(/display name/i), "New Friend");
     expect(submit).not.toBeDisabled();
+  });
+
+  it("shows invite-only alert when allowlist is enforced", async () => {
+    render(
+      <MockedProvider mocks={[publicSettingsMock(true)]}>
+        <SignUpPage />
+      </MockedProvider>,
+    );
+
+    expect(
+      await screen.findByText(/invite-only/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show invite-only alert when allowlist is not enforced", async () => {
+    render(
+      <MockedProvider mocks={[publicSettingsMock(false)]}>
+        <SignUpPage />
+      </MockedProvider>,
+    );
+
+    // Wait for the form to render
+    expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
+    expect(screen.queryByText(/invite-only/i)).not.toBeInTheDocument();
   });
 });

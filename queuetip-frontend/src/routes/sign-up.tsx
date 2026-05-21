@@ -3,6 +3,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation } from "@apollo/client";
 
 import { RequestMagicLinkDocument } from "@/types/generated/graphql";
+import { usePublicSettings } from "@/lib/public-settings";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +24,7 @@ export function SignUpPage() {
   const [displayName, setDisplayName] = React.useState("");
   const [sent, setSent] = React.useState<{ message: string } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const { signupAllowlistEnforced } = usePublicSettings();
 
   const [requestMagicLink, { loading }] = useMutation(RequestMagicLinkDocument);
 
@@ -74,6 +77,15 @@ export function SignUpPage() {
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
+            {signupAllowlistEnforced && (
+              <Alert variant="default">
+                <AlertDescription>
+                  Sign-ups are currently invite-only. Make sure your email has
+                  been approved by the operator — if it hasn&apos;t, you
+                  won&apos;t receive a sign-in link even after submitting.
+                </AlertDescription>
+              </Alert>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input

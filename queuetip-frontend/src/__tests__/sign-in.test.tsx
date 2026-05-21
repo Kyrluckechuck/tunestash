@@ -4,7 +4,22 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MockedProvider } from "@apollo/client/testing";
 
-import { RequestMagicLinkDocument } from "@/types/generated/graphql";
+import {
+  PublicSettingsDocument,
+  RequestMagicLinkDocument,
+} from "@/types/generated/graphql";
+
+const publicSettingsMock = (enforced: boolean) => ({
+  request: { query: PublicSettingsDocument },
+  result: {
+    data: {
+      publicSettings: {
+        __typename: "PublicSettingsType",
+        signupAllowlistEnforced: enforced,
+      },
+    },
+  },
+});
 
 // Mock TanStack Router's Link so we don't need a full router context in tests
 vi.mock("@tanstack/react-router", async (importOriginal) => {
@@ -80,5 +95,31 @@ describe("SignInPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Internal server error");
     // Button should be re-enabled (not stuck in Sending... state)
     expect(screen.getByRole("button", { name: /send sign-in link/i })).not.toBeDisabled();
+  });
+
+  it("shows invite-only note on sign-up link when allowlist is enforced", async () => {
+    render(
+      <MockedProvider mocks={[publicSettingsMock(true)]}>
+        <SignInPage />
+      </MockedProvider>,
+    );
+
+    expect(
+      await screen.findByText(/invite-only during rollout/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show invite-only note when allowlist is not enforced", async () => {
+    render(
+      <MockedProvider mocks={[publicSettingsMock(false)]}>
+        <SignInPage />
+      </MockedProvider>,
+    );
+
+    // Wait for query to settle
+    expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/invite-only during rollout/i),
+    ).not.toBeInTheDocument();
   });
 });

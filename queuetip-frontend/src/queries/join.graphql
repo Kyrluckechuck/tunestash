@@ -1,5 +1,5 @@
 query PlaylistByInviteToken($token: String!) {
-  playlist(inviteToken: $token) {
+  playlistByInviteToken(inviteToken: $token) {
     id
     name
     description
