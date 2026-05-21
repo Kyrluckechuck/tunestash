@@ -6,7 +6,7 @@ from django.core.mail import send_mail
 
 def magic_link_url(token: str) -> str:
     """Build the public magic-link verification URL for a token."""
-    base = getattr(settings, "QUEUETIP_PUBLIC_URL", "http://localhost:5050").rstrip("/")
+    base = getattr(settings, "QUEUETIP_PUBLIC_URL", "http://127.0.0.1:5050").rstrip("/")
     return f"{base}/auth/verify?token={token}"
 
 

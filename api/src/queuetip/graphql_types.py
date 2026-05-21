@@ -381,7 +381,7 @@ class ExportSnapshotType:
         playlist_members: list[PlaylistMembership],
     ) -> "ExportSnapshotType":
         base = getattr(
-            dj_settings, "QUEUETIP_PUBLIC_URL", "http://localhost:5050"
+            dj_settings, "QUEUETIP_PUBLIC_URL", "http://127.0.0.1:5050"
         ).rstrip("/")
         return cls(
             id=strawberry.ID(str(snapshot.id)),

@@ -9,7 +9,7 @@ export function useMe() {
 }
 
 export async function signOut(): Promise<void> {
-  const url = (import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "http://localhost:5050/graphql")
+  const url = (import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "http://127.0.0.1:5050/graphql")
     .replace(/\/graphql\/?$/, "");
   await fetch(`${url}/auth/logout`, {
     method: "POST",

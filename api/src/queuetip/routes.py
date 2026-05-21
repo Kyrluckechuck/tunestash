@@ -90,7 +90,7 @@ def verify(token: str) -> Response:
     from queuetip.models import Account as _Account
 
     frontend_url = getattr(
-        settings, "QUEUETIP_FRONTEND_URL", "http://localhost:3001"
+        settings, "QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001"
     ).rstrip("/")
 
     try:
@@ -184,7 +184,7 @@ async def export_m3u(snapshot_id: str, request: Request) -> Response:
 
 
 def _queuetip_callback_uri() -> str:
-    base = getattr(settings, "QUEUETIP_PUBLIC_URL", "http://localhost:5050").rstrip("/")
+    base = getattr(settings, "QUEUETIP_PUBLIC_URL", "http://127.0.0.1:5050").rstrip("/")
     return f"{base}/auth/spotify/callback"
 
 
@@ -285,6 +285,6 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
         return HTMLResponse(f"<h1>{exc}</h1>", status_code=400)
 
     frontend = getattr(
-        settings, "QUEUETIP_FRONTEND_URL", "http://localhost:3001"
+        settings, "QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001"
     ).rstrip("/")
     return RedirectResponse(f"{frontend}/?spotify_linked=1", status_code=302)

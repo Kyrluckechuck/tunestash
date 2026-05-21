@@ -46,8 +46,8 @@ Services that auto-start in dev:
 | `postgres` | `:5432` | Shared database |
 | `valkey` | internal | Celery broker |
 
-- **Queuetip frontend**: http://localhost:3001
-- **Queuetip GraphQL playground**: http://localhost:3001/graphql (proxied via the frontend dev server)
+- **Queuetip frontend**: http://127.0.0.1:3001 (use `127.0.0.1`, not `localhost` — Spotify OAuth rejects `localhost` for redirect URIs and the cookie origin must match)
+- **Queuetip GraphQL playground**: http://127.0.0.1:3001/graphql (proxied via the frontend dev server)
 
 ## Magic-Link in Dev
 
@@ -143,7 +143,9 @@ Add the following to the existing Spotify Dev App's **Redirect URIs** list:
 <QUEUETIP_PUBLIC_URL>/auth/spotify/callback
 ```
 
-Example: `https://queuetip.example.com/auth/spotify/callback`
+**Local development**: `http://127.0.0.1:5050/auth/spotify/callback` — Spotify hard-rejects `localhost` for new app registrations (matches TuneStash's `spotify_redirect_uri` convention).
+
+**Production**: `https://queuetip.example.com/auth/spotify/callback`
 
 The required scopes (`playlist-modify-private`, `playlist-modify-public`) are requested at runtime and do not need to be pre-configured in the dashboard.
 

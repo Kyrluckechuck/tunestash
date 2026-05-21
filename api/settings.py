@@ -269,9 +269,12 @@ STORAGES = {
 
 # ── Queuetip ────────────────────────────────────────────────────────────────
 # Public base URL of the Queuetip ASGI process — used to build magic-link URLs.
-QUEUETIP_PUBLIC_URL = os.getenv("QUEUETIP_PUBLIC_URL", "http://localhost:5050")
+# Defaults use 127.0.0.1 (not 'localhost') because Spotify OAuth rejects
+# 'localhost' redirect URIs for new app registrations. Matches TuneStash's
+# spotify_redirect_uri default convention.
+QUEUETIP_PUBLIC_URL = os.getenv("QUEUETIP_PUBLIC_URL", "http://127.0.0.1:5050")
 # Origin of the Queuetip frontend — used for CORS on the public process.
-QUEUETIP_FRONTEND_URL = os.getenv("QUEUETIP_FRONTEND_URL", "http://localhost:3001")
+QUEUETIP_FRONTEND_URL = os.getenv("QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001")
 # Trusted reverse-proxy IPs/CIDRs for X-Forwarded-For parsing. When the
 # direct connection comes from one of these addresses, the XFF header is
 # trusted and the real client IP is extracted from it. Accepts individual IPs

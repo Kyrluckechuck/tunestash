@@ -34,7 +34,7 @@ def create_queuetip_app() -> FastAPI:
     app = FastAPI(title="Queuetip API", version="1.0.0")
 
     frontend_origin = getattr(
-        dj_settings, "QUEUETIP_FRONTEND_URL", "http://localhost:3001"
+        dj_settings, "QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001"
     )
     app.add_middleware(
         CORSMiddleware,

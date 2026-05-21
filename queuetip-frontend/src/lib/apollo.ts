@@ -10,7 +10,7 @@ const errorLink = onError(({ networkError }) => {
 });
 
 const httpLink = createHttpLink({
-  uri: import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "http://localhost:5050/graphql",
+  uri: import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "http://127.0.0.1:5050/graphql",
   credentials: "include",
 });
 

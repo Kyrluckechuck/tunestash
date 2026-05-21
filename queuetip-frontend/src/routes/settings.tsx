@@ -24,7 +24,7 @@ function SettingsPageContent() {
 
   function handleLinkSpotify() {
     const base = (
-      import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "http://localhost:5050/graphql"
+      import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "http://127.0.0.1:5050/graphql"
     ).replace(/\/graphql\/?$/, "");
     window.location.assign(`${base}/auth/spotify/start`);
   }
