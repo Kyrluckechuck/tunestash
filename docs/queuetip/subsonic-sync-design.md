@@ -391,7 +391,16 @@ Estimated total: ~2000–2400 LOC including tests (larger than the original Subs
 ## Deferred (post-MVP)
 
 - Multi-connection per account (one Spotify link / one Subsonic connection in MVP)
-- OpenSubsonic extensions (modern metadata, JWT auth) — opportunistic
+- **OpenSubsonic explicit detection + API key auth** (scope ~150 LOC). MVP
+  already implicitly benefits from OpenSubsonic ISRC fields when servers
+  return them (search3 reads them when present). A focused follow-up PR
+  adds `getOpenSubsonicExtensions` capability probing on connection-test,
+  stores results on `SubsonicConnection.opensubsonic_extensions: JSONField`,
+  and switches to API-key auth when the server advertises it. Wins: clean
+  credential model (no password storage required when API key is available),
+  reliable ISRC matching, MusicBrainz IDs as additional exact-match anchor,
+  better error code semantics. Held back for MVP focus + dual code-path
+  maintenance until we have real-world need beyond Navidrome.
 - Per-connection self-signed cert trust toggle
 - Hook download-completion to trigger sync (instead of 15min periodic)
 - Conflict reconciliation if user manually edits the synced playlist on the remote (current behaviour: queuetip overwrites on next sync; this is intentional but could be configurable)

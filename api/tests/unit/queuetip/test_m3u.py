@@ -1,4 +1,12 @@
-"""Tests for queuetip m3u export rendering."""
+"""Tests for queuetip m3u export rendering.
+
+The m3u format now embeds Subsonic stream URLs from the requesting user's
+configured Subsonic connection — local file paths are no longer emitted.
+These tests mock the Subsonic client's track resolution rather than hitting
+a real server.
+"""
+
+from unittest.mock import patch
 
 import pytest
 from tests.factories import ArtistFactory, SongFactory
@@ -8,8 +16,10 @@ from queuetip.models import (
     ExportSnapshot,
     ExportSnapshotTrack,
     Playlist,
+    SubsonicConnection,
 )
-from src.queuetip.m3u import render_m3u
+from src.queuetip.crypto import encrypt_secret
+from src.queuetip.m3u import M3uExportError, render_m3u
 
 
 def _make_owner_and_snap(playlist_name: str = "Test Playlist", rng_seed: int = 1):
@@ -19,6 +29,16 @@ def _make_owner_and_snap(playlist_name: str = "Test Playlist", rng_seed: int = 1
         playlist=playlist, requested_by=owner, rng_seed=rng_seed
     )
     return owner, snap
+
+
+def _connect(owner: Account, *, label: str = "Home Navidrome") -> SubsonicConnection:
+    return SubsonicConnection.objects.create(
+        account=owner,
+        label=label,
+        server_url="https://navi.example.com",
+        username="alice",
+        password_encrypted=encrypt_secret("hunter2"),
+    )
 
 
 def _add_track(snap, song, position, reason="rolled_in", probability=0.85):
@@ -32,149 +52,115 @@ def _add_track(snap, song, position, reason="rolled_in", probability=0.85):
 
 
 @pytest.mark.django_db
+def test_m3u_raises_when_no_subsonic_connection():
+    """The new m3u flow requires a Subsonic connection — without one we can't
+    build stream URLs. Fail loudly so the user gets a clear instruction."""
+    _owner, snap = _make_owner_and_snap()
+    with pytest.raises(M3uExportError, match="Connect a Subsonic server"):
+        render_m3u(snap)
+
+
+@pytest.mark.django_db
 def test_m3u_starts_with_extm3u_header():
-    _owner, snap = _make_owner_and_snap("Friday Mix")
-    out = render_m3u(snap)
+    owner, snap = _make_owner_and_snap("Friday Mix")
+    _connect(owner)
+    with patch("src.queuetip.m3u.resolve_song_to_subsonic_id", return_value=None):
+        out = render_m3u(snap)
     assert out.startswith("#EXTM3U\n")
 
 
 @pytest.mark.django_db
 def test_m3u_header_includes_playlist_name_and_snapshot_id():
-    _owner, snap = _make_owner_and_snap("Friday Mix")
-    out = render_m3u(snap)
+    owner, snap = _make_owner_and_snap("Friday Mix")
+    _connect(owner)
+    with patch("src.queuetip.m3u.resolve_song_to_subsonic_id", return_value=None):
+        out = render_m3u(snap)
     assert "Friday Mix" in out
-    # Either "snapshot 5" or "snapshot-5" are acceptable per the task spec
-    assert f"snapshot {snap.id}" in out or f"snapshot-{snap.id}" in out
+    assert f"snapshot {snap.id}" in out
 
 
 @pytest.mark.django_db
-def test_m3u_emits_extinf_and_path_for_downloaded_song():
-    _owner, snap = _make_owner_and_snap("P")
+def test_m3u_emits_extinf_and_stream_url_for_resolved_song():
+    owner, snap = _make_owner_and_snap("P")
+    _connect(owner)
     artist = ArtistFactory(name="Daft Punk")
-    song = SongFactory(
-        primary_artist=artist,
-        name="Get Lucky",
-        downloaded=True,
-    )
+    song = SongFactory(primary_artist=artist, name="Get Lucky")
     _add_track(snap, song, position=0)
 
-    out = render_m3u(snap)
+    with patch("src.queuetip.m3u.resolve_song_to_subsonic_id", return_value="ns-42"):
+        out = render_m3u(snap)
 
     assert "#EXTINF:-1,Daft Punk - Get Lucky" in out
-    assert song.file_path in out
+    # The stream URL points at the user's server with the resolved track id.
+    assert "https://navi.example.com/rest/stream.view?" in out
+    assert "id=ns-42" in out
+    # Auth params are present.
+    assert "u=alice" in out
+    assert "t=" in out
+    assert "s=" in out
 
 
 @pytest.mark.django_db
-def test_m3u_skips_song_with_downloaded_false():
-    _owner, snap = _make_owner_and_snap("P")
-    artist = ArtistFactory(name="Artist")
-    # SongFactory with downloaded=False — file_path may still be set from
-    # Faker but downloaded=False means we must skip it.
-    song = SongFactory(
-        primary_artist=artist,
-        name="Not Downloaded",
-        downloaded=False,
-        file_path_ref=None,
-    )
+def test_m3u_unmatched_song_emitted_as_comment_not_dropped():
+    """A track that doesn't resolve on the user's Subsonic shouldn't disappear
+    from the file silently — the user should see what's missing."""
+    owner, snap = _make_owner_and_snap("P")
+    _connect(owner)
+    artist = ArtistFactory(name="Some Artist")
+    song = SongFactory(primary_artist=artist, name="Obscure Track")
     _add_track(snap, song, position=0)
 
-    out = render_m3u(snap)
+    with patch("src.queuetip.m3u.resolve_song_to_subsonic_id", return_value=None):
+        out = render_m3u(snap)
 
-    assert "#EXTINF" not in out
-    assert "Not Downloaded" not in out
-
-
-@pytest.mark.django_db
-def test_m3u_skips_song_with_no_file_path():
-    """A song marked downloaded=True but with no file_path_ref is skipped."""
-    _owner, snap = _make_owner_and_snap("P")
-    from library_manager.models import Artist, Song
-
-    artist = Artist.objects.create(name="Ghost Artist", gid="ghost01")
-    song = Song.objects.create(
-        name="Phantom Track",
-        gid="phantom01",
-        primary_artist=artist,
-        downloaded=True,
-        file_path_ref=None,
-    )
-    _add_track(snap, song, position=0)
-
-    out = render_m3u(snap)
-
-    assert "#EXTINF" not in out
-    assert "Phantom Track" not in out
+    assert "# unmatched: Some Artist - Obscure Track" in out
+    # No stream URL is emitted for an unmatched track.
+    assert "rest/stream.view" not in out
 
 
 @pytest.mark.django_db
 def test_m3u_tracks_appear_in_position_order():
-    _owner, snap = _make_owner_and_snap("P")
-    artist = ArtistFactory(name="Artist")
-    song_a = SongFactory(primary_artist=artist, name="First", downloaded=True)
-    song_b = SongFactory(primary_artist=artist, name="Second", downloaded=True)
-    song_c = SongFactory(primary_artist=artist, name="Third", downloaded=True)
+    owner, snap = _make_owner_and_snap("P")
+    _connect(owner)
+    artist = ArtistFactory()
+    s1 = SongFactory(primary_artist=artist, name="First")
+    s2 = SongFactory(primary_artist=artist, name="Second")
+    s3 = SongFactory(primary_artist=artist, name="Third")
+    _add_track(snap, s2, position=1)
+    _add_track(snap, s3, position=2)
+    _add_track(snap, s1, position=0)
 
-    # Insert out of order to confirm ordering is by position, not insertion order
-    _add_track(snap, song_c, position=2)
-    _add_track(snap, song_a, position=0)
-    _add_track(snap, song_b, position=1)
+    def fake_resolve(*, title, artist, isrc, client):
+        return {"First": "id-1", "Second": "id-2", "Third": "id-3"}[title]
 
-    out = render_m3u(snap)
+    with patch(
+        "src.queuetip.m3u.resolve_song_to_subsonic_id", side_effect=fake_resolve
+    ):
+        out = render_m3u(snap)
 
-    idx_first = out.index("First")
-    idx_second = out.index("Second")
-    idx_third = out.index("Third")
-    assert idx_first < idx_second < idx_third
+    lines = out.splitlines()
+    # Stream URLs ordered as expected (id-1 before id-2 before id-3).
+    pos1 = next(i for i, l in enumerate(lines) if "id=id-1" in l)
+    pos2 = next(i for i, l in enumerate(lines) if "id=id-2" in l)
+    pos3 = next(i for i, l in enumerate(lines) if "id=id-3" in l)
+    assert pos1 < pos2 < pos3
 
 
 @pytest.mark.django_db
 def test_m3u_empty_snapshot_returns_only_header_lines():
-    _owner, snap = _make_owner_and_snap("Empty Playlist")
+    owner, snap = _make_owner_and_snap("Empty")
+    _connect(owner)
     out = render_m3u(snap)
-
-    assert out.startswith("#EXTM3U\n")
-    assert "#EXTINF" not in out
-    # Output ends with a newline
-    assert out.endswith("\n")
-
-
-@pytest.mark.django_db
-def test_m3u_all_undownloaded_snapshot_returns_only_header_lines():
-    _owner, snap = _make_owner_and_snap("All Undownloaded")
-    artist = ArtistFactory(name="Ghost")
-    for i in range(3):
-        song = SongFactory(primary_artist=artist, downloaded=False, file_path_ref=None)
-        _add_track(snap, song, position=i)
-
-    out = render_m3u(snap)
-
-    assert out.startswith("#EXTM3U\n")
-    assert "#EXTINF" not in out
+    lines = [line for line in out.splitlines() if line.strip()]
+    # Header + comment + Stream-URLs-from-... comment. No track entries.
+    assert lines[0] == "#EXTM3U"
+    assert any("Stream URLs from" in line for line in lines)
+    assert not any(line.startswith("#EXTINF") for line in lines)
 
 
 @pytest.mark.django_db
 def test_m3u_output_ends_with_newline():
-    _owner, snap = _make_owner_and_snap("P")
+    owner, snap = _make_owner_and_snap("P")
+    _connect(owner)
     out = render_m3u(snap)
     assert out.endswith("\n")
-
-
-@pytest.mark.django_db
-def test_m3u_mixed_downloaded_and_not():
-    """Only downloaded songs with a file path appear as track entries."""
-    _owner, snap = _make_owner_and_snap("Mixed")
-    artist = ArtistFactory(name="Band")
-    downloaded = SongFactory(primary_artist=artist, name="Yes", downloaded=True)
-    undownloaded = SongFactory(
-        primary_artist=artist, name="No", downloaded=False, file_path_ref=None
-    )
-    _add_track(snap, downloaded, position=0)
-    _add_track(snap, undownloaded, position=1)
-
-    out = render_m3u(snap)
-
-    assert "Yes" in out
-    assert "#EXTINF" in out
-    lines = out.splitlines()
-    extinf_count = sum(1 for line in lines if line.startswith("#EXTINF"))
-    assert extinf_count == 1

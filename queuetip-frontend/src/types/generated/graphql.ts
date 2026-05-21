@@ -132,6 +132,7 @@ export type MembershipType = {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  addSubsonicConnection: SubsonicConnectionType;
   bulkImportPlaylist: BulkImportJobType;
   castVote: ContributionType;
   clearVote: ContributionType;
@@ -139,17 +140,33 @@ export type Mutation = {
   contributeFromSearch: ContributionResult;
   createExport: ExportSnapshotType;
   createPlaylist: PlaylistType;
+  createSubsonicSyncTarget: PlaylistExportTargetType;
   deletePlaylist: DeletePlaylistResult;
   exportToSpotify: SpotifyExportResultType;
   joinPlaylist: PlaylistType;
   kickMember: DeletePlaylistResult;
   leavePlaylist: DeletePlaylistResult;
   promoteMember: PlaylistType;
+  recreateSyncTargetRemote: PlaylistExportTargetType;
   regenerateInviteToken: RegenerateInviteResult;
   removeContribution: DeletePlaylistResult;
+  removeSubsonicConnection: Scalars['Boolean']['output'];
+  removeSyncTarget: Scalars['Boolean']['output'];
   requestMagicLink: RequestMagicLinkResult;
   signOutEverywhere: SignOutEverywhereResult;
+  syncTargetNow: PlaylistExportTargetType;
+  testSubsonicConnection: SubsonicConnectionType;
   updatePlaylistSettings: PlaylistType;
+  updateSubsonicConnection: SubsonicConnectionType;
+  updateSyncTargetMode: PlaylistExportTargetType;
+};
+
+
+export type MutationAddSubsonicConnectionArgs = {
+  label: Scalars['String']['input'];
+  password: Scalars['String']['input'];
+  serverUrl: Scalars['String']['input'];
+  username: Scalars['String']['input'];
 };
 
 
@@ -194,6 +211,13 @@ export type MutationCreatePlaylistArgs = {
 };
 
 
+export type MutationCreateSubsonicSyncTargetArgs = {
+  connectionId: Scalars['ID']['input'];
+  playlistId: Scalars['ID']['input'];
+  syncMode?: Scalars['String']['input'];
+};
+
+
 export type MutationDeletePlaylistArgs = {
   id: Scalars['ID']['input'];
 };
@@ -228,6 +252,11 @@ export type MutationPromoteMemberArgs = {
 };
 
 
+export type MutationRecreateSyncTargetRemoteArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationRegenerateInviteTokenArgs = {
   id: Scalars['ID']['input'];
 };
@@ -238,9 +267,30 @@ export type MutationRemoveContributionArgs = {
 };
 
 
+export type MutationRemoveSubsonicConnectionArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationRemoveSyncTargetArgs = {
+  deleteRemote?: Scalars['Boolean']['input'];
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationRequestMagicLinkArgs = {
   displayName?: InputMaybe<Scalars['String']['input']>;
   email: Scalars['String']['input'];
+};
+
+
+export type MutationSyncTargetNowArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationTestSubsonicConnectionArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -249,6 +299,38 @@ export type MutationUpdatePlaylistSettingsArgs = {
   engine?: InputMaybe<EngineSettingsInput>;
   id: Scalars['ID']['input'];
   name?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type MutationUpdateSubsonicConnectionArgs = {
+  id: Scalars['ID']['input'];
+  label?: InputMaybe<Scalars['String']['input']>;
+  password?: InputMaybe<Scalars['String']['input']>;
+  serverUrl?: InputMaybe<Scalars['String']['input']>;
+  username?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type MutationUpdateSyncTargetModeArgs = {
+  id: Scalars['ID']['input'];
+  syncMode: Scalars['String']['input'];
+};
+
+export type PlaylistExportTargetType = {
+  __typename?: 'PlaylistExportTargetType';
+  destinationType: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  lastError: Scalars['String']['output'];
+  lastSyncStatus: Scalars['String']['output'];
+  lastSyncedAt?: Maybe<Scalars['DateTime']['output']>;
+  matchedTrackCount: Scalars['Int']['output'];
+  playlistId: Scalars['ID']['output'];
+  remotePlaylistId: Scalars['String']['output'];
+  spotifyUserId?: Maybe<Scalars['String']['output']>;
+  subsonicConnection?: Maybe<SubsonicConnectionType>;
+  syncMode: Scalars['String']['output'];
+  totalTrackCount: Scalars['Int']['output'];
+  unmatchedTrackTitles: Array<Scalars['String']['output']>;
 };
 
 export type PlaylistPreviewType = {
@@ -286,7 +368,9 @@ export type Query = {
   export: ExportSnapshotType;
   me?: Maybe<AccountType>;
   myPlaylistExports: Array<ExportSnapshotType>;
+  myPlaylistSyncTargets: Array<PlaylistExportTargetType>;
   myPlaylists: Array<PlaylistType>;
+  mySubsonicConnection?: Maybe<SubsonicConnectionType>;
   playlist: PlaylistType;
   playlistByInviteToken: PlaylistPreviewType;
   playlistContributions: Array<ContributionType>;
@@ -311,6 +395,11 @@ export type QueryExportArgs = {
 
 
 export type QueryMyPlaylistExportsArgs = {
+  playlistId: Scalars['ID']['input'];
+};
+
+
+export type QueryMyPlaylistSyncTargetsArgs = {
   playlistId: Scalars['ID']['input'];
 };
 
@@ -360,6 +449,19 @@ export type SpotifyExportResultType = {
   skippedCount: Scalars['Int']['output'];
   skippedTitles: Array<Scalars['String']['output']>;
   spotifyPlaylistUrl: Scalars['String']['output'];
+};
+
+export type SubsonicConnectionType = {
+  __typename?: 'SubsonicConnectionType';
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  label: Scalars['String']['output'];
+  lastVerifiedAt?: Maybe<Scalars['DateTime']['output']>;
+  opensubsonicExtensions: Array<Scalars['String']['output']>;
+  serverUrl: Scalars['String']['output'];
+  username: Scalars['String']['output'];
+  verificationError: Scalars['String']['output'];
+  verificationStatus: Scalars['String']['output'];
 };
 
 export type VoteType = {
@@ -558,7 +660,98 @@ export type ExportToSpotifyMutationVariables = Exact<{
 
 export type ExportToSpotifyMutation = { __typename?: 'Mutation', exportToSpotify: { __typename?: 'SpotifyExportResultType', spotifyPlaylistUrl: string, addedCount: number, skippedCount: number, skippedTitles: Array<string>, createdNew: boolean } };
 
+export type SubsonicConnectionFieldsFragment = { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any };
 
+export type PlaylistExportTargetFieldsFragment = { __typename?: 'PlaylistExportTargetType', id: string, playlistId: string, destinationType: string, syncMode: string, remotePlaylistId: string, lastSyncStatus: string, lastError: string, lastSyncedAt?: any | null, unmatchedTrackTitles: Array<string>, matchedTrackCount: number, totalTrackCount: number, spotifyUserId?: string | null, subsonicConnection?: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } | null };
+
+export type MySubsonicConnectionQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MySubsonicConnectionQuery = { __typename?: 'Query', mySubsonicConnection?: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } | null };
+
+export type MyPlaylistSyncTargetsQueryVariables = Exact<{
+  playlistId: Scalars['ID']['input'];
+}>;
+
+
+export type MyPlaylistSyncTargetsQuery = { __typename?: 'Query', myPlaylistSyncTargets: Array<{ __typename?: 'PlaylistExportTargetType', id: string, playlistId: string, destinationType: string, syncMode: string, remotePlaylistId: string, lastSyncStatus: string, lastError: string, lastSyncedAt?: any | null, unmatchedTrackTitles: Array<string>, matchedTrackCount: number, totalTrackCount: number, spotifyUserId?: string | null, subsonicConnection?: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } | null }> };
+
+export type AddSubsonicConnectionMutationVariables = Exact<{
+  label: Scalars['String']['input'];
+  serverUrl: Scalars['String']['input'];
+  username: Scalars['String']['input'];
+  password: Scalars['String']['input'];
+}>;
+
+
+export type AddSubsonicConnectionMutation = { __typename?: 'Mutation', addSubsonicConnection: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } };
+
+export type UpdateSubsonicConnectionMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  label?: InputMaybe<Scalars['String']['input']>;
+  serverUrl?: InputMaybe<Scalars['String']['input']>;
+  username?: InputMaybe<Scalars['String']['input']>;
+  password?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type UpdateSubsonicConnectionMutation = { __typename?: 'Mutation', updateSubsonicConnection: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } };
+
+export type RemoveSubsonicConnectionMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type RemoveSubsonicConnectionMutation = { __typename?: 'Mutation', removeSubsonicConnection: boolean };
+
+export type TestSubsonicConnectionMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type TestSubsonicConnectionMutation = { __typename?: 'Mutation', testSubsonicConnection: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } };
+
+export type CreateSubsonicSyncTargetMutationVariables = Exact<{
+  playlistId: Scalars['ID']['input'];
+  connectionId: Scalars['ID']['input'];
+  syncMode?: Scalars['String']['input'];
+}>;
+
+
+export type CreateSubsonicSyncTargetMutation = { __typename?: 'Mutation', createSubsonicSyncTarget: { __typename?: 'PlaylistExportTargetType', id: string, playlistId: string, destinationType: string, syncMode: string, remotePlaylistId: string, lastSyncStatus: string, lastError: string, lastSyncedAt?: any | null, unmatchedTrackTitles: Array<string>, matchedTrackCount: number, totalTrackCount: number, spotifyUserId?: string | null, subsonicConnection?: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } | null } };
+
+export type UpdateSyncTargetModeMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  syncMode: Scalars['String']['input'];
+}>;
+
+
+export type UpdateSyncTargetModeMutation = { __typename?: 'Mutation', updateSyncTargetMode: { __typename?: 'PlaylistExportTargetType', id: string, playlistId: string, destinationType: string, syncMode: string, remotePlaylistId: string, lastSyncStatus: string, lastError: string, lastSyncedAt?: any | null, unmatchedTrackTitles: Array<string>, matchedTrackCount: number, totalTrackCount: number, spotifyUserId?: string | null, subsonicConnection?: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } | null } };
+
+export type RemoveSyncTargetMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  deleteRemote?: Scalars['Boolean']['input'];
+}>;
+
+
+export type RemoveSyncTargetMutation = { __typename?: 'Mutation', removeSyncTarget: boolean };
+
+export type SyncTargetNowMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type SyncTargetNowMutation = { __typename?: 'Mutation', syncTargetNow: { __typename?: 'PlaylistExportTargetType', id: string, playlistId: string, destinationType: string, syncMode: string, remotePlaylistId: string, lastSyncStatus: string, lastError: string, lastSyncedAt?: any | null, unmatchedTrackTitles: Array<string>, matchedTrackCount: number, totalTrackCount: number, spotifyUserId?: string | null, subsonicConnection?: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } | null } };
+
+export type RecreateSyncTargetRemoteMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type RecreateSyncTargetRemoteMutation = { __typename?: 'Mutation', recreateSyncTargetRemote: { __typename?: 'PlaylistExportTargetType', id: string, playlistId: string, destinationType: string, syncMode: string, remotePlaylistId: string, lastSyncStatus: string, lastError: string, lastSyncedAt?: any | null, unmatchedTrackTitles: Array<string>, matchedTrackCount: number, totalTrackCount: number, spotifyUserId?: string | null, subsonicConnection?: { __typename?: 'SubsonicConnectionType', id: string, label: string, serverUrl: string, username: string, verificationStatus: string, verificationError: string, lastVerifiedAt?: any | null, opensubsonicExtensions: Array<string>, createdAt: any } | null } };
+
+export const SubsonicConnectionFieldsFragmentDoc = {"kind":"Document","definitions":[{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]} as unknown as DocumentNode<SubsonicConnectionFieldsFragment, unknown>;
+export const PlaylistExportTargetFieldsFragmentDoc = {"kind":"Document","definitions":[{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistExportTargetFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaylistExportTargetType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"playlistId"}},{"kind":"Field","name":{"kind":"Name","value":"destinationType"}},{"kind":"Field","name":{"kind":"Name","value":"syncMode"}},{"kind":"Field","name":{"kind":"Name","value":"remotePlaylistId"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncStatus"}},{"kind":"Field","name":{"kind":"Name","value":"lastError"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}},{"kind":"Field","name":{"kind":"Name","value":"unmatchedTrackTitles"}},{"kind":"Field","name":{"kind":"Name","value":"matchedTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"totalTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUserId"}},{"kind":"Field","name":{"kind":"Name","value":"subsonicConnection"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]} as unknown as DocumentNode<PlaylistExportTargetFieldsFragment, unknown>;
 export const RequestMagicLinkDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"RequestMagicLink"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"email"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"displayName"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"requestMagicLink"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"email"},"value":{"kind":"Variable","name":{"kind":"Name","value":"email"}}},{"kind":"Argument","name":{"kind":"Name","value":"displayName"},"value":{"kind":"Variable","name":{"kind":"Name","value":"displayName"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sent"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<RequestMagicLinkMutation, RequestMagicLinkMutationVariables>;
 export const SignOutEverywhereDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SignOutEverywhere"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"signOutEverywhere"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}}]}}]}}]} as unknown as DocumentNode<SignOutEverywhereMutation, SignOutEverywhereMutationVariables>;
 export const BulkImportPlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"BulkImportPlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"url"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bulkImportPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}},{"kind":"Argument","name":{"kind":"Name","value":"url"},"value":{"kind":"Variable","name":{"kind":"Name","value":"url"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"sourceUrl"}},{"kind":"Field","name":{"kind":"Name","value":"totalTracks"}},{"kind":"Field","name":{"kind":"Name","value":"addedCount"}},{"kind":"Field","name":{"kind":"Name","value":"skippedCount"}},{"kind":"Field","name":{"kind":"Name","value":"unresolvedCount"}},{"kind":"Field","name":{"kind":"Name","value":"unresolvedTitles"}},{"kind":"Field","name":{"kind":"Name","value":"error"}}]}}]}}]} as unknown as DocumentNode<BulkImportPlaylistMutation, BulkImportPlaylistMutationVariables>;
@@ -585,3 +778,14 @@ export const LeavePlaylistDocument = {"kind":"Document","definitions":[{"kind":"
 export const KickMemberDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"KickMember"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"accountId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"kickMember"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}},{"kind":"Argument","name":{"kind":"Name","value":"accountId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"accountId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleted"}}]}}]}}]} as unknown as DocumentNode<KickMemberMutation, KickMemberMutationVariables>;
 export const PromoteMemberDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"PromoteMember"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"accountId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"promoteMember"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}},{"kind":"Argument","name":{"kind":"Name","value":"accountId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"accountId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"members"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"account"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}}]}},{"kind":"Field","name":{"kind":"Name","value":"role"}}]}}]}}]}}]} as unknown as DocumentNode<PromoteMemberMutation, PromoteMemberMutationVariables>;
 export const ExportToSpotifyDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ExportToSpotify"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"snapshotId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistName"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"forceRecreate"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}},"defaultValue":{"kind":"BooleanValue","value":false}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"exportToSpotify"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"snapshotId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"snapshotId"}}},{"kind":"Argument","name":{"kind":"Name","value":"playlistName"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistName"}}},{"kind":"Argument","name":{"kind":"Name","value":"forceRecreate"},"value":{"kind":"Variable","name":{"kind":"Name","value":"forceRecreate"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"spotifyPlaylistUrl"}},{"kind":"Field","name":{"kind":"Name","value":"addedCount"}},{"kind":"Field","name":{"kind":"Name","value":"skippedCount"}},{"kind":"Field","name":{"kind":"Name","value":"skippedTitles"}},{"kind":"Field","name":{"kind":"Name","value":"createdNew"}}]}}]}}]} as unknown as DocumentNode<ExportToSpotifyMutation, ExportToSpotifyMutationVariables>;
+export const MySubsonicConnectionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MySubsonicConnection"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"mySubsonicConnection"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]} as unknown as DocumentNode<MySubsonicConnectionQuery, MySubsonicConnectionQueryVariables>;
+export const MyPlaylistSyncTargetsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MyPlaylistSyncTargets"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"myPlaylistSyncTargets"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistExportTargetFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistExportTargetFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaylistExportTargetType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"playlistId"}},{"kind":"Field","name":{"kind":"Name","value":"destinationType"}},{"kind":"Field","name":{"kind":"Name","value":"syncMode"}},{"kind":"Field","name":{"kind":"Name","value":"remotePlaylistId"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncStatus"}},{"kind":"Field","name":{"kind":"Name","value":"lastError"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}},{"kind":"Field","name":{"kind":"Name","value":"unmatchedTrackTitles"}},{"kind":"Field","name":{"kind":"Name","value":"matchedTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"totalTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUserId"}},{"kind":"Field","name":{"kind":"Name","value":"subsonicConnection"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}}]} as unknown as DocumentNode<MyPlaylistSyncTargetsQuery, MyPlaylistSyncTargetsQueryVariables>;
+export const AddSubsonicConnectionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"AddSubsonicConnection"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"label"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"serverUrl"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"username"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"addSubsonicConnection"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"label"},"value":{"kind":"Variable","name":{"kind":"Name","value":"label"}}},{"kind":"Argument","name":{"kind":"Name","value":"serverUrl"},"value":{"kind":"Variable","name":{"kind":"Name","value":"serverUrl"}}},{"kind":"Argument","name":{"kind":"Name","value":"username"},"value":{"kind":"Variable","name":{"kind":"Name","value":"username"}}},{"kind":"Argument","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]} as unknown as DocumentNode<AddSubsonicConnectionMutation, AddSubsonicConnectionMutationVariables>;
+export const UpdateSubsonicConnectionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateSubsonicConnection"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"label"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"serverUrl"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"username"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateSubsonicConnection"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"label"},"value":{"kind":"Variable","name":{"kind":"Name","value":"label"}}},{"kind":"Argument","name":{"kind":"Name","value":"serverUrl"},"value":{"kind":"Variable","name":{"kind":"Name","value":"serverUrl"}}},{"kind":"Argument","name":{"kind":"Name","value":"username"},"value":{"kind":"Variable","name":{"kind":"Name","value":"username"}}},{"kind":"Argument","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]} as unknown as DocumentNode<UpdateSubsonicConnectionMutation, UpdateSubsonicConnectionMutationVariables>;
+export const RemoveSubsonicConnectionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"RemoveSubsonicConnection"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"removeSubsonicConnection"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}]}]}}]} as unknown as DocumentNode<RemoveSubsonicConnectionMutation, RemoveSubsonicConnectionMutationVariables>;
+export const TestSubsonicConnectionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"TestSubsonicConnection"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"testSubsonicConnection"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]} as unknown as DocumentNode<TestSubsonicConnectionMutation, TestSubsonicConnectionMutationVariables>;
+export const CreateSubsonicSyncTargetDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateSubsonicSyncTarget"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"connectionId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"syncMode"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},"defaultValue":{"kind":"StringValue","value":"manual","block":false}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createSubsonicSyncTarget"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}},{"kind":"Argument","name":{"kind":"Name","value":"connectionId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"connectionId"}}},{"kind":"Argument","name":{"kind":"Name","value":"syncMode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"syncMode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistExportTargetFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistExportTargetFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaylistExportTargetType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"playlistId"}},{"kind":"Field","name":{"kind":"Name","value":"destinationType"}},{"kind":"Field","name":{"kind":"Name","value":"syncMode"}},{"kind":"Field","name":{"kind":"Name","value":"remotePlaylistId"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncStatus"}},{"kind":"Field","name":{"kind":"Name","value":"lastError"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}},{"kind":"Field","name":{"kind":"Name","value":"unmatchedTrackTitles"}},{"kind":"Field","name":{"kind":"Name","value":"matchedTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"totalTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUserId"}},{"kind":"Field","name":{"kind":"Name","value":"subsonicConnection"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}}]} as unknown as DocumentNode<CreateSubsonicSyncTargetMutation, CreateSubsonicSyncTargetMutationVariables>;
+export const UpdateSyncTargetModeDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateSyncTargetMode"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"syncMode"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateSyncTargetMode"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"syncMode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"syncMode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistExportTargetFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistExportTargetFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaylistExportTargetType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"playlistId"}},{"kind":"Field","name":{"kind":"Name","value":"destinationType"}},{"kind":"Field","name":{"kind":"Name","value":"syncMode"}},{"kind":"Field","name":{"kind":"Name","value":"remotePlaylistId"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncStatus"}},{"kind":"Field","name":{"kind":"Name","value":"lastError"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}},{"kind":"Field","name":{"kind":"Name","value":"unmatchedTrackTitles"}},{"kind":"Field","name":{"kind":"Name","value":"matchedTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"totalTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUserId"}},{"kind":"Field","name":{"kind":"Name","value":"subsonicConnection"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}}]} as unknown as DocumentNode<UpdateSyncTargetModeMutation, UpdateSyncTargetModeMutationVariables>;
+export const RemoveSyncTargetDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"RemoveSyncTarget"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"deleteRemote"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}},"defaultValue":{"kind":"BooleanValue","value":false}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"removeSyncTarget"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"deleteRemote"},"value":{"kind":"Variable","name":{"kind":"Name","value":"deleteRemote"}}}]}]}}]} as unknown as DocumentNode<RemoveSyncTargetMutation, RemoveSyncTargetMutationVariables>;
+export const SyncTargetNowDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SyncTargetNow"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"syncTargetNow"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistExportTargetFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistExportTargetFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaylistExportTargetType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"playlistId"}},{"kind":"Field","name":{"kind":"Name","value":"destinationType"}},{"kind":"Field","name":{"kind":"Name","value":"syncMode"}},{"kind":"Field","name":{"kind":"Name","value":"remotePlaylistId"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncStatus"}},{"kind":"Field","name":{"kind":"Name","value":"lastError"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}},{"kind":"Field","name":{"kind":"Name","value":"unmatchedTrackTitles"}},{"kind":"Field","name":{"kind":"Name","value":"matchedTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"totalTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUserId"}},{"kind":"Field","name":{"kind":"Name","value":"subsonicConnection"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}}]} as unknown as DocumentNode<SyncTargetNowMutation, SyncTargetNowMutationVariables>;
+export const RecreateSyncTargetRemoteDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"RecreateSyncTargetRemote"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"recreateSyncTargetRemote"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistExportTargetFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SubsonicConnectionFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubsonicConnectionType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"serverUrl"}},{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"verificationStatus"}},{"kind":"Field","name":{"kind":"Name","value":"verificationError"}},{"kind":"Field","name":{"kind":"Name","value":"lastVerifiedAt"}},{"kind":"Field","name":{"kind":"Name","value":"opensubsonicExtensions"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistExportTargetFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaylistExportTargetType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"playlistId"}},{"kind":"Field","name":{"kind":"Name","value":"destinationType"}},{"kind":"Field","name":{"kind":"Name","value":"syncMode"}},{"kind":"Field","name":{"kind":"Name","value":"remotePlaylistId"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncStatus"}},{"kind":"Field","name":{"kind":"Name","value":"lastError"}},{"kind":"Field","name":{"kind":"Name","value":"lastSyncedAt"}},{"kind":"Field","name":{"kind":"Name","value":"unmatchedTrackTitles"}},{"kind":"Field","name":{"kind":"Name","value":"matchedTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"totalTrackCount"}},{"kind":"Field","name":{"kind":"Name","value":"spotifyUserId"}},{"kind":"Field","name":{"kind":"Name","value":"subsonicConnection"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SubsonicConnectionFields"}}]}}]}}]} as unknown as DocumentNode<RecreateSyncTargetRemoteMutation, RecreateSyncTargetRemoteMutationVariables>;

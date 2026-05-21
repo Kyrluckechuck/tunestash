@@ -1,6 +1,7 @@
 """End-to-end GraphQL integration tests for Phase 2A export operations."""
 
 import json
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -304,9 +305,21 @@ async def test_my_playlist_exports_returns_newest_first():
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_m3u_download_happy_path():
-    """Owner can download the m3u for their own snapshot."""
+    """Owner can download the m3u for their own snapshot. The m3u now embeds
+    Subsonic stream URLs from the owner's configured Subsonic connection."""
+    from queuetip.models import SubsonicConnection
+    from src.queuetip.crypto import encrypt_secret
+
     owner, playlist = await _setup_playlist()
     await _add_song(playlist, owner, guaranteed=True)
+    # The m3u flow requires a connection to build stream URLs against.
+    await sync_to_async(SubsonicConnection.objects.create)(
+        account=owner,
+        label="test",
+        server_url="https://navi.test",
+        username="alice",
+        password_encrypted=encrypt_secret("hunter2"),
+    )
 
     async with _authed_client(owner.id) as client:
         created = await _gql(
@@ -316,7 +329,11 @@ async def test_m3u_download_happy_path():
         )
         snapshot_id = created["data"]["createExport"]["id"]
 
-        resp = await client.get(f"/exports/{snapshot_id}.m3u")
+        # Mock the per-track resolver so the test doesn't reach out to a real
+        # Subsonic server. Returning None makes every track an "unmatched"
+        # comment — the file still renders successfully.
+        with patch("src.queuetip.m3u.resolve_song_to_subsonic_id", return_value=None):
+            resp = await client.get(f"/exports/{snapshot_id}.m3u")
 
     assert resp.status_code == 200
     assert "audio/x-mpegurl" in resp.headers["content-type"]

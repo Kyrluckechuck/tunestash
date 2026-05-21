@@ -121,6 +121,31 @@ type Mutation {
   createExport(playlistId: ID!, options: ExportOptionsInput = null): ExportSnapshotType!
   exportToSpotify(snapshotId: ID!, playlistName: String = null, forceRecreate: Boolean! = false): SpotifyExportResultType!
   signOutEverywhere: SignOutEverywhereResult!
+  addSubsonicConnection(label: String!, serverUrl: String!, username: String!, password: String!): SubsonicConnectionType!
+  updateSubsonicConnection(id: ID!, label: String = null, serverUrl: String = null, username: String = null, password: String = null): SubsonicConnectionType!
+  removeSubsonicConnection(id: ID!): Boolean!
+  testSubsonicConnection(id: ID!): SubsonicConnectionType!
+  createSubsonicSyncTarget(playlistId: ID!, connectionId: ID!, syncMode: String! = "manual"): PlaylistExportTargetType!
+  updateSyncTargetMode(id: ID!, syncMode: String!): PlaylistExportTargetType!
+  removeSyncTarget(id: ID!, deleteRemote: Boolean! = false): Boolean!
+  syncTargetNow(id: ID!): PlaylistExportTargetType!
+  recreateSyncTargetRemote(id: ID!): PlaylistExportTargetType!
+}
+
+type PlaylistExportTargetType {
+  id: ID!
+  playlistId: ID!
+  destinationType: String!
+  syncMode: String!
+  remotePlaylistId: String!
+  lastSyncStatus: String!
+  lastError: String!
+  lastSyncedAt: DateTime
+  unmatchedTrackTitles: [String!]!
+  matchedTrackCount: Int!
+  totalTrackCount: Int!
+  spotifyUserId: String
+  subsonicConnection: SubsonicConnectionType
 }
 
 type PlaylistPreviewType {
@@ -159,6 +184,8 @@ type Query {
   export(id: ID!): ExportSnapshotType!
   myPlaylistExports(playlistId: ID!): [ExportSnapshotType!]!
   playlistContributions(playlistId: ID!): [ContributionType!]!
+  mySubsonicConnection: SubsonicConnectionType
+  myPlaylistSyncTargets(playlistId: ID!): [PlaylistExportTargetType!]!
 }
 
 type RegenerateInviteResult {
@@ -187,6 +214,18 @@ type SpotifyExportResultType {
   skippedCount: Int!
   skippedTitles: [String!]!
   createdNew: Boolean!
+}
+
+type SubsonicConnectionType {
+  id: ID!
+  label: String!
+  serverUrl: String!
+  username: String!
+  verificationStatus: String!
+  verificationError: String!
+  lastVerifiedAt: DateTime
+  opensubsonicExtensions: [String!]!
+  createdAt: DateTime!
 }
 
 type VoteType {

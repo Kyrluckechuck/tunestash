@@ -22,6 +22,7 @@ import { BulkImportDialog } from "@/features/playlist/BulkImportDialog";
 import { ContributeDialog } from "@/features/playlist/ContributeDialog";
 import { CreateExportDialog } from "@/features/playlist/CreateExportDialog";
 import { EditSettingsDialog } from "@/features/playlist/EditSettingsDialog";
+import { SendToSubsonicCard } from "@/features/playlist/SendToSubsonicCard";
 
 function PlaylistDetailContent({ id }: { id: string }) {
   const { account } = useMe();
@@ -229,6 +230,8 @@ function PlaylistDetailContent({ id }: { id: string }) {
             ) : null}
           </CardContent>
         </Card>
+
+        <SendToSubsonicCard playlistId={id} />
       </aside>
 
       <BulkImportDialog

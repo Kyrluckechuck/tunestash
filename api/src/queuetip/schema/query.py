@@ -4,7 +4,12 @@ import strawberry
 from asgiref.sync import sync_to_async
 from strawberry.types import Info
 
-from queuetip.models import Account, ExportSnapshot
+from queuetip.models import (
+    Account,
+    ExportSnapshot,
+    PlaylistExportTarget,
+    SubsonicConnection,
+)
 from queuetip.permissions import require_member
 from src.queuetip.resolution.catalog import catalog_search as _catalog_search
 
@@ -16,9 +21,11 @@ from ..graphql_types import (
     CatalogSearchResultType,
     ContributionType,
     ExportSnapshotType,
+    PlaylistExportTargetType,
     PlaylistPreviewType,
     PlaylistType,
     PublicSettingsType,
+    SubsonicConnectionType,
 )
 from ..services.bulk_import import BulkImportService
 from ..services.contribution import ContributionService
@@ -189,3 +196,31 @@ class Query:
         return [
             ContributionType.from_model(c, list(c.votes.all())) for c in contributions
         ]
+
+    @strawberry.field
+    async def my_subsonic_connection(
+        self, info: Info[QueuetipContext, None]
+    ) -> SubsonicConnectionType | None:
+        """Return the current user's Subsonic connection if they've added one.
+        MVP: one connection per user, so this returns at most a single row."""
+        account = _require_account(info)
+        conn = await sync_to_async(
+            lambda: SubsonicConnection.objects.filter(account=account).first()
+        )()
+        return SubsonicConnectionType.from_model(conn) if conn else None
+
+    @strawberry.field
+    async def my_playlist_sync_targets(
+        self, info: Info[QueuetipContext, None], playlist_id: strawberry.ID
+    ) -> list[PlaylistExportTargetType]:
+        """Return the caller's export targets for this playlist (Spotify,
+        Subsonic, future). One row per destination type at most."""
+        account = _require_account(info)
+        targets = await sync_to_async(
+            lambda: list(
+                PlaylistExportTarget.objects.filter(
+                    account=account, playlist_id=int(playlist_id)
+                ).select_related("spotify_link", "subsonic_connection")
+            )
+        )()
+        return [PlaylistExportTargetType.from_model(t) for t in targets]

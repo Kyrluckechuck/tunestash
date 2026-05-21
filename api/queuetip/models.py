@@ -460,6 +460,12 @@ class SubsonicConnection(models.Model):
         max_length=16, choices=STATUS_CHOICES, default=STATUS_UNKNOWN
     )
     verification_error: models.TextField = models.TextField(blank=True)
+    # OpenSubsonic extensions advertised by the server's
+    # /rest/getOpenSubsonicExtensions response (empty list = classic Subsonic
+    # or pre-probe). Populated by testSubsonicConnection; consumed for
+    # capability-aware behaviour (e.g. preferring ISRC matching when the
+    # server reliably returns it).
+    opensubsonic_extensions: models.JSONField = models.JSONField(default=list)
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
     updated_at: models.DateTimeField = models.DateTimeField(auto_now=True)
 

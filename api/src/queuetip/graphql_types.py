@@ -16,7 +16,9 @@ from queuetip.models import (
     ExportSnapshotTrack,
     ExternalServiceLink,
     Playlist,
+    PlaylistExportTarget,
     PlaylistMembership,
+    SubsonicConnection,
     Vote,
 )
 
@@ -44,6 +46,96 @@ class ExternalServiceLinkType:
             service=link.service,
             service_user_id=link.service_user_id,
             linked_at=link.created_at,
+        )
+
+
+@strawberry.type
+class SubsonicConnectionType:
+    """A user's Subsonic-compatible server connection (Navidrome etc.).
+
+    Never exposes the password — only the identifying fields and verification
+    status. The OpenSubsonic extension list lets the UI surface 'modern
+    server detected' badges without round-tripping.
+    """
+
+    id: strawberry.ID
+    label: str
+    server_url: str
+    username: str
+    verification_status: str
+    verification_error: str
+    last_verified_at: datetime.datetime | None
+    opensubsonic_extensions: list[str]
+    created_at: datetime.datetime
+
+    @classmethod
+    def from_model(cls, conn: SubsonicConnection) -> "SubsonicConnectionType":
+        return cls(
+            id=strawberry.ID(str(conn.id)),
+            label=conn.label,
+            server_url=conn.server_url,
+            username=conn.username,
+            verification_status=conn.verification_status,
+            verification_error=conn.verification_error,
+            last_verified_at=conn.last_verified_at,
+            opensubsonic_extensions=list(conn.opensubsonic_extensions or []),
+            created_at=conn.created_at,
+        )
+
+
+@strawberry.type
+class PlaylistExportTargetType:
+    """A user's intent to mirror a queuetip playlist to one external service.
+
+    Polymorphic over destination_type — `spotify_user_id` is set when
+    destination_type='spotify', `subsonic_connection` when 'subsonic'.
+    Frontend uses destination_type to pick the right details.
+    """
+
+    id: strawberry.ID
+    playlist_id: strawberry.ID
+    destination_type: str
+    sync_mode: str
+    remote_playlist_id: str
+    last_sync_status: str
+    last_error: str
+    last_synced_at: datetime.datetime | None
+    unmatched_track_titles: list[str]
+    matched_track_count: int
+    total_track_count: int
+
+    # Destination-specific details — at most one is populated per row.
+    spotify_user_id: str | None
+    subsonic_connection: SubsonicConnectionType | None
+
+    @classmethod
+    def from_model(cls, target: PlaylistExportTarget) -> "PlaylistExportTargetType":
+        link = (
+            cast(ExternalServiceLink, target.spotify_link)
+            if target.spotify_link_id
+            else None
+        )
+        conn = (
+            cast(SubsonicConnection, target.subsonic_connection)
+            if target.subsonic_connection_id
+            else None
+        )
+        return cls(
+            id=strawberry.ID(str(target.id)),
+            playlist_id=strawberry.ID(str(target.playlist_id)),
+            destination_type=target.destination_type,
+            sync_mode=target.sync_mode,
+            remote_playlist_id=target.remote_playlist_id,
+            last_sync_status=target.last_sync_status,
+            last_error=target.last_error,
+            last_synced_at=target.last_synced_at,
+            unmatched_track_titles=list(target.unmatched_track_titles or []),
+            matched_track_count=target.matched_track_count,
+            total_track_count=target.total_track_count,
+            spotify_user_id=(link.service_user_id if link else None),
+            subsonic_connection=(
+                SubsonicConnectionType.from_model(conn) if conn else None
+            ),
         )
 
 

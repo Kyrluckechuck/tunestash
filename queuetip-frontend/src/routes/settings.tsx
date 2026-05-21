@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { SignOutEverywhereDocument } from "@/types/generated/graphql";
+import { SubsonicConnectionSection } from "@/features/settings/SubsonicConnectionSection";
 
 function SettingsPageContent() {
   const { account } = useMe();
@@ -75,6 +76,8 @@ function SettingsPageContent() {
           )}
         </CardContent>
       </Card>
+
+      <SubsonicConnectionSection />
 
       <Card>
         <CardHeader>

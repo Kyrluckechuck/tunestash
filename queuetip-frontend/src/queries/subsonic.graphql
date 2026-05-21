@@ -1,0 +1,121 @@
+fragment SubsonicConnectionFields on SubsonicConnectionType {
+  id
+  label
+  serverUrl
+  username
+  verificationStatus
+  verificationError
+  lastVerifiedAt
+  opensubsonicExtensions
+  createdAt
+}
+
+fragment PlaylistExportTargetFields on PlaylistExportTargetType {
+  id
+  playlistId
+  destinationType
+  syncMode
+  remotePlaylistId
+  lastSyncStatus
+  lastError
+  lastSyncedAt
+  unmatchedTrackTitles
+  matchedTrackCount
+  totalTrackCount
+  spotifyUserId
+  subsonicConnection {
+    ...SubsonicConnectionFields
+  }
+}
+
+query MySubsonicConnection {
+  mySubsonicConnection {
+    ...SubsonicConnectionFields
+  }
+}
+
+query MyPlaylistSyncTargets($playlistId: ID!) {
+  myPlaylistSyncTargets(playlistId: $playlistId) {
+    ...PlaylistExportTargetFields
+  }
+}
+
+mutation AddSubsonicConnection(
+  $label: String!
+  $serverUrl: String!
+  $username: String!
+  $password: String!
+) {
+  addSubsonicConnection(
+    label: $label
+    serverUrl: $serverUrl
+    username: $username
+    password: $password
+  ) {
+    ...SubsonicConnectionFields
+  }
+}
+
+mutation UpdateSubsonicConnection(
+  $id: ID!
+  $label: String
+  $serverUrl: String
+  $username: String
+  $password: String
+) {
+  updateSubsonicConnection(
+    id: $id
+    label: $label
+    serverUrl: $serverUrl
+    username: $username
+    password: $password
+  ) {
+    ...SubsonicConnectionFields
+  }
+}
+
+mutation RemoveSubsonicConnection($id: ID!) {
+  removeSubsonicConnection(id: $id)
+}
+
+mutation TestSubsonicConnection($id: ID!) {
+  testSubsonicConnection(id: $id) {
+    ...SubsonicConnectionFields
+  }
+}
+
+mutation CreateSubsonicSyncTarget(
+  $playlistId: ID!
+  $connectionId: ID!
+  $syncMode: String! = "manual"
+) {
+  createSubsonicSyncTarget(
+    playlistId: $playlistId
+    connectionId: $connectionId
+    syncMode: $syncMode
+  ) {
+    ...PlaylistExportTargetFields
+  }
+}
+
+mutation UpdateSyncTargetMode($id: ID!, $syncMode: String!) {
+  updateSyncTargetMode(id: $id, syncMode: $syncMode) {
+    ...PlaylistExportTargetFields
+  }
+}
+
+mutation RemoveSyncTarget($id: ID!, $deleteRemote: Boolean! = false) {
+  removeSyncTarget(id: $id, deleteRemote: $deleteRemote)
+}
+
+mutation SyncTargetNow($id: ID!) {
+  syncTargetNow(id: $id) {
+    ...PlaylistExportTargetFields
+  }
+}
+
+mutation RecreateSyncTargetRemote($id: ID!) {
+  recreateSyncTargetRemote(id: $id) {
+    ...PlaylistExportTargetFields
+  }
+}

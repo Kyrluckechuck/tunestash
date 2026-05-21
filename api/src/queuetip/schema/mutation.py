@@ -20,12 +20,16 @@ from queuetip.models import (
     ExportSnapshot,
     MagicLinkRequestLog,
     Playlist,
+    PlaylistExportTarget,
+    PlaylistMembership,
+    SubsonicConnection,
     Vote,
 )
 
 from ..auth import make_magic_link_token
 from ..client_ip import get_client_ip
 from ..context import QueuetipContext
+from ..crypto import encrypt_secret
 from ..email import send_magic_link_email
 from ..errors import AuthRequiredError, NotFoundError, ValidationError
 from ..graphql_types import (
@@ -35,8 +39,10 @@ from ..graphql_types import (
     EngineSettingsInput,
     ExportOptionsInput,
     ExportSnapshotType,
+    PlaylistExportTargetType,
     PlaylistType,
     SpotifyExportResultType,
+    SubsonicConnectionType,
 )
 from ..services.bulk_import import BulkImportService
 from ..services.contribution import ContributionService
@@ -45,6 +51,7 @@ from ..services.membership import MembershipService
 from ..services.playlist import PlaylistService
 from ..services.spotify_export import SpotifyExportService
 from ..services.vote import VoteService
+from ..subsonic import SubsonicAuthError, SubsonicClient, SubsonicError
 
 # Pragmatic email shape check — rejects obvious garbage before we create a row
 # or hand the address to the mail backend. Not a full RFC 5322 validation.
@@ -589,3 +596,424 @@ class Mutation:
 
         await sync_to_async(_bump_epoch)()
         return SignOutEverywhereResult(success=True)
+
+    # ── Subsonic connection management ──────────────────────────────────────
+
+    @strawberry.mutation
+    async def add_subsonic_connection(
+        self,
+        info: Info[QueuetipContext, None],
+        label: str,
+        server_url: str,
+        username: str,
+        password: str,
+    ) -> SubsonicConnectionType:
+        """Save a Subsonic-compatible server connection for the current user
+        and immediately probe it (ping + OpenSubsonic extension detection).
+
+        MVP: one connection per account. Adding a second replaces the first
+        — destructive intent must be explicit, so this is enforced by the
+        unique_together constraint rather than silent overwrite.
+        """
+        account = _require_account(info)
+        conn = await sync_to_async(_create_subsonic_connection)(
+            account, label, server_url, username, password
+        )
+        # Probe synchronously so the user sees status immediately. Failures
+        # don't roll back the row — they're recorded for diagnosis.
+        await sync_to_async(_probe_subsonic_connection)(conn, password)
+        return SubsonicConnectionType.from_model(conn)
+
+    @strawberry.mutation
+    async def update_subsonic_connection(
+        self,
+        info: Info[QueuetipContext, None],
+        id: strawberry.ID,
+        label: str | None = None,
+        server_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> SubsonicConnectionType:
+        """Patch fields on an existing connection. Pass `password` only when
+        rotating credentials — null leaves the stored encrypted password
+        alone. Re-probes after any change."""
+        account = _require_account(info)
+        conn = await sync_to_async(_update_subsonic_connection)(
+            account, int(id), label, server_url, username, password
+        )
+        # If they rotated the password we have the plaintext; otherwise we
+        # need to decrypt to probe. The probe path handles both.
+        await sync_to_async(_probe_subsonic_connection)(conn, password)
+        return SubsonicConnectionType.from_model(conn)
+
+    @strawberry.mutation
+    async def remove_subsonic_connection(
+        self,
+        info: Info[QueuetipContext, None],
+        id: strawberry.ID,
+    ) -> bool:
+        """Delete the connection. Cascades to any sync targets pointing at it
+        (they become orphaned and stop syncing) — the user removes targets
+        first if they want to clean up remote playlists too."""
+        account = _require_account(info)
+
+        def _delete() -> int:
+            return SubsonicConnection.objects.filter(
+                id=int(id), account=account
+            ).delete()[0]
+
+        deleted = await sync_to_async(_delete)()
+        if not deleted:
+            raise NotFoundError(f"Subsonic connection {id} not found")
+        return True
+
+    @strawberry.mutation
+    async def test_subsonic_connection(
+        self,
+        info: Info[QueuetipContext, None],
+        id: strawberry.ID,
+    ) -> SubsonicConnectionType:
+        """Re-run the verification probe against the stored credentials.
+        Refreshes verification_status, OpenSubsonic extensions, and any
+        verification_error."""
+        account = _require_account(info)
+        conn = await sync_to_async(
+            lambda: SubsonicConnection.objects.filter(
+                id=int(id), account=account
+            ).first()
+        )()
+        if conn is None:
+            raise NotFoundError(f"Subsonic connection {id} not found")
+        await sync_to_async(_probe_subsonic_connection)(conn, None)
+        return SubsonicConnectionType.from_model(conn)
+
+    # ── Export targets (Subsonic + future) ──────────────────────────────────
+
+    @strawberry.mutation
+    async def create_subsonic_sync_target(
+        self,
+        info: Info[QueuetipContext, None],
+        playlist_id: strawberry.ID,
+        connection_id: strawberry.ID,
+        sync_mode: str = PlaylistExportTarget.SYNC_MANUAL,
+    ) -> PlaylistExportTargetType:
+        """Opt the user in to syncing a queuetip playlist to their Subsonic
+        server. Idempotent — re-calling returns the existing target rather
+        than erroring on the unique constraint.
+
+        Caller must be a member of the playlist. Each user has at most ONE
+        Subsonic sync target per playlist (per Lifecycle Principle 1).
+        """
+        account = _require_account(info)
+        target = await sync_to_async(_create_subsonic_sync_target)(
+            account, int(playlist_id), int(connection_id), sync_mode
+        )
+        return PlaylistExportTargetType.from_model(target)
+
+    @strawberry.mutation
+    async def update_sync_target_mode(
+        self,
+        info: Info[QueuetipContext, None],
+        id: strawberry.ID,
+        sync_mode: str,
+    ) -> PlaylistExportTargetType:
+        """Toggle a sync target between manual and on_change."""
+        account = _require_account(info)
+        target = await sync_to_async(_update_target_mode)(account, int(id), sync_mode)
+        return PlaylistExportTargetType.from_model(target)
+
+    @strawberry.mutation
+    async def remove_sync_target(
+        self,
+        info: Info[QueuetipContext, None],
+        id: strawberry.ID,
+        delete_remote: bool = False,
+    ) -> bool:
+        """Stop syncing this playlist. Defaults to leaving the remote
+        playlist alone (just stops queuetip from updating it). If
+        delete_remote=true AND the target is a Subsonic destination, also
+        delete the playlist on the user's Subsonic server."""
+        account = _require_account(info)
+        await sync_to_async(_remove_target)(account, int(id), delete_remote)
+        return True
+
+    @strawberry.mutation
+    async def sync_target_now(
+        self,
+        info: Info[QueuetipContext, None],
+        id: strawberry.ID,
+    ) -> PlaylistExportTargetType:
+        """Trigger a sync run immediately and wait for the result. Used by
+        the 'Sync now' UI button. Long-running tasks return after the run."""
+        account = _require_account(info)
+        target = await sync_to_async(_resolve_owned_target)(account, int(id))
+        # Run synchronously in a worker thread so the GraphQL response
+        # contains the post-sync state — better UX than a fire-and-forget
+        # task and a poll loop.
+        if target.destination_type == PlaylistExportTarget.DEST_SUBSONIC:
+            from ..services.subsonic_sync import (
+                SubsonicSyncError,
+                sync_subsonic_target,
+            )
+
+            try:
+                await sync_to_async(sync_subsonic_target)(target.id)
+            except SubsonicSyncError as exc:
+                # Already recorded on the target; surface the message.
+                raise ValidationError(str(exc)) from exc
+            # Refresh after the sync ran.
+            target = await sync_to_async(_resolve_owned_target)(account, int(id))
+        else:
+            raise ValidationError(
+                "syncTargetNow is only wired for Subsonic targets in this release. "
+                "Use exportToSpotify for Spotify exports."
+            )
+        return PlaylistExportTargetType.from_model(target)
+
+    @strawberry.mutation
+    async def recreate_sync_target_remote(
+        self,
+        info: Info[QueuetipContext, None],
+        id: strawberry.ID,
+    ) -> PlaylistExportTargetType:
+        """Recover from STATUS_REMOTE_DELETED by clearing remote_playlist_id
+        and triggering a fresh create. The explicit-intent escape hatch
+        required by Lifecycle Principle 2."""
+        account = _require_account(info)
+
+        def _clear_and_sync() -> PlaylistExportTarget:
+            target = _resolve_owned_target(account, int(id))
+            target.remote_playlist_id = ""
+            target.last_sync_status = PlaylistExportTarget.STATUS_PENDING
+            target.last_error = ""
+            target.save(
+                update_fields=[
+                    "remote_playlist_id",
+                    "last_sync_status",
+                    "last_error",
+                ]
+            )
+            return target
+
+        target = await sync_to_async(_clear_and_sync)()
+
+        if target.destination_type == PlaylistExportTarget.DEST_SUBSONIC:
+            from ..services.subsonic_sync import (
+                SubsonicSyncError,
+                sync_subsonic_target,
+            )
+
+            try:
+                await sync_to_async(sync_subsonic_target)(target.id)
+            except SubsonicSyncError as exc:
+                raise ValidationError(str(exc)) from exc
+
+        target = await sync_to_async(_resolve_owned_target)(account, int(id))
+        return PlaylistExportTargetType.from_model(target)
+
+
+# ── Helpers for Subsonic mutations (sync) ──────────────────────────────────
+
+
+def _create_subsonic_connection(
+    account: Account,
+    label: str,
+    server_url: str,
+    username: str,
+    password: str,
+) -> SubsonicConnection:
+    """Persist a new SubsonicConnection with the password encrypted."""
+    if not server_url.strip():
+        raise ValidationError("server_url is required")
+    if not username.strip():
+        raise ValidationError("username is required")
+    if not password:
+        raise ValidationError("password is required")
+    # Hard-replace any prior connection — the model is unique_together on
+    # account, so a second add must clobber. Doing this explicitly produces
+    # a clearer behaviour than relying on the IntegrityError path.
+    SubsonicConnection.objects.filter(account=account).delete()
+    return SubsonicConnection.objects.create(
+        account=account,
+        label=label.strip() or "Subsonic",
+        server_url=server_url.strip(),
+        username=username.strip(),
+        password_encrypted=encrypt_secret(password),
+    )
+
+
+def _update_subsonic_connection(
+    account: Account,
+    conn_id: int,
+    label: str | None,
+    server_url: str | None,
+    username: str | None,
+    password: str | None,
+) -> SubsonicConnection:
+    conn = SubsonicConnection.objects.filter(id=conn_id, account=account).first()
+    if conn is None:
+        raise NotFoundError(f"Subsonic connection {conn_id} not found")
+    if label is not None:
+        conn.label = label.strip() or conn.label
+    if server_url is not None:
+        conn.server_url = server_url.strip() or conn.server_url
+    if username is not None:
+        conn.username = username.strip() or conn.username
+    if password:
+        conn.password_encrypted = encrypt_secret(password)
+    conn.save()
+    return conn
+
+
+def _probe_subsonic_connection(
+    conn: SubsonicConnection, plaintext_password: str | None
+) -> None:
+    """Ping + OpenSubsonic capability probe. Writes results onto the row.
+    Never raises — failures are recorded as verification_status='failed'."""
+    from ..crypto import CryptoError, decrypt_secret
+
+    if plaintext_password is None:
+        try:
+            plaintext_password = decrypt_secret(conn.password_encrypted)
+        except CryptoError as exc:
+            conn.verification_status = SubsonicConnection.STATUS_FAILED
+            conn.verification_error = f"Could not decrypt stored password: {exc}"
+            conn.last_verified_at = timezone.now()
+            conn.save(
+                update_fields=[
+                    "verification_status",
+                    "verification_error",
+                    "last_verified_at",
+                ]
+            )
+            return
+
+    client = SubsonicClient(
+        server_url=conn.server_url,
+        username=conn.username,
+        password=plaintext_password,
+    )
+    try:
+        client.ping()
+    except SubsonicAuthError as exc:
+        conn.verification_status = SubsonicConnection.STATUS_FAILED
+        conn.verification_error = f"Authentication failed: {exc}"
+    except SubsonicError as exc:
+        conn.verification_status = SubsonicConnection.STATUS_FAILED
+        conn.verification_error = f"Connection failed: {exc}"
+    else:
+        conn.verification_status = SubsonicConnection.STATUS_OK
+        conn.verification_error = ""
+        # Best-effort capability probe. Empty list = classic Subsonic or
+        # endpoint not exposed; neither blocks the connection.
+        try:
+            conn.opensubsonic_extensions = client.get_open_subsonic_extensions()
+        except Exception:  # pylint: disable=broad-except
+            conn.opensubsonic_extensions = []
+    conn.last_verified_at = timezone.now()
+    conn.save(
+        update_fields=[
+            "verification_status",
+            "verification_error",
+            "opensubsonic_extensions",
+            "last_verified_at",
+        ]
+    )
+
+
+def _create_subsonic_sync_target(
+    account: Account,
+    playlist_id: int,
+    connection_id: int,
+    sync_mode: str,
+) -> PlaylistExportTarget:
+    """Create-or-return the per-(account, playlist, subsonic) sync target.
+
+    Idempotency: subsequent calls return the existing row rather than
+    erroring. The sync_mode argument is honoured only on the first call;
+    use updateSyncTargetMode to change it later.
+    """
+    membership = PlaylistMembership.objects.filter(
+        account=account, playlist_id=playlist_id
+    ).first()
+    if membership is None:
+        raise NotFoundError(f"Playlist {playlist_id} not found")
+
+    connection = SubsonicConnection.objects.filter(
+        id=connection_id, account=account
+    ).first()
+    if connection is None:
+        raise NotFoundError(f"Subsonic connection {connection_id} not found")
+
+    if sync_mode not in (
+        PlaylistExportTarget.SYNC_MANUAL,
+        PlaylistExportTarget.SYNC_ON_CHANGE,
+    ):
+        raise ValidationError(f"Invalid sync_mode: {sync_mode!r}")
+
+    target, _ = PlaylistExportTarget.objects.get_or_create(
+        account=account,
+        playlist_id=playlist_id,
+        destination_type=PlaylistExportTarget.DEST_SUBSONIC,
+        defaults={
+            "subsonic_connection": connection,
+            "sync_mode": sync_mode,
+        },
+    )
+    # If the user changed which Subsonic server they want to push to, swap
+    # the FK. This is rare but harmless.
+    if target.subsonic_connection_id != connection.id:
+        target.subsonic_connection = connection
+        target.save(update_fields=["subsonic_connection"])
+    return target
+
+
+def _update_target_mode(
+    account: Account, target_id: int, sync_mode: str
+) -> PlaylistExportTarget:
+    if sync_mode not in (
+        PlaylistExportTarget.SYNC_MANUAL,
+        PlaylistExportTarget.SYNC_ON_CHANGE,
+    ):
+        raise ValidationError(f"Invalid sync_mode: {sync_mode!r}")
+    target = _resolve_owned_target(account, target_id)
+    target.sync_mode = sync_mode
+    target.save(update_fields=["sync_mode"])
+    return target
+
+
+def _remove_target(account: Account, target_id: int, delete_remote: bool) -> None:
+    target = _resolve_owned_target(account, target_id)
+    if (
+        delete_remote
+        and target.destination_type == PlaylistExportTarget.DEST_SUBSONIC
+        and target.remote_playlist_id
+        and target.subsonic_connection_id
+    ):
+        from ..crypto import CryptoError, decrypt_secret
+
+        conn = cast(SubsonicConnection, target.subsonic_connection)
+        try:
+            password = decrypt_secret(conn.password_encrypted)
+            client = SubsonicClient(
+                server_url=conn.server_url,
+                username=conn.username,
+                password=password,
+            )
+            client.delete_playlist(target.remote_playlist_id)
+        except (CryptoError, SubsonicError):
+            # Best-effort cleanup — proceed to delete the local row even if
+            # the remote delete failed (user can clean it up manually).
+            pass
+    target.delete()
+
+
+def _resolve_owned_target(account: Account, target_id: int) -> PlaylistExportTarget:
+    target = (
+        PlaylistExportTarget.objects.filter(id=target_id, account=account)
+        .select_related("playlist", "spotify_link", "subsonic_connection")
+        .first()
+    )
+    if target is None:
+        raise NotFoundError(f"Sync target {target_id} not found")
+    return target
