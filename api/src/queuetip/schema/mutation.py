@@ -1,10 +1,10 @@
 """Queuetip GraphQL Mutation type."""
 
 import datetime
+import os
 import re
 from typing import cast
 
-from django.conf import settings as dj_settings
 from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
@@ -191,6 +191,18 @@ async def _load_snapshot_with_tracks(snapshot: ExportSnapshot) -> "ExportSnapsho
     return ExportSnapshotType.from_model(snap, tracks, members)
 
 
+def _signup_allowlist_required() -> bool:
+    """True iff the sign-up allowlist gate is enforced.
+
+    Reads the QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST env var directly because
+    dynaconf's HookableSettings wrapper doesn't expose module-level settings
+    added after its instantiation — so `dj_settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST`
+    raises AttributeError and the env-var escape hatch would silently never work.
+    Fail-safe default: enforce when the env var isn't set.
+    """
+    return os.getenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "true").lower() != "false"
+
+
 def _is_email_allowed(email: str) -> bool:
     """Return True if `email` may create a new Queuetip account.
 
@@ -199,7 +211,7 @@ def _is_email_allowed(email: str) -> bool:
     QueuetipSignupAllowlist pass. Existing accounts bypass this entirely because
     the identity lookup short-circuits before this is called.
     """
-    if not getattr(dj_settings, "QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", True):
+    if not _signup_allowlist_required():
         return True
     from queuetip.models import QueuetipSignupAllowlist  # local import avoids circular
 

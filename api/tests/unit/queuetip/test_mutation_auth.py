@@ -7,8 +7,10 @@ from src.queuetip.schema.mutation import _check_magic_link_throttle, _request_ma
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_request_magic_link_creates_account_for_new_email(mailoutbox, settings):
-    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = False
+async def test_request_magic_link_creates_account_for_new_email(
+    mailoutbox, monkeypatch
+):
+    monkeypatch.setenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "false")
     result = await _request_magic_link("New@Example.com", "Newbie")
     assert result.sent is True
     identity = await sync_to_async(
@@ -93,9 +95,9 @@ async def test_magic_link_different_emails_not_throttled(mailoutbox):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_signup_blocked_when_email_not_in_allowlist(mailoutbox, settings):
+async def test_signup_blocked_when_email_not_in_allowlist(mailoutbox, monkeypatch):
     """With the allowlist enforced (default), an un-approved email cannot sign up."""
-    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = True
+    monkeypatch.setenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "true")
     result = await _request_magic_link(
         "uninvited@example.com", "New Person", ip="10.0.0.99"
     )
@@ -109,11 +111,11 @@ async def test_signup_blocked_when_email_not_in_allowlist(mailoutbox, settings):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_signup_succeeds_when_email_is_allowlisted(mailoutbox, settings):
+async def test_signup_succeeds_when_email_is_allowlisted(mailoutbox, monkeypatch):
     """An allowlisted email can create a new account."""
     from queuetip.models import QueuetipSignupAllowlist
 
-    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = True
+    monkeypatch.setenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "true")
     await sync_to_async(QueuetipSignupAllowlist.objects.create)(
         email="invited@example.com"
     )
@@ -127,18 +129,20 @@ async def test_signup_succeeds_when_email_is_allowlisted(mailoutbox, settings):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_signup_works_when_allowlist_disabled(mailoutbox, settings):
+async def test_signup_works_when_allowlist_disabled(mailoutbox, monkeypatch):
     """When QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST=False, any email may sign up."""
-    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = False
+    monkeypatch.setenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "false")
     result = await _request_magic_link("anyone@example.com", "Anyone", ip="10.0.0.99")
     assert result.sent is True
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_existing_account_signin_not_blocked_by_allowlist(mailoutbox, settings):
+async def test_existing_account_signin_not_blocked_by_allowlist(
+    mailoutbox, monkeypatch
+):
     """An already-existing account can sign in even if not on the allowlist."""
-    settings.QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = True
+    monkeypatch.setenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "true")
     account = await sync_to_async(Account.objects.create)(display_name="Existing")
     await sync_to_async(AuthIdentity.objects.create)(
         account=account,
