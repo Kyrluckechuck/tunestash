@@ -100,6 +100,7 @@ describe("BulkImportDialog", () => {
               id: "99",
               status: "pending",
               sourceUrl: "https://open.spotify.com/playlist/xyz",
+              totalTracks: null,
               addedCount: 0,
               skippedCount: 0,
               unresolvedCount: 0,
@@ -109,9 +110,10 @@ describe("BulkImportDialog", () => {
           },
         },
       },
-      // Playlist detail refetch triggered by refetchQueries
+      // Playlist detail refetch — triggered on succeeded transition now
+      // (not at mutation resolution).
       playlistDetailRefetchMock,
-      // Poll 1: running
+      // Poll 1: running with mid-progress counters
       {
         request: { query: BulkImportJobDocument, variables: { id: "99" } },
         result: {
@@ -120,7 +122,8 @@ describe("BulkImportDialog", () => {
               __typename: "BulkImportJobType",
               id: "99",
               status: "running",
-              addedCount: 0,
+              totalTracks: 4,
+              addedCount: 1,
               skippedCount: 0,
               unresolvedCount: 0,
               unresolvedTitles: [],
@@ -139,6 +142,7 @@ describe("BulkImportDialog", () => {
               __typename: "BulkImportJobType",
               id: "99",
               status: "succeeded",
+              totalTracks: 4,
               addedCount: 3,
               skippedCount: 1,
               unresolvedCount: 0,
@@ -168,6 +172,13 @@ describe("BulkImportDialog", () => {
       expect(screen.getByText(/queued for import|importing tracks/i)).toBeInTheDocument();
     });
 
+    // Once the first poll lands with totalTracks=4 + addedCount=1, the dialog
+    // must show the "X / Y" progress counter so the user can see motion.
+    await waitFor(
+      () => expect(screen.getByText(/Importing tracks…\s*1\s*\/\s*4/i)).toBeInTheDocument(),
+      { timeout: 10000 },
+    );
+
     // Wait for the terminal-state UI (Apollo polls BulkImportJobDocument)
     await waitFor(
       () => expect(screen.getByText(/import complete/i)).toBeInTheDocument(),
@@ -195,6 +206,7 @@ describe("BulkImportDialog", () => {
               id: "88",
               status: "pending",
               sourceUrl: "https://open.spotify.com/playlist/bad",
+              totalTracks: null,
               addedCount: 0,
               skippedCount: 0,
               unresolvedCount: 0,
@@ -204,7 +216,8 @@ describe("BulkImportDialog", () => {
           },
         },
       },
-      playlistDetailRefetchMock,
+      // Failed jobs don't trigger a playlist refetch (nothing changed), so
+      // playlistDetailRefetchMock isn't included here.
       {
         request: { query: BulkImportJobDocument, variables: { id: "88" } },
         result: {
@@ -213,6 +226,7 @@ describe("BulkImportDialog", () => {
               __typename: "BulkImportJobType",
               id: "88",
               status: "failed",
+              totalTracks: null,
               addedCount: 0,
               skippedCount: 0,
               unresolvedCount: 0,

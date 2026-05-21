@@ -299,6 +299,9 @@ class BulkImportJobType:
     id: strawberry.ID
     source_url: str
     status: str
+    # Null while the task is still resolving the source playlist; set once the
+    # task knows the candidate count so the UI can show "X / Y processed."
+    total_tracks: int | None
     added_count: int
     skipped_count: int
     unresolved_count: int
@@ -313,6 +316,7 @@ class BulkImportJobType:
             id=strawberry.ID(str(job.id)),
             source_url=job.source_url,
             status=job.status,
+            total_tracks=job.total_tracks,
             added_count=job.added_count,
             skipped_count=job.skipped_count,
             unresolved_count=job.unresolved_count,

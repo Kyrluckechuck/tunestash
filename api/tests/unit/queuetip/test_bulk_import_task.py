@@ -76,6 +76,7 @@ def test_bulk_import_happy_path() -> None:
 
     job.refresh_from_db()
     assert job.status == BulkImportJob.STATUS_SUCCEEDED
+    assert job.total_tracks == 3
     assert job.added_count == 3
     assert job.skipped_count == 0
     assert job.unresolved_count == 0
@@ -176,6 +177,67 @@ def test_bulk_import_skip_already_contributed() -> None:
     job.refresh_from_db()
     assert job.skipped_count == 1
     assert Contribution.objects.filter(playlist=playlist).count() == 2
+
+
+@pytest.mark.django_db(transaction=True)
+def test_bulk_import_sets_total_tracks_before_processing() -> None:
+    """`total_tracks` must be persisted right after resolve and before any
+    ingest work, so a UI polling at 2s sees the count and can render
+    'X / Y processed' for the entire duration of the run.
+    """
+    owner = _make_owner()
+    playlist = _make_playlist(owner)
+    job = _make_job(owner, playlist)
+
+    candidates = [_make_candidate(f"Song {i}") for i in range(5)]
+    songs = [_make_song(f"Song {i}") for i in range(5)]
+
+    seen_total_during_ingest: list[int | None] = []
+
+    def ingest_side_effect(candidate: TrackCandidate) -> object:
+        # Each call samples what the persisted total_tracks is mid-run.
+        job.refresh_from_db()
+        seen_total_during_ingest.append(job.total_tracks)
+        return songs[int(candidate.track_name.split()[-1])]
+
+    with (
+        patch("queuetip.tasks.resolve_playlist", return_value=candidates),
+        patch("queuetip.tasks.ingest_track", side_effect=ingest_side_effect),
+    ):
+        bulk_import_playlist(job.id)
+
+    # total_tracks set BEFORE any ingest call ran.
+    assert seen_total_during_ingest == [5, 5, 5, 5, 5]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_bulk_import_writes_counters_per_track() -> None:
+    """Each candidate produces a counter update — the polling UI must be able
+    to observe added_count advancing as the run progresses."""
+    owner = _make_owner()
+    playlist = _make_playlist(owner)
+    job = _make_job(owner, playlist)
+
+    candidates = [_make_candidate(f"Song {i}") for i in range(3)]
+    songs = [_make_song(f"Song {i}") for i in range(3)]
+
+    seen_added_counts: list[int] = []
+
+    def ingest_side_effect(candidate: TrackCandidate) -> object:
+        job.refresh_from_db()
+        seen_added_counts.append(job.added_count)
+        return songs[int(candidate.track_name.split()[-1])]
+
+    with (
+        patch("queuetip.tasks.resolve_playlist", return_value=candidates),
+        patch("queuetip.tasks.ingest_track", side_effect=ingest_side_effect),
+    ):
+        bulk_import_playlist(job.id)
+
+    # Before each ingest, added_count reflects only earlier tracks.
+    assert seen_added_counts == [0, 1, 2]
+    job.refresh_from_db()
+    assert job.added_count == 3
 
 
 @pytest.mark.django_db(transaction=True)

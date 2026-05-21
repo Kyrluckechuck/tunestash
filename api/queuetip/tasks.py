@@ -68,6 +68,12 @@ def bulk_import_playlist(job_id: int) -> dict[str, Any]:
         job.save(update_fields=["status", "error", "finished_at"])
         return {"status": "failed", "error": str(exc)}
 
+    # Surface total so the UI can show "X / Y processed" while the task runs.
+    # Saved before the first ingest so the polling client sees it on the next
+    # tick instead of staying at null for the duration.
+    job.total_tracks = len(candidates)
+    job.save(update_fields=["total_tracks"])
+
     added = skipped = unresolved = 0
     unresolved_titles: list[str] = []
     playlist: Playlist = cast(Playlist, job.playlist)
@@ -86,31 +92,34 @@ def bulk_import_playlist(job_id: int) -> dict[str, Any]:
                 f"{getattr(candidate, 'track_name', '?')} — "
                 f"{getattr(candidate, 'artist_name', '?')}"
             )
-            continue
-        if Contribution.objects.filter(playlist=playlist, song=song).exists():
-            skipped += 1
-            continue
-        Contribution.objects.create(
-            playlist=playlist, song=song, contributed_by=job.requested_by
-        )
-        added += 1
+        else:
+            if Contribution.objects.filter(playlist=playlist, song=song).exists():
+                skipped += 1
+            else:
+                Contribution.objects.create(
+                    playlist=playlist, song=song, contributed_by=job.requested_by
+                )
+                added += 1
 
-    job.added_count = added
-    job.skipped_count = skipped
-    job.unresolved_count = unresolved
-    job.unresolved_titles = unresolved_titles
+        # Live progress for the polling UI. One row update per track is fine —
+        # bulk-import playlists are bounded (Spotify caps at 10k, typical use
+        # <500) and the polling cadence is 2s so contention is non-existent.
+        job.added_count = added
+        job.skipped_count = skipped
+        job.unresolved_count = unresolved
+        job.unresolved_titles = unresolved_titles
+        job.save(
+            update_fields=[
+                "added_count",
+                "skipped_count",
+                "unresolved_count",
+                "unresolved_titles",
+            ]
+        )
+
     job.status = BulkImportJob.STATUS_SUCCEEDED
     job.finished_at = timezone.now()
-    job.save(
-        update_fields=[
-            "added_count",
-            "skipped_count",
-            "unresolved_count",
-            "unresolved_titles",
-            "status",
-            "finished_at",
-        ]
-    )
+    job.save(update_fields=["status", "finished_at"])
     return {
         "status": "succeeded",
         "added": added,

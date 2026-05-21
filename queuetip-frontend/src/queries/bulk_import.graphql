@@ -3,6 +3,7 @@ mutation BulkImportPlaylist($playlistId: ID!, $url: String!) {
     id
     status
     sourceUrl
+    totalTracks
     addedCount
     skippedCount
     unresolvedCount
@@ -15,6 +16,7 @@ query BulkImportJob($id: ID!) {
   bulkImportJob(id: $id) {
     id
     status
+    totalTracks
     addedCount
     skippedCount
     unresolvedCount

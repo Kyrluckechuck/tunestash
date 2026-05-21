@@ -406,6 +406,25 @@ See `api/src/services/album.py` for examples:
 - `docker compose exec web bash` - Shell into web container
 - `docker compose logs -f <service>` - View logs for specific service
 
+#### ⚠️ Compose `command:` changes require `up -d <service>` — not just a code edit
+
+The dev worker (and similar containers like `queuetip`) wraps its real
+command in `watchdog.watchmedo auto-restart`, which re-execs the *original*
+command line whenever a `.py` file changes. Watchdog does NOT re-read the
+compose file. If you edit the `command:` block in `docker-compose.override.yml`
+(e.g. adding a queue to `celery --queues=...`), the running container keeps
+the old command until the container is recreated.
+
+**Symptom**: a task gets queued by the web/queuetip backend but never picked
+up by the worker. The worker boots cleanly, registers all tasks, and shows
+`[queues]` listing only the OLD set of queues. Verify with:
+```
+docker compose exec worker bash -c "cat /proc/*/cmdline | tr '\0' ' '"
+```
+
+**Fix**: `docker compose up -d worker` (or whichever service had its command
+changed). Takes seconds, preserves the rest of the stack.
+
 ### Code Quality & Linting
 - **Local linting is available and preferred** - Run linting locally instead of in containers when possible:
   - Python (from `/api` directory): `python3 -m flake8 <file>`, `python3 -m black <file>`, `python3 -m isort <file>`

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useMutation, useQuery } from "@apollo/client";
+import { useApolloClient, useMutation, useQuery } from "@apollo/client";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,11 +29,13 @@ type Props = {
 const TERMINAL_STATUSES = new Set(["succeeded", "failed"]);
 
 export function BulkImportDialog({ playlistId, open, onOpenChange }: Props) {
+  const apollo = useApolloClient();
   const [url, setUrl] = React.useState("");
   const [jobId, setJobId] = React.useState<string | null>(null);
-  const [bulkImport, { loading: starting }] = useMutation(BulkImportPlaylistDocument, {
-    refetchQueries: [{ query: PlaylistDetailDocument, variables: { id: playlistId } }],
-  });
+  // No refetchQueries here: the mutation returns when the job is QUEUED, not
+  // when it completes, so a refetch at this point would show an unchanged
+  // playlist. We refetch in the effect below once status hits a terminal state.
+  const [bulkImport, { loading: starting }] = useMutation(BulkImportPlaylistDocument);
 
   const { data: jobData, stopPolling, startPolling } = useQuery(BulkImportJobDocument, {
     variables: { id: jobId ?? "" },
@@ -41,13 +43,19 @@ export function BulkImportDialog({ playlistId, open, onOpenChange }: Props) {
     pollInterval: jobId ? 2000 : 0,
   });
 
-  // Stop polling once the job reaches a terminal state.
+  // Stop polling once the job reaches a terminal state, and refetch the
+  // parent playlist so the newly-added contributions render without a manual
+  // refresh. Re-fetching here (not on mutation resolution) ensures we see
+  // the real post-import state, not the empty queued-but-not-run state.
   React.useEffect(() => {
     if (!jobId || !jobData) return;
-    if (TERMINAL_STATUSES.has(jobData.bulkImportJob.status)) {
-      stopPolling();
+    const status = jobData.bulkImportJob.status;
+    if (!TERMINAL_STATUSES.has(status)) return;
+    stopPolling();
+    if (status === "succeeded") {
+      apollo.refetchQueries({ include: [PlaylistDetailDocument] });
     }
-  }, [jobId, jobData, stopPolling]);
+  }, [jobId, jobData, stopPolling, apollo]);
 
   // Resume polling if the dialog reopens with the same job still running.
   React.useEffect(() => {
@@ -112,12 +120,38 @@ export function BulkImportDialog({ playlistId, open, onOpenChange }: Props) {
               />
             </div>
           </div>
-        ) : isRunning ? (
-          <div className="flex items-center gap-3 py-4">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            <span className="text-sm">
-              {status === "pending" ? "Queued for import…" : "Importing tracks…"}
-            </span>
+        ) : isRunning && job ? (
+          <div className="space-y-2 py-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <span className="text-sm">
+                {status === "pending"
+                  ? "Queued for import…"
+                  : job.totalTracks
+                    ? `Importing tracks… ${
+                        job.addedCount + job.skippedCount + job.unresolvedCount
+                      } / ${job.totalTracks}`
+                    : "Importing tracks…"}
+              </span>
+            </div>
+            {job.totalTracks && status === "running" ? (
+              <div
+                className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                aria-label="Import progress"
+              >
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      ((job.addedCount + job.skippedCount + job.unresolvedCount) /
+                        Math.max(1, job.totalTracks)) *
+                        100,
+                    )}%`,
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
         ) : isSucceeded && job ? (
           <div className="space-y-3">

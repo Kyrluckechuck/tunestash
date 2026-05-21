@@ -240,6 +240,12 @@ class BulkImportJob(models.Model):
     status: models.CharField = models.CharField(
         max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING
     )
+    # Set by the task once the source playlist is resolved. Null while pending
+    # (source not yet fetched) so the UI can distinguish "waiting to start" from
+    # "in progress with X of Y processed."
+    total_tracks: models.PositiveIntegerField = models.PositiveIntegerField(
+        null=True, blank=True
+    )
     added_count: models.PositiveIntegerField = models.PositiveIntegerField(default=0)
     skipped_count: models.PositiveIntegerField = models.PositiveIntegerField(default=0)
     unresolved_count: models.PositiveIntegerField = models.PositiveIntegerField(
