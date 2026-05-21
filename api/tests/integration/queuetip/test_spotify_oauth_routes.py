@@ -12,6 +12,14 @@ from src.queuetip.app import app
 from src.queuetip.auth import SESSION_COOKIE, make_session_token
 
 
+@pytest.fixture(autouse=True)
+def _clear_used_states():
+    """Single-use state tracker is module-global; reset between tests."""
+    spotify_oauth._used_states.clear()
+    yield
+    spotify_oauth._used_states.clear()
+
+
 def _authed_client(account_id: int) -> httpx.AsyncClient:
     transport = httpx.ASGITransport(app=app)
     client = httpx.AsyncClient(transport=transport, base_url="http://testserver")
@@ -74,8 +82,7 @@ async def test_start_503_when_spotify_not_configured():
 async def test_callback_upserts_external_service_link():
     account = await sync_to_async(Account.objects.create)(display_name="Jo")
     session_token = make_session_token(account.id)
-    nonce = spotify_oauth._derive_nonce(session_token)
-    state = spotify_oauth.make_state_token(account.id, session_nonce=nonce)
+    state = spotify_oauth.make_state_token(account.id)
     tokens = {
         "access_token": "AT",
         "refresh_token": "RT",
@@ -129,8 +136,7 @@ async def test_callback_updates_existing_link():
     )
 
     session_token = make_session_token(account.id)
-    nonce = spotify_oauth._derive_nonce(session_token)
-    state = spotify_oauth.make_state_token(account.id, session_nonce=nonce)
+    state = spotify_oauth.make_state_token(account.id)
     tokens = {
         "access_token": "NEW_AT",
         "refresh_token": "NEW_RT",
@@ -188,6 +194,75 @@ async def test_callback_tampered_state_returns_400():
             follow_redirects=False,
         )
     assert response.status_code == 400
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_callback_succeeds_without_session_cookie():
+    """Regression: Spotify redirects from a `localhost`-initiated authorize to
+    `127.0.0.1` (loopback OAuth requirement), so the user's session cookie
+    cannot ride along to the callback. The callback MUST NOT require it; the
+    signed state token alone authenticates the account_id to link.
+    """
+    account = await sync_to_async(Account.objects.create)(display_name="Jo")
+    state = spotify_oauth.make_state_token(account.id)
+    tokens = {
+        "access_token": "AT",
+        "refresh_token": "RT",
+        "expires_in": 3600,
+        "scope": "playlist-modify-private",
+    }
+    with (
+        patch("src.queuetip.routes.exchange_code_for_tokens", return_value=tokens),
+        patch("src.queuetip.routes.get_spotify_user_id", return_value="su_42"),
+    ):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            # Deliberately no session cookie — emulates the post-Spotify
+            # redirect landing on a different origin than sign-in.
+            response = await client.get(
+                "/auth/spotify/callback",
+                params={"code": "CODE", "state": state},
+                follow_redirects=False,
+            )
+    assert response.status_code == 302
+    assert "spotify_linked=1" in response.headers["location"]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_callback_rejects_replayed_state():
+    """A state token consumed once must be rejected on a second callback."""
+    account = await sync_to_async(Account.objects.create)(display_name="Jo")
+    state = spotify_oauth.make_state_token(account.id)
+    tokens = {
+        "access_token": "AT",
+        "refresh_token": "RT",
+        "expires_in": 3600,
+        "scope": "playlist-modify-private",
+    }
+    with (
+        patch("src.queuetip.routes.exchange_code_for_tokens", return_value=tokens),
+        patch("src.queuetip.routes.get_spotify_user_id", return_value="su_42"),
+    ):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            first = await client.get(
+                "/auth/spotify/callback",
+                params={"code": "CODE", "state": state},
+                follow_redirects=False,
+            )
+            second = await client.get(
+                "/auth/spotify/callback",
+                params={"code": "CODE", "state": state},
+                follow_redirects=False,
+            )
+    assert first.status_code == 302
+    assert second.status_code == 400
 
 
 @pytest.mark.django_db(transaction=True)

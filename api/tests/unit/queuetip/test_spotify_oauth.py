@@ -10,33 +10,41 @@ from asgiref.sync import sync_to_async
 from src.queuetip import routes as queuetip_routes
 from src.queuetip import spotify_oauth
 
-_NONCE_A = spotify_oauth._derive_nonce("session-token-A")
-_NONCE_B = spotify_oauth._derive_nonce("session-token-B")
+
+@pytest.fixture(autouse=True)
+def _clear_used_states():
+    """Wipe the single-use state tracker between tests so they don't see
+    each other's tokens as 'already consumed'."""
+    spotify_oauth._used_states.clear()
+    yield
+    spotify_oauth._used_states.clear()
 
 
 def test_state_round_trip():
-    token = spotify_oauth.make_state_token(42, session_nonce=_NONCE_A)
-    assert spotify_oauth.read_state_token(token, expected_nonce=_NONCE_A) == 42
+    token = spotify_oauth.make_state_token(42)
+    assert spotify_oauth.read_state_token(token) == 42
 
 
 def test_tampered_state_rejected():
-    token = spotify_oauth.make_state_token(1, session_nonce=_NONCE_A)
+    token = spotify_oauth.make_state_token(1)
     with pytest.raises(spotify_oauth.InvalidStateError):
-        spotify_oauth.read_state_token(token + "x", expected_nonce=_NONCE_A)
+        spotify_oauth.read_state_token(token + "x")
 
 
 def test_expired_state_rejected():
-    token = spotify_oauth.make_state_token(1, session_nonce=_NONCE_A)
+    token = spotify_oauth.make_state_token(1)
     with patch.object(spotify_oauth, "STATE_MAX_AGE", -1):
         with pytest.raises(spotify_oauth.InvalidStateError):
-            spotify_oauth.read_state_token(token, expected_nonce=_NONCE_A)
+            spotify_oauth.read_state_token(token)
 
 
-def test_wrong_session_nonce_rejected():
-    """A state token issued for session A must be rejected when verified against session B."""
-    token = spotify_oauth.make_state_token(99, session_nonce=_NONCE_A)
-    with pytest.raises(spotify_oauth.InvalidStateError, match="nonce"):
-        spotify_oauth.read_state_token(token, expected_nonce=_NONCE_B)
+def test_state_token_is_single_use():
+    """Replay protection: a state token consumed once must be rejected if
+    presented again (matches TuneStash's `del _oauth_states[state]` pattern)."""
+    token = spotify_oauth.make_state_token(7)
+    assert spotify_oauth.read_state_token(token) == 7
+    with pytest.raises(spotify_oauth.InvalidStateError, match="already used"):
+        spotify_oauth.read_state_token(token)
 
 
 def test_build_authorize_url_includes_state_and_scope():
@@ -137,8 +145,7 @@ def test_callback_uri_respects_x_forwarded_proto():
 
 def test_callback_uri_rewrites_localhost_to_loopback_ip():
     """Spotify rejects 'localhost' for loopback URIs — swap to 127.0.0.1.
-    Mirrors api/src/routes/auth.py:37. The frontend also redirects users away
-    from 'localhost' at boot, but this is the backstop for non-browser callers."""
+    Mirrors api/src/routes/auth.py:37."""
     req = _fake_request(headers={"X-Forwarded-Host": "localhost:3001"})
     assert (
         queuetip_routes._queuetip_callback_uri(req)

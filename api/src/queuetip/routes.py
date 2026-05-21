@@ -27,7 +27,6 @@ from .auth import (
 from .spotify_oauth import (
     InvalidStateError,
     SpotifyOAuthError,
-    _derive_nonce,
     build_authorize_url,
     exchange_code_for_tokens,
     get_spotify_user_id,
@@ -202,10 +201,11 @@ def _queuetip_callback_uri(request: Request | None = None) -> str:
         scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
         if host:
             # Spotify rejects `localhost` for loopback redirect URIs — must be
-            # 127.0.0.1. Mirrors the swap in `src/routes/auth.py:37`. The
-            # frontend ALSO redirects browsers from localhost → 127.0.0.1 at
-            # boot (see queuetip-frontend/src/main.tsx) so this is mostly a
-            # backstop for non-browser callers / direct API hits.
+            # 127.0.0.1. Mirrors the swap in `src/routes/auth.py:37`. The user
+            # may have signed in on `localhost`, so the resulting redirect_uri
+            # will not match their cookie's origin — that's intentional. The
+            # callback no longer requires the session cookie (see comment on
+            # the cookie-less branch below) so this works regardless.
             host = host.replace("localhost", "127.0.0.1")
             # Force HTTPS for non-loopback hosts (Spotify OAuth requirement).
             if not (host.startswith("127.0.0.1") or host.startswith("localhost")):
@@ -227,8 +227,7 @@ async def spotify_start(request: Request) -> Response:
         return Response(status_code=401)
 
     try:
-        nonce = _derive_nonce(session_token)
-        state = make_state_token(start_payload.account_id, session_nonce=nonce)
+        state = make_state_token(start_payload.account_id)
         # build_authorize_url reads Spotify creds from the app_settings registry,
         # which queries the DB synchronously. Must be wrapped in sync_to_async
         # from this async route, or Django raises SynchronousOnlyOperation that
@@ -262,17 +261,14 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
     if not code or not state:
         return Response(status_code=400)
 
-    # Reject callback if the caller has no session — the state token was
-    # issued for a specific session, so no session means it can't match.
-    callback_session_token = request.cookies.get(SESSION_COOKIE)
-    if not callback_session_token:
-        return HTMLResponse(
-            "<h1>Session expired. Please sign in again.</h1>", status_code=400
-        )
-    expected_nonce = _derive_nonce(callback_session_token)
-
+    # No session-cookie check at callback: Spotify may redirect the user to
+    # 127.0.0.1 (loopback OAuth requirement) even when they signed in on
+    # localhost, putting the cookie out of reach of this origin. The signed
+    # state token + single-use guard in read_state_token() provide CSRF
+    # protection without requiring same-origin cookies. Mirrors TuneStash's
+    # `src/routes/auth.py` pattern.
     try:
-        account_id = read_state_token(state, expected_nonce=expected_nonce)
+        account_id = read_state_token(state)
     except InvalidStateError:
         return HTMLResponse(
             "<h1>Sign-in link expired or tampered. Try again.</h1>", status_code=400
