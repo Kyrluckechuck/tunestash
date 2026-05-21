@@ -22,7 +22,19 @@ def _clear_used_states():
 
 def test_state_round_trip():
     token = spotify_oauth.make_state_token(42)
-    assert spotify_oauth.read_state_token(token) == 42
+    payload = spotify_oauth.read_state_token(token)
+    assert payload.account_id == 42
+    assert payload.return_origin is None
+
+
+def test_state_round_trip_with_return_origin():
+    """The post-OAuth redirect target rides along in the signed state so the
+    callback can land the user back on the origin they came from instead of
+    the canonical 127.0.0.1 (where Spotify forces the redirect_uri itself)."""
+    token = spotify_oauth.make_state_token(7, return_origin="http://localhost:3001")
+    payload = spotify_oauth.read_state_token(token)
+    assert payload.account_id == 7
+    assert payload.return_origin == "http://localhost:3001"
 
 
 def test_tampered_state_rejected():
@@ -42,7 +54,8 @@ def test_state_token_is_single_use():
     """Replay protection: a state token consumed once must be rejected if
     presented again (matches TuneStash's `del _oauth_states[state]` pattern)."""
     token = spotify_oauth.make_state_token(7)
-    assert spotify_oauth.read_state_token(token) == 7
+    payload = spotify_oauth.read_state_token(token)
+    assert payload.account_id == 7
     with pytest.raises(spotify_oauth.InvalidStateError, match="already used"):
         spotify_oauth.read_state_token(token)
 
@@ -177,3 +190,69 @@ def test_callback_uri_falls_back_to_setting_when_no_request():
             queuetip_routes._queuetip_callback_uri(None)
             == "https://prod.example.com/auth/spotify/callback"
         )
+
+
+# ── Return-origin validation ────────────────────────────────────────────────
+
+
+def test_safe_return_origin_accepts_configured_frontend():
+    with patch.object(
+        queuetip_routes,
+        "settings",
+        SimpleNamespace(QUEUETIP_FRONTEND_URL="http://127.0.0.1:3001"),
+    ):
+        assert (
+            queuetip_routes._safe_return_origin("http://127.0.0.1:3001")
+            == "http://127.0.0.1:3001"
+        )
+
+
+def test_safe_return_origin_accepts_localhost_loopback_of_configured():
+    """`localhost` is a loopback alias for `127.0.0.1` on the same port and
+    must be allowed even when QUEUETIP_FRONTEND_URL is set to the IP form."""
+    with patch.object(
+        queuetip_routes,
+        "settings",
+        SimpleNamespace(QUEUETIP_FRONTEND_URL="http://127.0.0.1:3001"),
+    ):
+        assert (
+            queuetip_routes._safe_return_origin("http://localhost:3001")
+            == "http://localhost:3001"
+        )
+
+
+def test_safe_return_origin_rejects_unrelated_host():
+    """A forged origin from an attacker (or signing-key leak) must not turn
+    the OAuth callback into an open redirect to evil.example.com."""
+    with patch.object(
+        queuetip_routes,
+        "settings",
+        SimpleNamespace(QUEUETIP_FRONTEND_URL="http://127.0.0.1:3001"),
+    ):
+        assert queuetip_routes._safe_return_origin("http://evil.example.com") is None
+
+
+def test_safe_return_origin_rejects_different_port():
+    """Same host different port is a different origin — reject."""
+    with patch.object(
+        queuetip_routes,
+        "settings",
+        SimpleNamespace(QUEUETIP_FRONTEND_URL="http://127.0.0.1:3001"),
+    ):
+        assert queuetip_routes._safe_return_origin("http://127.0.0.1:4444") is None
+
+
+def test_safe_return_origin_returns_none_for_blank():
+    assert queuetip_routes._safe_return_origin(None) is None
+    assert queuetip_routes._safe_return_origin("") is None
+
+
+def test_safe_return_origin_rejects_bad_scheme():
+    """Only http/https are valid — no javascript:, data:, file: etc."""
+    with patch.object(
+        queuetip_routes,
+        "settings",
+        SimpleNamespace(QUEUETIP_FRONTEND_URL="http://127.0.0.1:3001"),
+    ):
+        assert queuetip_routes._safe_return_origin("javascript:alert(1)") is None
+        assert queuetip_routes._safe_return_origin("file:///etc/passwd") is None

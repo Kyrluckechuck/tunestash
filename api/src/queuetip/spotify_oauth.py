@@ -24,6 +24,7 @@ from __future__ import annotations
 import threading
 import time
 import urllib.parse
+from dataclasses import dataclass
 from typing import Any
 
 from django.core import signing
@@ -91,18 +92,37 @@ def get_credentials() -> tuple[str, str]:
     return client_id, client_secret
 
 
-def make_state_token(account_id: int) -> str:
-    """Sign a state token carrying `account_id`.
+@dataclass(frozen=True)
+class StatePayload:
+    """Decoded Spotify OAuth state token."""
+
+    account_id: int
+    # Browser-facing origin the user was on when they clicked Connect Spotify.
+    # The callback uses this for the post-OAuth redirect so the user lands
+    # back where they started instead of being teleported to 127.0.0.1
+    # (which is where the redirect_uri itself must point per Spotify's rules).
+    return_origin: str | None = None
+
+
+def make_state_token(account_id: int, return_origin: str | None = None) -> str:
+    """Sign a state token carrying `account_id` and an optional return origin.
 
     The signature is the CSRF guarantee — an attacker cannot forge a state
     token without the server's SECRET_KEY. The callback must additionally
     call `_consume_state(token)` to prevent replay within the validity window.
+
+    `return_origin` is the scheme://host[:port] the user's browser was on
+    when they initiated the OAuth flow. It's signed in (not just appended)
+    so a forwarded link can't be tampered with to swap in an attacker host.
     """
-    return signing.dumps({"aid": account_id}, salt=_STATE_SALT)
+    payload: dict[str, Any] = {"aid": account_id}
+    if return_origin:
+        payload["ro"] = return_origin
+    return signing.dumps(payload, salt=_STATE_SALT)
 
 
-def read_state_token(token: str) -> int:
-    """Verify and decode a state token; return the embedded account_id.
+def read_state_token(token: str) -> StatePayload:
+    """Verify and decode a state token; return the embedded payload.
 
     Raises InvalidStateError if the signature is bad, the token has expired,
     or the token has already been consumed (replay). Callers should treat
@@ -114,7 +134,10 @@ def read_state_token(token: str) -> int:
         raise InvalidStateError(str(exc)) from exc
     if not _consume_state(token):
         raise InvalidStateError("State token already used.")
-    return int(data["aid"])
+    return StatePayload(
+        account_id=int(data["aid"]),
+        return_origin=data.get("ro") or None,
+    )
 
 
 def build_authorize_url(state: str, redirect_uri: str) -> str:

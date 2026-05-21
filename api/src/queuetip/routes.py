@@ -5,6 +5,7 @@ Phase 1 returns a plain success page; Phase 2 will redirect to the frontend.
 """
 
 import datetime as dt
+import urllib.parse
 import uuid
 from typing import cast
 
@@ -226,8 +227,16 @@ async def spotify_start(request: Request) -> Response:
     except InvalidTokenError:
         return Response(status_code=401)
 
+    # Capture the browser-facing origin so the callback can redirect the user
+    # back to it after token-exchange. We embed it in the signed state token
+    # (not a query param) so it can't be tampered with mid-flight. Without
+    # this, post-OAuth always lands on QUEUETIP_FRONTEND_URL (127.0.0.1) even
+    # when the user started on localhost — different origin, no cookie, looks
+    # like a silent sign-out.
+    return_origin = _safe_return_origin(_request_origin(request))
+
     try:
-        state = make_state_token(start_payload.account_id)
+        state = make_state_token(start_payload.account_id, return_origin=return_origin)
         # build_authorize_url reads Spotify creds from the app_settings registry,
         # which queries the DB synchronously. Must be wrapped in sync_to_async
         # from this async route, or Django raises SynchronousOnlyOperation that
@@ -268,11 +277,12 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
     # protection without requiring same-origin cookies. Mirrors TuneStash's
     # `src/routes/auth.py` pattern.
     try:
-        account_id = read_state_token(state)
+        state_payload = read_state_token(state)
     except InvalidStateError:
         return HTMLResponse(
             "<h1>Sign-in link expired or tampered. Try again.</h1>", status_code=400
         )
+    account_id = state_payload.account_id
 
     try:
         tokens = await sync_to_async(exchange_code_for_tokens)(
@@ -307,7 +317,83 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
     except SpotifyOAuthError as exc:
         return HTMLResponse(f"<h1>{exc}</h1>", status_code=400)
 
-    frontend = getattr(
+    # Prefer the origin the user was on when they started the flow (carried
+    # in the signed state token). Re-validate it here as a defense-in-depth
+    # check — even though it's signed, treating it as untrusted input avoids
+    # any future bug becoming an open-redirect.
+    return_origin = _safe_return_origin(state_payload.return_origin)
+    if return_origin is None:
+        return_origin = getattr(
+            settings, "QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001"
+        ).rstrip("/")
+    return RedirectResponse(f"{return_origin}/?spotify_linked=1", status_code=302)
+
+
+# ── Origin helpers ──────────────────────────────────────────────────────────
+
+
+def _request_origin(request: Request) -> str | None:
+    """Build the browser-facing origin (scheme://host[:port]) from the request.
+
+    Mirrors `_queuetip_callback_uri`'s precedence: X-Forwarded-Host (set by
+    Vite proxy / nginx) wins over the direct Host header. Returns None when
+    no host can be determined.
+    """
+    forwarded_host = request.headers.get("x-forwarded-host")
+    host = forwarded_host or request.headers.get("host")
+    if not host:
+        return None
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    return f"{scheme}://{host}"
+
+
+def _safe_return_origin(origin: str | None) -> str | None:
+    """Validate that `origin` is one we're willing to redirect back to.
+
+    Allowlist: the configured QUEUETIP_FRONTEND_URL origin plus its loopback
+    variants. Even though the value comes from a *signed* state token (so an
+    attacker can't forge one), treating it as untrusted means a future signing-
+    key leak can't be exploited to turn the callback into an open redirect.
+
+    Returns the trimmed origin string on success, or None to signal the
+    caller should fall back to QUEUETIP_FRONTEND_URL.
+    """
+    if not origin:
+        return None
+    origin = origin.rstrip("/")
+    try:
+        parts = urllib.parse.urlsplit(origin)
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return None
+
+    configured = getattr(
         settings, "QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001"
     ).rstrip("/")
-    return RedirectResponse(f"{frontend}/?spotify_linked=1", status_code=302)
+    configured_parts = urllib.parse.urlsplit(configured)
+
+    # Same origin as configured frontend → trivially safe.
+    if (
+        parts.scheme == configured_parts.scheme
+        and parts.netloc == configured_parts.netloc
+    ):
+        return origin
+
+    # Loopback equivalence: 'localhost' and '127.0.0.1' on the same port are
+    # the same machine. Allowing both means the boot-redirect from one to the
+    # other still works for users who bookmarked the older URL.
+    def _loopback_swap(host: str) -> str:
+        if host.startswith("localhost"):
+            return host.replace("localhost", "127.0.0.1", 1)
+        if host.startswith("127.0.0.1"):
+            return host.replace("127.0.0.1", "localhost", 1)
+        return host
+
+    if (
+        parts.scheme == configured_parts.scheme
+        and _loopback_swap(parts.netloc) == configured_parts.netloc
+    ):
+        return origin
+
+    return None
