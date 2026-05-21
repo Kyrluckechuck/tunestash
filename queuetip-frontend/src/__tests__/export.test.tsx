@@ -70,7 +70,6 @@ describe("CreateExportDialog", () => {
           createExport: {
             __typename: "ExportSnapshotType",
             id: SNAPSHOT_ID,
-            m3uUrl: `http://localhost:5050/exports/${SNAPSHOT_ID}.m3u`,
             warningMessage: "",
           },
         },
@@ -109,7 +108,6 @@ describe("ExportPage", () => {
           parameters: '{"exclude_my_downvotes": false}',
           rngSeed: "1234567890",
           warningMessage: "",
-          m3uUrl: `http://localhost:5050/exports/${SNAPSHOT_ID}.m3u`,
           requestedBy: {
             __typename: "AccountType",
             id: "1",
@@ -156,7 +154,7 @@ describe("ExportPage", () => {
     },
   };
 
-  it("renders both tracks in position order with m3u download link", async () => {
+  it("renders both tracks in position order", async () => {
     render(
       <MockedProvider mocks={[exportMock]}>
         <ExportPage />
@@ -174,13 +172,6 @@ describe("ExportPage", () => {
     // Position labels (1-indexed)
     expect(screen.getByText("1.")).toBeInTheDocument();
     expect(screen.getByText("2.")).toBeInTheDocument();
-
-    // m3u download link has the right href
-    const downloadLink = screen.getByRole("link", { name: /download m3u/i });
-    expect(downloadLink).toHaveAttribute(
-      "href",
-      `http://localhost:5050/exports/${SNAPSHOT_ID}.m3u`,
-    );
   });
 
   it("shows 'Link Spotify' when Spotify is not linked", async () => {

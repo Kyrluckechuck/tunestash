@@ -6,8 +6,6 @@ Phase 1 returns a plain success page; Phase 2 will redirect to the frontend.
 
 import datetime as dt
 import urllib.parse
-import uuid
-from typing import cast
 
 from django.conf import settings
 from django.utils import timezone
@@ -126,61 +124,6 @@ def logout() -> Response:
         secure=not settings.DEBUG,
     )
     return response
-
-
-@router.get("/exports/{snapshot_id}.m3u")
-async def export_m3u(snapshot_id: str, request: Request) -> Response:
-    """Stream the m3u for a snapshot. Member-only, session-cookie auth.
-
-    400 if snapshot_id is not a valid UUID.
-    401 if no/invalid session cookie. 403 if the caller is not a member of
-    the snapshot's playlist. 404 if no such snapshot.
-    """
-    from queuetip.models import Account, ExportSnapshot, Playlist
-    from queuetip.permissions import PermissionDeniedError, require_member
-
-    from .m3u import render_m3u
-
-    try:
-        snapshot_uuid = uuid.UUID(snapshot_id)
-    except ValueError:
-        return Response(status_code=400)
-
-    token = request.cookies.get(SESSION_COOKIE)
-    if not token:
-        return Response(status_code=401)
-    try:
-        session_payload = read_session_token(token)
-    except InvalidTokenError:
-        return Response(status_code=401)
-
-    def _load_and_render() -> tuple[int, str | None]:
-        account = Account.objects.filter(id=session_payload.account_id).first()
-        if account is None:
-            return 401, None
-        snap = (
-            ExportSnapshot.objects.select_related("playlist")
-            .filter(id=snapshot_uuid)
-            .first()
-        )
-        if snap is None:
-            return 404, None
-        try:
-            require_member(account, cast(Playlist, snap.playlist))
-        except PermissionDeniedError:
-            return 403, None
-        return 200, render_m3u(snap)
-
-    status, body = await sync_to_async(_load_and_render)()
-    if status != 200:
-        return Response(status_code=status)
-    return Response(
-        content=body,
-        media_type="audio/x-mpegurl",
-        headers={
-            "Content-Disposition": f'attachment; filename="snapshot-{snapshot_id}.m3u"'
-        },
-    )
 
 
 def _queuetip_callback_uri(request: Request | None = None) -> str:

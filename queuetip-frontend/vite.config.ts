@@ -47,14 +47,11 @@ export default defineConfig({
           });
         },
       },
-      // Only proxy actual m3u downloads to the backend. The frontend has its
-      // own /exports/<id> route (the export detail page) — proxying that
-      // would 404 because the backend only registers /exports/<id>.m3u.
-      "^/exports/.+\\.m3u$": {
-        target: BACKEND_TARGET,
-        changeOrigin: true,
-        rewrite: (p) => p,
-      },
+      // Note: there is no /exports/* proxy. The frontend owns
+      // /exports/<id> (the export detail page) as a SPA route. The backend
+      // used to expose /exports/<id>.m3u for snapshot downloads; that
+      // endpoint was removed when the unified push-to-Subsonic sync made
+      // m3u export redundant.
       "/health": {
         target: BACKEND_TARGET,
         changeOrigin: true,

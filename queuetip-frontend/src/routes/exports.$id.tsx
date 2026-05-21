@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@apollo/client";
-import { AlertTriangle, Download, Music } from "lucide-react";
+import { AlertTriangle, Music } from "lucide-react";
 import { toast } from "sonner";
 
 import { ExportDocument, ExportToSpotifyDocument } from "@/types/generated/graphql";
@@ -84,11 +84,6 @@ function ExportPageContent({ id }: { id: string }) {
           <Link to="/playlists/$id" params={{ id: snapshot.playlist.id }}>
             <Button variant="outline">Back to playlist</Button>
           </Link>
-          <a href={snapshot.m3uUrl} target="_blank" rel="noopener noreferrer">
-            <Button>
-              <Download className="h-4 w-4 mr-2" /> Download m3u
-            </Button>
-          </a>
           {spotifyLinked ? (
             <Button
               onClick={() => handleSpotifyExport()}

@@ -1,7 +1,6 @@
 """End-to-end GraphQL integration tests for Phase 2A export operations."""
 
 import json
-from unittest.mock import patch
 
 import httpx
 import pytest
@@ -67,7 +66,6 @@ mutation CreateExport($playlistId: ID!, $options: ExportOptionsInput) {
     id
     parameters
     rngSeed
-    m3uUrl
     warningMessage
     tracks {
       position
@@ -133,9 +131,6 @@ async def test_create_export_happy_path():
 
     # rngSeed must be a non-empty string (stored as BigInt, rendered as str)
     assert data["rngSeed"] and isinstance(data["rngSeed"], str)
-
-    # m3uUrl must end with /exports/<id>.m3u
-    assert data["m3uUrl"].endswith(f"/exports/{data['id']}.m3u")
 
     # 3 guaranteed songs → snapshot must contain exactly 3 tracks with positions 0..2
     tracks = data["tracks"]
@@ -295,119 +290,6 @@ async def test_my_playlist_exports_returns_newest_first():
     # Newest (second) should come first in the list
     ids = [e["id"] for e in exports]
     assert ids.index(second_id) < ids.index(first_id)
-
-
-# ---------------------------------------------------------------------------
-# REST endpoint: GET /exports/{snapshot_id}.m3u
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_m3u_download_happy_path():
-    """Owner can download the m3u for their own snapshot. The m3u now embeds
-    Subsonic stream URLs from the owner's configured Subsonic connection."""
-    from queuetip.models import SubsonicConnection
-    from src.queuetip.crypto import encrypt_secret
-
-    owner, playlist = await _setup_playlist()
-    await _add_song(playlist, owner, guaranteed=True)
-    # The m3u flow requires a connection to build stream URLs against.
-    await sync_to_async(SubsonicConnection.objects.create)(
-        account=owner,
-        label="test",
-        server_url="https://navi.test",
-        username="alice",
-        password_encrypted=encrypt_secret("hunter2"),
-    )
-
-    async with _authed_client(owner.id) as client:
-        created = await _gql(
-            client,
-            _CREATE_EXPORT_QUERY,
-            {"playlistId": str(playlist.id)},
-        )
-        snapshot_id = created["data"]["createExport"]["id"]
-
-        # Mock the per-track resolver so the test doesn't reach out to a real
-        # Subsonic server. Returning None makes every track an "unmatched"
-        # comment — the file still renders successfully.
-        with patch("src.queuetip.m3u.resolve_song_to_subsonic_id", return_value=None):
-            resp = await client.get(f"/exports/{snapshot_id}.m3u")
-
-    assert resp.status_code == 200
-    assert "audio/x-mpegurl" in resp.headers["content-type"]
-    assert resp.text.startswith("#EXTM3U")
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_m3u_download_no_cookie_returns_401():
-    """Request without a session cookie is rejected with 401."""
-    owner, playlist = await _setup_playlist()
-    await _add_song(playlist, owner, guaranteed=True)
-
-    async with _authed_client(owner.id) as client:
-        created = await _gql(
-            client,
-            _CREATE_EXPORT_QUERY,
-            {"playlistId": str(playlist.id)},
-        )
-        snapshot_id = created["data"]["createExport"]["id"]
-
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://testserver"
-    ) as anon_client:
-        resp = await anon_client.get(f"/exports/{snapshot_id}.m3u")
-
-    assert resp.status_code == 401
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_m3u_download_non_member_returns_403():
-    """A valid session for a non-member account is rejected with 403."""
-    owner, playlist = await _setup_playlist()
-    await _add_song(playlist, owner, guaranteed=True)
-
-    async with _authed_client(owner.id) as client:
-        created = await _gql(
-            client,
-            _CREATE_EXPORT_QUERY,
-            {"playlistId": str(playlist.id)},
-        )
-        snapshot_id = created["data"]["createExport"]["id"]
-
-    outsider = await sync_to_async(Account.objects.create)(display_name="Outsider")
-    async with _authed_client(outsider.id) as client:
-        resp = await client.get(f"/exports/{snapshot_id}.m3u")
-
-    assert resp.status_code == 403
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_m3u_download_unknown_snapshot_returns_404():
-    """Requesting a well-formed but non-existent snapshot UUID returns 404."""
-    owner, _ = await _setup_playlist()
-
-    async with _authed_client(owner.id) as client:
-        resp = await client.get("/exports/00000000-0000-0000-0000-000000000000.m3u")
-
-    assert resp.status_code == 404
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_m3u_download_invalid_uuid_returns_400():
-    """Requesting a non-UUID snapshot id returns 400."""
-    owner, _ = await _setup_playlist()
-
-    async with _authed_client(owner.id) as client:
-        resp = await client.get("/exports/not-a-uuid.m3u")
-
-    assert resp.status_code == 400
 
 
 @pytest.mark.django_db(transaction=True)

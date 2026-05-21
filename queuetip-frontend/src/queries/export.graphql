@@ -1,7 +1,6 @@
 mutation CreateExport($playlistId: ID!, $options: ExportOptionsInput) {
   createExport(playlistId: $playlistId, options: $options) {
     id
-    m3uUrl
     warningMessage
   }
 }
@@ -13,7 +12,6 @@ query Export($id: ID!) {
     parameters
     rngSeed
     warningMessage
-    m3uUrl
     requestedBy {
       id
       displayName

@@ -86,7 +86,6 @@ type ExportSnapshotType {
   rngSeed: String!
   warningMessage: String!
   tracks: [ExportSnapshotTrackType!]!
-  m3uUrl: String!
   playlist: PlaylistType!
 }
 

@@ -4,8 +4,6 @@ import datetime
 import json
 from typing import cast
 
-from django.conf import settings as dj_settings
-
 import strawberry
 
 from queuetip.models import (
@@ -469,7 +467,6 @@ class ExportSnapshotType:
     rng_seed: str  # rendered as str to avoid JS number-precision issues with BigInt
     warning_message: str
     tracks: list[ExportSnapshotTrackType]
-    m3u_url: str
     playlist: PlaylistType
 
     @classmethod
@@ -479,9 +476,6 @@ class ExportSnapshotType:
         tracks: list[ExportSnapshotTrack],
         playlist_members: list[PlaylistMembership],
     ) -> "ExportSnapshotType":
-        base = getattr(
-            dj_settings, "QUEUETIP_PUBLIC_URL", "http://127.0.0.1:3001"
-        ).rstrip("/")
         return cls(
             id=strawberry.ID(str(snapshot.id)),
             requested_by=AccountType.from_model(cast(Account, snapshot.requested_by)),
@@ -490,7 +484,6 @@ class ExportSnapshotType:
             rng_seed=str(snapshot.rng_seed),
             warning_message=snapshot.warning_message,
             tracks=[ExportSnapshotTrackType.from_model(t) for t in tracks],
-            m3u_url=f"{base}/exports/{snapshot.id}.m3u",
             playlist=PlaylistType.from_model(
                 cast(Playlist, snapshot.playlist), playlist_members
             ),
