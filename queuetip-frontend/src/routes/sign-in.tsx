@@ -1,8 +1,9 @@
 import * as React from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useMutation } from "@apollo/client";
 
 import { RequestMagicLinkDocument } from "@/types/generated/graphql";
+import { useMe } from "@/lib/auth";
 import { usePublicSettings } from "@/lib/public-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,12 +20,23 @@ import { MagicLinkSuccess } from "@/features/auth/MagicLinkSuccess";
 
 export function SignInPage() {
   const { next } = Route.useSearch();
+  const { account, loading: meLoading } = useMe();
   const [email, setEmail] = React.useState("");
   const [sent, setSent] = React.useState<{ message: string } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const { signupAllowlistEnforced } = usePublicSettings();
 
   const [requestMagicLink, { loading }] = useMutation(RequestMagicLinkDocument);
+
+  // Already authenticated → skip the form entirely. Honour `next` if present
+  // (e.g. user followed an Apollo 401-redirect from a deep link) so they end
+  // up where they were trying to go, not generically on the dashboard.
+  if (meLoading) return null;
+  if (account) {
+    const destination = next ?? "/playlists";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return <Navigate to={destination as any} replace />;
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();

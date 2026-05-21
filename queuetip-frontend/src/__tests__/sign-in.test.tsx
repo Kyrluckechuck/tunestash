@@ -5,9 +5,29 @@ import { describe, expect, it, vi } from "vitest";
 import { MockedProvider } from "@apollo/client/testing";
 
 import {
+  MeDocument,
   PublicSettingsDocument,
   RequestMagicLinkDocument,
 } from "@/types/generated/graphql";
+
+const anonMeMock = {
+  request: { query: MeDocument },
+  result: { data: { me: null } },
+};
+
+const authedMeMock = {
+  request: { query: MeDocument },
+  result: {
+    data: {
+      me: {
+        __typename: "AccountType",
+        id: "1",
+        displayName: "Already In",
+        email: "already-in@example.com",
+      },
+    },
+  },
+};
 
 const publicSettingsMock = (enforced: boolean) => ({
   request: { query: PublicSettingsDocument },
@@ -21,7 +41,9 @@ const publicSettingsMock = (enforced: boolean) => ({
   },
 });
 
-// Mock TanStack Router's Link so we don't need a full router context in tests
+// Mock TanStack Router's Link + Navigate so we don't need a router context.
+// Navigate becomes an observable div with data-testid so we can assert on it.
+let nextSearch: { next?: string } = {};
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
   return {
@@ -29,9 +51,12 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
     Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
       <a href={to} className={className}>{children}</a>
     ),
+    Navigate: ({ to }: { to: string }) => (
+      <div data-testid="navigate" data-to={to} />
+    ),
     createFileRoute: () => () => ({
       options: {},
-      useSearch: () => ({ next: undefined }),
+      useSearch: () => nextSearch,
     }),
   };
 });
@@ -60,12 +85,12 @@ describe("SignInPage", () => {
     ];
 
     render(
-      <MockedProvider mocks={mocks}>
+      <MockedProvider mocks={[anonMeMock, ...mocks]}>
         <SignInPage />
       </MockedProvider>,
     );
 
-    await user.type(screen.getByLabelText(/email/i), "friend@example.com");
+    await user.type(await screen.findByLabelText(/email/i), "friend@example.com");
     await user.click(screen.getByRole("button", { name: /send sign-in link/i }));
 
     expect(await screen.findByRole("heading", { name: /check your email/i })).toBeInTheDocument();
@@ -84,12 +109,12 @@ describe("SignInPage", () => {
     ];
 
     render(
-      <MockedProvider mocks={errorMock}>
+      <MockedProvider mocks={[anonMeMock, ...errorMock]}>
         <SignInPage />
       </MockedProvider>,
     );
 
-    await user.type(screen.getByLabelText(/email/i), "bad@example.com");
+    await user.type(await screen.findByLabelText(/email/i), "bad@example.com");
     await user.click(screen.getByRole("button", { name: /send sign-in link/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Internal server error");
@@ -99,7 +124,7 @@ describe("SignInPage", () => {
 
   it("shows invite-only note on sign-up link when allowlist is enforced", async () => {
     render(
-      <MockedProvider mocks={[publicSettingsMock(true)]}>
+      <MockedProvider mocks={[anonMeMock, publicSettingsMock(true)]}>
         <SignInPage />
       </MockedProvider>,
     );
@@ -111,7 +136,7 @@ describe("SignInPage", () => {
 
   it("does not show invite-only note when allowlist is not enforced", async () => {
     render(
-      <MockedProvider mocks={[publicSettingsMock(false)]}>
+      <MockedProvider mocks={[anonMeMock, publicSettingsMock(false)]}>
         <SignInPage />
       </MockedProvider>,
     );
@@ -121,5 +146,30 @@ describe("SignInPage", () => {
     expect(
       screen.queryByText(/invite-only during rollout/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("redirects to /playlists when the user is already signed in", async () => {
+    nextSearch = {};
+    render(
+      <MockedProvider mocks={[authedMeMock]}>
+        <SignInPage />
+      </MockedProvider>,
+    );
+    const nav = await screen.findByTestId("navigate");
+    expect(nav.dataset.to).toBe("/playlists");
+    // Form should NOT be rendered.
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument();
+  });
+
+  it("honours ?next=… when redirecting an already-signed-in user", async () => {
+    nextSearch = { next: "/playlists/42" };
+    render(
+      <MockedProvider mocks={[authedMeMock]}>
+        <SignInPage />
+      </MockedProvider>,
+    );
+    const nav = await screen.findByTestId("navigate");
+    expect(nav.dataset.to).toBe("/playlists/42");
+    nextSearch = {}; // reset for other tests
   });
 });

@@ -1,8 +1,9 @@
 import * as React from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useMutation } from "@apollo/client";
 
 import { RequestMagicLinkDocument } from "@/types/generated/graphql";
+import { useMe } from "@/lib/auth";
 import { usePublicSettings } from "@/lib/public-settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { MagicLinkSuccess } from "@/features/auth/MagicLinkSuccess";
 
 export function SignUpPage() {
   const { next } = Route.useSearch();
+  const { account, loading: meLoading } = useMe();
   const [email, setEmail] = React.useState("");
   const [displayName, setDisplayName] = React.useState("");
   const [sent, setSent] = React.useState<{ message: string } | null>(null);
@@ -27,6 +29,15 @@ export function SignUpPage() {
   const { signupAllowlistEnforced } = usePublicSettings();
 
   const [requestMagicLink, { loading }] = useMutation(RequestMagicLinkDocument);
+
+  // Already authenticated → no point asking them to sign up again. Honour
+  // `next` if present so deep-link returns work; otherwise the dashboard.
+  if (meLoading) return null;
+  if (account) {
+    const destination = next ?? "/playlists";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return <Navigate to={destination as any} replace />;
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
