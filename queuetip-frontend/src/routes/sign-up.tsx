@@ -16,9 +16,10 @@ import {
 } from "@/components/ui/card";
 import { MagicLinkSuccess } from "@/features/auth/MagicLinkSuccess";
 
-export function SignInPage() {
+export function SignUpPage() {
   const { next } = Route.useSearch();
   const [email, setEmail] = React.useState("");
+  const [displayName, setDisplayName] = React.useState("");
   const [sent, setSent] = React.useState<{ message: string } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -28,10 +29,8 @@ export function SignInPage() {
     event.preventDefault();
     setError(null);
     try {
-      // Sign-in path — never sends a display name. Unknown emails get a neutral
-      // response from the backend that points the user at the sign-up page.
       const result = await requestMagicLink({
-        variables: { email, displayName: null },
+        variables: { email, displayName },
       });
       const payload = result.data?.requestMagicLink;
       if (!payload) {
@@ -67,9 +66,10 @@ export function SignInPage() {
     <div className="container max-w-md py-16">
       <Card>
         <CardHeader>
-          <CardTitle>Sign in to Queuetip</CardTitle>
+          <CardTitle>Sign up for Queuetip</CardTitle>
           <CardDescription>
-            We&apos;ll email you a one-time sign-in link.
+            Pick a display name your friends will see, then we&apos;ll email you a
+            one-time link to confirm.
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -86,19 +86,30 @@ export function SignInPage() {
                 autoFocus
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="displayName">Display name</Label>
+              <Input
+                id="displayName"
+                type="text"
+                value={displayName}
+                required
+                onChange={(e) => setDisplayName(e.target.value)}
+                autoComplete="nickname"
+              />
+            </div>
             {error ? (
               <p className="text-sm text-destructive" role="alert">
                 {error}
               </p>
             ) : null}
             <p className="text-sm text-muted-foreground">
-              New here?{" "}
+              Already have an account?{" "}
               <Link
-                to="/sign-up"
+                to="/sign-in"
                 search={next ? { next } : undefined}
                 className="underline hover:text-foreground"
               >
-                Sign up instead
+                Sign in instead
               </Link>
             </p>
           </CardContent>
@@ -106,8 +117,11 @@ export function SignInPage() {
             <Link to="/" className="text-sm text-muted-foreground hover:underline">
               Back home
             </Link>
-            <Button type="submit" disabled={loading || !email}>
-              {loading ? "Sending..." : "Send sign-in link"}
+            <Button
+              type="submit"
+              disabled={loading || !email || !displayName.trim()}
+            >
+              {loading ? "Sending..." : "Create account"}
             </Button>
           </CardFooter>
         </form>
@@ -116,8 +130,8 @@ export function SignInPage() {
   );
 }
 
-export const Route = createFileRoute("/sign-in")({
-  component: SignInPage,
+export const Route = createFileRoute("/sign-up")({
+  component: SignUpPage,
   validateSearch: (search: Record<string, unknown>): { next?: string } => ({
     next: typeof search.next === "string" ? search.next : undefined,
   }),

@@ -31,9 +31,14 @@ function Home() {
       <p className="text-lg text-muted-foreground max-w-prose mx-auto">
         Build a playlist with your friends. Add songs, vote, export the mix.
       </p>
-      <div className="flex justify-center gap-3">
+      <div className="flex flex-wrap justify-center gap-3">
         <Link to="/sign-in">
-          <Button size="lg">Sign up or sign in</Button>
+          <Button size="lg">Sign in</Button>
+        </Link>
+        <Link to="/sign-up">
+          <Button size="lg" variant="outline">
+            Sign up
+          </Button>
         </Link>
       </div>
     </div>

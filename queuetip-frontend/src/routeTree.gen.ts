@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as IndexRouteImport } from './routes/index'
@@ -17,6 +18,11 @@ import { Route as PlaylistsIdRouteImport } from './routes/playlists.$id'
 import { Route as JoinTokenRouteImport } from './routes/join.$token'
 import { Route as ExportsIdRouteImport } from './routes/exports.$id'
 
+const SignUpRoute = SignUpRouteImport.update({
+  id: '/sign-up',
+  path: '/sign-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignInRoute = SignInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
+  '/sign-up': typeof SignUpRoute
   '/exports/$id': typeof ExportsIdRoute
   '/join/$token': typeof JoinTokenRoute
   '/playlists/$id': typeof PlaylistsIdRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
+  '/sign-up': typeof SignUpRoute
   '/exports/$id': typeof ExportsIdRoute
   '/join/$token': typeof JoinTokenRoute
   '/playlists/$id': typeof PlaylistsIdRoute
@@ -76,6 +84,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
+  '/sign-up': typeof SignUpRoute
   '/exports/$id': typeof ExportsIdRoute
   '/join/$token': typeof JoinTokenRoute
   '/playlists/$id': typeof PlaylistsIdRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/settings'
     | '/sign-in'
+    | '/sign-up'
     | '/exports/$id'
     | '/join/$token'
     | '/playlists/$id'
@@ -96,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/settings'
     | '/sign-in'
+    | '/sign-up'
     | '/exports/$id'
     | '/join/$token'
     | '/playlists/$id'
@@ -105,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/settings'
     | '/sign-in'
+    | '/sign-up'
     | '/exports/$id'
     | '/join/$token'
     | '/playlists/$id'
@@ -115,6 +127,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
+  SignUpRoute: typeof SignUpRoute
   ExportsIdRoute: typeof ExportsIdRoute
   JoinTokenRoute: typeof JoinTokenRoute
   PlaylistsIdRoute: typeof PlaylistsIdRoute
@@ -123,6 +136,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sign-up': {
+      id: '/sign-up'
+      path: '/sign-up'
+      fullPath: '/sign-up'
+      preLoaderRoute: typeof SignUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sign-in': {
       id: '/sign-in'
       path: '/sign-in'
@@ -179,6 +199,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
+  SignUpRoute: SignUpRoute,
   ExportsIdRoute: ExportsIdRoute,
   JoinTokenRoute: JoinTokenRoute,
   PlaylistsIdRoute: PlaylistsIdRoute,
