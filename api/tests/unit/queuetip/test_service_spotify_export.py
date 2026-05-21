@@ -602,3 +602,142 @@ async def test_force_recreate_creates_fresh_remote_and_clears_deleted_state():
     )()
     assert target.remote_playlist_id == "SP_FRESH"
     assert target.last_sync_status == PlaylistExportTarget.STATUS_OK
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_sync_target_creates_remote_from_current_contributions():
+    """Sync-flow Spotify export: sources tracks from Contribution rows (not
+    a frozen snapshot) and updates the unified PlaylistExportTarget in place."""
+    from queuetip.models import Contribution
+
+    owner = await sync_to_async(Account.objects.create)(display_name="O")
+    playlist = await sync_to_async(Playlist.objects.create)(
+        name="Auto Mix", created_by=owner
+    )
+    await sync_to_async(PlaylistMembership.objects.create)(
+        playlist=playlist, account=owner, role="owner"
+    )
+    link = await sync_to_async(_fresh_link)(owner)
+
+    artist = await sync_to_async(ArtistFactory)()
+    song = await sync_to_async(SongFactory)(primary_artist=artist)
+    song.gid = "G_SYNC"
+    await sync_to_async(song.save)()
+    await sync_to_async(Contribution.objects.create)(
+        playlist=playlist, song=song, contributed_by=owner
+    )
+
+    target = await sync_to_async(PlaylistExportTarget.objects.create)(
+        account=owner,
+        playlist=playlist,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        spotify_link=link,
+    )
+
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["G_SYNC"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp(playlist_id="SP_AUTO"), _make_add_resp()],
+        ),
+        patch("src.queuetip.services.spotify_export._enrich_playlist_missing_gids"),
+    ):
+        result = await SpotifyExportService.sync_target(target.id)
+
+    assert result.created_new is True
+    assert result.added_count == 1
+    await sync_to_async(target.refresh_from_db)()
+    assert target.remote_playlist_id == "SP_AUTO"
+    assert target.last_sync_status == PlaylistExportTarget.STATUS_OK
+    assert target.matched_track_count == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_sync_target_updates_existing_remote_no_duplicate():
+    """Second sync of a Spotify target must PUT to the existing playlist id —
+    same idempotent contract as the snapshot-based export, but driven by
+    current contributions (auto-sync semantics)."""
+    from queuetip.models import Contribution
+
+    owner = await sync_to_async(Account.objects.create)(display_name="O")
+    playlist = await sync_to_async(Playlist.objects.create)(
+        name="Auto Mix", created_by=owner
+    )
+    await sync_to_async(PlaylistMembership.objects.create)(
+        playlist=playlist, account=owner, role="owner"
+    )
+    link = await sync_to_async(_fresh_link)(owner)
+
+    artist = await sync_to_async(ArtistFactory)()
+    song = await sync_to_async(SongFactory)(primary_artist=artist)
+    song.gid = "G_AUTO"
+    await sync_to_async(song.save)()
+    await sync_to_async(Contribution.objects.create)(
+        playlist=playlist, song=song, contributed_by=owner
+    )
+
+    # Target already has a remote_playlist_id — simulating "second sync".
+    target = await sync_to_async(PlaylistExportTarget.objects.create)(
+        account=owner,
+        playlist=playlist,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        spotify_link=link,
+        remote_playlist_id="SP_EXISTING",
+        last_sync_status=PlaylistExportTarget.STATUS_OK,
+    )
+
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["G_AUTO"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.put",
+            return_value=_make_put_resp(),
+        ) as mock_put,
+        patch("src.queuetip.services.spotify_export.httpx.post") as mock_post,
+        patch("src.queuetip.services.spotify_export._enrich_playlist_missing_gids"),
+    ):
+        result = await SpotifyExportService.sync_target(target.id)
+
+    assert result.created_new is False
+    assert "SP_EXISTING" in result.spotify_playlist_url
+    assert mock_put.call_count == 1  # PUT to replace tracks
+    assert mock_post.call_count == 0  # NO create-playlist call
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_sync_target_raises_when_remote_deleted_state():
+    """Once a target is in STATUS_REMOTE_DELETED, sync_target must refuse —
+    user must explicitly call recreate (Lifecycle Principle 2)."""
+    from queuetip.models import Contribution
+
+    owner = await sync_to_async(Account.objects.create)(display_name="O")
+    playlist = await sync_to_async(Playlist.objects.create)(name="P", created_by=owner)
+    await sync_to_async(PlaylistMembership.objects.create)(
+        playlist=playlist, account=owner, role="owner"
+    )
+    link = await sync_to_async(_fresh_link)(owner)
+    artist = await sync_to_async(ArtistFactory)()
+    song = await sync_to_async(SongFactory)(primary_artist=artist)
+    await sync_to_async(Contribution.objects.create)(
+        playlist=playlist, song=song, contributed_by=owner
+    )
+
+    target = await sync_to_async(PlaylistExportTarget.objects.create)(
+        account=owner,
+        playlist=playlist,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        spotify_link=link,
+        remote_playlist_id="SP_DEAD",
+        last_sync_status=PlaylistExportTarget.STATUS_REMOTE_DELETED,
+    )
+
+    with pytest.raises(RemotePlaylistDeletedError):
+        await SpotifyExportService.sync_target(target.id)

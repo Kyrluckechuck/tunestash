@@ -25,6 +25,7 @@ from asgiref.sync import sync_to_async
 
 from queuetip.models import (
     Account,
+    Contribution,
     ExportSnapshot,
     ExternalServiceLink,
     Playlist,
@@ -177,6 +178,89 @@ class SpotifyExportService:
             created_new=created_new,
         )
 
+    @staticmethod
+    async def sync_target(target_id: int) -> "SpotifyExportResult":
+        """Push a playlist's CURRENT contributions to its Spotify counterpart.
+
+        Counterpart to `export()` — that one is snapshot-driven (manual export
+        with an immutable frozen tracklist + audit log). This one is
+        sync-driven: pulls the playlist's contributions in real time, pushes,
+        updates the target's status fields. Used by the unified
+        `sync_export_target` Celery task to give Spotify targets the same
+        auto-sync semantics Subsonic targets have.
+
+        No ExportSnapshot is created — auto-syncs aren't audit events.
+        Manual exports via `exportToSpotify(snapshotId)` still produce
+        snapshots; those continue to share the same idempotent target row.
+        """
+        from queuetip.models import SubsonicConnection as _Unused  # noqa: F401
+
+        target = await sync_to_async(
+            lambda: PlaylistExportTarget.objects.select_related(
+                "playlist", "spotify_link", "account"
+            ).get(id=target_id, destination_type=PlaylistExportTarget.DEST_SPOTIFY)
+        )()
+
+        if target.last_sync_status == PlaylistExportTarget.STATUS_REMOTE_DELETED:
+            raise RemotePlaylistDeletedError(
+                "Spotify playlist was deleted. Click 'Recreate on Spotify' "
+                "to start over."
+            )
+
+        link = cast(ExternalServiceLink, target.spotify_link)
+        if link is None:
+            raise NotFoundError(
+                "Spotify is not linked. Connect Spotify in settings first."
+            )
+
+        playlist = cast(Playlist, target.playlist)
+        access_token = await _ensure_fresh_token(link)
+
+        # Enrich any contributions missing a gid (ISRC → Spotify bridge).
+        await _enrich_playlist_missing_gids(playlist)
+
+        candidates, skipped_titles = await sync_to_async(_collect_playlist_candidates)(
+            playlist
+        )
+        valid_uris, stale_titles = await sync_to_async(_validate_and_collect_uris)(
+            access_token, candidates
+        )
+        skipped_titles.extend(stale_titles)
+
+        created_new = False
+        try:
+            if target.remote_playlist_id:
+                playlist_url = await sync_to_async(_replace_tracks)(
+                    access_token, target.remote_playlist_id, valid_uris
+                )
+            else:
+                playlist_url, playlist_id = await sync_to_async(_create_playlist)(
+                    access_token, link.service_user_id, playlist.name
+                )
+                await sync_to_async(_add_tracks_in_batches)(
+                    access_token, playlist_id, valid_uris
+                )
+                target.remote_playlist_id = playlist_id
+                created_new = True
+        except RemotePlaylistDeletedError:
+            await sync_to_async(_mark_remote_deleted)(target)
+            raise
+
+        await sync_to_async(_record_success)(
+            target,
+            matched_count=len(valid_uris),
+            total_count=len(valid_uris) + len(skipped_titles),
+            unmatched=skipped_titles,
+        )
+
+        return SpotifyExportResult(
+            spotify_playlist_url=playlist_url,
+            added_count=len(valid_uris),
+            skipped_count=len(skipped_titles),
+            skipped_titles=skipped_titles,
+            created_new=created_new,
+        )
+
 
 # ── Helpers (sync — wrapped by callers as needed) ────────────────────────────
 
@@ -191,6 +275,28 @@ async def _enrich_missing_gids(snapshot: ExportSnapshot) -> None:
     )()
     for track in tracks:
         song = cast(SongModel, track.song)
+        if not (song.gid or "").strip():
+            try:
+                await sync_to_async(enrich_song_cross_platform)(song)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning(
+                    "[EXPORT] Enrichment failed for song %s: %s", song.id, exc
+                )
+
+
+async def _enrich_playlist_missing_gids(playlist: Playlist) -> None:
+    """Sync-flow equivalent of _enrich_missing_gids — operate on the
+    playlist's current contributions rather than a frozen snapshot."""
+    from library_manager.models import Song as SongModel
+    from src.queuetip.enrichment import enrich_song_cross_platform
+
+    contributions = await sync_to_async(
+        lambda: list(
+            Contribution.objects.filter(playlist=playlist).select_related("song")
+        )
+    )()
+    for contrib in contributions:
+        song = cast(SongModel, contrib.song)
         if not (song.gid or "").strip():
             try:
                 await sync_to_async(enrich_song_cross_platform)(song)
@@ -223,6 +329,37 @@ def _collect_track_candidates(
         title = song.name
         artist = song.primary_artist.name if song.primary_artist_id else ""  # type: ignore[attr-defined]
         label = f"{artist} — {title}".strip(" —")
+        if not gid:
+            skipped.append(label)
+            continue
+        candidates.append((song.id, gid, label))
+    return candidates, skipped
+
+
+def _collect_playlist_candidates(
+    playlist: Playlist,
+) -> tuple[list[tuple[int, str, str]], list[str]]:
+    """Sync-flow equivalent of _collect_track_candidates: source tracks from
+    the playlist's current contributions instead of a frozen snapshot.
+
+    Order is by contribution id (insertion order) — matches the order users
+    see in the queuetip UI and is stable across syncs.
+    """
+    from library_manager.models import Song as SongModel
+
+    candidates: list[tuple[int, str, str]] = []
+    skipped: list[str] = []
+    contributions = (
+        Contribution.objects.filter(playlist=playlist)
+        .select_related("song", "song__primary_artist")
+        .order_by("id")
+    )
+    for contrib in contributions:
+        song = cast(SongModel, contrib.song)
+        song.refresh_from_db()
+        gid = (song.gid or "").strip()
+        artist = song.primary_artist.name if song.primary_artist_id else ""  # type: ignore[attr-defined]
+        label = f"{artist} — {song.name}".strip(" —")
         if not gid:
             skipped.append(label)
             continue

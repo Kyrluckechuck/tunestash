@@ -752,9 +752,8 @@ class Mutation:
         the 'Sync now' UI button. Long-running tasks return after the run."""
         account = _require_account(info)
         target = await sync_to_async(_resolve_owned_target)(account, int(id))
-        # Run synchronously in a worker thread so the GraphQL response
-        # contains the post-sync state — better UX than a fire-and-forget
-        # task and a poll loop.
+        # Run synchronously so the GraphQL response contains the post-sync
+        # state — better UX than a fire-and-forget task and a poll loop.
         if target.destination_type == PlaylistExportTarget.DEST_SUBSONIC:
             from ..services.subsonic_sync import (
                 SubsonicSyncError,
@@ -764,15 +763,27 @@ class Mutation:
             try:
                 await sync_to_async(sync_subsonic_target)(target.id)
             except SubsonicSyncError as exc:
-                # Already recorded on the target; surface the message.
                 raise ValidationError(str(exc)) from exc
-            # Refresh after the sync ran.
-            target = await sync_to_async(_resolve_owned_target)(account, int(id))
+        elif target.destination_type == PlaylistExportTarget.DEST_SPOTIFY:
+            from ..services.spotify_export import (
+                RemotePlaylistDeletedError,
+                SpotifyExportError,
+                SpotifyExportService,
+            )
+
+            try:
+                await SpotifyExportService.sync_target(target.id)
+            except RemotePlaylistDeletedError as exc:
+                raise ValidationError(str(exc)) from exc
+            except SpotifyExportError as exc:
+                raise ValidationError(str(exc)) from exc
         else:
             raise ValidationError(
-                "syncTargetNow is only wired for Subsonic targets in this release. "
-                "Use exportToSpotify for Spotify exports."
+                f"Unknown destination_type: {target.destination_type}"
             )
+
+        # Refresh after the sync ran so we return post-sync state.
+        target = await sync_to_async(_resolve_owned_target)(account, int(id))
         return PlaylistExportTargetType.from_model(target)
 
     @strawberry.mutation
@@ -811,6 +822,16 @@ class Mutation:
             try:
                 await sync_to_async(sync_subsonic_target)(target.id)
             except SubsonicSyncError as exc:
+                raise ValidationError(str(exc)) from exc
+        elif target.destination_type == PlaylistExportTarget.DEST_SPOTIFY:
+            from ..services.spotify_export import (
+                SpotifyExportError,
+                SpotifyExportService,
+            )
+
+            try:
+                await SpotifyExportService.sync_target(target.id)
+            except SpotifyExportError as exc:
                 raise ValidationError(str(exc)) from exc
 
         target = await sync_to_async(_resolve_owned_target)(account, int(id))

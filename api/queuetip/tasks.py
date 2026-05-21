@@ -160,7 +160,6 @@ def sync_export_target(self, target_id: int) -> dict[str, Any]:
         try:
             result = sync_subsonic_target(target_id)
         except SubsonicSyncError as exc:
-            # Permanent — already recorded on the target by the service.
             logger.info("[sync_export_target] subsonic %s: %s", target_id, exc)
             return {"status": "failed", "error": str(exc)}
         return {
@@ -171,15 +170,45 @@ def sync_export_target(self, target_id: int) -> dict[str, Any]:
             "queued_downloads": result.queued_downloads,
         }
 
-    # Spotify path: today's sync still goes through the existing
-    # SpotifyExportService entry point (snapshot-based). A follow-up will
-    # add a target-based wrapper so this task can drive Spotify too.
+    if target.destination_type == PlaylistExportTarget.DEST_SPOTIFY:
+        # Spotify auto-sync uses SpotifyExportService.sync_target, which
+        # pulls the playlist's current contributions (not a frozen snapshot)
+        # and pushes through the same idempotent target row that manual
+        # exports use. No new Spotify playlist is created — the existing
+        # remote_playlist_id is updated in place.
+        import asyncio
+
+        from src.queuetip.services.spotify_export import (
+            RemotePlaylistDeletedError,
+            SpotifyExportError,
+            SpotifyExportService,
+        )
+
+        try:
+            result = asyncio.run(SpotifyExportService.sync_target(target_id))
+        except RemotePlaylistDeletedError as exc:
+            logger.info(
+                "[sync_export_target] spotify %s remote deleted: %s",
+                target_id,
+                exc,
+            )
+            return {"status": "remote_deleted", "error": str(exc)}
+        except SpotifyExportError as exc:
+            logger.info("[sync_export_target] spotify %s: %s", target_id, exc)
+            return {"status": "failed", "error": str(exc)}
+        return {
+            "status": "ok",
+            "added": result.added_count,
+            "skipped": result.skipped_count,
+            "created_new": result.created_new,
+        }
+
     logger.warning(
-        "[sync_export_target] destination_type=%s not yet driven by Celery (target=%s)",
+        "[sync_export_target] unknown destination_type=%s (target=%s)",
         target.destination_type,
         target_id,
     )
-    return {"status": "skipped", "reason": "destination_not_yet_celery_driven"}
+    return {"status": "skipped", "reason": "unknown_destination_type"}
 
 
 def schedule_auto_sync_for_playlist(playlist_id: int) -> None:

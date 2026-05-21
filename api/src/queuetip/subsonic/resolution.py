@@ -100,11 +100,27 @@ def resolve_song_to_subsonic_id(
 
 
 def _normalize(value: str) -> str:
-    """Lower-case, trim, collapse whitespace, strip punctuation that's noisy
-    for matching ('()', dashes, dots, apostrophes).
+    """Lower-case, trim, collapse whitespace, strip noisy punctuation.
+
+    Two non-obvious decisions:
+      * Apostrophes are DELETED rather than substituted with space, so
+        "Don't" → "dont" matches "Dont" → "dont". Substituting would split
+        "Don't" into "don t" which then doesn't match "Dont".
+      * Trailing parenthesized content is stripped before normalization, so
+        "Bohemian Rhapsody (Remastered)" → "bohemian rhapsody" matches
+        "Bohemian Rhapsody". Common enough variation that exact-matching it
+        beats relying on the fuzzy step, which would have to score above
+        threshold for every "(suffix)" length we'd see.
     """
     lowered = value.lower().strip()
-    # Replace punctuation with space, then collapse runs of whitespace.
+    # Strip ALL parenthesized content (most commonly the "(Remastered)",
+    # "(Live)", "(Acoustic)" annotations that vary between sources).
+    lowered = re.sub(r"\([^)]*\)", " ", lowered)
+    lowered = re.sub(r"\[[^\]]*\]", " ", lowered)
+    # Delete apostrophes (both curly and straight) before generic punctuation
+    # substitution so "don't" collapses to "dont" not "don t".
+    lowered = lowered.replace("'", "").replace("’", "")
+    # Replace remaining punctuation with space, then collapse whitespace.
     cleaned = re.sub(r"[^a-z0-9]+", " ", lowered)
     return re.sub(r"\s+", " ", cleaned).strip()
 
