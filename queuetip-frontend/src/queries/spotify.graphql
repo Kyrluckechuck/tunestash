@@ -1,8 +1,17 @@
-mutation ExportToSpotify($snapshotId: ID!, $playlistName: String) {
-  exportToSpotify(snapshotId: $snapshotId, playlistName: $playlistName) {
+mutation ExportToSpotify(
+  $snapshotId: ID!
+  $playlistName: String
+  $forceRecreate: Boolean! = false
+) {
+  exportToSpotify(
+    snapshotId: $snapshotId
+    playlistName: $playlistName
+    forceRecreate: $forceRecreate
+  ) {
     spotifyPlaylistUrl
     addedCount
     skippedCount
     skippedTitles
+    createdNew
   }
 }

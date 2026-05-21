@@ -18,9 +18,15 @@ function ExportPageContent({ id }: { id: string }) {
     account?.externalServices.some((l) => l.service === "spotify") ?? false;
   const [exportToSpotify, { loading: exporting }] = useMutation(ExportToSpotifyDocument);
 
-  async function handleSpotifyExport() {
+  async function handleSpotifyExport(forceRecreate = false) {
     try {
-      const { data: result } = await exportToSpotify({ variables: { snapshotId: id } });
+      // Only include forceRecreate in variables when it's true — Apollo
+      // MockedProvider in tests requires exact variable matching, and the
+      // common case (no recreate) keeps the wire payload minimal.
+      const variables = forceRecreate
+        ? { snapshotId: id, forceRecreate: true }
+        : { snapshotId: id };
+      const { data: result } = await exportToSpotify({ variables });
       const exportResult = result?.exportToSpotify;
       if (!exportResult) {
         toast.error("Export failed.");
@@ -28,7 +34,11 @@ function ExportPageContent({ id }: { id: string }) {
       }
       const skipNote =
         exportResult.skippedCount > 0 ? ` (${exportResult.skippedCount} skipped)` : "";
-      toast.success(`Exported to Spotify${skipNote}.`, {
+      // First export creates the Spotify playlist; subsequent exports update
+      // the same one — surface which path we took so the user understands
+      // we're not duplicating their playlists.
+      const verb = exportResult.createdNew ? "Created" : "Updated";
+      toast.success(`${verb} Spotify playlist${skipNote}.`, {
         action: {
           label: "Open",
           onClick: () => window.open(exportResult.spotifyPlaylistUrl, "_blank"),
@@ -36,7 +46,22 @@ function ExportPageContent({ id }: { id: string }) {
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Could not export to Spotify.";
-      toast.error(message);
+      // The backend signals a deleted-remote state by including this exact
+      // phrase. We offer the user a one-click recovery path that re-calls
+      // the mutation with forceRecreate=true — the only way out of the
+      // STATUS_REMOTE_DELETED state (lifecycle Principle 2 requires
+      // explicit intent).
+      if (message.toLowerCase().includes("playlist was deleted")) {
+        toast.error(message, {
+          duration: 12000,
+          action: {
+            label: "Recreate on Spotify",
+            onClick: () => handleSpotifyExport(true),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     }
   }
 
@@ -65,7 +90,11 @@ function ExportPageContent({ id }: { id: string }) {
             </Button>
           </a>
           {spotifyLinked ? (
-            <Button onClick={handleSpotifyExport} disabled={exporting} variant="outline">
+            <Button
+              onClick={() => handleSpotifyExport()}
+              disabled={exporting}
+              variant="outline"
+            >
               <Music className="h-4 w-4 mr-2" /> {exporting ? "Exporting…" : "Export to Spotify"}
             </Button>
           ) : (

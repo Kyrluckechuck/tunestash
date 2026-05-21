@@ -425,3 +425,196 @@ class ExternalServiceLink(models.Model):
 
     def __str__(self) -> str:
         return f"{self.account} → {self.service} ({self.service_user_id})"
+
+
+class SubsonicConnection(models.Model):
+    """A user's connection to their own Subsonic-compatible server (Navidrome etc.).
+
+    Reserved for the upcoming Subsonic playlist-sync feature. Defined in this
+    PR so the schema for PlaylistExportTarget's polymorphic FK can compile
+    without coordinating a second migration when the sync feature lands.
+
+    Password is Fernet-encrypted with QUEUETIP_SUBSONIC_FERNET_KEY (see
+    `src.queuetip.crypto`). Salted-MD5 auth (Subsonic's lowest-common
+    denominator, works against every implementation) is computed per-request.
+    """
+
+    STATUS_OK = "ok"
+    STATUS_FAILED = "failed"
+    STATUS_UNKNOWN = "unknown"
+    STATUS_CHOICES = [
+        (STATUS_OK, "Verified"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_UNKNOWN, "Not verified"),
+    ]
+
+    account: models.ForeignKey = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="subsonic_connections"
+    )
+    label: models.CharField = models.CharField(max_length=80)
+    server_url: models.URLField = models.URLField(max_length=500)
+    username: models.CharField = models.CharField(max_length=120)
+    password_encrypted: models.BinaryField = models.BinaryField()
+    last_verified_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    verification_status: models.CharField = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_UNKNOWN
+    )
+    verification_error: models.TextField = models.TextField(blank=True)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    updated_at: models.DateTimeField = models.DateTimeField(auto_now=True)
+
+    if TYPE_CHECKING:
+        id: int
+        account_id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
+        # MVP: one connection per account. Multi-connection is a later
+        # optimization; unique_together keeps the simple "my Subsonic" semantics.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account"],
+                name="queuetip_subsonic_connection_unique_per_account",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.account} → {self.label} ({self.server_url})"
+
+
+class PlaylistExportTarget(models.Model):
+    """A user's intent to mirror a collaborative playlist to one external service.
+
+    One row per (account, playlist, destination_type). The polymorphic
+    credential FK (`spotify_link` xor `subsonic_connection`) selects which
+    service we sync to. The CHECK constraint enforces the xor at the DB level.
+
+    Lifecycle (see docs/queuetip/subsonic-sync-design.md):
+      1. ONE queuetip playlist ↔ ONE remote playlist per (user, destination)
+         — subsequent syncs UPDATE `remote_playlist_id`, never create new.
+      2. If the remote is deleted, status → REMOTE_DELETED, automation halts,
+         user must explicitly recreate.
+      3. Idempotent overwrite — queuetip is source of truth for synced
+         playlists; manual edits on the remote get replaced on next sync.
+    """
+
+    DEST_SPOTIFY = "spotify"
+    DEST_SUBSONIC = "subsonic"
+    DESTINATION_CHOICES = [
+        (DEST_SPOTIFY, "Spotify"),
+        (DEST_SUBSONIC, "Subsonic"),
+    ]
+
+    SYNC_MANUAL = "manual"
+    SYNC_ON_CHANGE = "on_change"
+    SYNC_MODE_CHOICES = [
+        (SYNC_MANUAL, "Manual"),
+        (SYNC_ON_CHANGE, "Auto-sync on changes"),
+    ]
+
+    STATUS_PENDING = "pending"
+    STATUS_OK = "ok"
+    STATUS_PARTIAL = "partial"
+    STATUS_FAILED = "failed"
+    STATUS_REMOTE_DELETED = "remote_deleted"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_OK, "Synced"),
+        (STATUS_PARTIAL, "Synced (some tracks unmatched)"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_REMOTE_DELETED, "Remote deleted — re-link required"),
+    ]
+
+    account: models.ForeignKey = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="export_targets"
+    )
+    playlist: models.ForeignKey = models.ForeignKey(
+        Playlist, on_delete=models.CASCADE, related_name="export_targets"
+    )
+    destination_type: models.CharField = models.CharField(
+        max_length=16, choices=DESTINATION_CHOICES
+    )
+
+    # Exactly one of these is non-null; CHECK constraint below enforces the
+    # invariant matching destination_type. We use two explicit FKs (rather
+    # than a GenericForeignKey) because the credentials live in stable, known
+    # models and the simpler shape is easier to query and validate.
+    spotify_link: models.ForeignKey = models.ForeignKey(
+        ExternalServiceLink,
+        on_delete=models.CASCADE,
+        related_name="export_targets",
+        null=True,
+        blank=True,
+    )
+    subsonic_connection: models.ForeignKey = models.ForeignKey(
+        SubsonicConnection,
+        on_delete=models.CASCADE,
+        related_name="export_targets",
+        null=True,
+        blank=True,
+    )
+
+    # Empty until the first successful create on the remote. After that it's
+    # stable for the lifetime of the remote playlist (no timestamped suffixes,
+    # no duplicates — that's the entire point of this model).
+    remote_playlist_id: models.CharField = models.CharField(max_length=200, blank=True)
+
+    sync_mode: models.CharField = models.CharField(
+        max_length=16, choices=SYNC_MODE_CHOICES, default=SYNC_MANUAL
+    )
+    last_synced_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    last_sync_status: models.CharField = models.CharField(
+        max_length=24, choices=STATUS_CHOICES, default=STATUS_PENDING
+    )
+    last_error: models.TextField = models.TextField(blank=True)
+    unmatched_track_titles: models.JSONField = models.JSONField(default=list)
+    matched_track_count: models.PositiveIntegerField = models.PositiveIntegerField(
+        default=0
+    )
+    total_track_count: models.PositiveIntegerField = models.PositiveIntegerField(
+        default=0
+    )
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        id: int
+        account_id: int
+        playlist_id: int
+        spotify_link_id: int | None
+        subsonic_connection_id: int | None
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account", "playlist", "destination_type"],
+                name="queuetip_export_target_unique_per_dest",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        destination_type="spotify",
+                        spotify_link__isnull=False,
+                        subsonic_connection__isnull=True,
+                    )
+                    | models.Q(
+                        destination_type="subsonic",
+                        subsonic_connection__isnull=False,
+                        spotify_link__isnull=True,
+                    )
+                ),
+                name="queuetip_export_target_dest_fk_matches",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["sync_mode", "last_sync_status"],
+                name="qt_export_target_auto_sync_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.account} → {self.playlist} ({self.destination_type}, "
+            f"{self.last_sync_status})"
+        )

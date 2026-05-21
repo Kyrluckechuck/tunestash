@@ -280,6 +280,13 @@ QUEUETIP_PUBLIC_URL = os.getenv("QUEUETIP_PUBLIC_URL", "http://127.0.0.1:3001")
 # kept as a separate setting in case a future deployment splits the API
 # host from the frontend host. Used for CORS allowlist + post-OAuth redirect.
 QUEUETIP_FRONTEND_URL = os.getenv("QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001")
+
+# Fernet key for at-rest encryption of queuetip-owned secrets
+# (SubsonicConnection.password_encrypted is the first user). Generate with
+# `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'`.
+# In DEBUG, an empty value falls back to a SECRET_KEY-derived dev key; in
+# production, a missing key raises CryptoError on any encrypt/decrypt call.
+QUEUETIP_FERNET_KEY = os.getenv("QUEUETIP_FERNET_KEY", "")
 # Trusted reverse-proxy IPs/CIDRs for X-Forwarded-For parsing. When the
 # direct connection comes from one of these addresses, the XFF header is
 # trusted and the real client IP is extracted from it. Accepts individual IPs

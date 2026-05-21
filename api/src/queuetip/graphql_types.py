@@ -53,6 +53,9 @@ class SpotifyExportResultType:
     added_count: int
     skipped_count: int
     skipped_titles: list[str]
+    # True when this call created a new Spotify playlist; False when we
+    # updated the existing one (the normal path after the first export).
+    created_new: bool = False
 
 
 @strawberry.type

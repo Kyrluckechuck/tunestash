@@ -13,14 +13,26 @@ from queuetip.models import (
     ExportSnapshotTrack,
     ExternalServiceLink,
     Playlist,
+    PlaylistExportTarget,
     PlaylistMembership,
 )
 from queuetip.permissions import PermissionDeniedError
 from src.queuetip.errors import NotFoundError
 from src.queuetip.services.spotify_export import (
+    RemotePlaylistDeletedError,
     SpotifyExportError,
     SpotifyExportService,
 )
+
+
+def _make_put_resp(status_code: int = 201) -> MagicMock:
+    return MagicMock(status_code=status_code, json=lambda: {}, text="")
+
+
+def _make_404_resp() -> MagicMock:
+    return MagicMock(
+        status_code=404, json=lambda: {"error": {"status": 404}}, text="Not found"
+    )
 
 
 async def _setup_snapshot_with_tracks(track_specs: list[dict]):
@@ -383,3 +395,210 @@ async def test_export_mix_enriched_stale_valid():
 
     assert result.added_count == 2
     assert result.skipped_count == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_first_export_creates_target_and_persists_remote_id():
+    """First export creates a PlaylistExportTarget and stores the Spotify
+    playlist id on it. This is the row that makes future exports idempotent."""
+    owner, snapshot = await _setup_snapshot_with_tracks([{"gid": "g1"}])
+    await sync_to_async(_fresh_link)(owner)
+
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["g1"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp(playlist_id="SP_NEW"), _make_add_resp()],
+        ),
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
+    ):
+        result = await SpotifyExportService.export(owner, snapshot.id)
+
+    assert result.created_new is True
+    target = await sync_to_async(
+        lambda: PlaylistExportTarget.objects.get(
+            account=owner,
+            playlist=snapshot.playlist,
+            destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        )
+    )()
+    assert target.remote_playlist_id == "SP_NEW"
+    assert target.last_sync_status == PlaylistExportTarget.STATUS_OK
+    assert target.matched_track_count == 1
+    assert target.unmatched_track_titles == []
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_second_export_updates_same_remote_no_duplicate():
+    """Regression: prior behaviour created a fresh Spotify playlist on every
+    export, leaving the user with timestamped copies. The fix: second export
+    must PUT to /v1/playlists/<remote_id>/tracks against the SAME id, never
+    POST /v1/users/<me>/playlists again."""
+    owner, snapshot = await _setup_snapshot_with_tracks([{"gid": "g1"}])
+    await sync_to_async(_fresh_link)(owner)
+
+    # First export — creates remote.
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["g1"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp(playlist_id="SP_STABLE"), _make_add_resp()],
+        ),
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
+    ):
+        first = await SpotifyExportService.export(owner, snapshot.id)
+    assert first.created_new is True
+
+    # Second export — must hit PUT only, never POST /users/<me>/playlists.
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["g1"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.put",
+            return_value=_make_put_resp(),
+        ) as mock_put,
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            return_value=_make_add_resp(),  # would be append-batch path only
+        ) as mock_post,
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
+    ):
+        second = await SpotifyExportService.export(owner, snapshot.id)
+
+    assert second.created_new is False
+    assert second.spotify_playlist_url == "https://open.spotify.com/playlist/SP_STABLE"
+    # PUT once to replace tracks; no POST (single batch fits, no append).
+    assert mock_put.call_count == 1
+    assert mock_post.call_count == 0
+
+    # Only ONE target row exists — we did not duplicate.
+    count = await sync_to_async(
+        lambda: PlaylistExportTarget.objects.filter(
+            account=owner,
+            playlist=snapshot.playlist,
+            destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        ).count()
+    )()
+    assert count == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_export_marks_remote_deleted_on_404_and_refuses_silent_recreate():
+    """If the user deletes the playlist on Spotify, the next PUT returns 404.
+    We must mark STATUS_REMOTE_DELETED and refuse to silently re-create.
+    Lifecycle Principle 2."""
+    owner, snapshot = await _setup_snapshot_with_tracks([{"gid": "g1"}])
+    await sync_to_async(_fresh_link)(owner)
+
+    # First export — creates remote.
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["g1"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp(playlist_id="SP_GONE"), _make_add_resp()],
+        ),
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
+    ):
+        await SpotifyExportService.export(owner, snapshot.id)
+
+    # Second export — user deleted the Spotify playlist; PUT returns 404.
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["g1"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.put",
+            return_value=_make_404_resp(),
+        ),
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
+    ):
+        with pytest.raises(RemotePlaylistDeletedError):
+            await SpotifyExportService.export(owner, snapshot.id)
+
+    target = await sync_to_async(
+        lambda: PlaylistExportTarget.objects.get(
+            account=owner,
+            playlist=snapshot.playlist,
+            destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        )
+    )()
+    assert target.last_sync_status == PlaylistExportTarget.STATUS_REMOTE_DELETED
+
+    # Third export WITHOUT force_recreate must refuse — automation halted
+    # until user explicitly opts in. No HTTP calls allowed.
+    with (
+        patch("src.queuetip.services.spotify_export.httpx.get") as mock_get,
+        patch("src.queuetip.services.spotify_export.httpx.post") as mock_post,
+        patch("src.queuetip.services.spotify_export.httpx.put") as mock_put,
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
+    ):
+        with pytest.raises(RemotePlaylistDeletedError):
+            await SpotifyExportService.export(owner, snapshot.id)
+        assert mock_get.call_count == 0
+        assert mock_post.call_count == 0
+        assert mock_put.call_count == 0
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_force_recreate_creates_fresh_remote_and_clears_deleted_state():
+    """The escape hatch from STATUS_REMOTE_DELETED: force_recreate=True
+    abandons the dead remote and creates a fresh one. Status returns to OK."""
+    owner, snapshot = await _setup_snapshot_with_tracks([{"gid": "g1"}])
+    await sync_to_async(_fresh_link)(owner)
+
+    # Pre-stage the target in REMOTE_DELETED.
+    playlist = await sync_to_async(lambda: snapshot.playlist)()
+    link = await sync_to_async(
+        lambda: ExternalServiceLink.objects.get(account=owner, service="spotify")
+    )()
+    await sync_to_async(PlaylistExportTarget.objects.create)(
+        account=owner,
+        playlist=playlist,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        spotify_link=link,
+        remote_playlist_id="SP_DEAD",
+        last_sync_status=PlaylistExportTarget.STATUS_REMOTE_DELETED,
+    )
+
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.httpx.get",
+            return_value=_make_tracks_resp(["g1"]),
+        ),
+        patch(
+            "src.queuetip.services.spotify_export.httpx.post",
+            side_effect=[_make_create_resp(playlist_id="SP_FRESH"), _make_add_resp()],
+        ),
+        patch("src.queuetip.services.spotify_export._enrich_missing_gids"),
+    ):
+        result = await SpotifyExportService.export(
+            owner, snapshot.id, force_recreate=True
+        )
+
+    assert result.created_new is True
+    assert "SP_FRESH" in result.spotify_playlist_url
+    target = await sync_to_async(
+        lambda: PlaylistExportTarget.objects.get(
+            account=owner,
+            playlist=playlist,
+            destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        )
+    )()
+    assert target.remote_playlist_id == "SP_FRESH"
+    assert target.last_sync_status == PlaylistExportTarget.STATUS_OK

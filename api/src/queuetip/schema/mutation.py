@@ -546,17 +546,30 @@ class Mutation:
         info: Info[QueuetipContext, None],
         snapshot_id: strawberry.ID,
         playlist_name: str | None = None,
+        force_recreate: bool = False,
     ) -> SpotifyExportResultType:
-        """Push an ExportSnapshot to a real Spotify playlist on the caller's account."""
+        """Sync the queuetip playlist behind this snapshot to its Spotify
+        counterpart on the caller's account.
+
+        First call creates a Spotify playlist; subsequent calls update the
+        same playlist in place (no duplicate timestamped copies). If the user
+        deletes the Spotify playlist, the next call raises an error and the
+        UI offers a "Recreate on Spotify" action which re-calls with
+        ``forceRecreate: true``.
+        """
         account = _require_account(info)
         result = await SpotifyExportService.export(
-            account, str(snapshot_id), playlist_name=playlist_name
+            account,
+            str(snapshot_id),
+            playlist_name=playlist_name,
+            force_recreate=force_recreate,
         )
         return SpotifyExportResultType(
             spotify_playlist_url=result.spotify_playlist_url,
             added_count=result.added_count,
             skipped_count=result.skipped_count,
             skipped_titles=result.skipped_titles,
+            created_new=result.created_new,
         )
 
     @strawberry.mutation

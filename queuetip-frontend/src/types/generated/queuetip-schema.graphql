@@ -119,7 +119,7 @@ type Mutation {
   clearVote(contributionId: ID!): ContributionType!
   bulkImportPlaylist(playlistId: ID!, url: String!): BulkImportJobType!
   createExport(playlistId: ID!, options: ExportOptionsInput = null): ExportSnapshotType!
-  exportToSpotify(snapshotId: ID!, playlistName: String = null): SpotifyExportResultType!
+  exportToSpotify(snapshotId: ID!, playlistName: String = null, forceRecreate: Boolean! = false): SpotifyExportResultType!
   signOutEverywhere: SignOutEverywhereResult!
 }
 
@@ -186,6 +186,7 @@ type SpotifyExportResultType {
   addedCount: Int!
   skippedCount: Int!
   skippedTitles: [String!]!
+  createdNew: Boolean!
 }
 
 type VoteType {

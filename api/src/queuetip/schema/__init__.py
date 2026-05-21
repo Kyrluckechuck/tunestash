@@ -21,13 +21,22 @@ from ..errors import (
     PermissionDeniedError,
     ValidationError,
 )
+from ..services.spotify_export import RemotePlaylistDeletedError
 from .mutation import Mutation
 from .query import Query
 
 logger = logging.getLogger(__name__)
 
 # Errors whose messages are safe to pass through to the client unchanged.
-_PASS_THROUGH_ERRORS = (AuthRequiredError, ValidationError)
+# RemotePlaylistDeletedError is in this set because the message is the entire
+# affordance the client needs to render the "Recreate" action — masking it
+# would leave the user with a generic "Internal server error" toast and no
+# path to recovery.
+_PASS_THROUGH_ERRORS = (
+    AuthRequiredError,
+    ValidationError,
+    RemotePlaylistDeletedError,
+)
 
 # Errors that reveal existence side-channels — message is replaced at the
 # GraphQL boundary with a single unified string so callers cannot distinguish

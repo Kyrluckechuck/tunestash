@@ -204,6 +204,7 @@ describe("ExportPage", () => {
           addedCount: 2,
           skippedCount: 0,
           skippedTitles: [],
+          createdNew: true,
         },
       },
     }));
@@ -211,7 +212,14 @@ describe("ExportPage", () => {
     const spotifyMock = {
       request: {
         query: ExportToSpotifyDocument,
-        variables: { snapshotId: SNAPSHOT_ID },
+        // The mutation document declares `$forceRecreate: Boolean! = false`,
+        // so Apollo resolves the default and includes the variable in the
+        // request. playlistName (nullable) is omitted unless the caller
+        // provides it, so don't include it in the mock either.
+        variables: {
+          snapshotId: SNAPSHOT_ID,
+          forceRecreate: false,
+        },
       },
       result: exportResultFn,
     };
