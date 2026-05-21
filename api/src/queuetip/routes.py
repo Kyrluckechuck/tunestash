@@ -201,6 +201,15 @@ def _queuetip_callback_uri(request: Request | None = None) -> str:
         host = forwarded_host or request.headers.get("host")
         scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
         if host:
+            # Spotify rejects `localhost` for loopback redirect URIs — must be
+            # 127.0.0.1. Mirrors the swap in `src/routes/auth.py:37`. The
+            # frontend ALSO redirects browsers from localhost → 127.0.0.1 at
+            # boot (see queuetip-frontend/src/main.tsx) so this is mostly a
+            # backstop for non-browser callers / direct API hits.
+            host = host.replace("localhost", "127.0.0.1")
+            # Force HTTPS for non-loopback hosts (Spotify OAuth requirement).
+            if not (host.startswith("127.0.0.1") or host.startswith("localhost")):
+                scheme = "https"
             return f"{scheme}://{host}/auth/spotify/callback"
     base = getattr(settings, "QUEUETIP_PUBLIC_URL", "http://127.0.0.1:3001").rstrip("/")
     return f"{base}/auth/spotify/callback"

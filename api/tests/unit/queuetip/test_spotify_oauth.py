@@ -112,11 +112,12 @@ def test_callback_uri_prefers_x_forwarded_host():
 
 
 def test_callback_uri_falls_back_to_host_header():
-    """If only Host is present (no proxy), use it."""
-    req = _fake_request(headers={"Host": "queuetip.example.com"})
+    """If only Host is present (no proxy), use it. Non-loopback hosts get
+    https forced — covered separately by the forces_https test."""
+    req = _fake_request(headers={"Host": "127.0.0.1:3001"})
     assert (
         queuetip_routes._queuetip_callback_uri(req)
-        == "http://queuetip.example.com/auth/spotify/callback"
+        == "http://127.0.0.1:3001/auth/spotify/callback"
     )
 
 
@@ -127,6 +128,30 @@ def test_callback_uri_respects_x_forwarded_proto():
             "X-Forwarded-Host": "queuetip.example.com",
             "X-Forwarded-Proto": "https",
         }
+    )
+    assert (
+        queuetip_routes._queuetip_callback_uri(req)
+        == "https://queuetip.example.com/auth/spotify/callback"
+    )
+
+
+def test_callback_uri_rewrites_localhost_to_loopback_ip():
+    """Spotify rejects 'localhost' for loopback URIs — swap to 127.0.0.1.
+    Mirrors api/src/routes/auth.py:37. The frontend also redirects users away
+    from 'localhost' at boot, but this is the backstop for non-browser callers."""
+    req = _fake_request(headers={"X-Forwarded-Host": "localhost:3001"})
+    assert (
+        queuetip_routes._queuetip_callback_uri(req)
+        == "http://127.0.0.1:3001/auth/spotify/callback"
+    )
+
+
+def test_callback_uri_forces_https_for_non_loopback_hosts():
+    """Public deployments must use HTTPS for Spotify OAuth — even if the proxy
+    forwarded plain HTTP, force https on non-loopback hosts."""
+    req = _fake_request(
+        headers={"X-Forwarded-Host": "queuetip.example.com"},
+        scheme="http",
     )
     assert (
         queuetip_routes._queuetip_callback_uri(req)
