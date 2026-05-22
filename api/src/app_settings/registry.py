@@ -26,6 +26,7 @@ CAT_DISCOVERY = "discovery"
 CAT_LYRICS_MEDIA = "lyrics_media"
 CAT_NOTIFICATIONS = "notifications"
 CAT_EXTERNAL = "external_lists"
+CAT_EMAIL = "email"
 CAT_INFRA = "infrastructure"
 
 CATEGORY_ORDER = [
@@ -35,6 +36,7 @@ CATEGORY_ORDER = [
     CAT_LYRICS_MEDIA,
     CAT_NOTIFICATIONS,
     CAT_EXTERNAL,
+    CAT_EMAIL,
     CAT_INFRA,
 ]
 
@@ -45,6 +47,7 @@ CATEGORY_LABELS = {
     CAT_LYRICS_MEDIA: "Lyrics & Media",
     CAT_NOTIFICATIONS: "Notifications",
     CAT_EXTERNAL: "External Lists",
+    CAT_EMAIL: "Email (SMTP)",
     CAT_INFRA: "Infrastructure",
 }
 
@@ -368,6 +371,54 @@ SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
             "Monochrome (Tidal CDN) API endpoints, tried in order with "
             "5-minute cooldown on failure."
         ),
+    },
+    # ── Email (SMTP) ─────────────────────────────────────────────────────────
+    # Outbound mail for Queuetip magic-link sign-in. When email_host is blank,
+    # the sender falls back to the console backend (links print to logs).
+    "email_host": {
+        "default": "",
+        "type": TYPE_STRING,
+        "category": CAT_EMAIL,
+        "label": "SMTP Host",
+        "description": (
+            "SMTP server hostname for outbound mail (e.g. magic-link sign-in). "
+            "Leave blank to print links to the container logs instead."
+        ),
+    },
+    "email_port": {
+        "default": 587,
+        "type": TYPE_INT,
+        "category": CAT_EMAIL,
+        "label": "SMTP Port",
+        "description": "SMTP server port (587 for STARTTLS, 465 for implicit TLS).",
+    },
+    "email_host_user": {
+        "default": "",
+        "type": TYPE_STRING,
+        "category": CAT_EMAIL,
+        "label": "SMTP Username",
+        "description": "Username for SMTP authentication.",
+    },
+    "email_host_password": {
+        "default": "",
+        "type": TYPE_SECRET,
+        "category": CAT_EMAIL,
+        "label": "SMTP Password",
+        "description": "Password / app-password for SMTP authentication.",
+    },
+    "email_use_tls": {
+        "default": True,
+        "type": TYPE_BOOL,
+        "category": CAT_EMAIL,
+        "label": "Use STARTTLS",
+        "description": "Use STARTTLS for the SMTP connection (typical for port 587).",
+    },
+    "email_from": {
+        "default": "Queuetip <queuetip@localhost>",
+        "type": TYPE_STRING,
+        "category": CAT_EMAIL,
+        "label": "From Address",
+        "description": "The From header on outbound mail.",
     },
 }
 
