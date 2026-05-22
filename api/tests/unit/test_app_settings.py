@@ -103,6 +103,7 @@ class TestIsSensitive:
         assert is_sensitive("po_token") is True
         assert is_sensitive("spotipy_client_secret") is True
         assert is_sensitive("navidrome_password") is True
+        assert is_sensitive("email_host_password") is True
 
     def test_non_secret_is_not_sensitive(self):
         assert is_sensitive("youtube_premium") is False

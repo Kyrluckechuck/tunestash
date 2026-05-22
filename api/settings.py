@@ -295,25 +295,13 @@ QUEUETIP_FERNET_KEY = os.getenv("QUEUETIP_FERNET_KEY", "")
 # For Cloudflare Tunnel, add Cloudflare's published IPv4/IPv6 ranges instead.
 QUEUETIP_TRUSTED_PROXIES: list[str] = []
 
-# Email — magic-link delivery. Resolution order:
-#   1. DJANGO_EMAIL_BACKEND env var (escape hatch for dev: force console backend
-#      without editing settings.yaml — useful when SMTP isn't reachable locally).
-#   2. settings.yaml `email_host` → SMTP backend with the related SMTP settings.
-#   3. Otherwise → console backend (links print to the container logs).
-_email_backend_env = os.getenv("DJANGO_EMAIL_BACKEND")
-_email_host = settings.get("email_host", None)
-if _email_backend_env:
-    EMAIL_BACKEND = _email_backend_env
-elif _email_host:
-    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-    EMAIL_HOST = _email_host
-    EMAIL_PORT = int(settings.get("email_port", 587))
-    EMAIL_HOST_USER = settings.get("email_host_user", "")
-    EMAIL_HOST_PASSWORD = settings.get("email_host_password", "")
-    EMAIL_USE_TLS = bool(settings.get("email_use_tls", True))
-else:
-    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-DEFAULT_FROM_EMAIL = settings.get("default_from_email", "Queuetip <queuetip@localhost>")
+# Email backend default. Queuetip builds its own SMTP connection at send time
+# from the DB-backed app_settings (see src/queuetip/email.py), so the global
+# EMAIL_BACKEND only matters as a fallback for any other send_mail caller. The
+# DJANGO_EMAIL_BACKEND env var stays honored as a dev escape hatch.
+EMAIL_BACKEND = os.getenv(
+    "DJANGO_EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
 
 # Sign-up gate. When True (default), only emails on the QueuetipSignupAllowlist
 # can create new accounts. Existing accounts always sign in normally.
