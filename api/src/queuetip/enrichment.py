@@ -75,7 +75,11 @@ def find_spotify_track_by_name_artist(name: str, artist: str) -> tuple[str, str]
         client = PublicSpotifyClient()
         if client.sp is None:
             return None
-        query = f'track:"{name}" artist:"{artist}"'
+        # Strip quotes — they'd break the track:"…" artist:"…" query syntax,
+        # and Spotify search ignores quotes inside terms anyway.
+        safe_name = name.replace('"', "")
+        safe_artist = artist.replace('"', "")
+        query = f'track:"{safe_name}" artist:"{safe_artist}"'
         results: dict[str, Any] = dict(
             client.sp.search(q=query, type="track", limit=5) or {}
         )

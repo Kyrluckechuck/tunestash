@@ -4,7 +4,13 @@ import { useMutation, useQuery } from "@apollo/client";
 import { Plus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
-import { InviteToQueuetipDocument, MyPlaylistsDocument } from "@/types/generated/graphql";
+import {
+  InviteToQueuetipDocument,
+  MyInviteesDocument,
+  MyPlaylistsDocument,
+  RemoveQueuetipInviteDocument,
+} from "@/types/generated/graphql";
+import { X } from "lucide-react";
 import { useMe } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,7 +83,12 @@ function PlaylistsIndexContent() {
 function AdminInviteCard() {
   const { account } = useMe();
   const [email, setEmail] = React.useState("");
-  const [invite, { loading }] = useMutation(InviteToQueuetipDocument);
+  const refetchInvitees = { refetchQueries: [{ query: MyInviteesDocument }] };
+  const [invite, { loading }] = useMutation(InviteToQueuetipDocument, refetchInvitees);
+  const [remove] = useMutation(RemoveQueuetipInviteDocument, refetchInvitees);
+  const { data } = useQuery(MyInviteesDocument, {
+    skip: !account?.isAdmin,
+  });
 
   if (!account?.isAdmin) return null;
 
@@ -96,6 +107,20 @@ function AdminInviteCard() {
     }
   }
 
+  async function handleRemove(targetEmail: string) {
+    if (!confirm(`Remove ${targetEmail} from the allowlist?`)) return;
+    try {
+      const r = await remove({ variables: { email: targetEmail } });
+      const res = r.data?.removeQueuetipInvite;
+      if (res?.sent) toast.success(res.message);
+      else toast.error(res?.message ?? "Could not remove.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove.");
+    }
+  }
+
+  const invitees = data?.myInvitees ?? [];
+
   return (
     <Card className="mb-6">
       <CardHeader>
@@ -104,17 +129,49 @@ function AdminInviteCard() {
         </CardTitle>
         <CardDescription>Allowlists the email and sends them a sign-up invite.</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col sm:flex-row gap-2">
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="friend@example.com"
-          className="flex-1 px-3 py-1.5 text-sm bg-background border border-input rounded-md"
-        />
-        <Button onClick={handleInvite} disabled={loading || !email.trim()}>
-          {loading ? "Inviting…" : "Send invite"}
-        </Button>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="friend@example.com"
+            className="flex-1 px-3 py-1.5 text-sm bg-background border border-input rounded-md"
+          />
+          <Button onClick={handleInvite} disabled={loading || !email.trim()}>
+            {loading ? "Inviting…" : "Send invite"}
+          </Button>
+        </div>
+        {invitees.length > 0 ? (
+          <ul className="divide-y divide-border border border-border rounded-md">
+            {invitees.map((iv) => (
+              <li
+                key={iv.email}
+                className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+              >
+                <span className="truncate">
+                  <span className="font-mono">{iv.email}</span>
+                  <span
+                    className={`ml-2 text-xs ${
+                      iv.hasSignedUp ? "text-green-500" : "text-muted-foreground"
+                    }`}
+                  >
+                    {iv.hasSignedUp ? "Joined" : "Pending"}
+                  </span>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRemove(iv.email)}
+                  aria-label={`Remove ${iv.email}`}
+                  title="Remove from allowlist"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </CardContent>
     </Card>
   );

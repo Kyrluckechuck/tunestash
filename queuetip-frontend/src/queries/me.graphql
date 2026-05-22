@@ -18,3 +18,19 @@ mutation InviteToQueuetip($email: String!) {
     message
   }
 }
+
+query MyInvitees {
+  myInvitees {
+    email
+    addedAt
+    hasSignedUp
+    note
+  }
+}
+
+mutation RemoveQueuetipInvite($email: String!) {
+  removeQueuetipInvite(email: $email) {
+    sent
+    message
+  }
+}

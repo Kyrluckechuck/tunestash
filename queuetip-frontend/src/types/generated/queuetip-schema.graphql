@@ -73,6 +73,13 @@ type ExternalServiceLinkType {
   linkedAt: DateTime!
 }
 
+type InviteeType {
+  email: String!
+  addedAt: DateTime!
+  hasSignedUp: Boolean!
+  note: String!
+}
+
 type MembershipType {
   account: AccountType!
   role: String!
@@ -83,6 +90,7 @@ type Mutation {
   requestMagicLink(email: String!, displayName: String = null): RequestMagicLinkResult!
   createPlaylist(name: String!, description: String! = ""): PlaylistType!
   inviteToQueuetip(email: String!): RequestMagicLinkResult!
+  removeQueuetipInvite(email: String!): RequestMagicLinkResult!
   updatePlaylistSettings(id: ID!, name: String = null, description: String = null, engine: EngineSettingsInput = null): PlaylistType!
   regenerateInviteToken(id: ID!): RegenerateInviteResult!
   deletePlaylist(id: ID!): DeletePlaylistResult!
@@ -150,6 +158,7 @@ type PublicSettingsType {
 
 type Query {
   me: AccountType
+  myInvitees: [InviteeType!]!
   publicSettings: PublicSettingsType!
   myPlaylists: [PlaylistType!]!
   playlist(id: ID!): PlaylistType!

@@ -278,6 +278,17 @@ class QueuetipSignupAllowlist(models.Model):
     email: models.EmailField = models.EmailField(unique=True, max_length=254)
     note: models.CharField = models.CharField(max_length=200, blank=True)
     added_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    invited_by: models.ForeignKey = models.ForeignKey(
+        "Account",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=(
+            "The Queuetip admin who invited this email. NULL for pre-existing "
+            "entries or operator-CLI additions."
+        ),
+    )
 
     if TYPE_CHECKING:
         id: int
