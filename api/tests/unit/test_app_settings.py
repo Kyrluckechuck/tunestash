@@ -246,6 +246,14 @@ class TestTypeCoercion:
     def test_int_from_int(self):
         assert self._coerce("notifications_cooldown_minutes", 120) == 120
 
+    def test_int_blank_falls_back_to_default(self):
+        """Clearing a numeric field must not raise int('') — it unsets to the
+        registry default."""
+        entry = SETTINGS_REGISTRY["email_port"]
+        assert self._coerce("email_port", "") == entry["default"]
+        assert self._coerce("email_port", "   ") == entry["default"]
+        assert self._coerce("email_port", None) == entry["default"]
+
     def test_string_from_string(self):
         assert self._coerce("log_level", "DEBUG") == "DEBUG"
 

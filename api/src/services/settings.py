@@ -326,11 +326,15 @@ class SettingsService:
                 return value.lower() in ("true", "1", "yes")
             return bool(value)
 
+        # An empty/blank numeric input means "unset" — fall back to the
+        # registry default rather than raising on int("")/float("").
+        _blank = value is None or (isinstance(value, str) and value.strip() == "")
+
         if target_type == TYPE_INT:
-            return int(value)
+            return entry["default"] if _blank else int(value)
 
         if target_type == TYPE_FLOAT:
-            return float(value)
+            return entry["default"] if _blank else float(value)
 
         if target_type in (TYPE_STRING, TYPE_SECRET):
             return str(value) if value is not None else ""

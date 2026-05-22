@@ -5,7 +5,12 @@ from django.core.mail.backends.smtp import EmailBackend as SmtpBackend
 import pytest
 
 from library_manager.models import AppSetting
-from src.services.mail import build_connection, from_address, send_message
+from src.services.mail import (
+    build_connection,
+    from_address,
+    render_email,
+    send_message,
+)
 
 
 @pytest.mark.django_db
@@ -79,3 +84,27 @@ def test_send_message_delivers(mailoutbox):
     assert len(mailoutbox) == 1
     assert mailoutbox[0].to == ["dest@example.com"]
     assert mailoutbox[0].subject == "Hi"
+
+
+def test_render_email_escapes_and_includes_button():
+    html = render_email(
+        eyebrow="Queuetip",
+        heading="Sign in",
+        paragraphs=["Hello <script>", "second"],
+        button=("Go", "https://example.com/x?token=abc"),
+        footer="footer note",
+    )
+    assert "<table" in html and "https://example.com/x?token=abc" in html
+    assert "Go" in html and "footer note" in html
+    # Dynamic text is escaped, not injected raw.
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+@pytest.mark.django_db
+def test_send_message_attaches_html_alternative(mailoutbox):
+    send_message(subject="S", body="plain text", to="a@b.com", html_body="<p>rich</p>")
+    assert len(mailoutbox) == 1
+    msg = mailoutbox[0]
+    assert msg.body == "plain text"
+    assert msg.alternatives == [("<p>rich</p>", "text/html")]

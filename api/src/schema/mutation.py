@@ -676,13 +676,23 @@ class Mutation:  # pylint: disable=too-many-public-methods
             return MutationResult(success=False, message="Enter a valid email address.")
 
         def _send() -> None:
+            text = (
+                "This is a test email from TuneStash. "
+                "If you received it, your SMTP settings are working."
+            )
             mail.send_message(
                 subject="TuneStash test email",
-                body=(
-                    "This is a test email from TuneStash. "
-                    "If you received it, your SMTP settings are working."
-                ),
+                body=text,
                 to=address,
+                html_body=mail.render_email(
+                    eyebrow="TuneStash",
+                    heading="SMTP test successful",
+                    paragraphs=[
+                        "This is a test email from TuneStash.",
+                        "If you're reading this, your SMTP settings are "
+                        "working correctly.",
+                    ],
+                ),
             )
 
         try:
@@ -718,15 +728,30 @@ class Mutation:  # pylint: disable=too-many-public-methods
         ).rstrip("/")
 
         def _send() -> None:
+            text = (
+                "You've been invited to Queuetip — collaborative playlists.\n\n"
+                f"Sign up with this email ({address}) here:\n{signup_url}\n\n"
+                "After you enter your name you'll receive a one-time sign-in "
+                "link by email."
+            )
             mail.send_message(
                 subject="You're invited to Queuetip",
-                body=(
-                    "You've been invited to Queuetip — collaborative playlists.\n\n"
-                    f"Sign up with this email ({address}) here:\n{signup_url}\n\n"
-                    "After you enter your name you'll receive a one-time sign-in "
-                    "link by email."
-                ),
+                body=text,
                 to=address,
+                html_body=mail.render_email(
+                    eyebrow="Queuetip",
+                    heading="You're invited to Queuetip",
+                    paragraphs=[
+                        "You've been invited to Queuetip — collaborative "
+                        "playlists you build together.",
+                        f"Sign up with this email ({address}) to get started.",
+                    ],
+                    button=("Sign up", signup_url),
+                    footer=(
+                        "After you enter your name you'll receive a one-time "
+                        "sign-in link by email."
+                    ),
+                ),
             )
 
         try:
