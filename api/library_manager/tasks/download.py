@@ -499,6 +499,20 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
                     f"Linked deezer_id to existing song '{song.name}' via ISRC"
                 )
 
+        # 3c. Already on THIS album under another source (e.g. a Spotify-sourced
+        # row with the same ISRC, gid set, no deezer_id)? Reuse it and link the
+        # deezer_id rather than creating a same-(isrc, album) duplicate.
+        if not song and track.isrc:
+            song = Song.objects.filter(isrc=track.isrc, album=album).first()
+            if song:
+                if not song.deezer_id:
+                    song.deezer_id = track.deezer_id
+                    song.save(update_fields=["deezer_id"])
+                logger.debug(
+                    f"Reused same-album song '{song.name}' via ISRC "
+                    "(linked deezer_id)"
+                )
+
         # 4. Create new Song for this album (even if deezer_id exists elsewhere)
         if not song:
             song = Song.objects.create(
