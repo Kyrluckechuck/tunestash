@@ -44,12 +44,14 @@ function NumberField({
   value,
   onChange,
   step = 1,
+  hint,
 }: {
   id: string;
   label: string;
   value: number;
   onChange: (n: number) => void;
   step?: number;
+  hint?: string;
 }) {
   return (
     <div>
@@ -63,6 +65,9 @@ function NumberField({
         step={step}
         onChange={(e) => onChange(Number(e.target.value))}
       />
+      {hint ? (
+        <p className="mt-1 text-xs text-muted-foreground leading-snug">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -194,30 +199,50 @@ export function EditSettingsDialog({
                 ) : null}
               </div>
               <NumberField
-                id="tHigh"
-                label="t_high (guaranteed-from)"
-                value={tHigh}
-                onChange={setTHigh}
-              />
-              <NumberField
-                id="tLow"
-                label="t_low (floor-at)"
-                value={tLow}
-                onChange={setTLow}
-              />
-              <NumberField
                 id="base"
-                label="base (p at net=0)"
+                label="Base chance (net 0 votes)"
                 value={base}
                 onChange={setBase}
                 step={0.05}
+                hint={
+                  "Probability a song is included when its votes are even " +
+                  "(upvotes = downvotes). 0.5 = a coin flip. This is the " +
+                  "starting point that upvotes raise and downvotes lower."
+                }
+              />
+              <NumberField
+                id="tHigh"
+                label="Guaranteed at (net upvotes)"
+                value={tHigh}
+                onChange={setTHigh}
+                hint={
+                  "Net upvotes at which a song is always included (100%). " +
+                  "Between 0 and here the chance ramps from the base up to " +
+                  "certain — e.g. 5 means 5 net upvotes locks it in."
+                }
+              />
+              <NumberField
+                id="tLow"
+                label="Floored at (net downvotes)"
+                value={tLow}
+                onChange={setTLow}
+                hint={
+                  "Net downvotes at which a song hits its minimum chance. " +
+                  "Between 0 and here the chance ramps from the base down to " +
+                  "the floor — e.g. 5 means 5 net downvotes bottoms it out."
+                }
               />
               <NumberField
                 id="pFloor"
-                label="p_floor"
+                label="Minimum chance (floor)"
                 value={pFloor}
                 onChange={setPFloor}
                 step={0.05}
+                hint={
+                  "The lowest a song's chance can drop. Above 0, even heavily " +
+                  "downvoted songs keep a small chance of sneaking in; 0 means " +
+                  "they can be excluded entirely."
+                }
               />
             </div>
           </details>
