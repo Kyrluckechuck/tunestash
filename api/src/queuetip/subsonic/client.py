@@ -39,7 +39,7 @@ import logging
 import re
 import secrets
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -181,7 +181,10 @@ class SubsonicClient:
     def get_playlist(self, playlist_id: str) -> dict[str, Any]:
         """Fetch playlist metadata and entry list. Raises SubsonicNotFoundError
         on code 70 (user deleted it on the server)."""
-        return self._get("getPlaylist", params={"id": playlist_id}).get("playlist", {})
+        playlist = self._get("getPlaylist", params={"id": playlist_id}).get(
+            "playlist", {}
+        )
+        return cast("dict[str, Any]", playlist)
 
     def create_playlist(self, name: str, song_ids: list[str]) -> str:
         """Create a new playlist and return its server-assigned id.
@@ -253,7 +256,7 @@ class SubsonicClient:
             self._get("deletePlaylist", params={"id": playlist_id})
         except SubsonicNotFoundError:
             # Already gone — that's fine, treat as idempotent.
-            return
+            pass
 
     # ── Internal helpers ────────────────────────────────────────────────────
 
@@ -279,7 +282,9 @@ class SubsonicClient:
 
         url = f"{self.server_url}/rest/{endpoint}.view"
         try:
-            response = httpx.get(url, params=query, timeout=self._timeout)
+            response = httpx.get(
+                url, params=cast("httpx.QueryParams", query), timeout=self._timeout
+            )
         except httpx.HTTPError as exc:
             raise SubsonicError(f"HTTP error calling {endpoint}: {exc}") from exc
 

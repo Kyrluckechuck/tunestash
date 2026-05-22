@@ -292,8 +292,12 @@ async def _request_magic_link(  # pylint: disable=too-many-return-statements
 
 
 @strawberry.type
-class Mutation:
-    """Root mutation for the Queuetip public API."""
+class Mutation:  # pylint: disable=too-many-public-methods
+    """Root mutation for the Queuetip public API.
+
+    A GraphQL root type naturally accumulates many resolver methods (one per
+    mutation); the public-method cap doesn't apply meaningfully here.
+    """
 
     @strawberry.mutation
     async def request_magic_link(

@@ -109,7 +109,8 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
     # owner's perspective isn't meaningful for a shared remote).
     from .roll import roll_playlist
 
-    roll = roll_playlist(cast(Playlist, target.playlist))
+    playlist = cast(Playlist, target.playlist)
+    roll = roll_playlist(playlist)
 
     # Fetch the rolled songs in the engine's chosen order, with the relations
     # the resolver needs. Preserve roll order via a position map.
@@ -166,7 +167,7 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
             client.overwrite_playlist(target.remote_playlist_id, matched_ids)
         else:
             target.remote_playlist_id = client.create_playlist(
-                target.playlist.name, matched_ids  # type: ignore[union-attr]
+                playlist.name, matched_ids
             )
     except SubsonicNotFoundError as exc:
         _mark_remote_deleted(target)
@@ -265,36 +266,33 @@ def _maybe_queue_download(song) -> bool:  # type: ignore[no-untyped-def]
         logger.debug("[subsonic-sync] download helpers unavailable: %s", exc)
         return False
 
-    gid = (getattr(song, "gid", "") or "").strip()
-    if gid:
-        task_id = generate_task_id("download_track_by_spotify_gid", gid)
-        if is_task_pending_or_running(task_id):
+    def _queue(task_name: str, key: str, task, args: list) -> bool:  # type: ignore[no-untyped-def]
+        task_id = generate_task_id(task_name, key)
+        is_pending, _ = is_task_pending_or_running(task_id)
+        if is_pending:
             return False
         try:
-            download_track_by_spotify_gid.apply_async(args=[gid], task_id=task_id)
+            task.apply_async(args=args, task_id=task_id)
             return True
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
-                "[subsonic-sync] failed to queue Spotify download for %s: %s",
-                gid,
-                exc,
+                "[subsonic-sync] failed to queue %s for %s: %s", task_name, key, exc
             )
             return False
 
+    gid = (getattr(song, "gid", "") or "").strip()
+    if gid:
+        return _queue(
+            "download_track_by_spotify_gid", gid, download_track_by_spotify_gid, [gid]
+        )
+
     deezer_id = getattr(song, "deezer_id", None)
     if deezer_id:
-        task_id = generate_task_id("download_deezer_track", str(deezer_id))
-        if is_task_pending_or_running(task_id):
-            return False
-        try:
-            download_deezer_track.apply_async(args=[int(deezer_id)], task_id=task_id)
-            return True
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.warning(
-                "[subsonic-sync] failed to queue Deezer download for %s: %s",
-                deezer_id,
-                exc,
-            )
-            return False
+        return _queue(
+            "download_deezer_track",
+            str(deezer_id),
+            download_deezer_track,
+            [int(deezer_id)],
+        )
 
     return False

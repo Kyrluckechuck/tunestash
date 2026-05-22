@@ -86,9 +86,9 @@ def resolve_song_to_subsonic_id(
     if title:
         _add(f"{title} {artist}".strip(), 50)
         _add(title, 50)
+    # No early-out on an empty candidate list: each rung simply iterates
+    # nothing and we fall through to the final `return None`.
     candidates = list(seen.values())
-    if not candidates:
-        return None
 
     # Rung 1: file-path (same-file) match — highest confidence.
     if file_path:
