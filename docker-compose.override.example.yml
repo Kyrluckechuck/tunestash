@@ -82,6 +82,13 @@ services:
     profiles:
       - disabled
 
+  # Disable the prod queuetip-frontend (pre-built ghcr image) in favor of
+  # queuetip-frontend-dev. Without this, `docker compose up` tries to pull
+  # ghcr.io/.../queuetip-frontend:latest — which only exists after a CI build.
+  queuetip-frontend:
+    profiles:
+      - disabled
+
   # Development frontend service
   frontend-dev:
     build:
