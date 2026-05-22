@@ -407,3 +407,33 @@ Estimated total: ~2000–2400 LOC including tests (larger than the original Subs
 - Pre-sync detection of artist/album-level mismatches (we currently only resolve at track level)
 - Multiple targets of the same destination type per (user, playlist) — e.g. "push to two of my Subsonic servers"
 - Apple Music export (same pattern, different API)
+
+## Follow-up — capability-gated auth picker
+
+The current `SubsonicConnectionSection.tsx` shows both auth modes (password
+and API key) regardless of what the target server supports. Adding API-key
+auth against a server that doesn't implement `apiKeyAuthentication` produces
+a confusing failure (the test-connection probe rejects with an auth error
+that doesn't explain why).
+
+**Why this matters now**: we discovered during PR 4's smoke test that
+Navidrome 0.61.2 doesn't yet implement `apiKeyAuthentication` (the
+OpenSubsonic extension that the picker's API-key path requires). The
+extension is in the OpenSubsonic spec but not in this Navidrome version.
+
+**Fix shape** (~80 LOC, future PR):
+
+  1. Backend: add a `probeSubsonicServer(serverUrl: String!)` mutation that
+     hits `/rest/getOpenSubsonicExtensions.view` without auth and returns
+     the extension list + server type/version. Reachable without storing a
+     connection first.
+  2. Frontend: split the "Add connection" form into two steps —
+     (a) enter URL → click "Probe" → see what the server supports;
+     (b) auth picker shows only the modes the server can actually accept,
+         with a note like "API-key auth requires the apiKeyAuthentication
+         OpenSubsonic extension — your server doesn't advertise it."
+  3. For password auth (always available against any Subsonic server), the
+     picker can show it unconditionally as the safe default.
+
+This naturally extends to other capability-aware behaviors we may add
+later (e.g. lyrics support, MusicBrainz ID matching, transcoding hints).

@@ -17,7 +17,7 @@ from queuetip.models import (
     Account,
     AuthIdentity,
     Contribution,
-    ExportSnapshot,
+    ExternalServiceLink,
     MagicLinkRequestLog,
     Playlist,
     PlaylistExportTarget,
@@ -37,19 +37,14 @@ from ..graphql_types import (
     ContributionResult,
     ContributionType,
     EngineSettingsInput,
-    ExportOptionsInput,
-    ExportSnapshotType,
     PlaylistExportTargetType,
     PlaylistType,
-    SpotifyExportResultType,
     SubsonicConnectionType,
 )
 from ..services.bulk_import import BulkImportService
 from ..services.contribution import ContributionService
-from ..services.export import ExportService
 from ..services.membership import MembershipService
 from ..services.playlist import PlaylistService
-from ..services.spotify_export import SpotifyExportService
 from ..services.vote import VoteService
 from ..subsonic import SubsonicAuthError, SubsonicClient, SubsonicError
 
@@ -171,31 +166,6 @@ async def _build_playlist_type(playlist: Playlist) -> PlaylistType:
     """Compose a PlaylistType with pre-fetched memberships (no lazy load)."""
     members = await PlaylistService.list_memberships(playlist)
     return PlaylistType.from_model(playlist, members)
-
-
-async def _load_snapshot_with_tracks(snapshot: ExportSnapshot) -> "ExportSnapshotType":
-    """Pre-fetch tracks (+song+artist) and playlist members before composing the GraphQL type."""
-    from queuetip.models import ExportSnapshot, ExportSnapshotTrack, PlaylistMembership
-
-    def _load() -> tuple[ExportSnapshot, list, list]:
-        # Re-fetch snapshot with playlist__created_by to avoid lazy-load in conversion
-        snap = ExportSnapshot.objects.select_related(
-            "playlist", "playlist__created_by", "requested_by"
-        ).get(id=snapshot.id)
-        tracks = list(
-            ExportSnapshotTrack.objects.filter(snapshot=snap)
-            .select_related("song", "song__primary_artist")
-            .order_by("position")
-        )
-        members = list(
-            PlaylistMembership.objects.filter(playlist=snap.playlist)
-            .select_related("account")
-            .order_by("joined_at")
-        )
-        return snap, tracks, members
-
-    snap, tracks, members = await sync_to_async(_load)()
-    return ExportSnapshotType.from_model(snap, tracks, members)
 
 
 def _signup_allowlist_required() -> bool:
@@ -533,53 +503,6 @@ class Mutation:
         return BulkImportJobType.from_model(job)
 
     @strawberry.mutation
-    async def create_export(
-        self,
-        info: Info[QueuetipContext, None],
-        playlist_id: strawberry.ID,
-        options: ExportOptionsInput | None = None,
-    ) -> ExportSnapshotType:
-        """Materialize a playlist into a new ExportSnapshot."""
-        account = _require_account(info)
-        exclude_downvotes = bool(options and options.exclude_my_downvotes)
-        snapshot = await ExportService.create(
-            account, int(playlist_id), exclude_my_downvotes=exclude_downvotes
-        )
-        return await _load_snapshot_with_tracks(snapshot)
-
-    @strawberry.mutation
-    async def export_to_spotify(
-        self,
-        info: Info[QueuetipContext, None],
-        snapshot_id: strawberry.ID,
-        playlist_name: str | None = None,
-        force_recreate: bool = False,
-    ) -> SpotifyExportResultType:
-        """Sync the queuetip playlist behind this snapshot to its Spotify
-        counterpart on the caller's account.
-
-        First call creates a Spotify playlist; subsequent calls update the
-        same playlist in place (no duplicate timestamped copies). If the user
-        deletes the Spotify playlist, the next call raises an error and the
-        UI offers a "Recreate on Spotify" action which re-calls with
-        ``forceRecreate: true``.
-        """
-        account = _require_account(info)
-        result = await SpotifyExportService.export(
-            account,
-            str(snapshot_id),
-            playlist_name=playlist_name,
-            force_recreate=force_recreate,
-        )
-        return SpotifyExportResultType(
-            spotify_playlist_url=result.spotify_playlist_url,
-            added_count=result.added_count,
-            skipped_count=result.skipped_count,
-            skipped_titles=result.skipped_titles,
-            created_new=result.created_new,
-        )
-
-    @strawberry.mutation
     async def sign_out_everywhere(
         self, info: Info[QueuetipContext, None]
     ) -> SignOutEverywhereResult:
@@ -712,6 +635,21 @@ class Mutation:
         account = _require_account(info)
         target = await sync_to_async(_create_subsonic_sync_target)(
             account, int(playlist_id), int(connection_id)
+        )
+        return PlaylistExportTargetType.from_model(target)
+
+    @strawberry.mutation
+    async def create_spotify_export_target(
+        self,
+        info: Info[QueuetipContext, None],
+        playlist_id: strawberry.ID,
+    ) -> PlaylistExportTargetType:
+        """Register a Spotify destination for a playlist, using the caller's
+        linked Spotify account. Idempotent. Pushing is a separate manual
+        action (syncTargetNow / 'Reshuffle & push')."""
+        account = _require_account(info)
+        target = await sync_to_async(_create_spotify_export_target)(
+            account, int(playlist_id)
         )
         return PlaylistExportTargetType.from_model(target)
 
@@ -985,7 +923,47 @@ def _create_subsonic_sync_target(
     if target.subsonic_connection_id != connection.id:
         target.subsonic_connection = connection
         target.save(update_fields=["subsonic_connection"])
-    return target
+    # Re-fetch with the credential relations prefetched — PlaylistExportTargetType
+    # .from_model traverses them, and the async resolver can't lazy-load.
+    return _select_related_target(target.id)
+
+
+def _create_spotify_export_target(
+    account: Account,
+    playlist_id: int,
+) -> PlaylistExportTarget:
+    """Create-or-return the per-(account, playlist, spotify) target, using the
+    caller's linked Spotify account. Idempotent."""
+    membership = PlaylistMembership.objects.filter(
+        account=account, playlist_id=playlist_id
+    ).first()
+    if membership is None:
+        raise NotFoundError(f"Playlist {playlist_id} not found")
+
+    link = ExternalServiceLink.objects.filter(
+        account=account, service=ExternalServiceLink.SERVICE_SPOTIFY
+    ).first()
+    if link is None:
+        raise NotFoundError("Spotify is not linked. Connect Spotify in settings first.")
+
+    target, _ = PlaylistExportTarget.objects.get_or_create(
+        account=account,
+        playlist_id=playlist_id,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        defaults={"spotify_link": link},
+    )
+    if target.spotify_link_id != link.id:
+        target.spotify_link = link
+        target.save(update_fields=["spotify_link"])
+    return _select_related_target(target.id)
+
+
+def _select_related_target(target_id: int) -> PlaylistExportTarget:
+    """Fetch a target with both credential FKs prefetched so converting it to
+    the GraphQL type in an async resolver doesn't trigger a lazy DB load."""
+    return PlaylistExportTarget.objects.select_related(
+        "spotify_link", "subsonic_connection"
+    ).get(id=target_id)
 
 
 def _remove_target(account: Account, target_id: int, delete_remote: bool) -> None:

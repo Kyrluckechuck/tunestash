@@ -94,6 +94,12 @@ mutation CreateSubsonicSyncTarget($playlistId: ID!, $connectionId: ID!) {
   }
 }
 
+mutation CreateSpotifyExportTarget($playlistId: ID!) {
+  createSpotifyExportTarget(playlistId: $playlistId) {
+    ...PlaylistExportTargetFields
+  }
+}
+
 mutation RemoveSyncTarget($id: ID!, $deleteRemote: Boolean! = false) {
   removeSyncTarget(id: $id, deleteRemote: $deleteRemote)
 }

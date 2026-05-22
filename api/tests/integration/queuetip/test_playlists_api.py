@@ -8,15 +8,12 @@ from tests.factories import ArtistFactory, SongFactory
 from queuetip.models import (
     Account,
     Contribution,
-    ExportSnapshot,
-    ExportSnapshotTrack,
     Playlist,
     PlaylistMembership,
     Vote,
 )
 from src.queuetip.app import app
 from src.queuetip.auth import SESSION_COOKIE, make_session_token
-from src.queuetip.services.export import ExportService
 
 
 def _authed_client(account_id: int) -> httpx.AsyncClient:
@@ -212,8 +209,8 @@ async def test_playlist_by_invite_token_does_not_expose_engine_settings():
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_delete_playlist_cascades_contributions_votes_snapshots():
-    """deletePlaylist removes all child rows (contributions, votes, snapshots, memberships)."""
+async def test_delete_playlist_cascades_contributions_votes():
+    """deletePlaylist removes all child rows (contributions, votes, memberships)."""
     owner = await sync_to_async(Account.objects.create)(display_name="Owner")
     playlist = await sync_to_async(Playlist.objects.create)(
         name="To Delete", created_by=owner
@@ -223,18 +220,14 @@ async def test_delete_playlist_cascades_contributions_votes_snapshots():
     )
 
     # Add two contributions with votes
-    contributions = []
-    for i in range(2):
+    for _ in range(2):
         artist = await sync_to_async(ArtistFactory)()
         song = await sync_to_async(SongFactory)(primary_artist=artist)
         c = await sync_to_async(Contribution.objects.create)(
             playlist=playlist, song=song, contributed_by=owner
         )
         await sync_to_async(Vote.objects.create)(contribution=c, account=owner, value=1)
-        contributions.append(c)
 
-    # Create an export snapshot (result not needed; side-effect is the DB rows)
-    await ExportService.create(owner, playlist.id)
     playlist_id = playlist.id
 
     # Delete via GraphQL
@@ -257,18 +250,6 @@ async def test_delete_playlist_cascades_contributions_votes_snapshots():
     assert (
         await sync_to_async(
             Vote.objects.filter(contribution__playlist_id=playlist_id).count
-        )()
-        == 0
-    )
-    assert (
-        await sync_to_async(
-            ExportSnapshot.objects.filter(playlist_id=playlist_id).count
-        )()
-        == 0
-    )
-    assert (
-        await sync_to_async(
-            ExportSnapshotTrack.objects.filter(snapshot__playlist_id=playlist_id).count
         )()
         == 0
     )

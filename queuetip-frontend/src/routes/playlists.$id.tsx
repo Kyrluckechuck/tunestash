@@ -20,9 +20,9 @@ import { ContributionRow } from "@/features/playlist/ContributionRow";
 import { MemberList } from "@/features/playlist/MemberList";
 import { BulkImportDialog } from "@/features/playlist/BulkImportDialog";
 import { ContributeDialog } from "@/features/playlist/ContributeDialog";
-import { CreateExportDialog } from "@/features/playlist/CreateExportDialog";
 import { EditSettingsDialog } from "@/features/playlist/EditSettingsDialog";
 import { SendToSubsonicCard } from "@/features/playlist/SendToSubsonicCard";
+import { SendToSpotifyCard } from "@/features/playlist/SendToSpotifyCard";
 
 function PlaylistDetailContent({ id }: { id: string }) {
   const { account } = useMe();
@@ -32,7 +32,6 @@ function PlaylistDetailContent({ id }: { id: string }) {
   });
   const [contributeOpen, setContributeOpen] = React.useState(false);
   const [bulkImportOpen, setBulkImportOpen] = React.useState(false);
-  const [exportOpen, setExportOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   const [regenerate] = useMutation(RegenerateInviteTokenDocument, {
@@ -163,9 +162,6 @@ function PlaylistDetailContent({ id }: { id: string }) {
           <CardHeader className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle>Contributions</CardTitle>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setExportOpen(true)}>
-                Create export
-              </Button>
               <Button size="sm" variant="outline" onClick={() => setBulkImportOpen(true)}>
                 Bulk import
               </Button>
@@ -231,6 +227,7 @@ function PlaylistDetailContent({ id }: { id: string }) {
           </CardContent>
         </Card>
 
+        <SendToSpotifyCard playlistId={id} />
         <SendToSubsonicCard playlistId={id} />
       </aside>
 
@@ -243,11 +240,6 @@ function PlaylistDetailContent({ id }: { id: string }) {
         playlistId={id}
         open={contributeOpen}
         onOpenChange={setContributeOpen}
-      />
-      <CreateExportDialog
-        playlistId={id}
-        open={exportOpen}
-        onOpenChange={setExportOpen}
       />
       {isOwner ? (
         <EditSettingsDialog

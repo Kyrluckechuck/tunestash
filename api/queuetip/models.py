@@ -5,7 +5,6 @@ TuneStash's database; `Contribution.song` is a real FK into `library_manager`.
 """
 
 import secrets
-import uuid
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -104,7 +103,7 @@ class Playlist(models.Model):
         memberships: "models.Manager[PlaylistMembership]"
         contributions: "models.Manager[Contribution]"
         import_jobs: "models.Manager[BulkImportJob]"
-        export_snapshots: "models.Manager[ExportSnapshot]"
+        export_targets: "models.Manager[PlaylistExportTarget]"
 
     class Meta(TypedModelMeta):
         app_label = "queuetip"
@@ -266,78 +265,6 @@ class BulkImportJob(models.Model):
 
     def __str__(self) -> str:
         return f"Import {self.status} for {self.playlist} ({self.source_url})"
-
-
-class ExportSnapshot(models.Model):
-    """Immutable materialization of a playlist's contributions to a tracklist."""
-
-    id: uuid.UUID = models.UUIDField(  # type: ignore[assignment]
-        primary_key=True, default=uuid.uuid4, editable=False
-    )
-    playlist: models.ForeignKey = models.ForeignKey(
-        Playlist, on_delete=models.CASCADE, related_name="export_snapshots"
-    )
-    requested_by: models.ForeignKey = models.ForeignKey(
-        Account, on_delete=models.PROTECT, related_name="export_snapshots"
-    )
-    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
-    parameters: models.JSONField = models.JSONField(default=dict)
-    rng_seed: models.BigIntegerField = models.BigIntegerField()
-    warning_message: models.TextField = models.TextField(blank=True)
-
-    if TYPE_CHECKING:
-        playlist_id: int
-        requested_by_id: int
-        tracks: "models.Manager[ExportSnapshotTrack]"
-
-    class Meta(TypedModelMeta):
-        app_label = "queuetip"
-        ordering = ["-created_at"]
-
-    def __str__(self) -> str:
-        return f"ExportSnapshot {self.id} of {self.playlist}"
-
-
-class ExportSnapshotTrack(models.Model):
-    """One track in an ExportSnapshot, with the reason it's included."""
-
-    REASON_GUARANTEED = "guaranteed"
-    REASON_ROLLED_IN = "rolled_in"
-    REASON_TOPPED_UP = "topped_up"
-    REASON_CHOICES = [
-        (REASON_GUARANTEED, "Guaranteed (net >= t_high)"),
-        (REASON_ROLLED_IN, "Rolled in"),
-        (REASON_TOPPED_UP, "Topped up to min_size"),
-    ]
-
-    snapshot: models.ForeignKey = models.ForeignKey(
-        ExportSnapshot, on_delete=models.CASCADE, related_name="tracks"
-    )
-    song: models.ForeignKey = models.ForeignKey(
-        "library_manager.Song",
-        on_delete=models.PROTECT,
-        related_name="queuetip_export_tracks",
-    )
-    position: models.PositiveIntegerField = models.PositiveIntegerField()
-    inclusion_reason: models.CharField = models.CharField(
-        max_length=16, choices=REASON_CHOICES
-    )
-    roll_probability: models.FloatField = models.FloatField()
-
-    if TYPE_CHECKING:
-        id: int
-        snapshot_id: uuid.UUID
-        song_id: int
-
-    class Meta(TypedModelMeta):
-        app_label = "queuetip"
-        ordering = ["position"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["snapshot", "position"],
-                name="queuetip_export_track_position_unique",
-            )
-        ]
 
 
 class QueuetipSignupAllowlist(models.Model):

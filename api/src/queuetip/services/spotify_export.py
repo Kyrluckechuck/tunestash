@@ -24,15 +24,12 @@ import httpx
 from asgiref.sync import sync_to_async
 
 from queuetip.models import (
-    Account,
-    ExportSnapshot,
     ExternalServiceLink,
     Playlist,
     PlaylistExportTarget,
 )
 
 from ..errors import NotFoundError
-from ..services.export import ExportService
 from ..spotify_oauth import (
     SPOTIFY_API_BASE,
     SpotifyOAuthError,
@@ -70,112 +67,6 @@ class SpotifyExportResult:
 
 class SpotifyExportService:
     """Stateless namespace for pushing a queuetip playlist's state to Spotify."""
-
-    @staticmethod
-    async def export(
-        account: Account,
-        snapshot_id: str,
-        playlist_name: str | None = None,
-        *,
-        force_recreate: bool = False,
-    ) -> SpotifyExportResult:
-        """Push the snapshot's tracks to Spotify, reusing the same Spotify
-        playlist on subsequent calls for the same (account, queuetip playlist).
-
-        Set ``force_recreate=True`` to abandon an existing remote (e.g. after
-        the user deleted it on Spotify and explicitly requested a fresh one).
-        """
-        # Membership + snapshot existence handled by ExportService.get.
-        snapshot = await ExportService.get(account, snapshot_id)
-        queuetip_playlist = cast(Playlist, snapshot.playlist)
-
-        link = await sync_to_async(
-            lambda: ExternalServiceLink.objects.filter(
-                account=account,
-                service=ExternalServiceLink.SERVICE_SPOTIFY,
-            ).first()
-        )()
-        if link is None:
-            raise NotFoundError(
-                "Spotify is not linked. Connect Spotify in settings first."
-            )
-
-        # Find-or-create the export target. This is the row that turns
-        # "create a fresh playlist every export" into "update the same one."
-        target = await sync_to_async(_find_or_create_target)(
-            account, queuetip_playlist, link
-        )
-
-        # Principle 2: if a previous sync detected the remote was deleted,
-        # refuse to silently re-create. The caller must pass force_recreate
-        # (or call the recreate mutation).
-        if (
-            target.last_sync_status == PlaylistExportTarget.STATUS_REMOTE_DELETED
-            and not force_recreate
-        ):
-            raise RemotePlaylistDeletedError(
-                "Spotify playlist was deleted. Click 'Recreate on Spotify' "
-                "to start over."
-            )
-        if force_recreate:
-            target.remote_playlist_id = ""
-
-        access_token = await _ensure_fresh_token(link)
-
-        # Pre-export: enrich any songs missing a gid via ISRC→Spotify bridge.
-        await _enrich_missing_gids(snapshot)
-
-        # Collect candidate URIs — songs that still have no gid after enrichment
-        # are collected as skipped here.
-        tracks_and_skips = await sync_to_async(_collect_track_candidates)(snapshot)
-        candidates, skipped_titles = tracks_and_skips
-
-        # Pre-flight: validate gids against Spotify's /v1/tracks endpoint.
-        # Stale or deleted gids return null in the response — drop those too.
-        valid_uris, stale_titles = await sync_to_async(_validate_and_collect_uris)(
-            access_token, candidates
-        )
-        skipped_titles.extend(stale_titles)
-
-        name = playlist_name or queuetip_playlist.name
-        created_new = False
-
-        try:
-            if target.remote_playlist_id:
-                # Update path: replace tracks atomically with PUT.
-                # 404 here means the user deleted the playlist on Spotify.
-                playlist_url = await sync_to_async(_replace_tracks)(
-                    access_token, target.remote_playlist_id, valid_uris
-                )
-            else:
-                # Create path: first export for this (user, playlist) pair,
-                # OR force_recreate after a remote_deleted state.
-                playlist_url, playlist_id = await sync_to_async(_create_playlist)(
-                    access_token, link.service_user_id, name
-                )
-                await sync_to_async(_add_tracks_in_batches)(
-                    access_token, playlist_id, valid_uris
-                )
-                target.remote_playlist_id = playlist_id
-                created_new = True
-        except RemotePlaylistDeletedError:
-            await sync_to_async(_mark_remote_deleted)(target)
-            raise
-
-        await sync_to_async(_record_success)(
-            target,
-            matched_count=len(valid_uris),
-            total_count=len(valid_uris) + len(skipped_titles),
-            unmatched=skipped_titles,
-        )
-
-        return SpotifyExportResult(
-            spotify_playlist_url=playlist_url,
-            added_count=len(valid_uris),
-            skipped_count=len(skipped_titles),
-            skipped_titles=skipped_titles,
-            created_new=created_new,
-        )
 
     @staticmethod
     async def sync_target(target_id: int) -> "SpotifyExportResult":
@@ -269,25 +160,6 @@ class SpotifyExportService:
 # ── Helpers (sync — wrapped by callers as needed) ────────────────────────────
 
 
-async def _enrich_missing_gids(snapshot: ExportSnapshot) -> None:
-    """Enrich songs that are missing a gid before the export run."""
-    from library_manager.models import Song as SongModel
-    from src.queuetip.enrichment import enrich_song_cross_platform
-
-    tracks = await sync_to_async(
-        lambda: list(snapshot.tracks.select_related("song").order_by("position"))
-    )()
-    for track in tracks:
-        song = cast(SongModel, track.song)
-        if not (song.gid or "").strip():
-            try:
-                await sync_to_async(enrich_song_cross_platform)(song)
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.warning(
-                    "[EXPORT] Enrichment failed for song %s: %s", song.id, exc
-                )
-
-
 async def _enrich_songs_missing_gids(song_ids: list[int]) -> None:
     """Enrich the given songs' missing gids before pushing (ISRC → Spotify).
     Operates on a rolled selection's song ids rather than a snapshot."""
@@ -305,36 +177,6 @@ async def _enrich_songs_missing_gids(song_ids: list[int]) -> None:
                 logger.warning(
                     "[EXPORT] Enrichment failed for song %s: %s", song.id, exc
                 )
-
-
-def _collect_track_candidates(
-    snapshot: ExportSnapshot,
-) -> tuple[list[tuple[int, str, str]], list[str]]:
-    """Build (song_id, gid, label) for all tracks; songs without gid go to skipped.
-
-    Returns (candidates, skipped_titles) where candidates is a list of
-    (song_id, gid, label) tuples for songs that have a gid after enrichment.
-    """
-    from library_manager.models import Song as SongModel
-
-    candidates: list[tuple[int, str, str]] = []
-    skipped: list[str] = []
-    tracks = snapshot.tracks.select_related("song", "song__primary_artist").order_by(
-        "position"
-    )
-    for track in tracks:
-        song = cast(SongModel, track.song)
-        # Re-read from DB to pick up any enrichment writes.
-        song.refresh_from_db()
-        gid = (song.gid or "").strip()
-        title = song.name
-        artist = song.primary_artist.name if song.primary_artist_id else ""  # type: ignore[attr-defined]
-        label = f"{artist} — {title}".strip(" —")
-        if not gid:
-            skipped.append(label)
-            continue
-        candidates.append((song.id, gid, label))
-    return candidates, skipped
 
 
 def _collect_song_candidates(
@@ -446,27 +288,6 @@ async def _ensure_fresh_token(link: ExternalServiceLink) -> str:
         return str(link.access_token)
 
     return await sync_to_async(_refresh_and_save)()
-
-
-def _find_or_create_target(
-    account: Account,
-    playlist: Playlist,
-    link: ExternalServiceLink,
-) -> PlaylistExportTarget:
-    """Return the (account, playlist, spotify) export target, creating it
-    on first export.  The credential FK is set on creation and updated if the
-    user has re-linked Spotify since the last export."""
-    target, _ = PlaylistExportTarget.objects.get_or_create(
-        account=account,
-        playlist=playlist,
-        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
-        defaults={"spotify_link": link},
-    )
-    # If the user re-linked Spotify, point the target at the new credential.
-    if target.spotify_link_id != link.id:
-        target.spotify_link = link
-        target.save(update_fields=["spotify_link"])
-    return target
 
 
 def _record_success(

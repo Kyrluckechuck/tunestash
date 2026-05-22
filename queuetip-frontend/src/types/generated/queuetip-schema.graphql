@@ -66,29 +66,6 @@ input EngineSettingsInput {
   pFloor: Float = null
 }
 
-input ExportOptionsInput {
-  excludeMyDownvotes: Boolean! = false
-}
-
-type ExportSnapshotTrackType {
-  id: ID!
-  song: SongRef!
-  position: Int!
-  inclusionReason: String!
-  rollProbability: Float!
-}
-
-type ExportSnapshotType {
-  id: ID!
-  requestedBy: AccountType!
-  createdAt: DateTime!
-  parameters: String!
-  rngSeed: String!
-  warningMessage: String!
-  tracks: [ExportSnapshotTrackType!]!
-  playlist: PlaylistType!
-}
-
 type ExternalServiceLinkType {
   service: String!
   serviceUserId: String!
@@ -117,14 +94,13 @@ type Mutation {
   castVote(contributionId: ID!, value: Int!): ContributionType!
   clearVote(contributionId: ID!): ContributionType!
   bulkImportPlaylist(playlistId: ID!, url: String!): BulkImportJobType!
-  createExport(playlistId: ID!, options: ExportOptionsInput = null): ExportSnapshotType!
-  exportToSpotify(snapshotId: ID!, playlistName: String = null, forceRecreate: Boolean! = false): SpotifyExportResultType!
   signOutEverywhere: SignOutEverywhereResult!
   addSubsonicConnection(label: String!, serverUrl: String!, username: String!, password: String!, authMode: String! = "password"): SubsonicConnectionType!
   updateSubsonicConnection(id: ID!, label: String = null, serverUrl: String = null, username: String = null, password: String = null, authMode: String = null): SubsonicConnectionType!
   removeSubsonicConnection(id: ID!): Boolean!
   testSubsonicConnection(id: ID!): SubsonicConnectionType!
   createSubsonicSyncTarget(playlistId: ID!, connectionId: ID!): PlaylistExportTargetType!
+  createSpotifyExportTarget(playlistId: ID!): PlaylistExportTargetType!
   removeSyncTarget(id: ID!, deleteRemote: Boolean! = false): Boolean!
   syncTargetNow(id: ID!): PlaylistExportTargetType!
   recreateSyncTargetRemote(id: ID!): PlaylistExportTargetType!
@@ -178,8 +154,6 @@ type Query {
   playlistByInviteToken(inviteToken: String!): PlaylistPreviewType!
   catalogSearch(query: String!, limit: Int! = 10): [CatalogSearchResultType!]!
   bulkImportJob(id: ID!): BulkImportJobType!
-  export(id: ID!): ExportSnapshotType!
-  myPlaylistExports(playlistId: ID!): [ExportSnapshotType!]!
   playlistContributions(playlistId: ID!): [ContributionType!]!
   mySubsonicConnection: SubsonicConnectionType
   myPlaylistSyncTargets(playlistId: ID!): [PlaylistExportTargetType!]!
@@ -203,14 +177,6 @@ type SongRef {
   title: String!
   artist: String!
   isrc: String
-}
-
-type SpotifyExportResultType {
-  spotifyPlaylistUrl: String!
-  addedCount: Int!
-  skippedCount: Int!
-  skippedTitles: [String!]!
-  createdNew: Boolean!
 }
 
 type SubsonicConnectionType {

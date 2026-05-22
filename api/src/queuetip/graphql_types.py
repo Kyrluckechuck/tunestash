@@ -1,7 +1,6 @@
 """Strawberry GraphQL types for Queuetip."""
 
 import datetime
-import json
 from typing import cast
 
 import strawberry
@@ -10,8 +9,6 @@ from queuetip.models import (
     Account,
     BulkImportJob,
     Contribution,
-    ExportSnapshot,
-    ExportSnapshotTrack,
     ExternalServiceLink,
     Playlist,
     PlaylistExportTarget,
@@ -138,17 +135,6 @@ class PlaylistExportTargetType:
                 SubsonicConnectionType.from_model(conn) if conn else None
             ),
         )
-
-
-@strawberry.type
-class SpotifyExportResultType:
-    spotify_playlist_url: str
-    added_count: int
-    skipped_count: int
-    skipped_titles: list[str]
-    # True when this call created a new Spotify playlist; False when we
-    # updated the existing one (the normal path after the first export).
-    created_new: bool = False
 
 
 @strawberry.type
@@ -420,74 +406,4 @@ class BulkImportJobType:
             error=job.error,
             created_at=job.created_at,
             finished_at=job.finished_at,
-        )
-
-
-@strawberry.type
-class ExportSnapshotTrackType:
-    """One track in a materialized snapshot."""
-
-    id: strawberry.ID
-    song: SongRef
-    position: int
-    inclusion_reason: str
-    roll_probability: float
-
-    @classmethod
-    def from_model(cls, t: ExportSnapshotTrack) -> "ExportSnapshotTrackType":
-        from library_manager.models import Song
-
-        song = cast(Song, t.song)
-        return cls(
-            id=strawberry.ID(str(t.id)),
-            song=SongRef(
-                id=strawberry.ID(str(song.id)),
-                title=song.name,
-                artist=song.primary_artist.name,  # type: ignore[attr-defined]
-                isrc=song.isrc or None,
-            ),
-            position=t.position,
-            inclusion_reason=t.inclusion_reason,
-            roll_probability=t.roll_probability,
-        )
-
-
-@strawberry.input
-class ExportOptionsInput:
-    """Personal filters applied to one export. v1 has just the downvote filter."""
-
-    exclude_my_downvotes: bool = False
-
-
-@strawberry.type
-class ExportSnapshotType:
-    """A materialized export — immutable artifact, replayable from its seed."""
-
-    id: strawberry.ID
-    requested_by: AccountType
-    created_at: datetime.datetime
-    parameters: str  # JSON-stringified, opaque to clients
-    rng_seed: str  # rendered as str to avoid JS number-precision issues with BigInt
-    warning_message: str
-    tracks: list[ExportSnapshotTrackType]
-    playlist: PlaylistType
-
-    @classmethod
-    def from_model(
-        cls,
-        snapshot: ExportSnapshot,
-        tracks: list[ExportSnapshotTrack],
-        playlist_members: list[PlaylistMembership],
-    ) -> "ExportSnapshotType":
-        return cls(
-            id=strawberry.ID(str(snapshot.id)),
-            requested_by=AccountType.from_model(cast(Account, snapshot.requested_by)),
-            created_at=snapshot.created_at,
-            parameters=json.dumps(snapshot.parameters or {}),
-            rng_seed=str(snapshot.rng_seed),
-            warning_message=snapshot.warning_message,
-            tracks=[ExportSnapshotTrackType.from_model(t) for t in tracks],
-            playlist=PlaylistType.from_model(
-                cast(Playlist, snapshot.playlist), playlist_members
-            ),
         )

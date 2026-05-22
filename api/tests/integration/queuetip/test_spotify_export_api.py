@@ -1,13 +1,9 @@
 """Integration tests for the Spotify export GraphQL surface.
 
 Covers:
-- me.externalServices returns [] when no link exists
-- me.externalServices returns the linked service after direct DB insert
-- exportToSpotify happy path (SpotifyExportService mocked)
-- exportToSpotify without a Spotify link raises an error
+- me.externalServices reflects linked services
+- createSpotifyExportTarget find-or-creates a Spotify PlaylistExportTarget
 """
-
-from unittest.mock import AsyncMock, patch
 
 from django.utils import timezone
 
@@ -15,14 +11,15 @@ import httpx
 import pytest
 from asgiref.sync import sync_to_async
 
-from queuetip.models import Account, ExternalServiceLink, Playlist, PlaylistMembership
+from queuetip.models import (
+    Account,
+    ExternalServiceLink,
+    Playlist,
+    PlaylistExportTarget,
+    PlaylistMembership,
+)
 from src.queuetip.app import app
 from src.queuetip.auth import SESSION_COOKIE, make_session_token
-from src.queuetip.services.spotify_export import SpotifyExportResult
-
-# ---------------------------------------------------------------------------
-# Helpers (mirror test_exports_api.py conventions)
-# ---------------------------------------------------------------------------
 
 
 def _authed_client(account_id: int) -> httpx.AsyncClient:
@@ -81,155 +78,87 @@ query Me {
 }
 """
 
-_EXPORT_TO_SPOTIFY_MUTATION = """
-mutation ExportToSpotify($snapshotId: ID!, $playlistName: String) {
-  exportToSpotify(snapshotId: $snapshotId, playlistName: $playlistName) {
-    spotifyPlaylistUrl
-    addedCount
-    skippedCount
-    skippedTitles
+_CREATE_SPOTIFY_TARGET = """
+mutation CreateSpotifyExportTarget($playlistId: ID!) {
+  createSpotifyExportTarget(playlistId: $playlistId) {
+    id
+    destinationType
+    spotifyUserId
   }
 }
 """
-
-# ---------------------------------------------------------------------------
-# me.externalServices
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_me_external_services_empty_when_no_link():
-    """me.externalServices returns an empty list for an account without a linked service."""
     account = await _make_account()
-
     async with _authed_client(account.id) as client:
         result = await _gql(client, _ME_QUERY)
-
     assert "errors" not in result, result.get("errors")
-    me = result["data"]["me"]
-    assert me["externalServices"] == []
+    assert result["data"]["me"]["externalServices"] == []
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_me_external_services_shows_linked_spotify():
-    """me.externalServices returns the Spotify entry after a link is created."""
     account = await _make_account()
     await _make_spotify_link(account, service_user_id="spotify_uid_42")
-
     async with _authed_client(account.id) as client:
         result = await _gql(client, _ME_QUERY)
-
     assert "errors" not in result, result.get("errors")
-    me = result["data"]["me"]
-    assert len(me["externalServices"]) == 1
-    svc = me["externalServices"][0]
-    assert svc["service"] == "spotify"
-    assert svc["serviceUserId"] == "spotify_uid_42"
-    assert svc["linkedAt"]  # non-empty ISO timestamp
-
-
-# ---------------------------------------------------------------------------
-# exportToSpotify mutation
-# ---------------------------------------------------------------------------
+    svcs = result["data"]["me"]["externalServices"]
+    assert len(svcs) == 1
+    assert svcs[0]["service"] == "spotify"
+    assert svcs[0]["serviceUserId"] == "spotify_uid_42"
+    assert svcs[0]["linkedAt"]
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_export_to_spotify_happy_path():
-    """exportToSpotify returns the expected payload when SpotifyExportService succeeds."""
-    from tests.factories import ArtistFactory, SongFactory
-
-    from queuetip.models import Contribution
-
+async def test_create_spotify_export_target_find_or_creates():
+    """createSpotifyExportTarget registers a Spotify target for the caller's
+    linked account, and is idempotent on repeat calls."""
     account = await _make_account()
     playlist = await _make_playlist_with_owner(account)
-    await _make_spotify_link(account)
+    await _make_spotify_link(account, service_user_id="me42")
 
-    # Add a contribution so createExport has at least one song to snapshot
-    artist = await sync_to_async(ArtistFactory)()
-    song = await sync_to_async(SongFactory)(primary_artist=artist)
-    await sync_to_async(Contribution.objects.create)(
-        playlist=playlist, song=song, contributed_by=account
-    )
-
-    # First, create an export snapshot to get a real snapshot_id
-    create_export_mutation = """
-    mutation CreateExport($playlistId: ID!) {
-      createExport(playlistId: $playlistId) { id }
-    }
-    """
     async with _authed_client(account.id) as client:
-        created = await _gql(
-            client, create_export_mutation, {"playlistId": str(playlist.id)}
+        first = await _gql(
+            client, _CREATE_SPOTIFY_TARGET, {"playlistId": str(playlist.id)}
         )
-    assert "errors" not in created, created.get("errors")
-    snapshot_id = created["data"]["createExport"]["id"]
+        second = await _gql(
+            client, _CREATE_SPOTIFY_TARGET, {"playlistId": str(playlist.id)}
+        )
 
-    fixture_result = SpotifyExportResult(
-        spotify_playlist_url="https://open.spotify.com/playlist/abc123",
-        added_count=3,
-        skipped_count=1,
-        skipped_titles=["Unknown Artist — Mystery Track"],
-    )
+    assert "errors" not in first, first.get("errors")
+    t = first["data"]["createSpotifyExportTarget"]
+    assert t["destinationType"] == "spotify"
+    assert t["spotifyUserId"] == "me42"
+    # Idempotent — same row id on the second call.
+    assert second["data"]["createSpotifyExportTarget"]["id"] == t["id"]
 
-    with patch(
-        "src.queuetip.services.spotify_export.SpotifyExportService.export",
-        new=AsyncMock(return_value=fixture_result),
-    ):
-        async with _authed_client(account.id) as client:
-            result = await _gql(
-                client,
-                _EXPORT_TO_SPOTIFY_MUTATION,
-                {"snapshotId": snapshot_id, "playlistName": "My Party Mix"},
-            )
-
-    assert "errors" not in result, result.get("errors")
-    data = result["data"]["exportToSpotify"]
-    assert data["spotifyPlaylistUrl"] == "https://open.spotify.com/playlist/abc123"
-    assert data["addedCount"] == 3
-    assert data["skippedCount"] == 1
-    assert data["skippedTitles"] == ["Unknown Artist — Mystery Track"]
+    count = await sync_to_async(
+        lambda: PlaylistExportTarget.objects.filter(
+            account=account,
+            playlist=playlist,
+            destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        ).count()
+    )()
+    assert count == 1
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_export_to_spotify_without_link_returns_error():
-    """exportToSpotify returns a GraphQL error when Spotify is not linked."""
-    from tests.factories import ArtistFactory, SongFactory
-
-    from queuetip.models import Contribution
-
+async def test_create_spotify_export_target_without_link_errors():
+    """Without a Spotify link, creating a Spotify target is rejected."""
     account = await _make_account()
     playlist = await _make_playlist_with_owner(account)
 
-    artist = await sync_to_async(ArtistFactory)()
-    song = await sync_to_async(SongFactory)(primary_artist=artist)
-    await sync_to_async(Contribution.objects.create)(
-        playlist=playlist, song=song, contributed_by=account
-    )
-
-    create_export_mutation = """
-    mutation CreateExport($playlistId: ID!) {
-      createExport(playlistId: $playlistId) { id }
-    }
-    """
-    async with _authed_client(account.id) as client:
-        created = await _gql(
-            client, create_export_mutation, {"playlistId": str(playlist.id)}
-        )
-    snapshot_id = created["data"]["createExport"]["id"]
-
-    # No Spotify link exists → service raises NotFoundError
     async with _authed_client(account.id) as client:
         result = await _gql(
-            client,
-            _EXPORT_TO_SPOTIFY_MUTATION,
-            {"snapshotId": snapshot_id},
+            client, _CREATE_SPOTIFY_TARGET, {"playlistId": str(playlist.id)}
         )
 
-    assert "errors" in result
-    error_messages = " ".join(e["message"] for e in result["errors"])
-    # NotFoundError messages are unified at the GraphQL boundary (Fix 2).
-    assert "not found or not allowed" in error_messages.lower()
+    assert result["data"] is None
+    assert result.get("errors")
