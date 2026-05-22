@@ -74,3 +74,17 @@ mutation MigrateSettingsFromYaml {
     message
   }
 }
+
+mutation SendTestEmail($recipient: String!) {
+  sendTestEmail(recipient: $recipient) {
+    success
+    message
+  }
+}
+
+mutation InviteQueuetipUser($email: String!) {
+  inviteQueuetipUser(email: $email) {
+    success
+    message
+  }
+}

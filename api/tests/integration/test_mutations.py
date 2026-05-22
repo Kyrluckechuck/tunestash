@@ -1,10 +1,12 @@
 """Integration tests for GraphQL mutations."""
 
+from django.core import mail
 from django.test import TransactionTestCase
 
 from asgiref.sync import sync_to_async
 
 from library_manager.models import Album, Artist, PlaylistStatus, TrackedPlaylist
+from queuetip.models import QueuetipSignupAllowlist
 from src.schema import schema
 
 
@@ -298,3 +300,46 @@ class TestTaskMutations(TransactionTestCase):
 
             assert result.errors is None
             assert result.data["cancelAllTasks"]["success"] is True
+
+
+class TestEmailMutations(TransactionTestCase):
+    """Test the SMTP test-email and Queuetip invite mutations."""
+
+    async def test_send_test_email_delivers(self):
+        mutation = """
+        mutation Send($r: String!) {
+            sendTestEmail(recipient: $r) { success message }
+        }
+        """
+        result = await schema.execute(
+            mutation, variable_values={"r": "ops@example.com"}
+        )
+        assert result.errors is None
+        assert result.data["sendTestEmail"]["success"] is True
+        assert any(m.to == ["ops@example.com"] for m in mail.outbox)
+
+    async def test_send_test_email_rejects_bad_address(self):
+        mutation = """
+        mutation { sendTestEmail(recipient: "notanemail") { success message } }
+        """
+        result = await schema.execute(mutation)
+        assert result.errors is None
+        assert result.data["sendTestEmail"]["success"] is False
+
+    async def test_invite_allowlists_and_emails(self):
+        mutation = """
+        mutation Invite($e: String!) {
+            inviteQueuetipUser(email: $e) { success message }
+        }
+        """
+        result = await schema.execute(
+            mutation, variable_values={"e": "NewUser@Example.com"}
+        )
+        assert result.errors is None
+        assert result.data["inviteQueuetipUser"]["success"] is True
+        # Allowlisted (normalized to lowercase) + invite emailed.
+        exists = await sync_to_async(
+            QueuetipSignupAllowlist.objects.filter(email="newuser@example.com").exists
+        )()
+        assert exists
+        assert any(m.to == ["newuser@example.com"] for m in mail.outbox)
