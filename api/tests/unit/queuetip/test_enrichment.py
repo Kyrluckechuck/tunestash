@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from tests.factories import ArtistFactory, SongFactory
+from tests.factories import AlbumFactory, ArtistFactory, SongFactory
 
 from library_manager.models import Song
 from src.queuetip.enrichment import (
@@ -338,3 +338,29 @@ def test_enrich_song_idempotent_when_all_fields_present():
     mock_sp.assert_not_called()
     mock_sp_isrc.assert_not_called()
     mock_dz.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_enrich_skips_deezer_id_when_album_pair_taken():
+    """The Island Boy bug: two rows for the same recording in one album.
+
+    A sibling row already owns (deezer_id, album); enriching the other row must
+    NOT crash (or abort ingest) trying to backfill the same deezer_id — it skips
+    the field, leaving deezer_id unset.
+    """
+    artist = ArtistFactory()
+    album = AlbumFactory()
+    # Sibling: Deezer-sourced, owns (775788292, album).
+    SongFactory(
+        primary_artist=artist, album=album, gid="SIB", deezer_id=775788292, isrc="ISRCX"
+    )
+    # Spotify-sourced row for the same recording: same album/isrc, no deezer_id.
+    song = SongFactory(
+        primary_artist=artist, album=album, gid="SPOT", deezer_id=None, isrc="ISRCX"
+    )
+
+    with patch("src.queuetip.enrichment.get_deezer_id_by_isrc", return_value=775788292):
+        result = enrich_song_cross_platform(song)  # must not raise
+
+    assert result.deezer_id is None
+    assert Song.objects.get(id=song.id).deezer_id is None
