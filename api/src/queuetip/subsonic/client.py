@@ -193,7 +193,7 @@ class SubsonicClient:
         """
         params: list[tuple[str, str]] = [("name", name)]
         params.extend(("songId", sid) for sid in song_ids)
-        data = self._get("createPlaylist", params=params)
+        data = self._get("createPlaylist", params=params, method="POST")
         playlist = data.get("playlist") or {}
         playlist_id = str(playlist.get("id", ""))
         if not playlist_id:
@@ -233,7 +233,7 @@ class SubsonicClient:
             params.append(("songIndexToRemove", str(i)))
         for sid in song_ids:
             params.append(("songIdToAdd", sid))
-        self._get("updatePlaylist", params=params)
+        self._get("updatePlaylist", params=params, method="POST")
 
     def _auth_params(self) -> list[tuple[str, str]]:
         """Build the auth-related query params per the configured auth_mode.
@@ -274,8 +274,14 @@ class SubsonicClient:
         endpoint: str,
         *,
         params: list[tuple[str, str]] | dict[str, str] | None = None,
+        method: str = "GET",
     ) -> dict[str, Any]:
-        """Perform a Subsonic REST call, decode JSON, validate the envelope."""
+        """Perform a Subsonic REST call, decode JSON, validate the envelope.
+
+        Use method="POST" for endpoints with unbounded params (createPlaylist /
+        updatePlaylist with many songIds): a GET would pack every id into the
+        URL and trip upstream proxy URI-length limits (HTTP 414).
+        """
         query: list[tuple[str, str]] = list(self._auth_params())
         query.extend(
             [
@@ -291,9 +297,15 @@ class SubsonicClient:
 
         url = f"{self.server_url}/rest/{endpoint}.view"
         try:
-            response = httpx.get(
-                url, params=cast("httpx.QueryParams", query), timeout=self._timeout
-            )
+            if method == "POST":
+                # Params (incl. auth) go in the form body, keeping the URL short.
+                response = httpx.post(url, data=query, timeout=self._timeout)
+            else:
+                response = httpx.get(
+                    url,
+                    params=cast("httpx.QueryParams", query),
+                    timeout=self._timeout,
+                )
         except httpx.HTTPError as exc:
             raise SubsonicError(f"HTTP error calling {endpoint}: {exc}") from exc
 
