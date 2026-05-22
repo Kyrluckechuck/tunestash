@@ -299,7 +299,12 @@ class SubsonicClient:
         try:
             if method == "POST":
                 # Params (incl. auth) go in the form body, keeping the URL short.
-                response = httpx.post(url, data=query, timeout=self._timeout)
+                # httpx form-encodes a dict, emitting one field per list item —
+                # so repeated keys (songId, songIndexToRemove) become a list.
+                form: dict[str, list[str]] = {}
+                for key, value in query:
+                    form.setdefault(key, []).append(value)
+                response = httpx.post(url, data=form, timeout=self._timeout)
             else:
                 response = httpx.get(
                     url,
