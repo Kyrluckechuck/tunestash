@@ -513,11 +513,17 @@ class PlaylistExportTarget(models.Model):
 
     Lifecycle (see docs/queuetip/subsonic-sync-design.md):
       1. ONE queuetip playlist ↔ ONE remote playlist per (user, destination)
-         — subsequent syncs UPDATE `remote_playlist_id`, never create new.
-      2. If the remote is deleted, status → REMOTE_DELETED, automation halts,
-         user must explicitly recreate.
-      3. Idempotent overwrite — queuetip is source of truth for synced
-         playlists; manual edits on the remote get replaced on next sync.
+         — subsequent pushes UPDATE `remote_playlist_id`, never create new.
+      2. If the remote is deleted, status → REMOTE_DELETED, the user must
+         explicitly recreate before pushing again.
+      3. Each push runs the selection engine fresh ("reshuffle & push") and
+         replaces the remote contents — queuetip is the source of truth.
+
+    Pushes are manual ("Reshuffle & push") — there is no background auto-sync.
+    Once a listening client enqueues the remote playlist, staleness is
+    invisible until the next session, so continuous syncing would add
+    machinery for no real benefit (and would fight the random-curation
+    mechanic by reshuffling under an active session).
     """
 
     DEST_SPOTIFY = "spotify"
@@ -525,13 +531,6 @@ class PlaylistExportTarget(models.Model):
     DESTINATION_CHOICES = [
         (DEST_SPOTIFY, "Spotify"),
         (DEST_SUBSONIC, "Subsonic"),
-    ]
-
-    SYNC_MANUAL = "manual"
-    SYNC_ON_CHANGE = "on_change"
-    SYNC_MODE_CHOICES = [
-        (SYNC_MANUAL, "Manual"),
-        (SYNC_ON_CHANGE, "Auto-sync on changes"),
     ]
 
     STATUS_PENDING = "pending"
@@ -581,9 +580,6 @@ class PlaylistExportTarget(models.Model):
     # no duplicates — that's the entire point of this model).
     remote_playlist_id: models.CharField = models.CharField(max_length=200, blank=True)
 
-    sync_mode: models.CharField = models.CharField(
-        max_length=16, choices=SYNC_MODE_CHOICES, default=SYNC_MANUAL
-    )
     last_synced_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
     last_sync_status: models.CharField = models.CharField(
         max_length=24, choices=STATUS_CHOICES, default=STATUS_PENDING
@@ -626,12 +622,6 @@ class PlaylistExportTarget(models.Model):
                     )
                 ),
                 name="queuetip_export_target_dest_fk_matches",
-            ),
-        ]
-        indexes = [
-            models.Index(
-                fields=["sync_mode", "last_sync_status"],
-                name="qt_export_target_auto_sync_idx",
             ),
         ]
 

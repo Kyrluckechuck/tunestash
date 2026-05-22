@@ -124,8 +124,7 @@ type Mutation {
   updateSubsonicConnection(id: ID!, label: String = null, serverUrl: String = null, username: String = null, password: String = null, authMode: String = null): SubsonicConnectionType!
   removeSubsonicConnection(id: ID!): Boolean!
   testSubsonicConnection(id: ID!): SubsonicConnectionType!
-  createSubsonicSyncTarget(playlistId: ID!, connectionId: ID!, syncMode: String! = "manual"): PlaylistExportTargetType!
-  updateSyncTargetMode(id: ID!, syncMode: String!): PlaylistExportTargetType!
+  createSubsonicSyncTarget(playlistId: ID!, connectionId: ID!): PlaylistExportTargetType!
   removeSyncTarget(id: ID!, deleteRemote: Boolean! = false): Boolean!
   syncTargetNow(id: ID!): PlaylistExportTargetType!
   recreateSyncTargetRemote(id: ID!): PlaylistExportTargetType!
@@ -135,7 +134,6 @@ type PlaylistExportTargetType {
   id: ID!
   playlistId: ID!
   destinationType: String!
-  syncMode: String!
   remotePlaylistId: String!
   lastSyncStatus: String!
   lastError: String!

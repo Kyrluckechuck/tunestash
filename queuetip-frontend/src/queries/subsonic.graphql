@@ -15,7 +15,6 @@ fragment PlaylistExportTargetFields on PlaylistExportTargetType {
   id
   playlistId
   destinationType
-  syncMode
   remotePlaylistId
   lastSyncStatus
   lastError
@@ -89,22 +88,8 @@ mutation TestSubsonicConnection($id: ID!) {
   }
 }
 
-mutation CreateSubsonicSyncTarget(
-  $playlistId: ID!
-  $connectionId: ID!
-  $syncMode: String! = "manual"
-) {
-  createSubsonicSyncTarget(
-    playlistId: $playlistId
-    connectionId: $connectionId
-    syncMode: $syncMode
-  ) {
-    ...PlaylistExportTargetFields
-  }
-}
-
-mutation UpdateSyncTargetMode($id: ID!, $syncMode: String!) {
-  updateSyncTargetMode(id: $id, syncMode: $syncMode) {
+mutation CreateSubsonicSyncTarget($playlistId: ID!, $connectionId: ID!) {
+  createSubsonicSyncTarget(playlistId: $playlistId, connectionId: $connectionId) {
     ...PlaylistExportTargetFields
   }
 }

@@ -700,31 +700,19 @@ class Mutation:
         info: Info[QueuetipContext, None],
         playlist_id: strawberry.ID,
         connection_id: strawberry.ID,
-        sync_mode: str = PlaylistExportTarget.SYNC_MANUAL,
     ) -> PlaylistExportTargetType:
-        """Opt the user in to syncing a queuetip playlist to their Subsonic
-        server. Idempotent — re-calling returns the existing target rather
-        than erroring on the unique constraint.
+        """Register a Subsonic destination for a playlist. Idempotent —
+        re-calling returns the existing target rather than erroring on the
+        unique constraint.
 
         Caller must be a member of the playlist. Each user has at most ONE
-        Subsonic sync target per playlist (per Lifecycle Principle 1).
+        Subsonic target per playlist (per Lifecycle Principle 1). Pushing is
+        a separate, manual action (syncTargetNow / 'Reshuffle & push').
         """
         account = _require_account(info)
         target = await sync_to_async(_create_subsonic_sync_target)(
-            account, int(playlist_id), int(connection_id), sync_mode
+            account, int(playlist_id), int(connection_id)
         )
-        return PlaylistExportTargetType.from_model(target)
-
-    @strawberry.mutation
-    async def update_sync_target_mode(
-        self,
-        info: Info[QueuetipContext, None],
-        id: strawberry.ID,
-        sync_mode: str,
-    ) -> PlaylistExportTargetType:
-        """Toggle a sync target between manual and on_change."""
-        account = _require_account(info)
-        target = await sync_to_async(_update_target_mode)(account, int(id), sync_mode)
         return PlaylistExportTargetType.from_model(target)
 
     @strawberry.mutation
@@ -968,13 +956,11 @@ def _create_subsonic_sync_target(
     account: Account,
     playlist_id: int,
     connection_id: int,
-    sync_mode: str,
 ) -> PlaylistExportTarget:
-    """Create-or-return the per-(account, playlist, subsonic) sync target.
+    """Create-or-return the per-(account, playlist, subsonic) target.
 
     Idempotency: subsequent calls return the existing row rather than
-    erroring. The sync_mode argument is honoured only on the first call;
-    use updateSyncTargetMode to change it later.
+    erroring on the unique constraint.
     """
     membership = PlaylistMembership.objects.filter(
         account=account, playlist_id=playlist_id
@@ -988,40 +974,17 @@ def _create_subsonic_sync_target(
     if connection is None:
         raise NotFoundError(f"Subsonic connection {connection_id} not found")
 
-    if sync_mode not in (
-        PlaylistExportTarget.SYNC_MANUAL,
-        PlaylistExportTarget.SYNC_ON_CHANGE,
-    ):
-        raise ValidationError(f"Invalid sync_mode: {sync_mode!r}")
-
     target, _ = PlaylistExportTarget.objects.get_or_create(
         account=account,
         playlist_id=playlist_id,
         destination_type=PlaylistExportTarget.DEST_SUBSONIC,
-        defaults={
-            "subsonic_connection": connection,
-            "sync_mode": sync_mode,
-        },
+        defaults={"subsonic_connection": connection},
     )
     # If the user changed which Subsonic server they want to push to, swap
     # the FK. This is rare but harmless.
     if target.subsonic_connection_id != connection.id:
         target.subsonic_connection = connection
         target.save(update_fields=["subsonic_connection"])
-    return target
-
-
-def _update_target_mode(
-    account: Account, target_id: int, sync_mode: str
-) -> PlaylistExportTarget:
-    if sync_mode not in (
-        PlaylistExportTarget.SYNC_MANUAL,
-        PlaylistExportTarget.SYNC_ON_CHANGE,
-    ):
-        raise ValidationError(f"Invalid sync_mode: {sync_mode!r}")
-    target = _resolve_owned_target(account, target_id)
-    target.sync_mode = sync_mode
-    target.save(update_fields=["sync_mode"])
     return target
 
 

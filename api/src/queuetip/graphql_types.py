@@ -98,7 +98,6 @@ class PlaylistExportTargetType:
     id: strawberry.ID
     playlist_id: strawberry.ID
     destination_type: str
-    sync_mode: str
     remote_playlist_id: str
     last_sync_status: str
     last_error: str
@@ -127,7 +126,6 @@ class PlaylistExportTargetType:
             id=strawberry.ID(str(target.id)),
             playlist_id=strawberry.ID(str(target.playlist_id)),
             destination_type=target.destination_type,
-            sync_mode=target.sync_mode,
             remote_playlist_id=target.remote_playlist_id,
             last_sync_status=target.last_sync_status,
             last_error=target.last_error,

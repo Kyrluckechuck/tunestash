@@ -94,14 +94,4 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
         "options": {"priority": TaskPriority.MAINTENANCE},
     },
-    # Queuetip: re-sync auto-sync targets that still have unmatched tracks.
-    # When a sync run can't find a track on the user's Subsonic server,
-    # queuetip queues a TuneStash download. When the download eventually
-    # completes, this periodic catch-up picks it up — no event-coupling
-    # between library_manager and queuetip.
-    "queuetip-requeue-stale-export-targets": {
-        "task": "queuetip.tasks.requeue_stale_export_targets",
-        "schedule": crontab(minute="*/15"),
-        "options": {"priority": TaskPriority.MAINTENANCE},
-    },
 }

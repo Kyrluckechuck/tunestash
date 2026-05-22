@@ -17,28 +17,26 @@ import {
   RecreateSyncTargetRemoteDocument,
   RemoveSyncTargetDocument,
   SyncTargetNowDocument,
-  UpdateSyncTargetModeDocument,
 } from "@/types/generated/graphql";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
- * "Send to Subsonic" panel — appears on the playlist detail page when the
- * user has a Subsonic connection configured.
+ * "Reshuffle & push to Subsonic" panel — appears on the playlist page when
+ * the user has a Subsonic connection configured.
  *
- * - No target yet → "Sync to <connection label>" creates one and runs the
- *   first sync (creates a fresh playlist on the user's Navidrome).
- * - Target exists → status badge + sync-now button + auto-sync toggle +
- *   remove. Unmatched track titles surface in an expandable list.
- * - Target in REMOTE_DELETED → red badge + "Recreate on Subsonic" button.
+ * Each push runs the selection engine fresh (a new random roll over the
+ * playlist's current contributions) and replaces the remote playlist's
+ * contents. There is no background auto-sync: the remote only changes when
+ * the user deliberately reshuffles, which matches how playback clients
+ * capture-on-enqueue (staleness is invisible mid-session anyway).
+ *
+ * States:
+ *  - No target yet → "Reshuffle & push" creates the target + does the first push.
+ *  - Target exists → last-pushed summary + "Reshuffle & push" + remove.
+ *  - Target REMOTE_DELETED → red alert + "Recreate on Subsonic".
  */
 type Props = {
   playlistId: string;
@@ -50,14 +48,11 @@ export function SendToSubsonicCard({ playlistId }: Props) {
   });
   const connection = connData?.mySubsonicConnection ?? null;
 
-  const { data: targetsData, refetch } = useQuery(
-    MyPlaylistSyncTargetsDocument,
-    {
-      variables: { playlistId },
-      fetchPolicy: "cache-and-network",
-    },
-  );
-  const subsonicTarget =
+  const { data: targetsData, refetch } = useQuery(MyPlaylistSyncTargetsDocument, {
+    variables: { playlistId },
+    fetchPolicy: "cache-and-network",
+  });
+  const target =
     targetsData?.myPlaylistSyncTargets.find(
       (t) => t.destinationType === "subsonic",
     ) ?? null;
@@ -66,7 +61,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
     CreateSubsonicSyncTargetDocument,
     { onCompleted: () => refetch() },
   );
-  const [syncNow, { loading: syncing }] = useMutation(SyncTargetNowDocument, {
+  const [pushNow, { loading: pushing }] = useMutation(SyncTargetNowDocument, {
     onCompleted: () => refetch(),
   });
   const [recreateRemote, { loading: recreating }] = useMutation(
@@ -77,50 +72,38 @@ export function SendToSubsonicCard({ playlistId }: Props) {
     RemoveSyncTargetDocument,
     { onCompleted: () => refetch() },
   );
-  const [updateMode, { loading: updatingMode }] = useMutation(
-    UpdateSyncTargetModeDocument,
-    { onCompleted: () => refetch() },
-  );
 
   if (!connection) {
-    // Don't render at all when no Subsonic connection — settings page is
-    // where the user adds one, surfacing it here would clutter the playlist.
+    // No connection → nothing to push to. Settings is where one is added;
+    // surfacing the card here would just be a dead button.
     return null;
   }
 
-  async function handleFirstSync() {
+  async function handleReshufflePush() {
     try {
-      const created = await createTarget({
-        variables: {
-          playlistId,
-          connectionId: connection!.id,
-          syncMode: "manual",
-        },
-      });
-      const newId = created.data?.createSubsonicSyncTarget.id;
-      if (newId) {
-        await syncNow({ variables: { id: newId } });
-        toast.success("Synced to Subsonic.");
+      // Ensure a target exists, then push (which re-rolls + replaces remote).
+      let targetId = target?.id;
+      if (!targetId) {
+        const created = await createTarget({
+          variables: { playlistId, connectionId: connection!.id },
+        });
+        targetId = created.data?.createSubsonicSyncTarget.id;
       }
+      if (!targetId) {
+        toast.error("Could not set up the Subsonic target.");
+        return;
+      }
+      await pushNow({ variables: { id: targetId } });
+      toast.success("Reshuffled & pushed to Subsonic.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Sync failed.");
-    }
-  }
-
-  async function handleSyncNow() {
-    if (!subsonicTarget) return;
-    try {
-      await syncNow({ variables: { id: subsonicTarget.id } });
-      toast.success("Synced to Subsonic.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Sync failed.");
+      toast.error(err instanceof Error ? err.message : "Push failed.");
     }
   }
 
   async function handleRecreate() {
-    if (!subsonicTarget) return;
+    if (!target) return;
     try {
-      await recreateRemote({ variables: { id: subsonicTarget.id } });
+      await recreateRemote({ variables: { id: target.id } });
       toast.success("Re-created on Subsonic.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Recreate failed.");
@@ -128,61 +111,35 @@ export function SendToSubsonicCard({ playlistId }: Props) {
   }
 
   async function handleRemove() {
-    if (!subsonicTarget) return;
+    if (!target) return;
     if (
       !window.confirm(
-        "Stop syncing this playlist to Subsonic? The playlist on your server will not be touched.",
+        "Stop pushing this playlist to Subsonic? The playlist on your server is left as-is.",
       )
     ) {
       return;
     }
     try {
-      await removeTarget({
-        variables: { id: subsonicTarget.id, deleteRemote: false },
-      });
-      toast.success("Sync target removed.");
+      await removeTarget({ variables: { id: target.id, deleteRemote: false } });
+      toast.success("Removed.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Remove failed.");
     }
   }
 
-  async function handleToggleAutoSync(checked: boolean) {
-    if (!subsonicTarget) return;
-    try {
-      await updateMode({
-        variables: {
-          id: subsonicTarget.id,
-          syncMode: checked ? "on_change" : "manual",
-        },
-      });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not update.");
-    }
-  }
+  const busy = creating || pushing;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Server className="h-4 w-4" />
-          Send to {connection.label}
-          {subsonicTarget ? (
-            <SyncStatusBadge status={subsonicTarget.lastSyncStatus} />
-          ) : null}
+          {connection.label}
+          {target ? <SyncStatusBadge status={target.lastSyncStatus} /> : null}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {!subsonicTarget ? (
-          <Button onClick={handleFirstSync} disabled={creating || syncing}>
-            {creating || syncing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Syncing…
-              </>
-            ) : (
-              "Sync to Subsonic"
-            )}
-          </Button>
-        ) : subsonicTarget.lastSyncStatus === "remote_deleted" ? (
+        {target && target.lastSyncStatus === "remote_deleted" ? (
           <div className="space-y-2">
             <Alert variant="destructive">
               <AlertDescription>
@@ -195,71 +152,58 @@ export function SendToSubsonicCard({ playlistId }: Props) {
                 {recreating ? "Recreating…" : "Recreate on Subsonic"}
               </Button>
               <Button variant="ghost" onClick={handleRemove} disabled={removing}>
-                Stop syncing
+                Stop pushing
               </Button>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="text-sm text-muted-foreground">
-              {subsonicTarget.matchedTrackCount} of{" "}
-              {subsonicTarget.totalTrackCount} tracks matched
-              {subsonicTarget.lastSyncedAt
-                ? ` · synced ${new Date(subsonicTarget.lastSyncedAt).toLocaleString()}`
-                : ""}
-            </div>
-            {subsonicTarget.unmatchedTrackTitles.length > 0 ? (
+            {target && target.lastSyncedAt ? (
+              <div className="text-sm text-muted-foreground">
+                Last pushed {new Date(target.lastSyncedAt).toLocaleString()} ·{" "}
+                {target.matchedTrackCount} of {target.totalTrackCount} tracks matched
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                Not pushed yet. Each push picks a fresh random selection from
+                this playlist and replaces the remote.
+              </div>
+            )}
+            {target && target.unmatchedTrackTitles.length > 0 ? (
               <details className="text-sm">
                 <summary className="cursor-pointer text-muted-foreground">
-                  {subsonicTarget.unmatchedTrackTitles.length} track
-                  {subsonicTarget.unmatchedTrackTitles.length === 1 ? "" : "s"}{" "}
-                  couldn&apos;t be matched on your server
+                  {target.unmatchedTrackTitles.length} track
+                  {target.unmatchedTrackTitles.length === 1 ? "" : "s"} not on
+                  your server
                 </summary>
                 <ul className="mt-2 list-disc pl-5 space-y-1">
-                  {subsonicTarget.unmatchedTrackTitles.map((title, idx) => (
-                    <li key={idx}>{title}</li>
+                  {target.unmatchedTrackTitles.map((t, idx) => (
+                    <li key={idx}>{t}</li>
                   ))}
                 </ul>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  TuneStash has been asked to download these. Re-sync after
-                  they appear in your library, or turn on auto-sync below.
+                  TuneStash has been asked to download these. Reshuffle again
+                  once they&apos;re in your library to pick them up.
                 </p>
               </details>
             ) : null}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={subsonicTarget.syncMode === "on_change"}
-                  onCheckedChange={handleToggleAutoSync}
-                  disabled={updatingMode}
-                  id={`auto-sync-${subsonicTarget.id}`}
-                />
-                <label
-                  htmlFor={`auto-sync-${subsonicTarget.id}`}
-                  className="text-sm cursor-pointer select-none"
-                >
-                  Auto-sync on changes
-                </label>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSyncNow}
-                  disabled={syncing}
-                >
-                  <RefreshCw className="h-4 w-4 mr-1" />
-                  {syncing ? "Syncing…" : "Sync now"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleRemove}
-                  disabled={removing}
-                >
+            <div className="flex gap-2">
+              <Button onClick={handleReshufflePush} disabled={busy}>
+                {busy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Pushing…
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2" /> Reshuffle &amp; push
+                  </>
+                )}
+              </Button>
+              {target ? (
+                <Button variant="ghost" size="sm" onClick={handleRemove} disabled={removing}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
-              </div>
+              ) : null}
             </div>
           </div>
         )}
@@ -272,7 +216,7 @@ function SyncStatusBadge({ status }: { status: string }) {
   if (status === "ok") {
     return (
       <Badge variant="default" className="gap-1 ml-auto">
-        <CheckCircle2 className="h-3 w-3" /> Synced
+        <CheckCircle2 className="h-3 w-3" /> Pushed
       </Badge>
     );
   }

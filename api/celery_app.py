@@ -91,8 +91,6 @@ app.conf.task_routes = {
     "library_manager.tasks.*": {"queue": "celery"},
     # Queuetip orchestration tasks — isolated queue for user-facing responsiveness
     "queuetip.tasks.bulk_import_playlist": {"queue": "queuetip"},
-    "queuetip.tasks.sync_export_target": {"queue": "queuetip"},
-    "queuetip.tasks.requeue_stale_export_targets": {"queue": "queuetip"},
 }
 
 # Task priority configuration
@@ -119,9 +117,6 @@ app.conf.task_annotations = {
     "library_manager.tasks.sync_tracked_playlists": {"rate_limit": "2/s"},
     # Queuetip bulk-import: high priority (8/9) for user-facing responsiveness
     "queuetip.tasks.bulk_import_playlist": {"priority": 8},
-    # Manual / auto sync is user-facing too.
-    "queuetip.tasks.sync_export_target": {"priority": 7},
-    "queuetip.tasks.requeue_stale_export_targets": {"priority": 4},
 }
 
 # Ensure all task results include task names

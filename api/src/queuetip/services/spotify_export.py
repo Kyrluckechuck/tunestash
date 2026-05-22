@@ -460,10 +460,7 @@ def _find_or_create_target(
         account=account,
         playlist=playlist,
         destination_type=PlaylistExportTarget.DEST_SPOTIFY,
-        defaults={
-            "spotify_link": link,
-            "sync_mode": PlaylistExportTarget.SYNC_MANUAL,
-        },
+        defaults={"spotify_link": link},
     )
     # If the user re-linked Spotify, point the target at the new credential.
     if target.spotify_link_id != link.id:
