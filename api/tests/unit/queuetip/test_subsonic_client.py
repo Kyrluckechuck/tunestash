@@ -196,13 +196,18 @@ def test_overwrite_playlist_reads_current_then_sends_remove_plus_add():
         # updatePlaylist
         _ok_response(),
     ]
-    with patch.object(subsonic_client.httpx, "get", side_effect=responses) as mock_get:
+    # getPlaylist is a GET; updatePlaylist is POSTed (large param sets must not
+    # ride in the URL — see the 414 fix), so its params live in the form body.
+    with (
+        patch.object(subsonic_client.httpx, "get", return_value=responses[0]),
+        patch.object(
+            subsonic_client.httpx, "post", return_value=responses[1]
+        ) as mock_post,
+    ):
         c.overwrite_playlist("PL1", ["new-1", "new-2"])
 
-    # Second call (updatePlaylist) — inspect its params.
-    update_call = mock_get.call_args_list[1]
-    params = update_call.kwargs["params"]
-    keys_seen = [k for k, _ in params]
+    data = mock_post.call_args.kwargs["data"]
+    keys_seen = [k for k, _ in data]
     # 3 removes + 2 adds + auth/api keys
     assert keys_seen.count("songIndexToRemove") == 3
     assert keys_seen.count("songIdToAdd") == 2
@@ -219,3 +224,18 @@ def test_delete_playlist_is_idempotent_on_404():
     ):
         # Must not raise.
         c.delete_playlist("missing")
+
+
+def test_create_playlist_uses_post_to_avoid_uri_limit():
+    """createPlaylist must POST (songIds in the body), not GET — a long
+    tracklist in the URL trips upstream proxy 414 limits."""
+    c = _client()
+    with patch.object(
+        subsonic_client.httpx,
+        "post",
+        return_value=_ok_response({"playlist": {"id": "NEWPL"}}),
+    ) as mock_post:
+        pid = c.create_playlist("My List", ["s1", "s2", "s3"])
+    assert pid == "NEWPL"
+    data = mock_post.call_args.kwargs["data"]
+    assert [k for k, _ in data].count("songId") == 3
