@@ -364,3 +364,45 @@ def test_enrich_skips_deezer_id_when_album_pair_taken():
 
     assert result.deezer_id is None
     assert Song.objects.get(id=song.id).deezer_id is None
+
+
+@pytest.mark.django_db
+def test_find_spotify_by_name_artist_verifies_artist():
+    from src.queuetip.enrichment import find_spotify_track_by_name_artist
+
+    # Result whose artist does NOT match → rejected.
+    sp = MagicMock()
+    sp.search.return_value = {
+        "tracks": {
+            "items": [
+                {
+                    "id": "WRONG",
+                    "name": "Aint It Fun",
+                    "artists": [{"name": "A Cover Band"}],
+                    "external_ids": {"isrc": "X"},
+                }
+            ]
+        }
+    }
+    client = MagicMock(sp=sp)
+    with patch("downloader.spotipy_tasks.PublicSpotifyClient", return_value=client):
+        assert find_spotify_track_by_name_artist("Aint It Fun", "Paramore") is None
+
+    # Matching artist + title → (gid, isrc).
+    sp.search.return_value = {
+        "tracks": {
+            "items": [
+                {
+                    "id": "RIGHT",
+                    "name": "Aint It Fun",
+                    "artists": [{"name": "Paramore"}],
+                    "external_ids": {"isrc": "USAT21300009"},
+                }
+            ]
+        }
+    }
+    with patch("downloader.spotipy_tasks.PublicSpotifyClient", return_value=client):
+        assert find_spotify_track_by_name_artist("Aint It Fun", "Paramore") == (
+            "RIGHT",
+            "USAT21300009",
+        )

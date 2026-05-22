@@ -22,8 +22,13 @@ def _no_real_downloads():
             "src.queuetip.resolution.ingest.enrich_song_cross_platform",
             side_effect=lambda song: song,
         ),
+        # Default: name+artist fallback finds nothing (tests opt in explicitly).
+        patch(
+            "src.queuetip.resolution.ingest.find_spotify_track_by_name_artist",
+            return_value=None,
+        ) as name_search,
     ):
-        yield {"deezer": dz, "spotify": sp}
+        yield {"deezer": dz, "spotify": sp, "name_search": name_search}
 
 
 def test_ingest_matches_existing_song_by_gid(_no_real_downloads):
@@ -106,3 +111,56 @@ def test_ingest_calls_enrich_after_create(_no_real_downloads):
     mock_enrich.assert_called_once()
     called_song = mock_enrich.call_args[0][0]
     assert called_song.id == result.id
+
+
+def test_ingest_matches_existing_by_alternate_isrc(_no_real_downloads):
+    """A recorded alternate ISRC lets a cross-platform import match instantly."""
+    artist = ArtistFactory()
+    existing = SongFactory(
+        primary_artist=artist,
+        gid="canon-gid",
+        isrc="CANON009",
+        alternate_isrcs=["APPLE025"],
+    )
+    cand = TrackCandidate("Aint It Fun", "Paramore", "apple", isrc="APPLE025")
+    result = ingest_track(cand)
+    assert result.id == existing.id
+
+
+def test_ingest_apple_fallback_reuses_existing_and_records_alternate(
+    _no_real_downloads,
+):
+    """ISRC misses Deezer → name+artist search resolves to an existing row by
+    its canonical ISRC; the Apple ISRC is saved as an alternate for next time."""
+    artist = ArtistFactory()
+    existing = SongFactory(primary_artist=artist, gid="canon-gid", isrc="CANON009")
+    cand = TrackCandidate("Aint It Fun", "Paramore", "apple", isrc="APPLE025")
+
+    provider = MagicMock()
+    provider.get_track_by_isrc.return_value = None  # Deezer ISRC miss
+    _no_real_downloads["name_search"].return_value = ("some-gid", "CANON009")
+    with patch(
+        "src.queuetip.resolution.ingest.DeezerMetadataProvider", return_value=provider
+    ):
+        result = ingest_track(cand)
+
+    assert result.id == existing.id
+    existing.refresh_from_db()
+    assert "APPLE025" in existing.alternate_isrcs
+
+
+def test_ingest_apple_fallback_creates_with_canonical_isrc(_no_real_downloads):
+    """No existing row → create with the resolved gid + canonical ISRC, keeping
+    the source ISRC as an alternate."""
+    cand = TrackCandidate("Some Track", "Some Artist", "apple", isrc="APPLE777")
+    provider = MagicMock()
+    provider.get_track_by_isrc.return_value = None
+    _no_real_downloads["name_search"].return_value = ("new-gid", "CANON111")
+    with patch(
+        "src.queuetip.resolution.ingest.DeezerMetadataProvider", return_value=provider
+    ):
+        result = ingest_track(cand)
+
+    assert result.gid == "new-gid"
+    assert result.isrc == "CANON111"
+    assert result.alternate_isrcs == ["APPLE777"]
