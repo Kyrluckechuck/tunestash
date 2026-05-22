@@ -193,6 +193,53 @@ class TestDownloadCreatesPerAlbumSongs:
 
     @patch("downloader.providers.fallback.FallbackDownloader")
     @patch("src.providers.deezer.DeezerMetadataProvider")
+    def test_reuses_same_album_song_via_isrc_instead_of_duplicating(
+        self, mock_provider_cls, mock_downloader_cls
+    ) -> None:
+        """A Spotify-sourced row already on THIS album (same ISRC, no deezer_id)
+        must be reused + linked, not duplicated by the Deezer download path."""
+        artist = Artist.objects.create(name="Tiesto", gid="0aB1cD2eF3gH4iJ5kL6mN7")
+        album = Album.objects.create(
+            name="Drive", artist=artist, deezer_id=300, wanted=True
+        )
+        existing = Song.objects.create(
+            name="Lay Low",
+            gid="7MqMH46N0yZoGTf3Sj7nAc",  # Spotify-sourced
+            deezer_id=None,
+            primary_artist=artist,
+            album=album,
+            downloaded=False,
+            isrc="NLZ8W2300090",
+        )
+
+        provider = mock_provider_cls.return_value
+        provider.get_album_tracks.return_value = [
+            _make_deezer_track(deezer_id=888, name="Lay Low", isrc="NLZ8W2300090"),
+        ]
+        provider.get_album.return_value = _make_album_data()
+
+        downloader_instance = mock_downloader_cls.return_value
+        result_mock = MagicMock()
+        result_mock.success = True
+        result_mock.file_path = "/mnt/music/Tiesto/Drive/Lay Low.m4a"
+        result_mock.provider_used = "youtube"
+
+        async def fake_download(metadata):
+            return result_mock
+
+        downloader_instance.download_track = fake_download
+        downloader_instance.close = AsyncMock()
+
+        _download_deezer_album(album, _make_task_history())
+
+        # No duplicate: still one row for this (isrc, album); deezer_id linked.
+        assert Song.objects.filter(isrc="NLZ8W2300090", album=album).count() == 1
+        existing.refresh_from_db()
+        assert existing.deezer_id == 888
+        assert existing.gid == "7MqMH46N0yZoGTf3Sj7nAc"  # original row, preserved
+
+    @patch("downloader.providers.fallback.FallbackDownloader")
+    @patch("src.providers.deezer.DeezerMetadataProvider")
     def test_adopts_orphan_song_instead_of_creating_duplicate(
         self, mock_provider_cls, mock_downloader_cls
     ) -> None:
