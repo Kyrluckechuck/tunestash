@@ -1,0 +1,22 @@
+query MyPlaylists {
+  myPlaylists {
+    id
+    name
+    description
+    createdAt
+    members {
+      account {
+        id
+        displayName
+      }
+      role
+    }
+  }
+}
+
+mutation CreatePlaylist($name: String!, $description: String) {
+  createPlaylist(name: $name, description: $description) {
+    id
+    name
+  }
+}

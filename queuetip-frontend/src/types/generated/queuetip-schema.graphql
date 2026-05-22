@@ -1,0 +1,199 @@
+type AccountType {
+  id: ID!
+  displayName: String!
+  createdAt: DateTime!
+  externalServices: [ExternalServiceLinkType!]!
+}
+
+type BulkImportJobType {
+  id: ID!
+  sourceUrl: String!
+  status: String!
+  totalTracks: Int
+  addedCount: Int!
+  skippedCount: Int!
+  unresolvedCount: Int!
+  unresolvedTitles: [String!]!
+  error: String!
+  createdAt: DateTime!
+  finishedAt: DateTime
+}
+
+type CatalogSearchResultType {
+  deezerId: String!
+  title: String!
+  artist: String!
+  isrc: String
+  inLibrary: Boolean!
+}
+
+type ContributionResult {
+  contribution: ContributionType!
+  alreadyPresent: Boolean!
+}
+
+type ContributionType {
+  id: ID!
+  song: SongRef!
+  contributedBy: AccountType!
+  createdAt: DateTime!
+  votes: [VoteType!]!
+  netScore: Int!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+type DeletePlaylistResult {
+  deleted: Boolean!
+}
+
+type EngineSettings {
+  minSize: Int!
+  maxSize: Int
+  tHigh: Int!
+  tLow: Int!
+  base: Float!
+  pFloor: Float!
+}
+
+input EngineSettingsInput {
+  minSize: Int = null
+  maxSize: Int
+  tHigh: Int = null
+  tLow: Int = null
+  base: Float = null
+  pFloor: Float = null
+}
+
+type ExternalServiceLinkType {
+  service: String!
+  serviceUserId: String!
+  linkedAt: DateTime!
+}
+
+type MembershipType {
+  account: AccountType!
+  role: String!
+  joinedAt: DateTime!
+}
+
+type Mutation {
+  requestMagicLink(email: String!, displayName: String = null): RequestMagicLinkResult!
+  createPlaylist(name: String!, description: String! = ""): PlaylistType!
+  updatePlaylistSettings(id: ID!, name: String = null, description: String = null, engine: EngineSettingsInput = null): PlaylistType!
+  regenerateInviteToken(id: ID!): RegenerateInviteResult!
+  deletePlaylist(id: ID!): DeletePlaylistResult!
+  joinPlaylist(inviteToken: String!): PlaylistType!
+  leavePlaylist(id: ID!): DeletePlaylistResult!
+  kickMember(playlistId: ID!, accountId: ID!): DeletePlaylistResult!
+  promoteMember(playlistId: ID!, accountId: ID!): PlaylistType!
+  contributeFromSearch(playlistId: ID!, deezerTrackId: String!): ContributionResult!
+  contributeFromLink(playlistId: ID!, url: String!): ContributionResult!
+  removeContribution(id: ID!): DeletePlaylistResult!
+  castVote(contributionId: ID!, value: Int!): ContributionType!
+  clearVote(contributionId: ID!): ContributionType!
+  bulkImportPlaylist(playlistId: ID!, url: String!): BulkImportJobType!
+  signOutEverywhere: SignOutEverywhereResult!
+  addSubsonicConnection(label: String!, serverUrl: String!, username: String!, password: String!, authMode: String! = "password"): SubsonicConnectionType!
+  updateSubsonicConnection(id: ID!, label: String = null, serverUrl: String = null, username: String = null, password: String = null, authMode: String = null): SubsonicConnectionType!
+  removeSubsonicConnection(id: ID!): Boolean!
+  testSubsonicConnection(id: ID!): SubsonicConnectionType!
+  createSubsonicSyncTarget(playlistId: ID!, connectionId: ID!): PlaylistExportTargetType!
+  createSpotifyExportTarget(playlistId: ID!): PlaylistExportTargetType!
+  removeSyncTarget(id: ID!, deleteRemote: Boolean! = false): Boolean!
+  syncTargetNow(id: ID!): PlaylistExportTargetType!
+  recreateSyncTargetRemote(id: ID!): PlaylistExportTargetType!
+}
+
+type PlaylistExportTargetType {
+  id: ID!
+  playlistId: ID!
+  destinationType: String!
+  remotePlaylistId: String!
+  lastSyncStatus: String!
+  lastError: String!
+  lastSyncedAt: DateTime
+  unmatchedTrackTitles: [String!]!
+  matchedTrackCount: Int!
+  totalTrackCount: Int!
+  spotifyUserId: String
+  subsonicConnection: SubsonicConnectionType
+}
+
+type PlaylistPreviewType {
+  id: ID!
+  name: String!
+  description: String!
+  inviteToken: String!
+  createdBy: AccountType!
+  createdAt: DateTime!
+  members: [MembershipType!]!
+}
+
+type PlaylistType {
+  id: ID!
+  name: String!
+  description: String!
+  inviteToken: String!
+  createdBy: AccountType!
+  createdAt: DateTime!
+  engineSettings: EngineSettings!
+  members: [MembershipType!]!
+}
+
+type PublicSettingsType {
+  signupAllowlistEnforced: Boolean!
+}
+
+type Query {
+  me: AccountType
+  publicSettings: PublicSettingsType!
+  myPlaylists: [PlaylistType!]!
+  playlist(id: ID!): PlaylistType!
+  playlistByInviteToken(inviteToken: String!): PlaylistPreviewType!
+  catalogSearch(query: String!, limit: Int! = 10): [CatalogSearchResultType!]!
+  bulkImportJob(id: ID!): BulkImportJobType!
+  playlistContributions(playlistId: ID!): [ContributionType!]!
+  mySubsonicConnection: SubsonicConnectionType
+  myPlaylistSyncTargets(playlistId: ID!): [PlaylistExportTargetType!]!
+}
+
+type RegenerateInviteResult {
+  inviteToken: String!
+}
+
+type RequestMagicLinkResult {
+  sent: Boolean!
+  message: String!
+}
+
+type SignOutEverywhereResult {
+  success: Boolean!
+}
+
+type SongRef {
+  id: ID!
+  title: String!
+  artist: String!
+  isrc: String
+}
+
+type SubsonicConnectionType {
+  id: ID!
+  label: String!
+  serverUrl: String!
+  username: String!
+  authMode: String!
+  verificationStatus: String!
+  verificationError: String!
+  lastVerifiedAt: DateTime
+  opensubsonicExtensions: [String!]!
+  createdAt: DateTime!
+}
+
+type VoteType {
+  account: AccountType!
+  value: Int!
+  createdAt: DateTime!
+}

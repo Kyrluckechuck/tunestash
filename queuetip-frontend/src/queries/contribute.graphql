@@ -1,0 +1,35 @@
+query CatalogSearch($query: String!, $limit: Int) {
+  catalogSearch(query: $query, limit: $limit) {
+    deezerId
+    title
+    artist
+    isrc
+    inLibrary
+  }
+}
+
+mutation ContributeFromSearch($playlistId: ID!, $deezerTrackId: String!) {
+  contributeFromSearch(playlistId: $playlistId, deezerTrackId: $deezerTrackId) {
+    alreadyPresent
+    contribution {
+      id
+      netScore
+      song { id title artist isrc }
+      contributedBy { id displayName }
+      votes { account { id } value }
+    }
+  }
+}
+
+mutation ContributeFromLink($playlistId: ID!, $url: String!) {
+  contributeFromLink(playlistId: $playlistId, url: $url) {
+    alreadyPresent
+    contribution {
+      id
+      netScore
+      song { id title artist isrc }
+      contributedBy { id displayName }
+      votes { account { id } value }
+    }
+  }
+}

@@ -45,6 +45,7 @@ settings = dynaconf.DjangoDynaconf(
         "django_celery_results",
         "django_celery_beat",
         "library_manager",
+        "queuetip",
         # Dev-only apps are appended conditionally below
     ],
     # API-specific middleware (simpler than full web app)
@@ -265,3 +266,58 @@ STORAGES = {
 
 # Note: Using STORAGES configuration above instead of deprecated DEFAULT_FILE_STORAGE and STATICFILES_STORAGE
 # The Django deprecation warnings for these settings are unavoidable in Django 5.0 when using dynaconf
+
+# ── Queuetip ────────────────────────────────────────────────────────────────
+# Browser-facing base URL for the Queuetip stack — used in magic-link emails
+# and as the Spotify OAuth redirect_uri fallback when X-Forwarded-Host is
+# absent. In dev this points at the Vite proxy (3001), which forwards
+# /graphql, /auth, /exports to the backend container — same pattern TuneStash
+# uses for its frontend↔backend interaction. 127.0.0.1 (not 'localhost')
+# because Spotify OAuth hard-rejects 'localhost'.
+QUEUETIP_PUBLIC_URL = os.getenv("QUEUETIP_PUBLIC_URL", "http://127.0.0.1:3001")
+# Same value as QUEUETIP_PUBLIC_URL in single-origin dev/prod setups —
+# kept as a separate setting in case a future deployment splits the API
+# host from the frontend host. Used for CORS allowlist + post-OAuth redirect.
+QUEUETIP_FRONTEND_URL = os.getenv("QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001")
+
+# Fernet key for at-rest encryption of queuetip-owned secrets
+# (SubsonicConnection.password_encrypted is the first user). Generate with
+# `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'`.
+# In DEBUG, an empty value falls back to a SECRET_KEY-derived dev key; in
+# production, a missing key raises CryptoError on any encrypt/decrypt call.
+QUEUETIP_FERNET_KEY = os.getenv("QUEUETIP_FERNET_KEY", "")
+# Trusted reverse-proxy IPs/CIDRs for X-Forwarded-For parsing. When the
+# direct connection comes from one of these addresses, the XFF header is
+# trusted and the real client IP is extracted from it. Accepts individual IPs
+# and CIDR blocks (e.g. "10.0.0.0/8"). Empty by default — safe for deployments
+# that expose the process directly. Example production values:
+#   ["127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+# For Cloudflare Tunnel, add Cloudflare's published IPv4/IPv6 ranges instead.
+QUEUETIP_TRUSTED_PROXIES: list[str] = []
+
+# Email — magic-link delivery. Resolution order:
+#   1. DJANGO_EMAIL_BACKEND env var (escape hatch for dev: force console backend
+#      without editing settings.yaml — useful when SMTP isn't reachable locally).
+#   2. settings.yaml `email_host` → SMTP backend with the related SMTP settings.
+#   3. Otherwise → console backend (links print to the container logs).
+_email_backend_env = os.getenv("DJANGO_EMAIL_BACKEND")
+_email_host = settings.get("email_host", None)
+if _email_backend_env:
+    EMAIL_BACKEND = _email_backend_env
+elif _email_host:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = _email_host
+    EMAIL_PORT = int(settings.get("email_port", 587))
+    EMAIL_HOST_USER = settings.get("email_host_user", "")
+    EMAIL_HOST_PASSWORD = settings.get("email_host_password", "")
+    EMAIL_USE_TLS = bool(settings.get("email_use_tls", True))
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = settings.get("default_from_email", "Queuetip <queuetip@localhost>")
+
+# Sign-up gate. When True (default), only emails on the QueuetipSignupAllowlist
+# can create new accounts. Existing accounts always sign in normally.
+# Set to False to allow open sign-ups (e.g. for personal local-only use).
+QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = (
+    os.getenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "true").lower() != "false"
+)

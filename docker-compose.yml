@@ -98,6 +98,63 @@ services:
         reservations:
           memory: 512M # Soft limit - guaranteed minimum
 
+  queuetip:
+    image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash:latest}
+    environment:
+      - CI=${CI:-false}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-development-only-key}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
+      - POSTGRES_DB=${POSTGRES_DB:-tunestash}
+      - POSTGRES_USER=${POSTGRES_USER:-slm_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-slm_dev_password}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://valkey:6379/0}
+      - HOME=/config
+      - TUNESTASH_SERVICE=queuetip
+      # Set these to your actual public URLs in production (e.g.
+      # https://queuetip.example.com). The fallback uses 127.0.0.1:3001
+      # because production stacks should override this in .env — the dev
+      # default just keeps a non-broken value for ad-hoc prod compose runs.
+      - QUEUETIP_PUBLIC_URL=${QUEUETIP_PUBLIC_URL:-http://127.0.0.1:3001}
+      - QUEUETIP_FRONTEND_URL=${QUEUETIP_FRONTEND_URL:-http://127.0.0.1:3001}
+    command: uvicorn src.queuetip.app:app --host 0.0.0.0 --port 5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    ports:
+      - "${QUEUETIP_PORT:-5050}:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - slm_net
+    volumes:
+      - config_storage:/config
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  queuetip-frontend:
+    image: ${QUEUETIP_FRONTEND_IMAGE:-ghcr.io/kyrluckechuck/queuetip-frontend:latest}
+    depends_on:
+      queuetip:
+        condition: service_healthy
+    networks:
+      - slm_net
+    ports:
+      - "${QUEUETIP_FRONTEND_PORT:-3001}:80"
+    restart: unless-stopped
+
   frontend:
     # Nginx frontend service - serves static files and proxies API
     image: ${FRONTEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash-frontend:latest}

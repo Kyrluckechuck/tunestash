@@ -132,6 +132,7 @@ jobs:
     outputs:
       backend-image: ${{ steps.backend-meta.outputs.tags }}
       frontend-image: ${{ steps.frontend-meta.outputs.tags }}
+      queuetip-frontend-image: ${{ steps.queuetip-frontend-meta.outputs.tags }}
     steps:
       - uses: actions/checkout@v4
 
@@ -172,6 +173,16 @@ jobs:
             type=ref,event=branch
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
+      - name: Queuetip frontend image metadata
+        id: queuetip-frontend-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.owner.outputs.value }}/queuetip-frontend
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
       - name: Build and push backend
         uses: docker/build-push-action@v6
         with:
@@ -197,6 +208,19 @@ jobs:
           labels: ${{ steps.frontend-meta.outputs.labels }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Build and push queuetip frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./queuetip-frontend
+          file: ./queuetip-frontend/Dockerfile
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.queuetip-frontend-meta.outputs.tags }}
+          labels: ${{ steps.queuetip-frontend-meta.outputs.labels }}
+          cache-from: type=gha,scope=queuetip-frontend
+          cache-to: type=gha,mode=max,scope=queuetip-frontend
 
   # =============================================================================
   # Job 5: Docker integration test

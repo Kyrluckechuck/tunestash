@@ -4,9 +4,16 @@ import os
 import tempfile
 from pathlib import Path
 
-import django
+# Fixed Fernet key for tests, set at import time BEFORE Django loads settings.
+# Real production values come from QUEUETIP_FERNET_KEY in the environment;
+# this is only consulted in test runs where the env var isn't already set.
+os.environ.setdefault(
+    "QUEUETIP_FERNET_KEY", "f0Q5J5gXqaV6BV5q3lH0OmYjBgaO3SjA0PpBnUaqIz4="
+)
 
-import pytest
+import django  # noqa: E402  pylint: disable=wrong-import-position
+
+import pytest  # noqa: E402  pylint: disable=wrong-import-position
 
 
 def pytest_configure(config):

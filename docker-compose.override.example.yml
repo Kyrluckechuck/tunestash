@@ -54,8 +54,38 @@ services:
       - python_packages:/app/.venv
       - pip_cache:/root/.cache/pip
 
+  queuetip:
+    environment:
+      - DJANGO_EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+
+  queuetip-frontend-dev:
+    build:
+      context: ./queuetip-frontend
+      target: development
+    command: yarn dev --host 0.0.0.0 --port 3001
+    volumes:
+      - ./queuetip-frontend:/app
+      - /app/node_modules
+    ports:
+      - "3001:3001"
+    depends_on:
+      queuetip:
+        condition: service_healthy
+    environment:
+      # Frontend uses '/graphql' (relative); Vite proxies it to this target.
+      - QUEUETIP_BACKEND_TARGET=http://queuetip:5000
+    networks:
+      - slm_net
+
   # Disable main frontend service in favor of frontend-dev
   frontend:
+    profiles:
+      - disabled
+
+  # Disable the prod queuetip-frontend (pre-built ghcr image) in favor of
+  # queuetip-frontend-dev. Without this, `docker compose up` tries to pull
+  # ghcr.io/.../queuetip-frontend:latest — which only exists after a CI build.
+  queuetip-frontend:
     profiles:
       - disabled
 
@@ -103,7 +133,7 @@ services:
       python -c 'import watchdog; print(\"Watchdog installed successfully\")' &&
       echo '👷 Starting Celery worker with auto-restart on code changes...';
       python -m watchdog.watchmedo auto-restart --directory=/app --pattern='*.py' --recursive --
-      celery -A celery_app worker --loglevel=info --queues=downloads,metadata,celery --concurrency=2
+      celery -A celery_app worker --loglevel=info --queues=downloads,metadata,celery,queuetip,queuetip-downloads --concurrency=2
       "
     environment:
       - INSTALL_DEV_DEPS=true
