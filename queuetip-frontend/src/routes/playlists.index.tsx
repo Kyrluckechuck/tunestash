@@ -1,9 +1,11 @@
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@apollo/client";
-import { Plus } from "lucide-react";
+import { useMutation, useQuery } from "@apollo/client";
+import { Plus, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 
-import { MyPlaylistsDocument } from "@/types/generated/graphql";
+import { InviteToQueuetipDocument, MyPlaylistsDocument } from "@/types/generated/graphql";
+import { useMe } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { NewPlaylistDialog } from "@/features/playlists/NewPlaylistDialog";
@@ -31,6 +33,8 @@ function PlaylistsIndexContent() {
           <Plus className="h-4 w-4 mr-1" /> New playlist
         </Button>
       </div>
+
+      <AdminInviteCard />
 
       {loading ? (
         <p className="text-muted-foreground">Loading…</p>
@@ -67,6 +71,52 @@ function PlaylistsIndexContent() {
 
       <NewPlaylistDialog open={open} onOpenChange={setOpen} />
     </div>
+  );
+}
+
+function AdminInviteCard() {
+  const { account } = useMe();
+  const [email, setEmail] = React.useState("");
+  const [invite, { loading }] = useMutation(InviteToQueuetipDocument);
+
+  if (!account?.isAdmin) return null;
+
+  async function handleInvite() {
+    try {
+      const r = await invite({ variables: { email } });
+      const res = r.data?.inviteToQueuetip;
+      if (res?.sent) {
+        toast.success(res.message);
+        setEmail("");
+      } else {
+        toast.error(res?.message ?? "Could not invite.");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not invite.");
+    }
+  }
+
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <UserPlus className="h-4 w-4" /> Invite someone to Queuetip
+        </CardTitle>
+        <CardDescription>Allowlists the email and sends them a sign-up invite.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col sm:flex-row gap-2">
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="friend@example.com"
+          className="flex-1 px-3 py-1.5 text-sm bg-background border border-input rounded-md"
+        />
+        <Button onClick={handleInvite} disabled={loading || !email.trim()}>
+          {loading ? "Inviting…" : "Send invite"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

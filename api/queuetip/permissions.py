@@ -6,7 +6,34 @@ callers wrap these in `sync_to_async` like any other ORM call.
 
 from __future__ import annotations
 
-from .models import Account, Playlist, PlaylistMembership
+from .models import Account, AuthIdentity, Playlist, PlaylistMembership
+
+
+def account_email(account: Account | None) -> str | None:
+    """The account's magic-link email, or None."""
+    if account is None:
+        return None
+    ident = AuthIdentity.objects.filter(
+        account=account, provider=AuthIdentity.PROVIDER_MAGIC_LINK
+    ).first()
+    return ident.identifier if ident else None
+
+
+def is_queuetip_admin(account: Account | None) -> bool:
+    """True if the account's email is in the queuetip_admin_emails setting.
+
+    Admins can invite new users from the public Queuetip UI. The allowlist of
+    admin emails is a DB-backed app setting (empty by default), so it's set
+    once from TuneStash's Settings page rather than baked into code.
+    """
+    from src.app_settings.registry import get_setting
+
+    raw = get_setting("queuetip_admin_emails") or ""
+    admins = {e.strip().lower() for e in raw.split(",") if e.strip()}
+    if not admins:
+        return False
+    email = account_email(account)
+    return bool(email and email.lower() in admins)
 
 
 class PermissionDeniedError(Exception):

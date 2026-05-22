@@ -48,10 +48,15 @@ class Query:
         if ctx.account is None:
             return None
         account = ctx.account
-        links = await sync_to_async(
-            lambda: list(account.external_service_links.all())
+        from queuetip.permissions import is_queuetip_admin
+
+        links, admin = await sync_to_async(
+            lambda: (
+                list(account.external_service_links.all()),
+                is_queuetip_admin(account),
+            )
         )()
-        return AccountType.from_model(account, links=links)
+        return AccountType.from_model(account, links=links, is_admin=admin)
 
     @strawberry.field
     def public_settings(self) -> PublicSettingsType:

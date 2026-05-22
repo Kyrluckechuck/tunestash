@@ -145,12 +145,14 @@ class AccountType:
     display_name: str
     created_at: datetime.datetime
     external_services: list[ExternalServiceLinkType]
+    is_admin: bool = False
 
     @classmethod
     def from_model(
         cls,
         account: Account,
         links: list[ExternalServiceLink] | None = None,
+        is_admin: bool = False,
     ) -> "AccountType":
         """Build an AccountType from a Django Account row.
 
@@ -165,6 +167,7 @@ class AccountType:
             external_services=[
                 ExternalServiceLinkType.from_model(lnk) for lnk in (links or [])
             ],
+            is_admin=is_admin,
         )
 
 

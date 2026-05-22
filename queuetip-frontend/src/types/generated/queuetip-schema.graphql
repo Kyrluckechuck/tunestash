@@ -3,6 +3,7 @@ type AccountType {
   displayName: String!
   createdAt: DateTime!
   externalServices: [ExternalServiceLinkType!]!
+  isAdmin: Boolean!
 }
 
 type BulkImportJobType {
@@ -81,6 +82,7 @@ type MembershipType {
 type Mutation {
   requestMagicLink(email: String!, displayName: String = null): RequestMagicLinkResult!
   createPlaylist(name: String!, description: String! = ""): PlaylistType!
+  inviteToQueuetip(email: String!): RequestMagicLinkResult!
   updatePlaylistSettings(id: ID!, name: String = null, description: String = null, engine: EngineSettingsInput = null): PlaylistType!
   regenerateInviteToken(id: ID!): RegenerateInviteResult!
   deletePlaylist(id: ID!): DeletePlaylistResult!
