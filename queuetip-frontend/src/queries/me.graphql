@@ -3,10 +3,18 @@ query Me {
     id
     displayName
     createdAt
+    isAdmin
     externalServices {
       service
       serviceUserId
       linkedAt
     }
+  }
+}
+
+mutation InviteToQueuetip($email: String!) {
+  inviteToQueuetip(email: $email) {
+    sent
+    message
   }
 }

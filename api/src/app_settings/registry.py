@@ -61,6 +61,17 @@ SENSITIVE_PLACEHOLDER = "**configured**"
 
 SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
     # ── Authentication ────────────────────────────────────────────────────
+    "queuetip_admin_emails": {
+        "default": "",
+        "type": TYPE_STRING,
+        "category": CAT_AUTH,
+        "label": "Queuetip Admin Emails",
+        "description": (
+            "Comma-separated emails granted Queuetip admin powers — currently "
+            "the ability to invite new users (allowlist + email) from the "
+            "public Queuetip UI, without needing TuneStash admin access."
+        ),
+    },
     "youtube_premium": {
         "default": True,
         "type": TYPE_BOOL,

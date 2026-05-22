@@ -328,6 +328,69 @@ class Mutation:  # pylint: disable=too-many-public-methods
         return await _build_playlist_type(playlist)
 
     @strawberry.mutation
+    async def invite_to_queuetip(
+        self, info: Info[QueuetipContext, None], email: str
+    ) -> RequestMagicLinkResult:
+        """Admin-only: allowlist an email and email them a sign-up invite.
+
+        Lets a Queuetip admin (per the queuetip_admin_emails setting) onboard
+        new users from the public UI, without needing TuneStash admin access.
+        """
+        from django.conf import settings as dj_settings
+
+        from queuetip.models import QueuetipSignupAllowlist
+        from queuetip.permissions import PermissionDeniedError, is_queuetip_admin
+        from src.services import mail
+
+        account = _require_account(info)
+        address = (email or "").strip().lower()
+
+        def _do() -> RequestMagicLinkResult:
+            if not is_queuetip_admin(account):
+                raise PermissionDeniedError("Admin access required.")
+            if not _EMAIL_RE.match(address):
+                return RequestMagicLinkResult(
+                    sent=False, message="Enter a valid email address."
+                )
+            QueuetipSignupAllowlist.objects.get_or_create(
+                email=address,
+                defaults={"note": f"Invited by {account.display_name}"},
+            )
+            signup_url = getattr(
+                dj_settings, "QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001"
+            ).rstrip("/")
+            try:
+                mail.send_message(
+                    subject="You're invited to Queuetip",
+                    body=(
+                        "You've been invited to Queuetip.\n\n"
+                        f"Sign up with this email ({address}) here:\n{signup_url}\n"
+                    ),
+                    to=address,
+                    html_body=mail.render_email(
+                        eyebrow="Queuetip",
+                        heading="You're invited to Queuetip",
+                        paragraphs=[
+                            "You've been invited to Queuetip — collaborative "
+                            "playlists you build together.",
+                            f"Sign up with this email ({address}) to get started.",
+                        ],
+                        button=("Sign up", signup_url),
+                    ),
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                return RequestMagicLinkResult(
+                    sent=True,
+                    message=(
+                        f"{address} allowlisted, but the invite email failed "
+                        f"({exc}). Share {signup_url} with them directly."
+                    ),
+                )
+            return RequestMagicLinkResult(sent=True, message=f"Invited {address}.")
+
+        return await sync_to_async(_do)()
+
+    @strawberry.mutation
     async def update_playlist_settings(
         self,
         info: Info[QueuetipContext, None],
