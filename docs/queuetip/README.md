@@ -2,7 +2,7 @@
 
 ## Overview
 
-Queuetip is the collaborative playlist feature built into TuneStash. It lets multiple users contribute songs to a shared playlist, vote on contributions, and export a probabilistically-selected tracklist to a file or their personal Spotify account. Queuetip runs as its own public-facing ASGI process (`src/queuetip/app.py`) — completely separate from the TuneStash admin API — so only the Queuetip surface is reachable over the network. The selection engine, OAuth linking, and bulk import all run on the shared Celery worker alongside TuneStash's own background tasks.
+Queuetip is the collaborative playlist feature built into TuneStash. It lets multiple users contribute songs to a shared playlist, vote on contributions, and push a probabilistically-selected tracklist ("reshuffle & push") to their own Subsonic server or personal Spotify account. Queuetip runs as its own public-facing ASGI process (`src/queuetip/app.py`) — completely separate from the TuneStash admin API — so only the Queuetip surface is reachable over the network. The selection engine, OAuth linking, and bulk import all run on the shared Celery worker alongside TuneStash's own background tasks.
 
 ## Architecture Diagram
 

@@ -438,7 +438,7 @@ class PlaylistExportTarget(models.Model):
     credential FK (`spotify_link` xor `subsonic_connection`) selects which
     service we sync to. The CHECK constraint enforces the xor at the DB level.
 
-    Lifecycle (see docs/queuetip/subsonic-sync-design.md):
+    Lifecycle:
       1. ONE queuetip playlist ↔ ONE remote playlist per (user, destination)
          — subsequent pushes UPDATE `remote_playlist_id`, never create new.
       2. If the remote is deleted, status → REMOTE_DELETED, the user must

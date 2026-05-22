@@ -311,35 +311,19 @@ To add a new one-off task:
        await sync_to_async(queue_task)()
    ```
 
-2. **Django ORM from Async Context**
+2. **Django ORM queries & model methods from Async Context** — same wrap for
+   `.get()`/`.filter()`/`.create()` and `.save()`/`.delete()`:
    ```python
-   # ❌ WRONG - Django ORM calls are sync
-   async def my_service_method():
-       album = Album.objects.get(id=1)  # Raises sync_to_async error
+   # ❌ WRONG - all of these are sync-only
+   album = Album.objects.get(id=1)
+   album.save()
 
-   # ✅ CORRECT - Wrap ORM calls
-   async def my_service_method():
-       album = await sync_to_async(Album.objects.get)(id=1)
-       # Or for complex operations:
-       def get_album():
-           return Album.objects.get(id=1)
-       album = await sync_to_async(get_album)()
+   # ✅ CORRECT - wrap the sync call
+   album = await sync_to_async(Album.objects.get)(id=1)
+   await sync_to_async(album.save)()
    ```
 
-3. **Model Methods from Async Context**
-   ```python
-   # ❌ WRONG - Model save() is sync
-   async def my_service_method():
-       album.wanted = True
-       album.save()  # Raises sync_to_async error
-
-   # ✅ CORRECT - Wrap model methods
-   async def my_service_method():
-       album.wanted = True
-       await sync_to_async(album.save)()
-   ```
-
-4. **Lazy-Loading Related Objects**
+3. **Lazy-Loading Related Objects**
    ```python
    # ❌ WRONG - Accessing related objects can trigger lazy DB queries
    async def my_service_method():
@@ -499,11 +483,7 @@ When a component receives a function prop that will be called inside a `useEffec
 
 **Pattern**: Store function in ref, update ref in separate effect, main effect uses `ref.current` and does NOT include the function in dependencies.
 
-# important-instruction-reminders
-Do what has been asked; nothing more, nothing less.
-NEVER create files unless they're absolutely necessary for achieving your goal.
-ALWAYS prefer editing an existing file to creating a new one.
-NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
-- Local testing needs to test port 3000, always
-- Do not kill my servers -- I leave them running on purpose. Only restart/update them when the changes actually require it, and don't shut them down when you're done unless I ask. If you have a good reason to do it, you can ask first.
-- Do not add comments that explain *what* the code does when the code is self-explanatory. Only add comments when they provide genuine value for future readers (e.g., explaining *why* something non-obvious is done, documenting gotchas, or clarifying complex business logic).
+## Project-Specific Rules
+- Local testing always targets **port 3000** (Vite dev server).
+- Do not kill the user's servers — they're left running on purpose. Only restart/update them when changes actually require it; don't shut them down when finished unless asked. Ask first if there's a good reason to.
+- Comments explain *why*, never *what* (see [Comment Standards](#comment-standards)). Add one only when it carries genuine value for a future reader — non-obvious reasoning, a gotcha, or complex business logic.

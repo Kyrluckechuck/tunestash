@@ -221,7 +221,6 @@ class SubsonicClient:
         # Remove existing entries by index (must list each index explicitly).
         for i in range(current_count):
             params.append(("songIndexToRemove", str(i)))
-        # Add the new tracks in order.
         for sid in song_ids:
             params.append(("songIdToAdd", sid))
         self._get("updatePlaylist", params=params)

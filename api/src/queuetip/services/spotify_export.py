@@ -1,14 +1,12 @@
 """Async service: push a queuetip playlist's current state to Spotify.
 
-Lifecycle (matches docs/queuetip/subsonic-sync-design.md):
+Lifecycle (mirrors PlaylistExportTarget's docstring):
   * One queuetip playlist → ONE Spotify playlist per (user, dest). Subsequent
     exports REPLACE the tracks of the same Spotify playlist; we never create
     a fresh playlist with a timestamped name.
   * If the user deletes the Spotify playlist, Spotify's PUT-tracks endpoint
-    returns 404 → we mark the target REMOTE_DELETED. Automation halts until
-    the user explicitly re-creates.
-  * Snapshots are still created on each export as an audit log; they're no
-    longer the primary identity of the exported playlist.
+    returns 404 → we mark the target REMOTE_DELETED, and the user must
+    explicitly re-create before pushing again.
 """
 
 from __future__ import annotations
