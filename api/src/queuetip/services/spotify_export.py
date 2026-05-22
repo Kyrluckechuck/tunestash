@@ -25,7 +25,6 @@ from asgiref.sync import sync_to_async
 
 from queuetip.models import (
     Account,
-    Contribution,
     ExportSnapshot,
     ExternalServiceLink,
     Playlist,
@@ -193,8 +192,6 @@ class SpotifyExportService:
         Manual exports via `exportToSpotify(snapshotId)` still produce
         snapshots; those continue to share the same idempotent target row.
         """
-        from queuetip.models import SubsonicConnection as _Unused  # noqa: F401
-
         target = await sync_to_async(
             lambda: PlaylistExportTarget.objects.select_related(
                 "playlist", "spotify_link", "account"
@@ -216,11 +213,18 @@ class SpotifyExportService:
         playlist = cast(Playlist, target.playlist)
         access_token = await _ensure_fresh_token(link)
 
-        # Enrich any contributions missing a gid (ISRC → Spotify bridge).
-        await _enrich_playlist_missing_gids(playlist)
+        # Roll the selection engine over the playlist's current contributions
+        # — each push is a fresh random curation (queuetip's core mechanic).
+        # We push the rolled subset, not every contribution.
+        from .roll import roll_playlist
 
-        candidates, skipped_titles = await sync_to_async(_collect_playlist_candidates)(
-            playlist
+        roll = await sync_to_async(roll_playlist)(playlist)
+
+        # Enrich the rolled songs missing a gid (ISRC → Spotify bridge).
+        await _enrich_songs_missing_gids(roll.song_ids)
+
+        candidates, skipped_titles = await sync_to_async(_collect_song_candidates)(
+            roll.song_ids
         )
         valid_uris, stale_titles = await sync_to_async(_validate_and_collect_uris)(
             access_token, candidates
@@ -284,19 +288,16 @@ async def _enrich_missing_gids(snapshot: ExportSnapshot) -> None:
                 )
 
 
-async def _enrich_playlist_missing_gids(playlist: Playlist) -> None:
-    """Sync-flow equivalent of _enrich_missing_gids — operate on the
-    playlist's current contributions rather than a frozen snapshot."""
+async def _enrich_songs_missing_gids(song_ids: list[int]) -> None:
+    """Enrich the given songs' missing gids before pushing (ISRC → Spotify).
+    Operates on a rolled selection's song ids rather than a snapshot."""
     from library_manager.models import Song as SongModel
     from src.queuetip.enrichment import enrich_song_cross_platform
 
-    contributions = await sync_to_async(
-        lambda: list(
-            Contribution.objects.filter(playlist=playlist).select_related("song")
-        )
+    songs = await sync_to_async(
+        lambda: list(SongModel.objects.filter(id__in=song_ids))
     )()
-    for contrib in contributions:
-        song = cast(SongModel, contrib.song)
+    for song in songs:
         if not (song.gid or "").strip():
             try:
                 await sync_to_async(enrich_song_cross_platform)(song)
@@ -336,27 +337,21 @@ def _collect_track_candidates(
     return candidates, skipped
 
 
-def _collect_playlist_candidates(
-    playlist: Playlist,
+def _collect_song_candidates(
+    song_ids: list[int],
 ) -> tuple[list[tuple[int, str, str]], list[str]]:
-    """Sync-flow equivalent of _collect_track_candidates: source tracks from
-    the playlist's current contributions instead of a frozen snapshot.
-
-    Order is by contribution id (insertion order) — matches the order users
-    see in the queuetip UI and is stable across syncs.
-    """
+    """Build (song_id, gid, label) for a rolled selection's songs; songs
+    without a gid (after enrichment) go to skipped. Preserves roll order."""
     from library_manager.models import Song as SongModel
 
     candidates: list[tuple[int, str, str]] = []
     skipped: list[str] = []
-    contributions = (
-        Contribution.objects.filter(playlist=playlist)
-        .select_related("song", "song__primary_artist")
-        .order_by("id")
+    order = {sid: i for i, sid in enumerate(song_ids)}
+    songs = sorted(
+        SongModel.objects.filter(id__in=song_ids).select_related("primary_artist"),
+        key=lambda s: order.get(s.id, 0),
     )
-    for contrib in contributions:
-        song = cast(SongModel, contrib.song)
-        song.refresh_from_db()
+    for song in songs:
         gid = (song.gid or "").strip()
         artist = song.primary_artist.name if song.primary_artist_id else ""  # type: ignore[attr-defined]
         label = f"{artist} — {song.name}".strip(" —")

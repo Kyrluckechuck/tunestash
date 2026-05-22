@@ -29,7 +29,7 @@ from typing import cast
 from django.utils import timezone
 
 from queuetip.models import (
-    Contribution,
+    Playlist,
     PlaylistExportTarget,
     SubsonicConnection,
 )
@@ -102,19 +102,30 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
         auth_mode=connection.auth_mode,
     )
 
-    # Collect the queuetip-side track set (contributions ordered by creation).
-    contributions = list(
-        Contribution.objects.filter(playlist=target.playlist)
-        .select_related("song", "song__primary_artist")
-        .order_by("id")
+    # Roll the selection engine over the playlist's CURRENT contributions.
+    # Each sync is a fresh random curation (queuetip's core mechanic) — we
+    # push the rolled subset, not every contribution. `account` enables the
+    # exclude-my-downvotes filter; here we roll without it (the playlist
+    # owner's perspective isn't meaningful for a shared remote).
+    from .roll import roll_playlist
+
+    roll = roll_playlist(cast(Playlist, target.playlist))
+
+    # Fetch the rolled songs in the engine's chosen order, with the relations
+    # the resolver needs. Preserve roll order via a position map.
+    from library_manager.models import Song as SongModel
+
+    order = {sid: i for i, sid in enumerate(roll.song_ids)}
+    songs = sorted(
+        SongModel.objects.filter(id__in=roll.song_ids).select_related("primary_artist"),
+        key=lambda s: order.get(s.id, 0),
     )
 
     matched_ids: list[str] = []
     unmatched_titles: list[str] = []
     queued_downloads: list[int] = []
 
-    for contribution in contributions:
-        song = contribution.song
+    for song in songs:
         artist_name = (
             song.primary_artist.name if song.primary_artist_id else ""  # type: ignore[attr-defined]
         )
@@ -171,13 +182,13 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
     _record_success(
         target,
         matched_count=len(matched_ids),
-        total_count=len(contributions),
+        total_count=len(roll.song_ids),
         unmatched_titles=unmatched_titles,
     )
 
     return SubsonicSyncResult(
         matched_count=len(matched_ids),
-        total_count=len(contributions),
+        total_count=len(roll.song_ids),
         unmatched_titles=unmatched_titles,
         queued_downloads=queued_downloads,
     )

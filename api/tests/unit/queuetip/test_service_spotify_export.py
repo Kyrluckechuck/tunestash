@@ -25,6 +25,18 @@ from src.queuetip.services.spotify_export import (
 )
 
 
+class _RollStub:
+    """Stand-in for roll.RollResult so sync_target tests are deterministic —
+    the real roll is random, which would make 'is this song included?'
+    assertions flaky."""
+
+    def __init__(self, song_ids: list[int]) -> None:
+        self.song_ids = song_ids
+        self.warning_message = ""
+        self.seed = 1
+        self.detail = {}
+
+
 def _make_put_resp(status_code: int = 201) -> MagicMock:
     return MagicMock(status_code=status_code, json=lambda: {}, text="")
 
@@ -644,7 +656,12 @@ async def test_sync_target_creates_remote_from_current_contributions():
             "src.queuetip.services.spotify_export.httpx.post",
             side_effect=[_make_create_resp(playlist_id="SP_AUTO"), _make_add_resp()],
         ),
-        patch("src.queuetip.services.spotify_export._enrich_playlist_missing_gids"),
+        patch("src.queuetip.services.spotify_export._enrich_songs_missing_gids"),
+        # The roll is random; pin it to this song so the assertion is stable.
+        patch(
+            "src.queuetip.services.roll.roll_playlist",
+            return_value=_RollStub([song.id]),
+        ),
     ):
         result = await SpotifyExportService.sync_target(target.id)
 
@@ -701,7 +718,11 @@ async def test_sync_target_updates_existing_remote_no_duplicate():
             return_value=_make_put_resp(),
         ) as mock_put,
         patch("src.queuetip.services.spotify_export.httpx.post") as mock_post,
-        patch("src.queuetip.services.spotify_export._enrich_playlist_missing_gids"),
+        patch("src.queuetip.services.spotify_export._enrich_songs_missing_gids"),
+        patch(
+            "src.queuetip.services.roll.roll_playlist",
+            return_value=_RollStub([song.id]),
+        ),
     ):
         result = await SpotifyExportService.sync_target(target.id)
 
