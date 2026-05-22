@@ -136,9 +136,9 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
             remote_id = resolve_song_to_subsonic_id(
                 title=song.name,
                 artist=artist_name,
-                isrc=(song.isrc or None) if hasattr(song, "isrc") else None,
+                isrc=song.isrc or None,
                 client=client,
-                file_path=getattr(song, "file_path", None),
+                file_path=song.file_path,
             )
         except SubsonicAuthError as exc:
             _record_failure(target, f"Authentication failed: {exc}")

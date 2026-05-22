@@ -7,9 +7,9 @@ within the playlist's size bounds. Each roll uses a fresh random seed, so two
 rolls of the same playlist differ. That's the feature: "give me a fresh mix."
 
 This module exposes that as a pure function returning an ordered list of song
-ids — NO ExportSnapshot is persisted. Push flows (Spotify, Subsonic) call this
-at push time and send the result. The most recent roll is remembered on the
-PlaylistExportTarget as "last pushed" state, not as an archived snapshot.
+ids. The roll is ephemeral: push flows (Spotify, Subsonic) call this at push
+time, send the result to the remote, and discard it — nothing persists the
+rolled list. The target only records sync status and matched/total counts.
 
 Sync (Django ORM, no async) — callers wrap in sync_to_async or run from
 Celery as appropriate.

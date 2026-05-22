@@ -268,13 +268,12 @@ STORAGES = {
 # The Django deprecation warnings for these settings are unavoidable in Django 5.0 when using dynaconf
 
 # ── Queuetip ────────────────────────────────────────────────────────────────
-# Public base URL of the Queuetip ASGI process — used to build magic-link URLs.
-# Browser-facing base URL for the Queuetip stack — used in magic-link emails,
-# m3u download URLs, and as the Spotify OAuth redirect_uri fallback when
-# X-Forwarded-Host is absent. In dev this points at the Vite proxy (3001),
-# which forwards /graphql, /auth, /exports to the backend container — same
-# pattern TuneStash uses for its frontend↔backend interaction. 127.0.0.1
-# (not 'localhost') because Spotify OAuth hard-rejects 'localhost'.
+# Browser-facing base URL for the Queuetip stack — used in magic-link emails
+# and as the Spotify OAuth redirect_uri fallback when X-Forwarded-Host is
+# absent. In dev this points at the Vite proxy (3001), which forwards
+# /graphql, /auth, /exports to the backend container — same pattern TuneStash
+# uses for its frontend↔backend interaction. 127.0.0.1 (not 'localhost')
+# because Spotify OAuth hard-rejects 'localhost'.
 QUEUETIP_PUBLIC_URL = os.getenv("QUEUETIP_PUBLIC_URL", "http://127.0.0.1:3001")
 # Same value as QUEUETIP_PUBLIC_URL in single-origin dev/prod setups —
 # kept as a separate setting in case a future deployment splits the API

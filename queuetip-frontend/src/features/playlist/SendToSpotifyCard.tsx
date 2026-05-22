@@ -123,7 +123,11 @@ export function SendToSpotifyCard({ playlistId }: Props) {
     }
   }
 
-  const busy = creating || pushing;
+  // Any in-flight mutation disables all action buttons so a push can't race a
+  // remove/recreate (which create vs delete the same target). The push button's
+  // spinner label still keys off the push action specifically.
+  const pushing_ = creating || pushing;
+  const busy = pushing_ || removing || recreating;
 
   return (
     <Card>
@@ -142,11 +146,11 @@ export function SendToSpotifyCard({ playlistId }: Props) {
               </AlertDescription>
             </Alert>
             <div className="flex gap-2">
-              <Button onClick={handleRecreate} disabled={recreating}>
+              <Button onClick={handleRecreate} disabled={busy}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 {recreating ? "Recreating…" : "Recreate on Spotify"}
               </Button>
-              <Button variant="ghost" onClick={handleRemove} disabled={removing}>
+              <Button variant="ghost" onClick={handleRemove} disabled={busy}>
                 Stop pushing
               </Button>
             </div>
@@ -179,7 +183,7 @@ export function SendToSpotifyCard({ playlistId }: Props) {
             ) : null}
             <div className="flex gap-2">
               <Button onClick={handleReshufflePush} disabled={busy}>
-                {busy ? (
+                {pushing_ ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Pushing…
                   </>
@@ -190,7 +194,7 @@ export function SendToSpotifyCard({ playlistId }: Props) {
                 )}
               </Button>
               {target ? (
-                <Button variant="ghost" size="sm" onClick={handleRemove} disabled={removing}>
+                <Button variant="ghost" size="sm" onClick={handleRemove} disabled={busy}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               ) : null}

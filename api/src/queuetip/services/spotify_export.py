@@ -68,18 +68,15 @@ class SpotifyExportService:
 
     @staticmethod
     async def sync_target(target_id: int) -> "SpotifyExportResult":
-        """Push a playlist's CURRENT contributions to its Spotify counterpart.
+        """Roll the playlist's current contributions and push them to Spotify.
 
-        Counterpart to `export()` — that one is snapshot-driven (manual export
-        with an immutable frozen tracklist + audit log). This one is
-        sync-driven: pulls the playlist's contributions in real time, pushes,
-        updates the target's status fields. Used by the unified
-        `sync_export_target` Celery task to give Spotify targets the same
-        auto-sync semantics Subsonic targets have.
-
-        No ExportSnapshot is created — auto-syncs aren't audit events.
-        Manual exports via `exportToSpotify(snapshotId)` still produce
-        snapshots; those continue to share the same idempotent target row.
+        The "reshuffle & push" action for a Spotify target: runs the selection
+        engine fresh over the playlist's contributions, bridges any songs
+        missing a Spotify gid (ISRC → Spotify), then creates the Spotify
+        playlist on the first push or replaces its tracks on subsequent ones
+        (one queuetip playlist ↔ one Spotify playlist). Updates the target's
+        last-sync status fields. Raises RemotePlaylistDeletedError if the user
+        deleted the Spotify playlist — automation halts until they recreate.
         """
         target = await sync_to_async(
             lambda: PlaylistExportTarget.objects.select_related(

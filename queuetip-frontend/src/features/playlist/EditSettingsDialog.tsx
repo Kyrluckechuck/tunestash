@@ -91,10 +91,24 @@ export function EditSettingsDialog({
     ],
   });
 
+  // Seed every field from the current props when the dialog OPENS. The dialog
+  // is always mounted and the parent passes fresh object literals each render,
+  // so keying this on prop identity would wipe the user's edits on any parent
+  // re-render. Keying on `open` snapshots fresh values per open and leaves the
+  // form alone while editing.
   React.useEffect(() => {
+    if (!open) return;
     setName(playlist.name);
     setDescription(playlist.description);
-  }, [playlist]);
+    setMinSize(initialKnobs.minSize);
+    setMaxSizeEnabled(initialKnobs.maxSize !== null);
+    setMaxSize(initialKnobs.maxSize ?? 50);
+    setTHigh(initialKnobs.tHigh);
+    setTLow(initialKnobs.tLow);
+    setBase(initialKnobs.base);
+    setPFloor(initialKnobs.pFloor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
