@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 import django.core.validators
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.db.models import IntegerChoices, QuerySet, Sum, TextChoices
 from django.utils import timezone
@@ -317,6 +319,16 @@ class Song(models.Model):
         db_index=True,
         help_text="International Standard Recording Code (e.g., 'USRC11234567')",
     )
+    alternate_isrcs: ArrayField = ArrayField(
+        models.CharField(max_length=20),
+        default=list,
+        blank=True,
+        help_text=(
+            "Additional ISRCs that map to this same recording on other "
+            "platforms (e.g. Apple assigns a different ISRC than Spotify). "
+            "Lets a cross-platform import match this row without re-searching."
+        ),
+    )
     primary_artist: models.ForeignKey = models.ForeignKey(
         Artist, on_delete=models.CASCADE
     )
@@ -510,6 +522,7 @@ class Song(models.Model):
         indexes = [
             models.Index(fields=["gid"]),
             models.Index(fields=["youtube_id"], name="idx_song_youtube_id"),
+            GinIndex(fields=["alternate_isrcs"], name="idx_song_alt_isrcs"),
         ]
         constraints = [
             models.CheckConstraint(

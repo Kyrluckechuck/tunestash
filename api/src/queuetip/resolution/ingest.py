@@ -13,7 +13,10 @@ from django.db import IntegrityError
 from library_manager.models import Artist, Song, TrackingTier
 from library_manager.tasks import download_deezer_track, download_track_by_spotify_gid
 from src.providers.deezer import DeezerMetadataProvider
-from src.queuetip.enrichment import enrich_song_cross_platform
+from src.queuetip.enrichment import (
+    enrich_song_cross_platform,
+    find_spotify_track_by_name_artist,
+)
 from src.queuetip.resolution.candidate import TrackCandidate
 from src.queuetip.resolution.errors import TrackNotFoundError
 
@@ -38,6 +41,12 @@ def _find_existing_song(candidate: TrackCandidate) -> Song | None:
             return song
     if candidate.isrc:
         song = Song.objects.filter(isrc=candidate.isrc).first()
+        if song:
+            return song
+        # Cross-platform: the same recording can carry different ISRCs per
+        # platform. A prior import may have recorded this ISRC as an alternate
+        # on the row whose primary ISRC came from another platform.
+        song = Song.objects.filter(alternate_isrcs__contains=[candidate.isrc]).first()
         if song:
             return song
     return None
@@ -75,6 +84,8 @@ def _create_song(candidate: TrackCandidate) -> Song:
     gid: str | None = None
     deezer_id: int | None = None
     artist_deezer_id: int | None = None
+    primary_isrc: str | None = candidate.isrc
+    alternate_isrc: str | None = None
 
     if candidate.source == "spotify" and candidate.source_id:
         gid = candidate.source_id
@@ -93,6 +104,29 @@ def _create_song(candidate: TrackCandidate) -> Song:
                 if existing:
                     return existing
 
+    # ISRC-exact bridging failed. Platforms often assign different ISRCs to the
+    # same recording (Apple vs Spotify/Deezer), so fall back to a verified
+    # name+artist search to find a storable id.
+    if gid is None and deezer_id is None:
+        match = find_spotify_track_by_name_artist(
+            candidate.track_name, candidate.artist_name
+        )
+        if match:
+            gid, canonical_isrc = match
+            # Prefer reusing an existing row (by the resolved gid or its
+            # canonical ISRC) and record the source ISRC as an alternate, so a
+            # repeat import of this platform's copy matches by ISRC next time.
+            existing = Song.objects.filter(gid=gid).first()
+            if existing is None and canonical_isrc:
+                existing = Song.objects.filter(isrc=canonical_isrc).first()
+            if existing is not None:
+                _record_alternate_isrc(existing, candidate.isrc)
+                return existing
+            if canonical_isrc:
+                primary_isrc = canonical_isrc
+                if candidate.isrc and candidate.isrc != canonical_isrc:
+                    alternate_isrc = candidate.isrc
+
     if gid is None and deezer_id is None:
         raise TrackNotFoundError(
             f"Could not resolve '{candidate.track_name}' to a storable track"
@@ -104,7 +138,8 @@ def _create_song(candidate: TrackCandidate) -> Song:
             name=candidate.track_name,
             gid=gid,
             deezer_id=deezer_id,
-            isrc=candidate.isrc,
+            isrc=primary_isrc,
+            alternate_isrcs=[alternate_isrc] if alternate_isrc else [],
             primary_artist=artist,
         )
     except IntegrityError:
@@ -114,6 +149,17 @@ def _create_song(candidate: TrackCandidate) -> Song:
         if existing is not None:
             return existing
         raise
+
+
+def _record_alternate_isrc(song: Song, isrc: str | None) -> None:
+    """Add `isrc` to song.alternate_isrcs (deduped; skip if it's the primary)."""
+    if not isrc or isrc == song.isrc:
+        return
+    alts = list(song.alternate_isrcs or [])
+    if isrc in alts:
+        return
+    alts.append(isrc)
+    Song.objects.filter(id=song.id).update(alternate_isrcs=alts)
 
 
 _QUEUETIP_DOWNLOAD_QUEUE = "queuetip-downloads"

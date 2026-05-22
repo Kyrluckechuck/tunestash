@@ -8,6 +8,7 @@ enrichment is always a best-effort operation — it must never raise to callers.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from django.db import IntegrityError
@@ -47,6 +48,68 @@ def get_spotify_gid_by_isrc(isrc: str) -> str | None:
         return str(first_item["id"]) if first_item.get("id") else None
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("[ENRICHMENT] ISRC→gid lookup failed for %s: %s", isrc, exc)
+        return None
+
+
+def _normalize_match(value: str) -> str:
+    """Lowercase and strip non-alphanumerics for loose title/artist compare."""
+    return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
+
+def find_spotify_track_by_name_artist(name: str, artist: str) -> tuple[str, str] | None:
+    """Search Spotify by track name + artist; return (gid, isrc) or None.
+
+    Fallback for when ISRC-exact bridging fails (platforms often assign
+    different ISRCs to the same recording). Verifies the candidate artist
+    appears in the result's artist list and the titles closely match, so we
+    don't pull a cover or a wrong version. The returned ISRC is Spotify's
+    canonical one (which may differ from the source platform's).
+    """
+    name = (name or "").strip()
+    artist = (artist or "").strip()
+    if not name or not artist:
+        return None
+    try:
+        from downloader.spotipy_tasks import PublicSpotifyClient
+
+        client = PublicSpotifyClient()
+        if client.sp is None:
+            return None
+        query = f'track:"{name}" artist:"{artist}"'
+        results: dict[str, Any] = dict(
+            client.sp.search(q=query, type="track", limit=5) or {}
+        )
+        tracks = results.get("tracks") or {}
+        items = (tracks.get("items") or []) if isinstance(tracks, dict) else []
+        want_artist = _normalize_match(artist)
+        want_title = _normalize_match(name)
+        for item in items:
+            if not isinstance(item, dict) or not item.get("id"):
+                continue
+            names = [
+                a.get("name", "")
+                for a in (item.get("artists") or [])
+                if isinstance(a, dict)
+            ]
+            artist_ok = any(
+                want_artist in _normalize_match(n) or _normalize_match(n) in want_artist
+                for n in names
+                if n
+            )
+            title = _normalize_match(item.get("name", ""))
+            title_ok = bool(title) and (want_title in title or title in want_title)
+            if not (artist_ok and title_ok):
+                continue
+            isrc = (item.get("external_ids") or {}).get("isrc")
+            return str(item["id"]), (str(isrc) if isrc else "")
+        return None
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning(
+            "[ENRICHMENT] name+artist search failed for %s / %s: %s",
+            name,
+            artist,
+            exc,
+        )
         return None
 
 
