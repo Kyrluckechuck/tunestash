@@ -7,7 +7,7 @@ builder used by magic links, the Settings test-email button, and invites alike.
 
 from django.conf import settings
 
-from src.services.mail import send_message
+from src.services.mail import render_email, send_message
 
 
 def magic_link_url(token: str) -> str:
@@ -27,4 +27,14 @@ def send_magic_link_email(email: str, token: str) -> None:
             "you can ignore this email."
         ),
         to=email,
+        html_body=render_email(
+            eyebrow="Queuetip",
+            heading="Sign in to Queuetip",
+            paragraphs=[
+                "Click the button below to sign in. This link expires in "
+                "15 minutes and can only be used once.",
+            ],
+            button=("Sign in to Queuetip", url),
+            footer="If you didn't request this, you can safely ignore this email.",
+        ),
     )
