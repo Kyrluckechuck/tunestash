@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import re
 
-from .client import SubsonicClient, SubsonicError
+from .client import SubsonicClient, SubsonicError, SubsonicTrack
 
 logger = logging.getLogger(__name__)
 
@@ -41,62 +41,134 @@ def resolve_song_to_subsonic_id(
     artist: str,
     isrc: str | None,
     client: SubsonicClient,
+    file_path: str | None = None,
 ) -> str | None:
     """Walk the resolution ladder against the user's Subsonic server.
 
     Pure read-only — never mutates queuetip or remote state.
 
-    The caller is expected to pass already-resolved title/artist strings
-    rather than a Song object, so this module stays decoupled from the
-    queuetip ORM models (easier to unit-test with no DB).
+    Precedence (most → least confident):
+      1. File path — when TuneStash and the Subsonic server share the music
+         mount, the queuetip Song.file_path matches a candidate's server
+         path. This is a same-file match, definitive, immune to tag drift.
+      2. ISRC exact (when the server populates + indexes it).
+      3. Title + artist exact (artist matched against the credited-artist
+         list, version-qualifier suffixes stripped).
+      4. Fuzzy title + artist.
+
+    The caller passes already-resolved strings rather than a Song object so
+    this module stays decoupled from the ORM (easy to unit-test, no DB).
+    `file_path` is optional — omit it for non-shared-library setups.
     """
     title = (title or "").strip()
     artist = (artist or "").strip()
     if not title and not artist:
         return None
 
-    # 1. ISRC exact match.
+    norm_title = _normalize(title)
+    norm_artist = _normalize(artist)
+
+    # Gather candidates from several searches, deduped by id. ISRC search
+    # first (cheap, sometimes definitive), then "title artist" (biases the
+    # server's relevance toward the right recording for common titles), then
+    # bare title (catches differing artist strings on compilations).
+    seen: dict[str, SubsonicTrack] = {}
+
+    def _add(query: str, count: int) -> None:
+        try:
+            for cand in client.search_tracks(query, song_count=count):
+                seen.setdefault(cand.id, cand)
+        except SubsonicError as exc:
+            logger.warning("[subsonic] search failed for %s: %s", query, exc)
+
     if isrc:
-        try:
-            candidates = client.search_tracks(isrc, song_count=10)
-        except SubsonicError as exc:
-            logger.warning("[subsonic] ISRC search failed for %s: %s", isrc, exc)
-        else:
-            for cand in candidates:
-                # Some servers return ISRC in lowercase, others uppercase.
-                if cand.isrc and cand.isrc.lower() == isrc.lower():
-                    return cand.id
-
-    # 2. Title + artist exact match.
+        _add(isrc, 10)
     if title:
-        try:
-            candidates = client.search_tracks(title, song_count=20)
-        except SubsonicError as exc:
-            logger.warning("[subsonic] title search failed for %s: %s", title, exc)
-            return None
+        _add(f"{title} {artist}".strip(), 50)
+        _add(title, 50)
+    candidates = list(seen.values())
+    if not candidates:
+        return None
 
-        norm_title = _normalize(title)
-        norm_artist = _normalize(artist)
-
-        # Pass A: exact normalized match on both title and artist.
+    # Rung 1: file-path (same-file) match — highest confidence.
+    if file_path:
         for cand in candidates:
-            if _normalize(cand.title) == norm_title and (
-                not norm_artist or _normalize(cand.artist) == norm_artist
+            if cand.path and _paths_match(file_path, cand.path):
+                return cand.id
+
+    # Rung 2: ISRC exact match.
+    if isrc:
+        for cand in candidates:
+            if cand.isrc and cand.isrc.lower() == isrc.lower():
+                return cand.id
+
+    # Rung 3: exact normalized title + artist-list membership.
+    if title:
+        for cand in candidates:
+            if _normalize(cand.title) == norm_title and _artist_matches(
+                norm_artist, cand
             ):
                 return cand.id
 
-        # Pass B: fuzzy title with strict artist match. Skip if no artist
+        # Rung 4: fuzzy title + artist-list membership. Skip without an artist
         # constraint — too risky on title alone.
         if norm_artist:
             for cand in candidates:
                 if (
-                    _normalize(cand.artist) == norm_artist
+                    _artist_matches(norm_artist, cand)
                     and _fuzzy_title_score(norm_title, _normalize(cand.title))
                     >= FUZZY_TITLE_THRESHOLD
                 ):
                     return cand.id
 
     return None
+
+
+def _paths_match(tunestash_path: str, server_relative_path: str) -> bool:
+    """True if a queuetip Song.file_path and a Subsonic server path point at
+    the same file on a shared mount.
+
+    The server returns a path relative to ITS music root
+    (``Artist/Album/01 - Track.m4a``); TuneStash stores an absolute path
+    (``/mnt/music/Artist/Album/01 - Track.m4a``). On a shared mount the
+    absolute path ends with the relative one. We also accept a basename match
+    as a looser fallback (handles roots that reorganize directory layout but
+    keep filenames).
+    """
+    ts = tunestash_path.strip().replace("\\", "/").lower()
+    rel = server_relative_path.strip().replace("\\", "/").lstrip("/").lower()
+    if not ts or not rel:
+        return False
+    if ts.endswith("/" + rel) or ts == rel:
+        return True
+    # Basename fallback — same filename strongly implies same file.
+    return ts.rsplit("/", 1)[-1] == rel.rsplit("/", 1)[-1]
+
+
+def _artist_matches(norm_artist: str, cand: SubsonicTrack) -> bool:
+    """True if the queuetip primary artist matches the candidate.
+
+    Matches against the candidate's structured artist LIST (not just the
+    display string), so a queuetip primary artist like "Maejor" matches a
+    Navidrome track credited "Maejor • Juicy J • Justin Bieber" — the SAME
+    recording with featured artists. Crucially this does NOT match a cover
+    by a different artist (e.g. queuetip "Reel 2 Real" won't match a
+    will.i.am version), preserving precision against wrong-version matches.
+
+    An empty queuetip artist matches anything (caller gates fuzzy on a
+    non-empty artist, so this only relaxes the exact-title path).
+    """
+    if not norm_artist:
+        return True
+    # Build the candidate's credited-artist set from the structured list,
+    # falling back to the display string.
+    names = cand.artists or [cand.artist]
+    candidate_artists = {_normalize(n) for n in names if n}
+    if norm_artist in candidate_artists:
+        return True
+    # Also accept the full display string match (single-artist tracks where
+    # the list wasn't returned).
+    return _normalize(cand.artist) == norm_artist
 
 
 def _normalize(value: str) -> str:
@@ -117,12 +189,30 @@ def _normalize(value: str) -> str:
     # "(Live)", "(Acoustic)" annotations that vary between sources).
     lowered = re.sub(r"\([^)]*\)", " ", lowered)
     lowered = re.sub(r"\[[^\]]*\]", " ", lowered)
+    # Strip a trailing " - <version qualifier>" suffix. Streaming sources
+    # decorate titles like "Bluey Theme Tune - Extended", "Let It Grow - From
+    # \"The Lorax\"", "Some Song - 2011 Remaster". Navidrome usually stores the
+    # bare title, so dropping the qualifier lets the base titles exact-match.
+    # Gated on version keywords so we don't truncate legitimate dash titles
+    # (e.g. "Crystal - Stylo").
+    lowered = re.sub(_VERSION_SUFFIX_RE, "", lowered)
     # Delete apostrophes (both curly and straight) before generic punctuation
     # substitution so "don't" collapses to "dont" not "don t".
     lowered = lowered.replace("'", "").replace("’", "")
     # Replace remaining punctuation with space, then collapse whitespace.
     cleaned = re.sub(r"[^a-z0-9]+", " ", lowered)
     return re.sub(r"\s+", " ", cleaned).strip()
+
+
+# Trailing " - <qualifier>" where the qualifier begins with a known
+# version-marker word. Matches to end of string. Case-insensitive (input is
+# already lower-cased when this runs, but keep the flag for direct use).
+_VERSION_SUFFIX_RE = re.compile(
+    r"\s-\s(?:from|remaster|remastered|remix|mix|live|version|edit|extended|"
+    r"soundtrack|acoustic|mono|stereo|radio|single|album|original|feat|"
+    r"featuring|the remixes|deluxe|bonus|instrumental)\b.*$",
+    re.IGNORECASE,
+)
 
 
 def _fuzzy_title_score(left: str, right: str) -> float:

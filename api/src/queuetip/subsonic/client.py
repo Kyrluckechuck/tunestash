@@ -36,8 +36,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -75,6 +76,17 @@ class SubsonicTrack:
     title: str
     artist: str
     isrc: str | None = None
+    # OpenSubsonic's structured per-artist list (e.g. for "Maejor • Juicy J •
+    # Justin Bieber" → ["Maejor", "Juicy J", "Justin Bieber"]). Lets the
+    # resolver match a queuetip primary artist against ANY credited artist
+    # without matching a different cover/version. Empty on classic Subsonic
+    # servers that don't return the array.
+    artists: list[str] = field(default_factory=list)
+    # Server-relative file path (e.g. "Artist/Album/01 - Track.m4a"). When
+    # TuneStash and the Subsonic server share the music mount, this matches a
+    # suffix of the queuetip Song.file_path — a definitive same-file match
+    # that beats any tag-based heuristic. Empty when the server omits it.
+    path: str = ""
 
 
 class SubsonicClient:
@@ -158,9 +170,9 @@ class SubsonicClient:
                 id=str(s.get("id", "")),
                 title=str(s.get("title", "")),
                 artist=str(s.get("artist", "")),
-                # Subsonic exposes ISRC in some implementations under "isrc"
-                # (modern OpenSubsonic), others not at all. None when absent.
-                isrc=(s.get("isrc") or None),
+                isrc=_first_isrc(s.get("isrc")),
+                artists=_artist_names(s),
+                path=str(s.get("path", "")),
             )
             for s in songs_raw
             if s.get("id")
@@ -298,3 +310,35 @@ class SubsonicClient:
             raise SubsonicError(f"{endpoint} (code {code}): {message}")
 
         return envelope
+
+
+# ── Response field helpers ──────────────────────────────────────────────────
+
+
+def _first_isrc(raw: Any) -> str | None:
+    """Normalize the ISRC field, which OpenSubsonic returns as a list and
+    classic Subsonic omits or returns as a string. Returns the first ISRC
+    or None."""
+    if not raw:
+        return None
+    if isinstance(raw, list):
+        return str(raw[0]) if raw else None
+    return str(raw)
+
+
+def _artist_names(song: dict[str, Any]) -> list[str]:
+    """Extract the credited-artist names from an OpenSubsonic <song>.
+
+    Prefers the structured `artists` array (list of {id, name}); falls back
+    to splitting the display `artist` string on common multi-artist
+    separators so featured-artist matching works on classic servers too.
+    """
+    artists_raw = song.get("artists")
+    if isinstance(artists_raw, list) and artists_raw:
+        names = [str(a.get("name", "")).strip() for a in artists_raw if a.get("name")]
+        if names:
+            return names
+    # Fallback: split the display string on bullets / common separators.
+    display = str(song.get("artist", ""))
+    parts = re.split(r"\s*[•,;]\s*|\s+(?:feat\.?|ft\.?|featuring|&|x)\s+", display)
+    return [p.strip() for p in parts if p.strip()]
