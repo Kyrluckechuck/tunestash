@@ -27,6 +27,7 @@ from queuetip.models import (
     PlaylistExportTarget,
 )
 
+from ..crypto import decrypt_token, encrypt_token
 from ..errors import NotFoundError
 from ..spotify_oauth import (
     SPOTIFY_API_BASE,
@@ -264,23 +265,24 @@ async def _ensure_fresh_token(link: ExternalServiceLink) -> str:
     if link.expires_at > timezone.now() + dt.timedelta(
         seconds=TOKEN_REFRESH_LEEWAY_SECONDS
     ):
-        return str(link.access_token)
+        return decrypt_token(link.access_token)
 
     def _refresh_and_save() -> str:
         try:
-            tokens = refresh_access_token(link.refresh_token)
+            tokens = refresh_access_token(decrypt_token(link.refresh_token))
         except SpotifyOAuthError as exc:
             raise SpotifyExportError(
                 f"Could not refresh Spotify access. Please re-link Spotify. ({exc})"
             ) from exc
-        link.access_token = tokens["access_token"]
+        access_token = tokens["access_token"]
+        link.access_token = encrypt_token(access_token)
         if "refresh_token" in tokens:
-            link.refresh_token = tokens["refresh_token"]
+            link.refresh_token = encrypt_token(tokens["refresh_token"])
         link.expires_at = timezone.now() + dt.timedelta(
             seconds=int(tokens["expires_in"])
         )
         link.save(update_fields=["access_token", "refresh_token", "expires_at"])
-        return str(link.access_token)
+        return access_token
 
     return await sync_to_async(_refresh_and_save)()
 

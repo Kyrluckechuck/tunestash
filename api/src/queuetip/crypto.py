@@ -80,3 +80,28 @@ def decrypt_secret(ciphertext: bytes | memoryview) -> str:
         raise CryptoError(
             "Decryption failed — wrong key, tampered data, or stale ciphertext."
         ) from exc
+
+
+def encrypt_token(plaintext: str) -> str:
+    """Encrypt an OAuth token for at-rest storage in a TEXT column.
+
+    Returns the Fernet ciphertext as an ASCII string (Fernet output is
+    urlsafe-base64), so it drops into ExternalServiceLink's existing token
+    columns without a schema change. Pairs with decrypt_token.
+    """
+    return encrypt_secret(plaintext).decode("ascii")
+
+
+def decrypt_token(stored: str) -> str:
+    """Decrypt a token written by encrypt_token.
+
+    Backward-compatible: a value that isn't valid Fernet ciphertext — a legacy
+    plaintext token written before encryption was added — is returned as-is.
+    Those rows self-heal to ciphertext the next time the token is written.
+    """
+    if not stored:
+        return stored
+    try:
+        return decrypt_secret(stored.encode("ascii"))
+    except (CryptoError, UnicodeError):
+        return stored

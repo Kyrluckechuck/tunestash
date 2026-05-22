@@ -210,6 +210,8 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
     """Handle the Spotify OAuth redirect: exchange the code for tokens, persist."""
     from queuetip.models import Account, ExternalServiceLink
 
+    from .crypto import encrypt_token
+
     code = request.query_params.get("code")
     state = request.query_params.get("state")
     error = request.query_params.get("error")
@@ -255,8 +257,8 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
             account=account,
             service=ExternalServiceLink.SERVICE_SPOTIFY,
             defaults={
-                "access_token": tokens["access_token"],
-                "refresh_token": tokens["refresh_token"],
+                "access_token": encrypt_token(tokens["access_token"]),
+                "refresh_token": encrypt_token(tokens["refresh_token"]),
                 "expires_at": expires_at,
                 "scope": tokens.get("scope", ""),
                 "service_user_id": spotify_user_id,

@@ -10,6 +10,7 @@ from queuetip.models import Account, ExternalServiceLink
 from src.queuetip import spotify_oauth
 from src.queuetip.app import app
 from src.queuetip.auth import SESSION_COOKIE, make_session_token
+from src.queuetip.crypto import decrypt_token
 
 
 @pytest.fixture(autouse=True)
@@ -111,8 +112,8 @@ async def test_callback_upserts_external_service_link():
     link = await sync_to_async(ExternalServiceLink.objects.get)(
         account=account, service="spotify"
     )
-    assert link.access_token == "AT"
-    assert link.refresh_token == "RT"
+    assert decrypt_token(link.access_token) == "AT"
+    assert decrypt_token(link.refresh_token) == "RT"
     assert link.service_user_id == "spotify_user_42"
     assert link.scope == "playlist-modify-private playlist-modify-public"
 
@@ -166,7 +167,7 @@ async def test_callback_updates_existing_link():
     link = await sync_to_async(ExternalServiceLink.objects.get)(
         account=account, service="spotify"
     )
-    assert link.access_token == "NEW_AT"
+    assert decrypt_token(link.access_token) == "NEW_AT"
     assert link.service_user_id == "new_user"
 
 

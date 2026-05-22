@@ -309,6 +309,14 @@ class MagicLinkRequestLog(models.Model):
 
     class Meta(TypedModelMeta):
         app_label = "queuetip"
+        # The two rate-limit checks count rows by (identifier, recent window)
+        # and (ip_address, recent window). Composite indexes keep those counts
+        # O(log n) as the table grows, rather than scanning the created_at index
+        # and filtering by identifier/ip.
+        indexes = [
+            models.Index(fields=["identifier", "created_at"]),
+            models.Index(fields=["ip_address", "created_at"]),
+        ]
 
     def __str__(self) -> str:
         return f"{self.identifier} from {self.ip_address} at {self.created_at}"
