@@ -126,8 +126,8 @@ export function SendToSpotifyCard({ playlistId }: Props) {
   // Any in-flight mutation disables all action buttons so a push can't race a
   // remove/recreate (which create vs delete the same target). The push button's
   // spinner label still keys off the push action specifically.
-  const pushing_ = creating || pushing;
-  const busy = pushing_ || removing || recreating;
+  const pushBusy = creating || pushing;
+  const busy = pushBusy || removing || recreating;
 
   return (
     <Card>
@@ -183,7 +183,7 @@ export function SendToSpotifyCard({ playlistId }: Props) {
             ) : null}
             <div className="flex gap-2">
               <Button onClick={handleReshufflePush} disabled={busy}>
-                {pushing_ ? (
+                {pushBusy ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Pushing…
                   </>

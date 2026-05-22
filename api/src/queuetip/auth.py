@@ -5,6 +5,9 @@ django-sesame, which is coupled to AUTH_USER_MODEL — Queuetip's Account is a
 standalone model, not the project user model.
 """
 
+import hashlib
+import threading
+import time
 from dataclasses import dataclass
 
 from django.core import signing
@@ -36,12 +39,43 @@ def make_magic_link_token(account_id: int) -> str:
     return signing.dumps({"aid": account_id}, salt=_MAGIC_SALT)
 
 
+# Single-use guard for magic-link tokens. Stores {token_digest: consumed_epoch};
+# entries older than the token lifetime are reaped on read. In-memory, mirroring
+# the OAuth state guard (spotify_oauth._used_states): a process restart drops the
+# set, which only re-opens the already narrow (signature + 15-min-expiry-bound)
+# replay window. A DB-backed nonce would close that residual gap fully.
+_consumed_magic: dict[str, float] = {}
+_consumed_magic_lock = threading.Lock()
+
+
+def _consume_magic_token(token: str) -> bool:
+    """Record `token` as used. Returns True if it was unused before this call,
+    False if it was already consumed (replay)."""
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    now = time.time()
+    with _consumed_magic_lock:
+        cutoff = now - MAGIC_LINK_MAX_AGE
+        for k in [k for k, ts in _consumed_magic.items() if ts < cutoff]:
+            del _consumed_magic[k]
+        if digest in _consumed_magic:
+            return False
+        _consumed_magic[digest] = now
+        return True
+
+
 def read_magic_link_token(token: str) -> int:
-    """Return the account id from a magic-link token, or raise InvalidTokenError."""
+    """Return the account id from a magic-link token, or raise InvalidTokenError.
+
+    Single-use: a token that has already been redeemed (or is malformed,
+    tampered, or expired) raises InvalidTokenError. This prevents replay of a
+    link intercepted from email relays, proxy log prefetch, or shared history.
+    """
     try:
         data = signing.loads(token, salt=_MAGIC_SALT, max_age=MAGIC_LINK_MAX_AGE)
     except signing.BadSignature as exc:
         raise InvalidTokenError(str(exc)) from exc
+    if not _consume_magic_token(token):
+        raise InvalidTokenError("Magic link has already been used.")
     return int(data["aid"])
 
 

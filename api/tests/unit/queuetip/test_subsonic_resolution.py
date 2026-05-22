@@ -85,6 +85,25 @@ def test_normalize_keeps_legitimate_dash_titles():
     assert _normalize("Crystal - Stylo") == "crystal stylo"
 
 
+def test_normalize_keeps_leading_parenthetical():
+    """A LEADING parenthetical is part of the title — must not be deleted.
+    Stripping all parens would turn this into just 'the reaper'."""
+    assert _normalize("(Don't Fear) The Reaper") == "dont fear the reaper"
+
+
+def test_normalize_keeps_meaningful_trailing_parenthetical():
+    """A trailing parenthetical WITHOUT a version keyword carries meaning and
+    must survive — otherwise 'Jump (For My Love)' collapses to 'jump' and
+    false-matches Van Halen's 'Jump'."""
+    assert _normalize("Jump (For My Love)") == "jump for my love"
+
+
+def test_normalize_strips_version_paren_keyword_not_first():
+    """A trailing version parenthetical is stripped even when the keyword
+    isn't the first word ('(2011 Remaster)')."""
+    assert _normalize("Some Song (2011 Remaster)") == "some song"
+
+
 # ── _fuzzy_title_score ─────────────────────────────────────────────────────
 
 
@@ -107,11 +126,12 @@ def test_paths_match_relative_suffix_of_absolute():
     )
 
 
-def test_paths_match_basename_fallback():
-    """Different directory layout, same filename → still a match."""
-    assert _paths_match(
-        "/mnt/music_spotify/Vanilla Ice/X/Vanilla Ice - Ice Ice Baby.m4a",
-        "Various Artists/Compilation/Vanilla Ice - Ice Ice Baby.m4a",
+def test_paths_match_rejects_basename_only():
+    """Same filename in DIFFERENT directories must NOT match — a basename
+    collision (compilation vs original) would otherwise route the wrong track."""
+    assert not _paths_match(
+        "/mnt/music/The Beatles/Help!/01 - Help!.m4a",
+        "Various Artists/60s Hits/01 - Help!.m4a",
     )
 
 

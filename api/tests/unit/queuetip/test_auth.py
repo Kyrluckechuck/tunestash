@@ -10,6 +10,14 @@ def test_magic_link_token_round_trip():
     assert auth.read_magic_link_token(token) == 42
 
 
+def test_magic_link_token_is_single_use():
+    """A magic link is consumed on first read; a replay is rejected."""
+    token = auth.make_magic_link_token(7)
+    assert auth.read_magic_link_token(token) == 7
+    with pytest.raises(auth.InvalidTokenError):
+        auth.read_magic_link_token(token)
+
+
 def test_session_token_round_trip():
     token = auth.make_session_token(7, session_epoch=3)
     payload = auth.read_session_token(token)

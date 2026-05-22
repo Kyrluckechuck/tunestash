@@ -131,18 +131,20 @@ def _paths_match(tunestash_path: str, server_relative_path: str) -> bool:
     The server returns a path relative to ITS music root
     (``Artist/Album/01 - Track.m4a``); TuneStash stores an absolute path
     (``/mnt/music/Artist/Album/01 - Track.m4a``). On a shared mount the
-    absolute path ends with the relative one. We also accept a basename match
-    as a looser fallback (handles roots that reorganize directory layout but
-    keep filenames).
+    absolute path ends with the relative one — that suffix match is the whole
+    point of this rung.
+
+    We deliberately do NOT fall back to a basename-only match: two different
+    recordings can share a filename across albums (``01 - Intro.m4a``,
+    ``Help!.m4a`` on a compilation vs the original), and matching on filename
+    alone would route the wrong track into the playlist. A non-shared-library
+    setup simply falls through to the content rungs (ISRC / title+artist).
     """
     ts = tunestash_path.strip().replace("\\", "/").lower()
     rel = server_relative_path.strip().replace("\\", "/").lstrip("/").lower()
     if not ts or not rel:
         return False
-    if ts.endswith("/" + rel) or ts == rel:
-        return True
-    # Basename fallback — same filename strongly implies same file.
-    return ts.rsplit("/", 1)[-1] == rel.rsplit("/", 1)[-1]
+    return ts.endswith("/" + rel) or ts == rel
 
 
 def _artist_matches(norm_artist: str, cand: SubsonicTrack) -> bool:
@@ -178,17 +180,19 @@ def _normalize(value: str) -> str:
       * Apostrophes are DELETED rather than substituted with space, so
         "Don't" → "dont" matches "Dont" → "dont". Substituting would split
         "Don't" into "don t" which then doesn't match "Dont".
-      * Trailing parenthesized content is stripped before normalization, so
-        "Bohemian Rhapsody (Remastered)" → "bohemian rhapsody" matches
-        "Bohemian Rhapsody". Common enough variation that exact-matching it
-        beats relying on the fuzzy step, which would have to score above
-        threshold for every "(suffix)" length we'd see.
+      * Only a TRAILING parenthetical that contains a version keyword is
+        stripped ("Bohemian Rhapsody (Remastered)" → "bohemian rhapsody",
+        "Song (2011 Remaster)" → "song"). Leading or embedded parentheticals
+        carry meaning and MUST survive — stripping all of them would turn
+        "(Don't Fear) The Reaper" into "the reaper" and "Jump (For My Love)"
+        into "jump", producing wrong-track matches.
     """
     lowered = value.lower().strip()
-    # Strip ALL parenthesized content (most commonly the "(Remastered)",
-    # "(Live)", "(Acoustic)" annotations that vary between sources).
-    lowered = re.sub(r"\([^)]*\)", " ", lowered)
-    lowered = re.sub(r"\[[^\]]*\]", " ", lowered)
+    # Strip a trailing "(...)"/"[...]" annotation ONLY when it contains a
+    # version keyword. The keyword gate keeps meaningful parentheticals like
+    # "(For My Love)" or the leading "(Don't Fear)" intact; the punctuation
+    # pass below flattens those to spaces instead of deleting their words.
+    lowered = re.sub(_VERSION_PAREN_RE, "", lowered)
     # Strip a trailing " - <version qualifier>" suffix. Streaming sources
     # decorate titles like "Bluey Theme Tune - Extended", "Let It Grow - From
     # \"The Lorax\"", "Some Song - 2011 Remaster". Navidrome usually stores the
@@ -204,13 +208,26 @@ def _normalize(value: str) -> str:
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
-# Trailing " - <qualifier>" where the qualifier begins with a known
-# version-marker word. Matches to end of string. Case-insensitive (input is
-# already lower-cased when this runs, but keep the flag for direct use).
-_VERSION_SUFFIX_RE = re.compile(
-    r"\s-\s(?:from|remaster|remastered|remix|mix|live|version|edit|extended|"
+# Version-marker words shared by the dash-suffix and parenthetical strippers.
+_VERSION_KEYWORDS = (
+    r"from|remaster|remastered|remix|remixes|mix|live|version|edit|extended|"
     r"soundtrack|acoustic|mono|stereo|radio|single|album|original|feat|"
-    r"featuring|the remixes|deluxe|bonus|instrumental)\b.*$",
+    r"featuring|deluxe|bonus|instrumental|demo|reprise|edition|anniversary"
+)
+
+# Trailing " - <qualifier>" where the qualifier begins with a version keyword.
+# Matches to end of string. Case-insensitive (input is already lower-cased when
+# this runs, but keep the flag for direct use).
+_VERSION_SUFFIX_RE = re.compile(
+    rf"\s-\s(?:{_VERSION_KEYWORDS})\b.*$",
+    re.IGNORECASE,
+)
+
+# A TRAILING "(...)" or "[...]" group that CONTAINS a version keyword anywhere
+# inside it (so "(2011 Remaster)" matches even though the keyword isn't first).
+# Anchored to end-of-string so leading/embedded parentheticals are untouched.
+_VERSION_PAREN_RE = re.compile(
+    rf"\s*[\(\[][^\)\]]*\b(?:{_VERSION_KEYWORDS})\b[^\)\]]*[\)\]]\s*$",
     re.IGNORECASE,
 )
 

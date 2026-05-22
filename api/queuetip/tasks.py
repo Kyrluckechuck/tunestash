@@ -93,13 +93,19 @@ def bulk_import_playlist(job_id: int) -> dict[str, Any]:
                 f"{getattr(candidate, 'artist_name', '?')}"
             )
         else:
-            if Contribution.objects.filter(playlist=playlist, song=song).exists():
-                skipped += 1
-            else:
-                Contribution.objects.create(
-                    playlist=playlist, song=song, contributed_by=job.requested_by
-                )
+            # get_or_create is race-safe on the (playlist, song) unique
+            # constraint: a concurrent import of the same track is counted as a
+            # skip rather than raising IntegrityError (which the bare except
+            # above would have mis-counted as "unresolved").
+            _, created = Contribution.objects.get_or_create(
+                playlist=playlist,
+                song=song,
+                defaults={"contributed_by": job.requested_by},
+            )
+            if created:
                 added += 1
+            else:
+                skipped += 1
 
         # Live progress for the polling UI. One row update per track is fine —
         # bulk-import playlists are bounded (Spotify caps at 10k, typical use

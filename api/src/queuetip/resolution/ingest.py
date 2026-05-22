@@ -8,6 +8,8 @@ column — its CheckConstraint requires gid, deezer_id, or youtube_id).
 
 from __future__ import annotations
 
+from django.db import IntegrityError
+
 from library_manager.models import Artist, Song, TrackingTier
 from library_manager.tasks import download_deezer_track, download_track_by_spotify_gid
 from src.providers.deezer import DeezerMetadataProvider
@@ -97,13 +99,21 @@ def _create_song(candidate: TrackCandidate) -> Song:
         )
 
     artist = _get_or_create_artist(candidate, str(gid or deezer_id), artist_deezer_id)
-    return Song.objects.create(
-        name=candidate.track_name,
-        gid=gid,
-        deezer_id=deezer_id,
-        isrc=candidate.isrc,
-        primary_artist=artist,
-    )
+    try:
+        return Song.objects.create(
+            name=candidate.track_name,
+            gid=gid,
+            deezer_id=deezer_id,
+            isrc=candidate.isrc,
+            primary_artist=artist,
+        )
+    except IntegrityError:
+        # A concurrent ingest of the same track won the race on Song.gid
+        # (unique). Re-fetch the winner instead of failing this import.
+        existing = _find_existing_song(candidate)
+        if existing is not None:
+            return existing
+        raise
 
 
 _QUEUETIP_DOWNLOAD_QUEUE = "queuetip-downloads"

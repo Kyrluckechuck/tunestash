@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import cast
 
+from django.db import IntegrityError, transaction
+
 from asgiref.sync import sync_to_async
 
 from queuetip.models import Account, Contribution, Playlist, Vote
@@ -29,11 +31,20 @@ class VoteService:
             if contribution is None:
                 raise NotFoundError(f"No contribution with id={contribution_id}")
             require_member(account, cast(Playlist, contribution.playlist))
-            vote, _ = Vote.objects.update_or_create(
-                contribution=contribution,
-                account=account,
-                defaults={"value": value},
-            )
+            try:
+                with transaction.atomic():
+                    vote, _ = Vote.objects.update_or_create(
+                        contribution=contribution,
+                        account=account,
+                        defaults={"value": value},
+                    )
+            except IntegrityError:
+                # Two simultaneous first-votes from the same account both saw
+                # "no row" and raced the insert; the loser re-reads the winner's
+                # row and applies its own value.
+                vote = Vote.objects.get(contribution=contribution, account=account)
+                vote.value = value
+                vote.save(update_fields=["value"])
             return vote
 
         return await sync_to_async(_cast)()

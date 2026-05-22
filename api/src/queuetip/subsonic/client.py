@@ -208,6 +208,12 @@ class SubsonicClient:
         we first read its current length then send a single update that
         removes everything and adds the new list in order.
 
+        Not fully atomic: a track added by another client between our
+        getPlaylist read and the updatePlaylist write survives this overwrite
+        (it falls outside the index range we remove). The window is tiny and
+        the stale track is cleared on the next push, so we accept it rather
+        than add locking the Subsonic API doesn't offer.
+
         Raises SubsonicNotFoundError on code 70 (user deleted the playlist).
         """
         # Read current contents so we know how many indices to remove.
@@ -218,8 +224,12 @@ class SubsonicClient:
         current_count = len(current_entries)
 
         params: list[tuple[str, str]] = [("playlistId", playlist_id)]
-        # Remove existing entries by index (must list each index explicitly).
-        for i in range(current_count):
+        # Remove existing entries by index, HIGHEST first: removing low indices
+        # first would shift the remaining entries down, so a server that
+        # re-indexes between removals would delete the wrong rows. Descending
+        # order is correct whether the server resolves indices against the
+        # original list or re-indexes as it goes.
+        for i in range(current_count - 1, -1, -1):
             params.append(("songIndexToRemove", str(i)))
         for sid in song_ids:
             params.append(("songIdToAdd", sid))

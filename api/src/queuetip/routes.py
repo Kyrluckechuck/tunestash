@@ -100,7 +100,15 @@ def verify(token: str) -> Response:
         )
 
     account = _Account.objects.filter(id=account_id).first()
-    session_epoch = account.session_epoch if account is not None else 0
+    if account is None:
+        # Account deleted between link issuance and verification — issuing a
+        # session here would set a 30-day cookie that silently resolves to
+        # anonymous. Surface the failure instead.
+        return HTMLResponse(
+            _VERIFY_ERROR_HTML.format(frontend_url=frontend_url),
+            status_code=400,
+        )
+    session_epoch = account.session_epoch
 
     response = HTMLResponse(_VERIFY_SUCCESS_HTML.format(frontend_url=frontend_url))
     response.set_cookie(
