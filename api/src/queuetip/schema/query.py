@@ -42,6 +42,8 @@ class InviteeType:
     email: str
     added_at: datetime.datetime
     has_signed_up: bool
+    has_verified: bool
+    last_signed_in_at: datetime.datetime | None
     note: str
 
 
@@ -88,16 +90,22 @@ class Query:
                 )
             )
             emails = [e.email for e in entries]
-            joined = set(
-                AuthIdentity.objects.filter(
-                    provider=AuthIdentity.PROVIDER_MAGIC_LINK, identifier__in=emails
-                ).values_list("identifier", flat=True)
-            )
+            # Pull both signup state (AuthIdentity exists) and verify state
+            # (Account.last_signed_in_at is non-null) in a single query so
+            # the resolver stays O(1) regardless of invitee count.
+            identity_rows = AuthIdentity.objects.filter(
+                provider=AuthIdentity.PROVIDER_MAGIC_LINK, identifier__in=emails
+            ).values_list("identifier", "account__last_signed_in_at")
+            last_signed_in: dict[str, datetime.datetime | None] = {}
+            for ident, last in identity_rows:
+                last_signed_in[ident] = last
             return [
                 InviteeType(
                     email=e.email,
                     added_at=e.added_at,
-                    has_signed_up=e.email in joined,
+                    has_signed_up=e.email in last_signed_in,
+                    has_verified=last_signed_in.get(e.email) is not None,
+                    last_signed_in_at=last_signed_in.get(e.email),
                     note=e.note,
                 )
                 for e in entries

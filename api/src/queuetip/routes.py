@@ -110,6 +110,11 @@ def verify(token: str) -> Response:
         )
     session_epoch = account.session_epoch
 
+    # Persistent record that this account has actually clicked a magic link.
+    # We use .update() (not save) to avoid touching auto_now-style fields
+    # and to keep the write to a single column.
+    _Account.objects.filter(id=account_id).update(last_signed_in_at=timezone.now())
+
     response = HTMLResponse(_VERIFY_SUCCESS_HTML.format(frontend_url=frontend_url))
     response.set_cookie(
         SESSION_COOKIE,
