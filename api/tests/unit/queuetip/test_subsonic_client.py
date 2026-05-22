@@ -206,11 +206,10 @@ def test_overwrite_playlist_reads_current_then_sends_remove_plus_add():
     ):
         c.overwrite_playlist("PL1", ["new-1", "new-2"])
 
+    # POST body is a dict whose repeated-key values are lists.
     data = mock_post.call_args.kwargs["data"]
-    keys_seen = [k for k, _ in data]
-    # 3 removes + 2 adds + auth/api keys
-    assert keys_seen.count("songIndexToRemove") == 3
-    assert keys_seen.count("songIdToAdd") == 2
+    assert len(data["songIndexToRemove"]) == 3
+    assert data["songIdToAdd"] == ["new-1", "new-2"]
 
 
 def test_delete_playlist_is_idempotent_on_404():
@@ -238,4 +237,4 @@ def test_create_playlist_uses_post_to_avoid_uri_limit():
         pid = c.create_playlist("My List", ["s1", "s2", "s3"])
     assert pid == "NEWPL"
     data = mock_post.call_args.kwargs["data"]
-    assert [k for k, _ in data].count("songId") == 3
+    assert data["songId"] == ["s1", "s2", "s3"]
