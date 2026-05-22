@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from django.db import IntegrityError
+
 from library_manager.models import Song
 
 logger = logging.getLogger(__name__)
@@ -118,14 +120,41 @@ def enrich_song_cross_platform(song: Song) -> Song:
     # Step 3: If we have an isrc but no deezer_id, resolve via ISRC→Deezer.
     if isrc and not deezer_id:
         fetched_deezer_id = get_deezer_id_by_isrc(isrc)
-        if fetched_deezer_id:
+        # Skip the backfill if a sibling row already owns (deezer_id, album) —
+        # writing it would violate the unique_song_per_album constraint. This
+        # happens when the same recording exists twice (e.g. a Spotify-sourced
+        # row and a Deezer-sourced row sharing an ISRC + album).
+        if fetched_deezer_id and not _deezer_album_taken(fetched_deezer_id, song):
             updates["deezer_id"] = fetched_deezer_id
             logger.debug(
                 "[ENRICHMENT] Song %s: isrc→deezer_id %s", song.id, fetched_deezer_id
             )
 
     if updates:
-        Song.objects.filter(id=song.id).update(**updates)
-        song.refresh_from_db()
+        # Enrichment is best-effort and MUST NOT raise to callers (it runs
+        # mid-ingest). A unique-constraint clash just means the field is already
+        # owned elsewhere — log and move on rather than aborting the import.
+        try:
+            Song.objects.filter(id=song.id).update(**updates)
+            song.refresh_from_db()
+        except IntegrityError as exc:
+            logger.warning(
+                "[ENRICHMENT] Song %s: skipped conflicting update %s (%s)",
+                song.id,
+                list(updates),
+                exc,
+            )
 
     return song
+
+
+def _deezer_album_taken(deezer_id: int, song: Song) -> bool:
+    """True if another song already occupies (deezer_id, song.album)."""
+    album_id = getattr(song, "album_id", None)
+    if album_id is None:
+        return False
+    return (
+        Song.objects.filter(deezer_id=deezer_id, album_id=album_id)
+        .exclude(id=song.id)
+        .exists()
+    )
