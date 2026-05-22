@@ -79,3 +79,14 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.dummy.DummyCache",
     }
 }
+
+# Use in-memory email backend so mailoutbox fixture works in tests
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# Fixed Fernet key for queuetip's at-rest secret encryption (SubsonicConnection
+# passwords). Real production keys come from the QUEUETIP_FERNET_KEY env var;
+# tests need a deterministic value so encrypt → decrypt round-trips work.
+# Dynaconf doesn't expose module-level attributes added after init, so the
+# helper reaches through dynaconf's set() — same pattern as SPOTIPY above.
+QUEUETIP_FERNET_KEY = "f0Q5J5gXqaV6BV5q3lH0OmYjBgaO3SjA0PpBnUaqIz4="
+dynaconf_settings.set("QUEUETIP_FERNET_KEY", QUEUETIP_FERNET_KEY)

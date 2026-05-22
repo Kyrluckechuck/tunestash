@@ -112,9 +112,17 @@ disable_error_code = ["attr-defined"]
 [[tool.mypy.overrides]]
 module = [
     "library_manager.models",
-    "library_manager.helpers", 
+    "library_manager.helpers",
+    "queuetip.models",
 ]
-disable_error_code = ["var-annotated", "attr-defined"]
+disable_error_code = ["var-annotated", "attr-defined", "no-any-return"]
+
+# Queuetip Celery tasks use @shared_task decorator which has no type stubs
+[[tool.mypy.overrides]]
+module = [
+    "queuetip.tasks",
+]
+disable_error_code = ["misc"]
 
 # Django management commands, signals, and Celery tasks
 [[tool.mypy.overrides]]
@@ -171,7 +179,7 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["api", "library_manager", "src"]
+known_first_party = ["api", "library_manager", "src", "queuetip"]
 known_django = ["django"]
 sections = ["FUTURE", "STDLIB", "DJANGO", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
 skip = ["migrations", "venv", ".venv", "node_modules"]
@@ -247,7 +255,7 @@ ignore = [
 
 [tool.ruff.lint.isort]
 # Configure import sorting to match existing isort config
-known-first-party = ["api", "library_manager", "src"]
+known-first-party = ["api", "library_manager", "src", "queuetip"]
 section-order = ["future", "standard-library", "django", "third-party", "first-party", "local-folder"]
 
 [tool.ruff.lint.isort.sections]
@@ -298,6 +306,10 @@ good-names = ["i", "j", "k", "ex", "Run", "_", "id", "db"]
 
 [tool.pylint.django]
 load-plugins = ["pylint_django"] 
+
+[tool.pylint.typecheck]
+# httpx is a dependency installed in Docker/CI but not locally; suppress false E0401
+ignored-modules = ["httpx"]
 
 [tool.pylint.master]
 # Ensure Django is configured and project path is on sys.path during linting

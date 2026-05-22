@@ -1,0 +1,20 @@
+query PlaylistByInviteToken($token: String!) {
+  playlistByInviteToken(inviteToken: $token) {
+    id
+    name
+    description
+    members {
+      account {
+        id
+        displayName
+      }
+      role
+    }
+  }
+}
+
+mutation JoinPlaylist($token: String!) {
+  joinPlaylist(inviteToken: $token) {
+    id
+  }
+}

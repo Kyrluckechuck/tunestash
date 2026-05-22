@@ -89,6 +89,8 @@ app.conf.task_routes = {
     "library_manager.tasks.cleanup_celery_history": {"queue": "celery"},
     # Fallback for any other tasks
     "library_manager.tasks.*": {"queue": "celery"},
+    # Queuetip orchestration tasks — isolated queue for user-facing responsiveness
+    "queuetip.tasks.bulk_import_playlist": {"queue": "queuetip"},
 }
 
 # Task priority configuration
@@ -113,6 +115,8 @@ app.conf.task_annotations = {
     "library_manager.tasks.sync_tracked_playlist": {"rate_limit": "2/s"},
     "library_manager.tasks.sync_tracked_playlist_artists": {"rate_limit": "2/s"},
     "library_manager.tasks.sync_tracked_playlists": {"rate_limit": "2/s"},
+    # Queuetip bulk-import: high priority (8/9) for user-facing responsiveness
+    "queuetip.tasks.bulk_import_playlist": {"priority": 8},
 }
 
 # Ensure all task results include task names

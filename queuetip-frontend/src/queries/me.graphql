@@ -1,0 +1,12 @@
+query Me {
+  me {
+    id
+    displayName
+    createdAt
+    externalServices {
+      service
+      serviceUserId
+      linkedAt
+    }
+  }
+}
