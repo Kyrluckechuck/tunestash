@@ -309,3 +309,18 @@ EMAIL_BACKEND = os.getenv(
 QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST = (
     os.getenv("QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST", "true").lower() != "false"
 )
+
+# Register the settings above with dynaconf. Module-level assignments made
+# AFTER the DjangoDynaconf() init are NOT exposed via django.conf.settings
+# automatically (same reason INSTALLED_APPS uses settings.set() above). Without
+# this, crypto/email/OAuth read empty values in production — DEBUG masks it in
+# dev because the fallbacks/defaults happen to be the right dev values.
+for _qt_key, _qt_val in {
+    "QUEUETIP_PUBLIC_URL": QUEUETIP_PUBLIC_URL,
+    "QUEUETIP_FRONTEND_URL": QUEUETIP_FRONTEND_URL,
+    "QUEUETIP_FERNET_KEY": QUEUETIP_FERNET_KEY,
+    "QUEUETIP_TRUSTED_PROXIES": QUEUETIP_TRUSTED_PROXIES,
+    "EMAIL_BACKEND": EMAIL_BACKEND,
+    "QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST": QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST,
+}.items():
+    settings.set(_qt_key, _qt_val)
