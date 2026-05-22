@@ -65,6 +65,10 @@ _ML_PER_EMAIL_WINDOW = datetime.timedelta(minutes=5)
 _ML_PER_IP_LIMIT = 100
 _ML_PER_IP_WINDOW = datetime.timedelta(hours=1)
 
+# Generous per-admin cap on inviteToQueuetip — enough to bound a compromised
+# session without blocking legitimate manual onboarding.
+_ADMIN_INVITES_PER_HOUR = 30
+
 
 def _check_magic_link_throttle(email: str, ip: str) -> bool:
     """Return True if this request is within rate limits and record it.
@@ -352,9 +356,27 @@ class Mutation:  # pylint: disable=too-many-public-methods
                 return RequestMagicLinkResult(
                     sent=False, message="Enter a valid email address."
                 )
+            # Per-admin sliding-window rate limit: bounds runaway abuse from a
+            # compromised admin session without blocking legitimate manual use.
+            from datetime import timedelta
+
+            from django.utils import timezone
+
+            recent = QueuetipSignupAllowlist.objects.filter(
+                invited_by=account,
+                added_at__gte=timezone.now() - timedelta(hours=1),
+            ).count()
+            if recent >= _ADMIN_INVITES_PER_HOUR:
+                return RequestMagicLinkResult(
+                    sent=False,
+                    message="Too many invites in the last hour. Try again later.",
+                )
             QueuetipSignupAllowlist.objects.get_or_create(
                 email=address,
-                defaults={"note": f"Invited by {account.display_name}"},
+                defaults={
+                    "note": f"Invited by {account.display_name}",
+                    "invited_by": account,
+                },
             )
             signup_url = getattr(
                 dj_settings, "QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001"
@@ -387,6 +409,31 @@ class Mutation:  # pylint: disable=too-many-public-methods
                     ),
                 )
             return RequestMagicLinkResult(sent=True, message=f"Invited {address}.")
+
+        return await sync_to_async(_do)()
+
+    @strawberry.mutation
+    async def remove_queuetip_invite(
+        self, info: Info[QueuetipContext, None], email: str
+    ) -> RequestMagicLinkResult:
+        """Admin-only: remove an email from the Queuetip signup allowlist."""
+        from queuetip.models import QueuetipSignupAllowlist
+        from queuetip.permissions import PermissionDeniedError, is_queuetip_admin
+
+        account = _require_account(info)
+        address = (email or "").strip().lower()
+
+        def _do() -> RequestMagicLinkResult:
+            if not is_queuetip_admin(account):
+                raise PermissionDeniedError("Admin access required.")
+            deleted, _ = QueuetipSignupAllowlist.objects.filter(email=address).delete()
+            if deleted:
+                return RequestMagicLinkResult(
+                    sent=True, message=f"Removed {address} from the allowlist."
+                )
+            return RequestMagicLinkResult(
+                sent=False, message=f"{address} was not on the allowlist."
+            )
 
         return await sync_to_async(_do)()
 
@@ -748,10 +795,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
         # Run synchronously so the GraphQL response contains the post-sync
         # state — better UX than a fire-and-forget task and a poll loop.
         if target.destination_type == PlaylistExportTarget.DEST_SUBSONIC:
-            from ..services.subsonic_sync import (
-                SubsonicSyncError,
-                sync_subsonic_target,
-            )
+            from ..services.subsonic_sync import SubsonicSyncError, sync_subsonic_target
 
             try:
                 await sync_to_async(sync_subsonic_target)(target.id)
@@ -807,10 +851,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
         target = await sync_to_async(_clear_and_sync)()
 
         if target.destination_type == PlaylistExportTarget.DEST_SUBSONIC:
-            from ..services.subsonic_sync import (
-                SubsonicSyncError,
-                sync_subsonic_target,
-            )
+            from ..services.subsonic_sync import SubsonicSyncError, sync_subsonic_target
 
             try:
                 await sync_to_async(sync_subsonic_target)(target.id)

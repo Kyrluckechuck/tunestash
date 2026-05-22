@@ -1,14 +1,12 @@
 """Queuetip GraphQL Query type."""
 
+import datetime
+
 import strawberry
 from asgiref.sync import sync_to_async
 from strawberry.types import Info
 
-from queuetip.models import (
-    Account,
-    PlaylistExportTarget,
-    SubsonicConnection,
-)
+from queuetip.models import Account, PlaylistExportTarget, SubsonicConnection
 from queuetip.permissions import require_member
 from src.queuetip.resolution.catalog import catalog_search as _catalog_search
 
@@ -38,6 +36,16 @@ def _require_account(info: Info[QueuetipContext, None]) -> Account:
 
 
 @strawberry.type
+class InviteeType:
+    """A row in the Queuetip signup allowlist invited by the current admin."""
+
+    email: str
+    added_at: datetime.datetime
+    has_signed_up: bool
+    note: str
+
+
+@strawberry.type
 class Query:
     """Root query for the Queuetip public API."""
 
@@ -57,6 +65,45 @@ class Query:
             )
         )()
         return AccountType.from_model(account, links=links, is_admin=admin)
+
+    @strawberry.field
+    async def my_invitees(self, info: Info[QueuetipContext, None]) -> list[InviteeType]:
+        """Admin-only: emails the current admin has allowlisted.
+
+        Empty list for non-admins (so the public client can ask unconditionally
+        without a separate auth error). Includes a `hasSignedUp` flag so the UI
+        can distinguish pending invites from completed signups.
+        """
+        from queuetip.models import AuthIdentity, QueuetipSignupAllowlist
+        from queuetip.permissions import is_queuetip_admin
+
+        account = _require_account(info)
+
+        def _fetch() -> list[InviteeType]:
+            if not is_queuetip_admin(account):
+                return []
+            entries = list(
+                QueuetipSignupAllowlist.objects.filter(invited_by=account).order_by(
+                    "-added_at"
+                )
+            )
+            emails = [e.email for e in entries]
+            joined = set(
+                AuthIdentity.objects.filter(
+                    provider=AuthIdentity.PROVIDER_MAGIC_LINK, identifier__in=emails
+                ).values_list("identifier", flat=True)
+            )
+            return [
+                InviteeType(
+                    email=e.email,
+                    added_at=e.added_at,
+                    has_signed_up=e.email in joined,
+                    note=e.note,
+                )
+                for e in entries
+            ]
+
+        return await sync_to_async(_fetch)()
 
     @strawberry.field
     def public_settings(self) -> PublicSettingsType:
