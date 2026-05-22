@@ -7,6 +7,8 @@ configured, mail falls back to the console backend (links print to the
 container logs), which is the right default for local dev.
 """
 
+from typing import cast
+
 from django.conf import settings
 from django.core.mail import EmailMessage, get_connection
 from django.core.mail.backends.base import BaseEmailBackend
@@ -31,14 +33,17 @@ def _mail_connection() -> BaseEmailBackend:
     """
     host = (get_setting("email_host") or "").strip()
     if not host:
-        return get_connection()
-    return get_connection(
-        backend=_SMTP_BACKEND,
-        host=host,
-        port=int(get_setting("email_port")),
-        username=get_setting("email_host_user") or "",
-        password=get_setting("email_host_password") or "",
-        use_tls=bool(get_setting("email_use_tls")),
+        return cast(BaseEmailBackend, get_connection())
+    return cast(
+        BaseEmailBackend,
+        get_connection(
+            backend=_SMTP_BACKEND,
+            host=host,
+            port=int(get_setting("email_port")),
+            username=get_setting("email_host_user") or "",
+            password=get_setting("email_host_password") or "",
+            use_tls=bool(get_setting("email_use_tls")),
+        ),
     )
 
 
