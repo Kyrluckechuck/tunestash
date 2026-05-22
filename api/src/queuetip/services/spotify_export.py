@@ -274,7 +274,7 @@ async def _ensure_fresh_token(link: ExternalServiceLink) -> str:
             raise SpotifyExportError(
                 f"Could not refresh Spotify access. Please re-link Spotify. ({exc})"
             ) from exc
-        access_token = tokens["access_token"]
+        access_token = str(tokens["access_token"])
         link.access_token = encrypt_token(access_token)
         if "refresh_token" in tokens:
             link.refresh_token = encrypt_token(tokens["refresh_token"])

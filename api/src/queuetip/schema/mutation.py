@@ -793,9 +793,16 @@ def _create_subsonic_connection(
         SubsonicConnection.AUTH_API_KEY,
     ):
         raise ValidationError(f"Invalid auth_mode: {auth_mode!r}")
-    # Hard-replace any prior connection — the model is unique_together on
-    # account, so a second add must clobber.
-    SubsonicConnection.objects.filter(account=account).delete()
+    # Reject a second connection rather than replacing it. Deleting the prior
+    # row would CASCADE to its PlaylistExportTargets (on_delete=CASCADE),
+    # silently destroying the user's sync targets and orphaning their remote
+    # playlists. Editing an existing connection goes through
+    # updateSubsonicConnection, which the settings UI uses when one exists.
+    if SubsonicConnection.objects.filter(account=account).exists():
+        raise ValidationError(
+            "A Subsonic connection already exists for this account. "
+            "Update it instead of adding a new one."
+        )
     return SubsonicConnection.objects.create(
         account=account,
         label=label.strip() or "Subsonic",
