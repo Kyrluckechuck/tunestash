@@ -26,6 +26,15 @@ class Account(models.Model):
     display_name: models.CharField = models.CharField(max_length=120)
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
     session_epoch: models.PositiveIntegerField = models.PositiveIntegerField(default=0)
+    last_signed_in_at: models.DateTimeField = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Set whenever this account completes /auth/verify. NULL means the "
+            "account was created (signup form submitted, AuthIdentity issued) "
+            "but no magic link has ever been clicked."
+        ),
+    )
 
     if TYPE_CHECKING:
         id: int

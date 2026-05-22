@@ -77,6 +77,8 @@ type InviteeType {
   email: String!
   addedAt: DateTime!
   hasSignedUp: Boolean!
+  hasVerified: Boolean!
+  lastSignedInAt: DateTime
   note: String!
 }
 

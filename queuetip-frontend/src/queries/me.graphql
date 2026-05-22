@@ -24,6 +24,8 @@ query MyInvitees {
     email
     addedAt
     hasSignedUp
+    hasVerified
+    lastSignedInAt
     note
   }
 }

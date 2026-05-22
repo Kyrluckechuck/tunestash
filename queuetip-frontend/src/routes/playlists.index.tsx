@@ -121,6 +121,19 @@ function AdminInviteCard() {
 
   const invitees = data?.myInvitees ?? [];
 
+  // Pick the largest unit that fits the elapsed time. Native, no dependency.
+  function relativeTime(iso: string): string {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const sec = Math.round(diffMs / 1000);
+    const fmt = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+    if (sec < 60) return fmt.format(-sec, "second");
+    if (sec < 3600) return fmt.format(-Math.round(sec / 60), "minute");
+    if (sec < 86400) return fmt.format(-Math.round(sec / 3600), "hour");
+    if (sec < 2592000) return fmt.format(-Math.round(sec / 86400), "day");
+    if (sec < 31536000) return fmt.format(-Math.round(sec / 2592000), "month");
+    return fmt.format(-Math.round(sec / 31536000), "year");
+  }
+
   return (
     <Card className="mb-6">
       <CardHeader>
@@ -144,32 +157,44 @@ function AdminInviteCard() {
         </div>
         {invitees.length > 0 ? (
           <ul className="divide-y divide-border border border-border rounded-md">
-            {invitees.map((iv) => (
-              <li
-                key={iv.email}
-                className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
-              >
-                <span className="truncate">
-                  <span className="font-mono">{iv.email}</span>
-                  <span
-                    className={`ml-2 text-xs ${
-                      iv.hasSignedUp ? "text-green-500" : "text-muted-foreground"
-                    }`}
-                  >
-                    {iv.hasSignedUp ? "Joined" : "Pending"}
-                  </span>
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRemove(iv.email)}
-                  aria-label={`Remove ${iv.email}`}
-                  title="Remove from allowlist"
+            {invitees.map((iv) => {
+              // Three real states: invited (no AuthIdentity yet), signed-up
+              // (account exists but never clicked the magic link), verified
+              // (has at least one successful /auth/verify). The label and
+              // color must match the underlying state, not just hasSignedUp.
+              const status = iv.hasVerified
+                ? { label: "Active", color: "text-green-500" }
+                : iv.hasSignedUp
+                  ? { label: "Signed up, not verified", color: "text-amber-500" }
+                  : { label: "Invite pending", color: "text-muted-foreground" };
+              return (
+                <li
+                  key={iv.email}
+                  className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
                 >
-                  <X className="h-4 w-4" />
-                </Button>
-              </li>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono truncate">{iv.email}</span>
+                      <span className={`text-xs ${status.color}`}>{status.label}</span>
+                    </div>
+                    {iv.hasVerified && iv.lastSignedInAt ? (
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        Last signed in {relativeTime(iv.lastSignedInAt)}
+                      </div>
+                    ) : null}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemove(iv.email)}
+                    aria-label={`Remove ${iv.email}`}
+                    title="Remove from allowlist"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
       </CardContent>
