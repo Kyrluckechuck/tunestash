@@ -665,3 +665,78 @@ class Mutation:  # pylint: disable=too-many-public-methods
             skipped=result.get("skipped", 0),
             message=result.get("message", result.get("error", "Unknown error")),
         )
+
+    @strawberry.mutation
+    async def send_test_email(self, recipient: str) -> MutationResult:
+        """Send a test email to verify the configured SMTP settings."""
+        from src.services import mail
+
+        address = (recipient or "").strip()
+        if "@" not in address:
+            return MutationResult(success=False, message="Enter a valid email address.")
+
+        def _send() -> None:
+            mail.send_message(
+                subject="TuneStash test email",
+                body=(
+                    "This is a test email from TuneStash. "
+                    "If you received it, your SMTP settings are working."
+                ),
+                to=address,
+            )
+
+        try:
+            await sync_to_async(_send)()
+        except Exception as exc:  # pylint: disable=broad-except
+            return MutationResult(success=False, message=f"Send failed: {exc}")
+        return MutationResult(success=True, message=f"Test email sent to {address}.")
+
+    @strawberry.mutation
+    async def invite_queuetip_user(self, email: str) -> MutationResult:
+        """Allowlist an email for Queuetip sign-up and email them an invite."""
+        from django.conf import settings as dj_settings
+
+        from src.services import mail
+
+        address = (email or "").strip().lower()
+        if "@" not in address:
+            return MutationResult(success=False, message="Enter a valid email address.")
+
+        def _allowlist() -> None:
+            from queuetip.models import QueuetipSignupAllowlist
+
+            QueuetipSignupAllowlist.objects.get_or_create(
+                email=address, defaults={"note": "Invited from TuneStash settings"}
+            )
+
+        # Allowlist first and commit it — the invitee can still self-serve even
+        # if the email send fails, so a mail error must not undo the allowlist.
+        await sync_to_async(_allowlist)()
+
+        signup_url = getattr(
+            dj_settings, "QUEUETIP_FRONTEND_URL", "http://127.0.0.1:3001"
+        ).rstrip("/")
+
+        def _send() -> None:
+            mail.send_message(
+                subject="You're invited to Queuetip",
+                body=(
+                    "You've been invited to Queuetip — collaborative playlists.\n\n"
+                    f"Sign up with this email ({address}) here:\n{signup_url}\n\n"
+                    "After you enter your name you'll receive a one-time sign-in "
+                    "link by email."
+                ),
+                to=address,
+            )
+
+        try:
+            await sync_to_async(_send)()
+        except Exception as exc:  # pylint: disable=broad-except
+            return MutationResult(
+                success=True,
+                message=(
+                    f"{address} allowlisted, but the invite email failed ({exc}). "
+                    f"Share {signup_url} with them directly."
+                ),
+            )
+        return MutationResult(success=True, message=f"Invited {address}.")

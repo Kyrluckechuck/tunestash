@@ -369,6 +369,8 @@ type Mutation {
   resetAppSetting(key: String!): UpdateSettingResult!
   uploadCookieFile(content: String!): CookieUploadResult!
   migrateSettingsFromYaml: YamlMigrationResult!
+  sendTestEmail(recipient: String!): MutationResult!
+  inviteQueuetipUser(email: String!): MutationResult!
 }
 
 type MutationResult {

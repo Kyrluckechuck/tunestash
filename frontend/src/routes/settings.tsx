@@ -1,4 +1,4 @@
-import { useQuery } from '@apollo/client/react';
+import { useMutation, useQuery } from '@apollo/client/react';
 import { createFileRoute } from '@tanstack/react-router';
 import React, { useState } from 'react';
 
@@ -7,7 +7,11 @@ import type {
   AppSettingType,
   SettingsCategoryType,
 } from '../hooks/useSettingsPage';
-import { GetDeezerGenresDocument } from '../types/generated/graphql';
+import {
+  GetDeezerGenresDocument,
+  InviteQueuetipUserDocument,
+  SendTestEmailDocument,
+} from '../types/generated/graphql';
 
 export const Route = createFileRoute('/settings')({
   component: SettingsPage,
@@ -90,14 +94,122 @@ function SettingsPage() {
       )}
 
       {categories.map(category => (
-        <SettingsSection
-          key={category.category}
-          category={category}
-          pendingKey={pendingKey}
-          onUpdate={handleUpdateSetting}
-          onReset={handleResetSetting}
-        />
+        <React.Fragment key={category.category}>
+          <SettingsSection
+            category={category}
+            pendingKey={pendingKey}
+            onUpdate={handleUpdateSetting}
+            onReset={handleResetSetting}
+          />
+          {category.category === 'email' && <EmailActionsSection />}
+        </React.Fragment>
       ))}
+    </div>
+  );
+}
+
+function EmailActionsSection() {
+  const [testTo, setTestTo] = useState('');
+  const [inviteTo, setInviteTo] = useState('');
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(
+    null
+  );
+  const [sendTest, { loading: testing }] = useMutation(SendTestEmailDocument);
+  const [invite, { loading: inviting }] = useMutation(
+    InviteQueuetipUserDocument
+  );
+
+  async function handleTest() {
+    try {
+      const r = await sendTest({ variables: { recipient: testTo } });
+      const res = r.data?.sendTestEmail;
+      setResult({ ok: !!res?.success, text: res?.message ?? 'No response.' });
+    } catch (e) {
+      setResult({
+        ok: false,
+        text: e instanceof Error ? e.message : 'Failed.',
+      });
+    }
+  }
+
+  async function handleInvite() {
+    try {
+      const r = await invite({ variables: { email: inviteTo } });
+      const res = r.data?.inviteQueuetipUser;
+      setResult({ ok: !!res?.success, text: res?.message ?? 'No response.' });
+    } catch (e) {
+      setResult({
+        ok: false,
+        text: e instanceof Error ? e.message : 'Failed.',
+      });
+    }
+  }
+
+  const inputClass =
+    'flex-1 px-3 py-1.5 text-sm bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-400';
+  const btnClass =
+    'px-3 py-1.5 text-sm rounded-md bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap';
+
+  return (
+    <div className='bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4 space-y-4'>
+      <div className='space-y-1.5'>
+        <label className='text-sm font-medium text-gray-900 dark:text-white'>
+          Send a test email
+        </label>
+        <div className='flex gap-2'>
+          <input
+            type='email'
+            value={testTo}
+            onChange={e => setTestTo(e.target.value)}
+            placeholder='you@example.com'
+            className={inputClass}
+          />
+          <button
+            onClick={handleTest}
+            disabled={testing || !testTo.trim()}
+            className={btnClass}
+          >
+            {testing ? 'Sending…' : 'Send test'}
+          </button>
+        </div>
+      </div>
+
+      <div className='space-y-1.5'>
+        <label className='text-sm font-medium text-gray-900 dark:text-white'>
+          Invite to Queuetip
+        </label>
+        <p className='text-xs text-gray-500 dark:text-gray-400'>
+          Allowlists the email and sends them a sign-up invite.
+        </p>
+        <div className='flex gap-2'>
+          <input
+            type='email'
+            value={inviteTo}
+            onChange={e => setInviteTo(e.target.value)}
+            placeholder='friend@example.com'
+            className={inputClass}
+          />
+          <button
+            onClick={handleInvite}
+            disabled={inviting || !inviteTo.trim()}
+            className={btnClass}
+          >
+            {inviting ? 'Inviting…' : 'Invite'}
+          </button>
+        </div>
+      </div>
+
+      {result && (
+        <p
+          className={`text-sm ${
+            result.ok
+              ? 'text-green-600 dark:text-green-400'
+              : 'text-red-600 dark:text-red-400'
+          }`}
+        >
+          {result.text}
+        </p>
+      )}
     </div>
   );
 }
