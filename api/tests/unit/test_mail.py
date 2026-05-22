@@ -36,6 +36,34 @@ def test_build_connection_builds_smtp_from_app_settings():
 
 
 @pytest.mark.django_db
+def test_build_connection_implicit_ssl_for_465():
+    """email_use_ssl → implicit SSL (port 465), not STARTTLS."""
+    AppSetting.objects.create(
+        key="email_host", value="smtp.gmail.com", category="email"
+    )
+    AppSetting.objects.create(key="email_port", value=465, category="email")
+    AppSetting.objects.create(key="email_use_ssl", value=True, category="email")
+
+    conn = build_connection()
+    assert conn.use_ssl is True
+    assert conn.use_tls is False
+
+
+@pytest.mark.django_db
+def test_build_connection_ssl_wins_when_both_set():
+    """STARTTLS + SSL both on → SSL wins (Django errors if both are True)."""
+    AppSetting.objects.create(
+        key="email_host", value="smtp.gmail.com", category="email"
+    )
+    AppSetting.objects.create(key="email_use_tls", value=True, category="email")
+    AppSetting.objects.create(key="email_use_ssl", value=True, category="email")
+
+    conn = build_connection()
+    assert conn.use_ssl is True
+    assert conn.use_tls is False
+
+
+@pytest.mark.django_db
 def test_from_address_uses_setting_then_registry_default():
     # No DB override → the registry default for email_from.
     assert from_address() == "Queuetip <queuetip@localhost>"
