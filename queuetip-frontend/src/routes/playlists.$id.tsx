@@ -116,131 +116,116 @@ function PlaylistDetailContent({ id }: { id: string }) {
   }
 
   return (
-    <div className="container py-8 grid lg:grid-cols-[1fr_320px] gap-6">
-      <div>
-        <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">{playlist.name}</h1>
-            {playlist.description ? (
-              <p className="text-muted-foreground mt-1">{playlist.description}</p>
-            ) : null}
-          </div>
-          {isOwner ? (
-            <div className="flex gap-2 shrink-0">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setSettingsOpen(true)}
-              >
-                <Settings className="h-4 w-4 mr-1" />
-                Settings
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-destructive hover:text-destructive"
-                onClick={handleDelete}
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
-            </div>
-          ) : (
+    <div className="container py-8 space-y-6">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">{playlist.name}</h1>
+          {playlist.description ? (
+            <p className="text-muted-foreground mt-1">{playlist.description}</p>
+          ) : null}
+        </div>
+        {isOwner ? (
+          <div className="flex gap-2 shrink-0">
+            <Button size="sm" variant="outline" onClick={() => setSettingsOpen(true)}>
+              <Settings className="h-4 w-4 mr-1" />
+              Settings
+            </Button>
             <Button
               size="sm"
               variant="outline"
-              className="shrink-0"
-              onClick={handleLeave}
+              className="text-destructive hover:text-destructive"
+              onClick={handleDelete}
             >
-              <LogOut className="h-4 w-4 mr-1" />
-              Leave
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete
             </Button>
-          )}
-        </header>
+          </div>
+        ) : (
+          <Button size="sm" variant="outline" className="shrink-0" onClick={handleLeave}>
+            <LogOut className="h-4 w-4 mr-1" />
+            Leave
+          </Button>
+        )}
+      </header>
 
-        <Card>
-          <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>Contributions</CardTitle>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setBulkImportOpen(true)}>
-                Bulk import
+      <div className="grid lg:grid-cols-[1fr_320px] gap-6">
+        <div>
+          <Card>
+            <CardHeader className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>Contributions</CardTitle>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setBulkImportOpen(true)}>
+                  Bulk import
+                </Button>
+                <Button size="sm" onClick={() => setContributeOpen(true)}>
+                  Contribute
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {contributions.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  No songs yet. Click "Contribute" to add the first one.
+                </p>
+              ) : (
+                contributions.map((c) => (
+                  <ContributionRow
+                    key={c.id}
+                    contribution={c}
+                    currentAccountId={account!.id}
+                    isOwner={!!isOwner}
+                    onRemoved={() => refetch()}
+                  />
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <aside className="space-y-4 order-first lg:order-none">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Members</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MemberList
+                members={playlist.members}
+                currentAccountId={account!.id}
+                isOwner={!!isOwner}
+                onKick={isOwner ? handleKick : undefined}
+                onPromote={isOwner ? handlePromote : undefined}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Invite</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              <Button variant="outline" size="sm" className="w-full" onClick={copyInvite}>
+                <Copy className="h-4 w-4 mr-2" /> Copy invite link
               </Button>
-              <Button size="sm" onClick={() => setContributeOpen(true)}>
-                Contribute
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {contributions.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No songs yet. Click "Contribute" to add the first one.
-              </p>
-            ) : (
-              contributions.map((c) => (
-                <ContributionRow
-                  key={c.id}
-                  contribution={c}
-                  currentAccountId={account!.id}
-                  isOwner={!!isOwner}
-                  onRemoved={() => refetch()}
-                />
-              ))
-            )}
-          </CardContent>
-        </Card>
+              {isOwner ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-muted-foreground"
+                  onClick={handleRegenerate}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" /> Regenerate link
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <SendToSpotifyCard playlistId={id} />
+          <SendToSubsonicCard playlistId={id} />
+        </aside>
       </div>
 
-      <aside className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Members</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MemberList
-              members={playlist.members}
-              currentAccountId={account!.id}
-              isOwner={!!isOwner}
-              onKick={isOwner ? handleKick : undefined}
-              onPromote={isOwner ? handlePromote : undefined}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Invite</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            <Button variant="outline" size="sm" className="w-full" onClick={copyInvite}>
-              <Copy className="h-4 w-4 mr-2" /> Copy invite link
-            </Button>
-            {isOwner ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-muted-foreground"
-                onClick={handleRegenerate}
-              >
-                <RefreshCw className="h-4 w-4 mr-2" /> Regenerate link
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <SendToSpotifyCard playlistId={id} />
-        <SendToSubsonicCard playlistId={id} />
-      </aside>
-
-      <BulkImportDialog
-        playlistId={id}
-        open={bulkImportOpen}
-        onOpenChange={setBulkImportOpen}
-      />
-      <ContributeDialog
-        playlistId={id}
-        open={contributeOpen}
-        onOpenChange={setContributeOpen}
-      />
+      <BulkImportDialog playlistId={id} open={bulkImportOpen} onOpenChange={setBulkImportOpen} />
+      <ContributeDialog playlistId={id} open={contributeOpen} onOpenChange={setContributeOpen} />
       {isOwner ? (
         <EditSettingsDialog
           playlist={{
