@@ -411,7 +411,21 @@ SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
         "type": TYPE_BOOL,
         "category": CAT_EMAIL,
         "label": "Use STARTTLS",
-        "description": "Use STARTTLS for the SMTP connection (typical for port 587).",
+        "description": (
+            "Use STARTTLS — connect plaintext then upgrade (typical for port "
+            "587). Mutually exclusive with implicit SSL; if both are on, SSL "
+            "wins."
+        ),
+    },
+    "email_use_ssl": {
+        "default": False,
+        "type": TYPE_BOOL,
+        "category": CAT_EMAIL,
+        "label": "Use implicit SSL",
+        "description": (
+            "Use implicit TLS/SSL — the connection is encrypted from the start "
+            "(typical for port 465). Enable this instead of STARTTLS for 465."
+        ),
     },
     "email_from": {
         "default": "Queuetip <queuetip@localhost>",

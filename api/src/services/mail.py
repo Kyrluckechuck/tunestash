@@ -23,6 +23,10 @@ def build_connection() -> BaseEmailBackend:
     host = (get_setting("email_host") or "").strip()
     if not host:
         return cast(BaseEmailBackend, get_connection())
+    # STARTTLS (587) and implicit SSL (465) are mutually exclusive — Django's
+    # SMTP backend raises if both are set. Implicit SSL wins when both are on.
+    use_ssl = bool(get_setting("email_use_ssl"))
+    use_tls = bool(get_setting("email_use_tls")) and not use_ssl
     return cast(
         BaseEmailBackend,
         get_connection(
@@ -31,7 +35,8 @@ def build_connection() -> BaseEmailBackend:
             port=int(get_setting("email_port")),
             username=get_setting("email_host_user") or "",
             password=get_setting("email_host_password") or "",
-            use_tls=bool(get_setting("email_use_tls")),
+            use_tls=use_tls,
+            use_ssl=use_ssl,
         ),
     )
 
