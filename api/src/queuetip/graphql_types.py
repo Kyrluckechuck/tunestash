@@ -316,6 +316,12 @@ class SongRef:
     title: str
     artist: str
     isrc: str | None
+    # Platform IDs let the client build direct deep-links instead of falling
+    # back to platform search. Either may be null (a song imported from
+    # Spotify may have no deezer_id, and vice versa). We don't store an
+    # Apple Music ID — clients deep-link via the Apple search URL.
+    spotify_gid: str | None
+    deezer_id: str | None
 
 
 @strawberry.type
@@ -343,6 +349,8 @@ class ContributionType:
                 title=song.name,
                 artist=song.primary_artist.name,  # type: ignore[attr-defined]
                 isrc=song.isrc or None,
+                spotify_gid=song.gid or None,
+                deezer_id=str(song.deezer_id) if song.deezer_id else None,
             ),
             contributed_by=AccountType.from_model(
                 cast(Account, contribution.contributed_by)

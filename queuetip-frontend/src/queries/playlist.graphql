@@ -37,6 +37,8 @@ query PlaylistDetail($id: ID!) {
       title
       artist
       isrc
+      spotifyGid
+      deezerId
     }
     votes {
       account {

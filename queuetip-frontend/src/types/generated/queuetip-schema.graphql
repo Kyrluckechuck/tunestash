@@ -190,6 +190,8 @@ type SongRef {
   title: String!
   artist: String!
   isrc: String
+  spotifyGid: String
+  deezerId: String
 }
 
 type SubsonicConnectionType {

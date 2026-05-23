@@ -8,12 +8,19 @@ import {
   RemoveContributionDocument,
 } from "@/types/generated/graphql";
 import { Button } from "@/components/ui/button";
+import { PlatformLinks } from "./PlatformLinks";
 
 type Vote = { account: { id: string }; value: number };
 type Contribution = {
   id: string;
   netScore: number;
-  song: { id: string; title: string; artist: string };
+  song: {
+    id: string;
+    title: string;
+    artist: string;
+    spotifyGid?: string | null;
+    deezerId?: string | null;
+  };
   contributedBy: { id: string; displayName: string };
   votes: Vote[];
 };
@@ -112,6 +119,14 @@ export function ContributionRow({ contribution, currentAccountId, isOwner, onRem
           <div className="font-medium">{contribution.song.title}</div>
           <div className="text-sm text-muted-foreground">
             {contribution.song.artist} • added by {contribution.contributedBy.displayName}
+          </div>
+          <div className="mt-1">
+            <PlatformLinks
+              title={contribution.song.title}
+              artist={contribution.song.artist}
+              spotifyGid={contribution.song.spotifyGid}
+              deezerId={contribution.song.deezerId}
+            />
           </div>
         </div>
       </div>
