@@ -9,7 +9,7 @@ Thank you for your interest in contributing! This project uses a **Docker-first 
 ### Prerequisites
 - Docker and Docker Compose
 - Git
-- Node.js 20+ and Yarn (for local frontend development only)
+- Node.js 24 and Yarn (for local frontend development only)
 
 ### Development Setup
 
@@ -117,7 +117,7 @@ This is a full-stack application with:
 - **Database**: PostgreSQL with Django migrations
 - **Build Tools**: Vite (frontend), Docker Compose (services)
 
-For detailed technical information, see `CLAUDE.md`.
+For detailed technical information, see `AGENTS.md`.
 
 ## Docker Services
 
@@ -165,7 +165,7 @@ Tests use a separate PostgreSQL database (`test_tunestash`) which is created aut
 
 ## Getting Help
 
-- Check `CLAUDE.md` for detailed technical documentation
+- Check `AGENTS.md` for detailed technical documentation
 - Review existing issues and PRs for similar problems
 - Use Docker logs to debug service issues: `make dev-container-logs`
 

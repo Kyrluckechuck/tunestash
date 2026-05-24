@@ -4,7 +4,7 @@
 # =============================================================================
 # Stage 1: Frontend Build (only runs when frontend changes)
 # =============================================================================
-FROM node:20-alpine AS frontend-build
+FROM node:24-alpine AS frontend-build
 WORKDIR /frontend
 
 # Install yarn

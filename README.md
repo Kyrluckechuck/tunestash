@@ -184,7 +184,7 @@ An example compose setup is included. Follow these steps:
 
 ### Prerequisites
 1. Install Python 3.13 or higher
-2. Install Node.js and Yarn
+2. Install Node.js 24 and Yarn
 3. Optionally place your YouTube Music cookies in `/config/` as `youtube_music_cookies.txt`
    * You can export your cookies by using this Google Chrome extension on YouTube Music: https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc. Make sure to be logged in.
 
