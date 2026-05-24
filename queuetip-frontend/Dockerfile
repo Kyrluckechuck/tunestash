@@ -1,4 +1,4 @@
-FROM node:20-alpine AS node-base
+FROM node:24-alpine AS node-base
 WORKDIR /app
 RUN apk add --no-cache yarn
 
