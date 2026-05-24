@@ -91,8 +91,8 @@ export function ContributionRow({ contribution, currentAccountId, isOwner, onRem
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 py-2 border-b last:border-b-0">
-      <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center justify-between gap-3 py-2 border-b last:border-b-0">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <div className="flex flex-col items-center gap-1">
           <Button
             variant={myVote === 1 ? "default" : "ghost"}
@@ -115,12 +115,12 @@ export function ContributionRow({ contribution, currentAccountId, isOwner, onRem
             <ChevronDown className="h-4 w-4" />
           </Button>
         </div>
-        <div>
-          <div className="font-medium">{contribution.song.title}</div>
-          <div className="text-sm text-muted-foreground">
-            {contribution.song.artist} • added by {contribution.contributedBy.displayName}
-          </div>
-          <div className="mt-1">
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium">{contribution.song.title}</div>
+          <div className="flex min-w-0 flex-col gap-1 text-sm text-muted-foreground sm:flex-row sm:items-center sm:gap-2">
+            <span className="min-w-0 truncate">
+              {contribution.song.artist} • added by {contribution.contributedBy.displayName}
+            </span>
             <PlatformLinks
               title={contribution.song.title}
               artist={contribution.song.artist}
@@ -131,7 +131,13 @@ export function ContributionRow({ contribution, currentAccountId, isOwner, onRem
         </div>
       </div>
       {canRemove ? (
-        <Button variant="ghost" size="icon" onClick={handleRemove} aria-label="Remove">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
+          onClick={handleRemove}
+          aria-label="Remove"
+        >
           <X className="h-4 w-4" />
         </Button>
       ) : null}
