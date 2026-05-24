@@ -26,6 +26,30 @@ type Platform = {
   path: string;
 };
 
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function spotifyTrackUrl(value?: string | null): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  if (isHttpUrl(raw)) return raw;
+
+  const uriMatch = raw.match(/^spotify:track:([^:?/#]+)/i);
+  const trackId = uriMatch?.[1] ?? raw;
+  return `https://open.spotify.com/track/${encodeURIComponent(trackId)}`;
+}
+
+function deezerTrackUrl(value?: string | null): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  if (isHttpUrl(raw)) return raw;
+
+  const uriMatch = raw.match(/^deezer:track:([^:?/#]+)/i);
+  const trackId = uriMatch?.[1] ?? raw;
+  return `https://www.deezer.com/track/${encodeURIComponent(trackId)}`;
+}
+
 function PlatformIcon({ platform }: { platform: Platform }) {
   const url = platform.directUrl ?? platform.searchUrl;
   const direct = platform.directUrl !== null;
@@ -70,14 +94,14 @@ export function PlatformLinks({ title, artist, spotifyGid, deezerId }: Props) {
       {
         name: "Spotify",
         hoverClass: "hover:text-[#1DB954]",
-        directUrl: spotifyGid ? `https://open.spotify.com/track/${spotifyGid}` : null,
+        directUrl: spotifyTrackUrl(spotifyGid),
         searchUrl: `https://open.spotify.com/search/${spotifySearchTerm}`,
         path: "M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z",
       },
       {
         name: "Deezer",
         hoverClass: "hover:text-[#a238ff]",
-        directUrl: deezerId ? `https://www.deezer.com/track/${deezerId}` : null,
+        directUrl: deezerTrackUrl(deezerId),
         searchUrl: `https://www.deezer.com/search/${term}`,
         path: "M18.81 4.16v3.03H24V4.16h-5.19zm0 4.42v3.03H24V8.58h-5.19zm0 4.42v3.03H24V13h-5.19zm0 4.42v3.42H24v-3.42h-5.19zm-6.27 0v3.42h5.19v-3.42h-5.19zm-6.27 0v3.42h5.19v-3.42H6.27zM0 17.42v3.42h5.19v-3.42H0zm12.54-4.42v3.03h5.19V13h-5.19zm-6.27 0v3.03h5.19V13H6.27zm0-4.42v3.03h5.19V8.58H6.27z",
       },
@@ -94,7 +118,7 @@ export function PlatformLinks({ title, artist, spotifyGid, deezerId }: Props) {
   );
 
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex shrink-0 items-center gap-0.5">
       {platforms.map((p) => (
         <PlatformIcon key={p.name} platform={p} />
       ))}
