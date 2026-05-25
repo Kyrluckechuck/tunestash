@@ -5,32 +5,28 @@ import { useMutation } from "@apollo/client";
 import { RequireAuth } from "@/components/RequireAuth";
 import { signOut, useMe } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignOutEverywhereDocument } from "@/types/generated/graphql";
 import { SubsonicConnectionSection } from "@/features/settings/SubsonicConnectionSection";
+import { useOpenSpotifyLinksInApp } from "@/lib/link-preferences";
 
 function SettingsPageContent() {
   const { account } = useMe();
   const navigate = useNavigate();
+  const [openSpotifyLinksInApp, setOpenSpotifyLinksInApp] = useOpenSpotifyLinksInApp();
   const spotifyLink = account?.externalServices.find((l) => l.service === "spotify");
-  const [signOutEverywhere, { loading: signingOut }] = useMutation(
-    SignOutEverywhereDocument,
-  );
+  const [signOutEverywhere, { loading: signingOut }] = useMutation(SignOutEverywhereDocument);
 
   function handleLinkSpotify() {
     // Same-origin: Vite dev proxy (or nginx in prod) forwards /auth to backend.
     // Browser navigation to /auth/spotify/start lands here, gets proxied to the
     // backend, which 302s the user to accounts.spotify.com with a redirect_uri
     // built from X-Forwarded-Host — so it matches whatever origin the user is on.
-    const base = (
-      import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "/graphql"
-    ).replace(/\/graphql\/?$/, "");
+    const base = (import.meta.env.VITE_QUEUETIP_GRAPHQL_URL ?? "/graphql").replace(
+      /\/graphql\/?$/,
+      ""
+    );
     window.location.assign(`${base}/auth/spotify/start`);
   }
 
@@ -53,14 +49,12 @@ function SettingsPageContent() {
             Link your Spotify account to export Queuetip playlists directly.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {spotifyLink ? (
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-medium">Linked ✓</div>
-                <div className="text-sm text-muted-foreground">
-                  As: {spotifyLink.serviceUserId}
-                </div>
+                <div className="text-sm text-muted-foreground">As: {spotifyLink.serviceUserId}</div>
               </div>
               <Button variant="outline" disabled>
                 Linked
@@ -74,6 +68,16 @@ function SettingsPageContent() {
               </Button>
             </div>
           )}
+          <div className="flex items-center justify-between gap-4 border-t pt-4">
+            <label className="text-sm font-medium" htmlFor="open-spotify-links-in-app">
+              Open Spotify songs in desktop app
+            </label>
+            <Switch
+              id="open-spotify-links-in-app"
+              checked={openSpotifyLinksInApp}
+              onCheckedChange={setOpenSpotifyLinksInApp}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -85,16 +89,11 @@ function SettingsPageContent() {
             <LogOut className="h-5 w-5" /> Session Security
           </CardTitle>
           <CardDescription>
-            Sign out of all devices and browsers at once. Your current session
-            will also end.
+            Sign out of all devices and browsers at once. Your current session will also end.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button
-            variant="destructive"
-            onClick={handleSignOutEverywhere}
-            disabled={signingOut}
-          >
+          <Button variant="destructive" onClick={handleSignOutEverywhere} disabled={signingOut}>
             <LogOut className="h-4 w-4 mr-2" /> Sign out everywhere
           </Button>
         </CardContent>
