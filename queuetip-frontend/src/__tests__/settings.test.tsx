@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MockedProvider } from "@apollo/client/testing";
 
 import { SettingsPage } from "@/routes/settings";
@@ -22,9 +22,7 @@ vi.mock("@/lib/auth", async (orig) => {
   return { ...actual, signOut: vi.fn().mockResolvedValue(undefined) };
 });
 
-const meWithSpotify = (
-  services: Array<{ service: string; serviceUserId: string }>,
-) => ({
+const meWithSpotify = (services: Array<{ service: string; serviceUserId: string }>) => ({
   request: { query: MeDocument },
   result: {
     data: {
@@ -50,16 +48,18 @@ const signOutEverywhereMock = {
 };
 
 describe("SettingsPage", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   it("shows the Link Spotify button when not linked", async () => {
     const mock = meWithSpotify([]);
     render(
       <MockedProvider mocks={[mock, mock]}>
         <SettingsPage />
-      </MockedProvider>,
+      </MockedProvider>
     );
-    expect(
-      await screen.findByRole("button", { name: /link spotify/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /link spotify/i })).toBeInTheDocument();
   });
 
   it("shows the linked state with the service user id", async () => {
@@ -67,10 +67,29 @@ describe("SettingsPage", () => {
     render(
       <MockedProvider mocks={[mock, mock]}>
         <SettingsPage />
-      </MockedProvider>,
+      </MockedProvider>
     );
     expect(await screen.findByText(/linked ✓/i)).toBeInTheDocument();
     expect(screen.getByText(/alice42/)).toBeInTheDocument();
+  });
+
+  it("stores the browser preference for Spotify app links", async () => {
+    const mock = meWithSpotify([]);
+    render(
+      <MockedProvider mocks={[mock, mock]}>
+        <SettingsPage />
+      </MockedProvider>
+    );
+
+    const preference = await screen.findByRole("switch", {
+      name: /open spotify songs in desktop app/i,
+    });
+    expect(preference).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(preference);
+
+    expect(preference).toHaveAttribute("aria-checked", "true");
+    expect(window.localStorage.getItem("queuetip.openSpotifyLinksInApp")).toBe("true");
   });
 
   it("sign out everywhere button calls the mutation and navigates to sign-in", async () => {
@@ -78,7 +97,7 @@ describe("SettingsPage", () => {
     render(
       <MockedProvider mocks={[mock, mock, signOutEverywhereMock]}>
         <SettingsPage />
-      </MockedProvider>,
+      </MockedProvider>
     );
 
     const btn = await screen.findByRole("button", { name: /sign out everywhere/i });
