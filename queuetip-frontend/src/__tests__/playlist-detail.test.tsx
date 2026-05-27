@@ -5,17 +5,16 @@ import { describe, expect, it, vi } from "vitest";
 import { MockedProvider } from "@apollo/client/testing";
 
 import { PlaylistDetail } from "@/routes/playlists.$id";
-import {
-  CastVoteDocument,
-  MeDocument,
-  PlaylistDetailDocument,
-} from "@/types/generated/graphql";
+import { CastVoteDocument, MeDocument, PlaylistDetailDocument } from "@/types/generated/graphql";
 
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
   return {
     ...actual,
-    Link: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children?: React.ReactNode }) => (
+    Link: ({
+      children,
+      ...props
+    }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children?: React.ReactNode }) => (
       <a {...props}>{children}</a>
     ),
     Navigate: () => <div data-testid="navigate" />,
@@ -104,7 +103,7 @@ describe("PlaylistDetail", () => {
     render(
       <MockedProvider mocks={[meMock, meMock, playlistDetailMock]}>
         <PlaylistDetail />
-      </MockedProvider>,
+      </MockedProvider>
     );
 
     expect(await screen.findByText("Friday Mix")).toBeInTheDocument();
@@ -112,6 +111,8 @@ describe("PlaylistDetail", () => {
     expect(await screen.findByText(/Queen/)).toBeInTheDocument();
     expect(await screen.findByText("Alice")).toBeInTheDocument();
     expect(await screen.findByText("+2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add songs/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /bulk import/i })).not.toBeInTheDocument();
   });
 
   it("calls castVote mutation with correct variables when upvote is clicked", async () => {
@@ -159,7 +160,7 @@ describe("PlaylistDetail", () => {
     render(
       <MockedProvider mocks={[meForVote, meForVote, playlistDetailMock, castVoteMock]}>
         <PlaylistDetail />
-      </MockedProvider>,
+      </MockedProvider>
     );
 
     // Wait for the contribution to appear

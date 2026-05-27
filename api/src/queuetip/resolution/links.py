@@ -42,7 +42,9 @@ def resolve_link(url: str) -> TrackCandidate:
         raise UnsupportedURLError(
             "YouTube Music links are not supported — search for the song instead."
         )
-    if "open.spotify.com/track" in lowered or lowered.startswith("spotify:track"):
+    if ("open.spotify.com" in lowered and "/track/" in lowered) or lowered.startswith(
+        "spotify:track"
+    ):
         return resolve_spotify_track(url)
     if "music.apple.com" in lowered:
         return resolve_apple_track(url)

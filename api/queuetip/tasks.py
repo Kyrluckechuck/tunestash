@@ -1,4 +1,4 @@
-"""Celery tasks for Queuetip — bulk playlist import."""
+"""Celery tasks for Queuetip - bulk collection import."""
 
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ from src.queuetip.resolution.errors import (
     UnsupportedURLError,
 )
 from src.queuetip.resolution.ingest import ingest_track
-from src.queuetip.resolution.playlists import resolve_playlist
+from src.queuetip.resolution.playlists import resolve_collection
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task(name="queuetip.tasks.bulk_import_playlist")
 def bulk_import_playlist(job_id: int) -> dict[str, Any]:
-    """Resolve a playlist URL and create Contributions for each track.
+    """Resolve an album or playlist source and contribute each track.
 
     - Idempotent skip on tracks already contributed to the playlist.
     - Unresolvable tracks are recorded by title in `unresolved_titles`.
@@ -50,7 +50,7 @@ def bulk_import_playlist(job_id: int) -> dict[str, Any]:
     job.save(update_fields=["status"])
 
     try:
-        candidates = resolve_playlist(job.source_url)
+        candidates = resolve_collection(job.source_url)
     except (
         UnsupportedURLError,
         PlaylistNotFoundError,
@@ -108,7 +108,7 @@ def bulk_import_playlist(job_id: int) -> dict[str, Any]:
                 skipped += 1
 
         # Live progress for the polling UI. One row update per track is fine —
-        # bulk-import playlists are bounded (Spotify caps at 10k, typical use
+        # imported collections are bounded (Spotify caps playlists at 10k, typical use
         # <500) and the polling cadence is 2s so contention is non-existent.
         job.added_count = added
         job.skipped_count = skipped

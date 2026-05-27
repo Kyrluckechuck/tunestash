@@ -79,4 +79,23 @@ describe("PlatformLinks", () => {
       "https://music.apple.com/search?term=Bohemian%20Rhapsody%20Queen"
     );
   });
+
+  it("uses Apple and Deezer app schemes when app-link preferences are enabled", () => {
+    window.localStorage.setItem("queuetip.openAppleLinksInApp", "true");
+    window.localStorage.setItem("queuetip.openDeezerLinksInApp", "true");
+
+    render(
+      <PlatformLinks
+        title="Bohemian Rhapsody"
+        artist="Queen"
+        deezerId="https://www.deezer.com/track/456"
+      />
+    );
+
+    expect(screen.getByLabelText("Open on Deezer")).toHaveAttribute("href", "deezer://track/456");
+    expect(screen.getByLabelText("Search on Apple Music")).toHaveAttribute(
+      "href",
+      "music://music.apple.com/search?term=Bohemian%20Rhapsody%20Queen"
+    );
+  });
 });

@@ -73,7 +73,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText(/alice42/)).toBeInTheDocument();
   });
 
-  it("stores the browser preference for Spotify app links", async () => {
+  it("stores browser link preferences for Spotify, Apple Music, and Deezer app links", async () => {
     const mock = meWithSpotify([]);
     render(
       <MockedProvider mocks={[mock, mock]}>
@@ -90,6 +90,20 @@ describe("SettingsPage", () => {
 
     expect(preference).toHaveAttribute("aria-checked", "true");
     expect(window.localStorage.getItem("queuetip.openSpotifyLinksInApp")).toBe("true");
+
+    const applePreference = screen.getByRole("switch", {
+      name: /open apple music links in app/i,
+    });
+    fireEvent.click(applePreference);
+    expect(applePreference).toHaveAttribute("aria-checked", "true");
+    expect(window.localStorage.getItem("queuetip.openAppleLinksInApp")).toBe("true");
+
+    const deezerPreference = screen.getByRole("switch", {
+      name: /open deezer links in app/i,
+    });
+    fireEvent.click(deezerPreference);
+    expect(deezerPreference).toHaveAttribute("aria-checked", "true");
+    expect(window.localStorage.getItem("queuetip.openDeezerLinksInApp")).toBe("true");
   });
 
   it("sign out everywhere button calls the mutation and navigates to sign-in", async () => {

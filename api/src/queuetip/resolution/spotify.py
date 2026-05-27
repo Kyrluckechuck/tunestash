@@ -22,6 +22,7 @@ from src.queuetip.resolution.errors import (
 )
 
 _PLAYLIST_ID_RE = re.compile(r"(?:playlist[:/])([A-Za-z0-9]+)")
+_ALBUM_ID_RE = re.compile(r"(?:album[:/])([A-Za-z0-9]+)")
 _TRACK_ID_RE = re.compile(r"(?:track[:/])([A-Za-z0-9]+)")
 
 
@@ -68,6 +69,28 @@ def resolve_spotify_playlist(url: str) -> list[TrackCandidate]:
             track = item.get("track")
             if track and track.get("id"):
                 candidates.append(_candidate_from_spotify_track(track))
+        page = sp.next(page) if page.get("next") else None
+    return candidates
+
+
+def resolve_spotify_album(url: str) -> list[TrackCandidate]:
+    match = _ALBUM_ID_RE.search(url)
+    if not match:
+        raise PlaylistNotFoundError(f"Not a Spotify album URL: {url}")
+    album_id = match.group(1)
+    sp = _build_client()
+    try:
+        page = sp.album_tracks(album_id, limit=50)
+    except spotipy.SpotifyException as exc:
+        raise PlaylistNotFoundError(str(exc)) from exc
+
+    candidates: list[TrackCandidate] = []
+    while page:
+        candidates.extend(
+            _candidate_from_spotify_track(track)
+            for track in page.get("items", [])
+            if track.get("id")
+        )
         page = sp.next(page) if page.get("next") else None
     return candidates
 

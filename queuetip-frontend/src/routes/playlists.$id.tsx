@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContributionRow } from "@/features/playlist/ContributionRow";
 import { MemberList } from "@/features/playlist/MemberList";
-import { BulkImportDialog } from "@/features/playlist/BulkImportDialog";
 import { ContributeDialog } from "@/features/playlist/ContributeDialog";
 import { EditSettingsDialog } from "@/features/playlist/EditSettingsDialog";
 import { SendToSubsonicCard } from "@/features/playlist/SendToSubsonicCard";
@@ -31,7 +30,6 @@ function PlaylistDetailContent({ id }: { id: string }) {
     variables: { id },
   });
   const [contributeOpen, setContributeOpen] = React.useState(false);
-  const [bulkImportOpen, setBulkImportOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   const [regenerate] = useMutation(RegenerateInviteTokenDocument, {
@@ -153,20 +151,13 @@ function PlaylistDetailContent({ id }: { id: string }) {
           <Card>
             <CardHeader className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle>Contributions</CardTitle>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setBulkImportOpen(true)}>
-                  Bulk import
-                </Button>
-                <Button size="sm" onClick={() => setContributeOpen(true)}>
-                  Contribute
-                </Button>
-              </div>
+              <Button size="sm" onClick={() => setContributeOpen(true)}>
+                Add songs
+              </Button>
             </CardHeader>
             <CardContent>
               {contributions.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  No songs yet. Click "Contribute" to add the first one.
-                </p>
+                <p className="text-sm text-muted-foreground py-4 text-center">No songs yet.</p>
               ) : (
                 contributions.map((c) => (
                   <ContributionRow
@@ -224,7 +215,6 @@ function PlaylistDetailContent({ id }: { id: string }) {
         </aside>
       </div>
 
-      <BulkImportDialog playlistId={id} open={bulkImportOpen} onOpenChange={setBulkImportOpen} />
       <ContributeDialog playlistId={id} open={contributeOpen} onOpenChange={setContributeOpen} />
       {isOwner ? (
         <EditSettingsDialog

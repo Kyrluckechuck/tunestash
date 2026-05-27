@@ -608,7 +608,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
         playlist_id: strawberry.ID,
         url: str,
     ) -> BulkImportJobType:
-        """Queue an async import of a public Spotify/Apple playlist URL.
+        """Queue an async import of a supported provider album or playlist source.
 
         Returns the BulkImportJob; poll `bulkImportJob(id)` for progress.
         """
