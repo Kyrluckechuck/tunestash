@@ -119,3 +119,12 @@ def test_resolve_apple_track_album_url_uses_i_param():
         "/songs/456"
     ), f"Expected path ending in /songs/456, got: {called_path!r}"
     assert "123" not in called_path
+
+
+def test_resolve_apple_album_fetches_album_tracks():
+    album_url = "https://music.apple.com/us/album/some-album/123"
+    body = {"data": [_track("Album Track", "Band", "ISRC99", "456")]}
+    with patch("src.queuetip.resolution.apple._amp_get", return_value=body) as mock_get:
+        result = apple.resolve_apple_album(album_url)
+    assert result[0].track_name == "Album Track"
+    assert "/albums/123/tracks" in mock_get.call_args[0][0]

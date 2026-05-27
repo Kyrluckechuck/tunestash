@@ -63,7 +63,7 @@ def test_bulk_import_happy_path() -> None:
 
     with (
         patch(
-            "queuetip.tasks.resolve_playlist", return_value=candidates
+            "queuetip.tasks.resolve_collection", return_value=candidates
         ) as mock_resolve,
         patch("queuetip.tasks.ingest_track", side_effect=songs),
     ):
@@ -93,7 +93,7 @@ def test_bulk_import_bad_url() -> None:
     job = _make_job(owner, playlist)
 
     with patch(
-        "queuetip.tasks.resolve_playlist",
+        "queuetip.tasks.resolve_collection",
         side_effect=UnsupportedURLError("YouTube not supported"),
     ):
         result = bulk_import_playlist(job.id)
@@ -131,7 +131,7 @@ def test_bulk_import_per_track_failure() -> None:
         return song3
 
     with (
-        patch("queuetip.tasks.resolve_playlist", return_value=candidates),
+        patch("queuetip.tasks.resolve_collection", return_value=candidates),
         patch("queuetip.tasks.ingest_track", side_effect=ingest_side_effect),
     ):
         result = bulk_import_playlist(job.id)
@@ -165,7 +165,7 @@ def test_bulk_import_skip_already_contributed() -> None:
     Contribution.objects.create(playlist=playlist, song=song1, contributed_by=owner)
 
     with (
-        patch("queuetip.tasks.resolve_playlist", return_value=candidates),
+        patch("queuetip.tasks.resolve_collection", return_value=candidates),
         patch("queuetip.tasks.ingest_track", side_effect=[song1, song2]),
     ):
         result = bulk_import_playlist(job.id)
@@ -201,7 +201,7 @@ def test_bulk_import_sets_total_tracks_before_processing() -> None:
         return songs[int(candidate.track_name.split()[-1])]
 
     with (
-        patch("queuetip.tasks.resolve_playlist", return_value=candidates),
+        patch("queuetip.tasks.resolve_collection", return_value=candidates),
         patch("queuetip.tasks.ingest_track", side_effect=ingest_side_effect),
     ):
         bulk_import_playlist(job.id)
@@ -229,7 +229,7 @@ def test_bulk_import_writes_counters_per_track() -> None:
         return songs[int(candidate.track_name.split()[-1])]
 
     with (
-        patch("queuetip.tasks.resolve_playlist", return_value=candidates),
+        patch("queuetip.tasks.resolve_collection", return_value=candidates),
         patch("queuetip.tasks.ingest_track", side_effect=ingest_side_effect),
     ):
         bulk_import_playlist(job.id)
@@ -251,7 +251,7 @@ def test_bulk_import_idempotent_rerun() -> None:
 
     with (
         patch(
-            "queuetip.tasks.resolve_playlist", return_value=candidates
+            "queuetip.tasks.resolve_collection", return_value=candidates
         ) as mock_resolve,
         patch("queuetip.tasks.ingest_track", return_value=song1),
     ):

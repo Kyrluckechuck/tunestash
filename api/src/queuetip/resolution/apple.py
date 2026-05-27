@@ -87,6 +87,7 @@ def get_token(page_url: str, force_refresh: bool = False) -> str:
 _PLAYLIST_PATH_RE = re.compile(
     r"music\.apple\.com/([a-z]{2})/playlist/[^/]+/(pl\.[A-Za-z0-9-]+)"
 )
+_ALBUM_PATH_RE = re.compile(r"music\.apple\.com/([a-z]{2})/album/[^/]+/(\d+)")
 _STOREFRONT_RE = re.compile(r"music\.apple\.com/([a-z]{2})/")
 _SONG_URL_RE = re.compile(r"music\.apple\.com/[a-z]{2}/song/[^/]+/(\d+)")
 _ALBUM_TRACK_RE = re.compile(r"[?&]i=(\d+)")
@@ -158,6 +159,22 @@ def resolve_apple_playlist(url: str) -> list[TrackCandidate]:
             "next"
         )  # relative path; `limit` is intentionally dropped
         path = nxt or None
+    return candidates
+
+
+def resolve_apple_album(url: str) -> list[TrackCandidate]:
+    if _ALBUM_TRACK_RE.search(url):
+        raise PlaylistNotFoundError(f"Not an Apple Music album URL: {url}")
+    match = _ALBUM_PATH_RE.search(url)
+    if not match:
+        raise PlaylistNotFoundError(f"Not an Apple Music album URL: {url}")
+    storefront, album_id = match.group(1), match.group(2)
+    path: Optional[str] = f"/v1/catalog/{storefront}/albums/{album_id}/tracks?limit=100"
+    candidates: list[TrackCandidate] = []
+    while path:
+        body = _amp_get(path, url)
+        candidates.extend(_candidate_from_apple(t) for t in body.get("data", []))
+        path = body.get("next") or None
     return candidates
 
 

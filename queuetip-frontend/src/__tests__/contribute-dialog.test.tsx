@@ -6,6 +6,8 @@ import { MockedProvider } from "@apollo/client/testing";
 
 import { ContributeDialog } from "@/features/playlist/ContributeDialog";
 import {
+  BulkImportJobDocument,
+  BulkImportPlaylistDocument,
   ContributeFromLinkDocument,
   PlaylistDetailDocument,
 } from "@/types/generated/graphql";
@@ -59,18 +61,21 @@ function renderDialog(mocks: any[], onOpenChange = vi.fn()) {
     onOpenChange,
     ...render(
       <MockedProvider mocks={mocks}>
-        <ContributeDialog
-          playlistId={PLAYLIST_ID}
-          open={true}
-          onOpenChange={onOpenChange}
-        />
-      </MockedProvider>,
+        <ContributeDialog playlistId={PLAYLIST_ID} open={true} onOpenChange={onOpenChange} />
+      </MockedProvider>
     ),
   };
 }
 
 describe("ContributeDialog", () => {
-  it("alreadyPresent: false — paste link add closes dialog", async () => {
+  it("uses one field for search terms or pasted links", () => {
+    renderDialog([]);
+
+    expect(screen.getByLabelText(/search or paste a link/i)).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /paste link/i })).not.toBeInTheDocument();
+  });
+
+  it("adds a recognized track link and closes after success", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
 
@@ -110,15 +115,10 @@ describe("ContributeDialog", () => {
 
     renderDialog(mocks, onOpenChange);
 
-    // Switch to the Paste link tab
-    await user.click(screen.getByRole("tab", { name: /paste link/i }));
-
-    // Fill in the URL field
-    const urlInput = screen.getByPlaceholderText(/open\.spotify/i);
+    const urlInput = screen.getByLabelText(/search or paste a link/i);
     await user.type(urlInput, "https://open.spotify.com/track/abc");
 
-    // Click Add
-    await user.click(screen.getByRole("button", { name: /^add$/i }));
+    await user.click(screen.getByRole("button", { name: /add track/i }));
 
     // onOpenChange(false) is called when the dialog closes after success
     await waitFor(() => {
@@ -126,7 +126,7 @@ describe("ContributeDialog", () => {
     });
   });
 
-  it("alreadyPresent: true — paste link add shows upvote confirmation", async () => {
+  it("offers an upvote when the recognized track is already present", async () => {
     const user = userEvent.setup();
 
     const contributeResult = {
@@ -165,18 +165,81 @@ describe("ContributeDialog", () => {
 
     renderDialog(mocks);
 
-    await user.click(screen.getByRole("tab", { name: /paste link/i }));
-
-    const urlInput = screen.getByPlaceholderText(/open\.spotify/i);
+    const urlInput = screen.getByLabelText(/search or paste a link/i);
     await user.type(urlInput, "https://open.spotify.com/track/xyz");
 
-    await user.click(screen.getByRole("button", { name: /^add$/i }));
+    await user.click(screen.getByRole("button", { name: /add track/i }));
 
-    // The "already present / upvote?" confirmation should appear
     await waitFor(() => {
       expect(screen.getByText(/already in this playlist/i)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /upvote/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /dismiss/i })).toBeInTheDocument();
     });
+  });
+
+  it("imports a recognized collection and displays completion summary", async () => {
+    const user = userEvent.setup();
+    const url = "https://open.spotify.com/album/abc";
+    const mocks = [
+      {
+        request: {
+          query: BulkImportPlaylistDocument,
+          variables: { playlistId: PLAYLIST_ID, url },
+        },
+        result: {
+          data: {
+            bulkImportPlaylist: {
+              __typename: "BulkImportJobType",
+              id: "88",
+              status: "pending",
+              sourceUrl: url,
+              totalTracks: null,
+              addedCount: 0,
+              skippedCount: 0,
+              unresolvedCount: 0,
+              unresolvedTitles: [],
+              error: "",
+            },
+          },
+        },
+      },
+      {
+        request: { query: BulkImportJobDocument, variables: { id: "88" } },
+        result: {
+          data: {
+            bulkImportJob: {
+              __typename: "BulkImportJobType",
+              id: "88",
+              status: "succeeded",
+              totalTracks: 3,
+              addedCount: 2,
+              skippedCount: 1,
+              unresolvedCount: 0,
+              unresolvedTitles: [],
+              error: "",
+              finishedAt: "2026-05-24T00:00:00Z",
+            },
+          },
+        },
+      },
+      playlistDetailRefetchMock,
+    ];
+
+    renderDialog(mocks);
+    await user.type(screen.getByLabelText(/search or paste a link/i), url);
+    await user.click(screen.getByRole("button", { name: /import album/i }));
+
+    await waitFor(() => expect(screen.getByText(/import complete/i)).toBeInTheDocument());
+    expect(screen.getByText(/Added: 2/)).toBeInTheDocument();
+    expect(screen.getByText(/Already present: 1/)).toBeInTheDocument();
+  });
+
+  it("does not search an unsupported pasted URL", async () => {
+    const user = userEvent.setup();
+    renderDialog([]);
+
+    await user.type(screen.getByLabelText(/search or paste a link/i), "https://example.com/song/1");
+
+    expect(screen.getByText(/unsupported link/i)).toBeInTheDocument();
   });
 });

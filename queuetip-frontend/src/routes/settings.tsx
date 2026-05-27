@@ -9,12 +9,18 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignOutEverywhereDocument } from "@/types/generated/graphql";
 import { SubsonicConnectionSection } from "@/features/settings/SubsonicConnectionSection";
-import { useOpenSpotifyLinksInApp } from "@/lib/link-preferences";
+import {
+  useOpenAppleLinksInApp,
+  useOpenDeezerLinksInApp,
+  useOpenSpotifyLinksInApp,
+} from "@/lib/link-preferences";
 
 function SettingsPageContent() {
   const { account } = useMe();
   const navigate = useNavigate();
   const [openSpotifyLinksInApp, setOpenSpotifyLinksInApp] = useOpenSpotifyLinksInApp();
+  const [openAppleLinksInApp, setOpenAppleLinksInApp] = useOpenAppleLinksInApp();
+  const [openDeezerLinksInApp, setOpenDeezerLinksInApp] = useOpenDeezerLinksInApp();
   const spotifyLink = account?.externalServices.find((l) => l.service === "spotify");
   const [signOutEverywhere, { loading: signingOut }] = useMutation(SignOutEverywhereDocument);
 
@@ -76,6 +82,26 @@ function SettingsPageContent() {
               id="open-spotify-links-in-app"
               checked={openSpotifyLinksInApp}
               onCheckedChange={setOpenSpotifyLinksInApp}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm font-medium" htmlFor="open-apple-links-in-app">
+              Open Apple Music links in app
+            </label>
+            <Switch
+              id="open-apple-links-in-app"
+              checked={openAppleLinksInApp}
+              onCheckedChange={setOpenAppleLinksInApp}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <label className="text-sm font-medium" htmlFor="open-deezer-links-in-app">
+              Open Deezer links in app
+            </label>
+            <Switch
+              id="open-deezer-links-in-app"
+              checked={openDeezerLinksInApp}
+              onCheckedChange={setOpenDeezerLinksInApp}
             />
           </div>
         </CardContent>

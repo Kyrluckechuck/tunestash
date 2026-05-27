@@ -15,6 +15,14 @@ def test_resolve_link_spotify():
         assert resolve_link("https://open.spotify.com/track/t1") is cand
 
 
+def test_resolve_link_spotify_localized_share_url():
+    cand = TrackCandidate("A", "X", "spotify", source_id="t1")
+    with patch(
+        "src.queuetip.resolution.links.resolve_spotify_track", return_value=cand
+    ):
+        assert resolve_link("https://open.spotify.com/intl-en/track/t1") is cand
+
+
 def test_resolve_link_apple():
     cand = TrackCandidate("A", "X", "apple", source_id="9")
     with patch("src.queuetip.resolution.links.resolve_apple_track", return_value=cand):

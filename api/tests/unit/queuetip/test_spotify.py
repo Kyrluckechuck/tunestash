@@ -9,6 +9,7 @@ from src.queuetip.resolution.errors import (
     TrackNotFoundError,
 )
 from src.queuetip.resolution.spotify import (
+    resolve_spotify_album,
     resolve_spotify_playlist,
     resolve_spotify_track,
 )
@@ -86,3 +87,16 @@ def test_resolve_spotify_playlist_missing_credentials():
     with patch("src.queuetip.resolution.spotify.get_setting", return_value=None):
         with pytest.raises(ResolutionError):
             resolve_spotify_playlist("https://open.spotify.com/playlist/abc")
+
+
+def test_resolve_spotify_album_accepts_uri_and_paginates(fake_spotify):
+    page1 = {"items": [_track("A", ["X"], "ISRC1", "t1")], "next": "page2"}
+    page2 = {"items": [_track("B", ["Y"], "ISRC2", "t2")], "next": None}
+    fake_spotify.album_tracks.return_value = page1
+    fake_spotify.next.return_value = page2
+    with patch(
+        "src.queuetip.resolution.spotify._build_client", return_value=fake_spotify
+    ):
+        result = resolve_spotify_album("spotify:album:abc123")
+    assert [c.track_name for c in result] == ["A", "B"]
+    fake_spotify.album_tracks.assert_called_once_with("abc123", limit=50)
