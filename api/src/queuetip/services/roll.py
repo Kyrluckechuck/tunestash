@@ -137,7 +137,8 @@ def _dedupe_song_versions(song_ids: list[int]) -> list[int]:
     keep: list[int] = []
     seen_families: set[tuple[str, str]] = set()
     for song in songs:
-        artist_name = song.primary_artist.name if song.primary_artist_id else ""
+        primary_artist = getattr(song, "primary_artist", None)
+        artist_name = getattr(primary_artist, "name", "") if primary_artist else ""
         family = song_family_key(artist_name, song.name)
         if family in seen_families:
             continue

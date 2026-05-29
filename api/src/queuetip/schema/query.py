@@ -210,11 +210,11 @@ class Query:
             ContributionType.from_model(c, list(c.votes.all())) for c in contributions
         ]
         for row in result:
-            info = duplicate_info.get(int(row.id))
-            if info is None:
+            duplicate_row = duplicate_info.get(int(row.id))
+            if duplicate_row is None:
                 continue
-            row.duplicate_kind = info.kind
-            row.duplicate_with_titles = info.related_titles
+            row.duplicate_kind = duplicate_row.kind
+            row.duplicate_with_titles = duplicate_row.related_titles
         return result
 
     @strawberry.field
