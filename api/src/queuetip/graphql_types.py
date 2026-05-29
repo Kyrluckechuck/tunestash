@@ -102,6 +102,9 @@ class PlaylistExportTargetType:
     unmatched_track_titles: list[str]
     matched_track_count: int
     total_track_count: int
+    exclude_my_downvotes: bool
+    min_score_threshold: int | None
+    target_size_override: int | None
 
     # Destination-specific details — at most one is populated per row.
     spotify_user_id: str | None
@@ -130,6 +133,9 @@ class PlaylistExportTargetType:
             unmatched_track_titles=list(target.unmatched_track_titles or []),
             matched_track_count=target.matched_track_count,
             total_track_count=target.total_track_count,
+            exclude_my_downvotes=target.exclude_my_downvotes,
+            min_score_threshold=target.min_score_threshold,
+            target_size_override=target.target_size_override,
             spotify_user_id=(link.service_user_id if link else None),
             subsonic_connection=(
                 SubsonicConnectionType.from_model(conn) if conn else None

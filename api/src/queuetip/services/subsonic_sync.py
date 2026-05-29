@@ -110,7 +110,13 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
     from .roll import roll_playlist
 
     playlist = cast(Playlist, target.playlist)
-    roll = roll_playlist(playlist)
+    roll = roll_playlist(
+        playlist,
+        account=target.account,
+        exclude_my_downvotes=target.exclude_my_downvotes,
+        min_score_threshold=target.min_score_threshold,
+        target_size_override=target.target_size_override,
+    )
 
     # Fetch the rolled songs in the engine's chosen order, with the relations
     # the resolver needs. Preserve roll order via a position map.

@@ -44,6 +44,8 @@ def roll_playlist(
     *,
     account: Account | None = None,
     exclude_my_downvotes: bool = False,
+    min_score_threshold: int | None = None,
+    target_size_override: int | None = None,
 ) -> RollResult:
     """Roll the selection engine over `playlist`'s current contributions.
 
@@ -66,13 +68,17 @@ def roll_playlist(
             )
         ]
 
-    song_inputs = [
-        SongInput(
-            song_id=c.song_id,
-            net=sum(v.value for v in c.votes.all()),
+    song_inputs: list[SongInput] = []
+    for contribution in contributions:
+        net = sum(v.value for v in contribution.votes.all())
+        if min_score_threshold is not None and net < min_score_threshold:
+            continue
+        song_inputs.append(
+            SongInput(
+                song_id=contribution.song_id,
+                net=net,
+            )
         )
-        for c in contributions
-    ]
 
     knobs = CurveKnobs(
         base=playlist.base,
@@ -81,11 +87,18 @@ def roll_playlist(
         t_low=playlist.t_low,
     )
     seed = secrets.randbits(63)
+    if target_size_override is not None:
+        min_size = target_size_override
+        max_size = target_size_override
+    else:
+        min_size = playlist.min_size
+        max_size = playlist.max_size
+
     result = materialize(
         song_inputs,
         knobs=knobs,
-        min_size=playlist.min_size,
-        max_size=playlist.max_size,
+        min_size=min_size,
+        max_size=max_size,
         seed=seed,
     )
 
