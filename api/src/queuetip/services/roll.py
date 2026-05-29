@@ -46,6 +46,7 @@ def roll_playlist(
     exclude_my_downvotes: bool = False,
     min_score_threshold: int | None = None,
     target_size_override: int | None = None,
+    unique_versions_only: bool = False,
 ) -> RollResult:
     """Roll the selection engine over `playlist`'s current contributions.
 
@@ -103,8 +104,11 @@ def roll_playlist(
     )
 
     ordered = sorted(result.tracks, key=lambda t: t.position)
+    song_ids = [t.song_id for t in ordered]
+    if unique_versions_only:
+        song_ids = _dedupe_song_versions(song_ids)
     return RollResult(
-        song_ids=[t.song_id for t in ordered],
+        song_ids=song_ids,
         warning_message=result.warning_message,
         seed=seed,
         detail={
@@ -115,3 +119,28 @@ def roll_playlist(
             for t in ordered
         },
     )
+
+
+def _dedupe_song_versions(song_ids: list[int]) -> list[int]:
+    """Keep only one song per normalized artist/title family, preserving order."""
+    from library_manager.models import Song as SongModel
+
+    if not song_ids:
+        return song_ids
+    from ..duplicates import song_family_key
+
+    order = {sid: i for i, sid in enumerate(song_ids)}
+    songs = sorted(
+        SongModel.objects.filter(id__in=song_ids).select_related("primary_artist"),
+        key=lambda song: order.get(song.id, 0),
+    )
+    keep: list[int] = []
+    seen_families: set[tuple[str, str]] = set()
+    for song in songs:
+        artist_name = song.primary_artist.name if song.primary_artist_id else ""
+        family = song_family_key(artist_name, song.name)
+        if family in seen_families:
+            continue
+        seen_families.add(family)
+        keep.append(song.id)
+    return keep

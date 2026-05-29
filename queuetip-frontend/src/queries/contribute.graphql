@@ -14,6 +14,8 @@ mutation ContributeFromSearch($playlistId: ID!, $deezerTrackId: String!) {
     contribution {
       id
       netScore
+      duplicateKind
+      duplicateWithTitles
       song { id title artist isrc }
       contributedBy { id displayName }
       votes { account { id } value }
@@ -27,6 +29,8 @@ mutation ContributeFromLink($playlistId: ID!, $url: String!) {
     contribution {
       id
       netScore
+      duplicateKind
+      duplicateWithTitles
       song { id title artist isrc }
       contributedBy { id displayName }
       votes { account { id } value }

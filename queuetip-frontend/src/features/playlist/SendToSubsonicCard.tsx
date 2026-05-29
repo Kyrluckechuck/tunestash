@@ -76,11 +76,13 @@ export function SendToSubsonicCard({ playlistId }: Props) {
     { onCompleted: () => refetch() },
   );
   const [excludeMyDownvotes, setExcludeMyDownvotes] = React.useState(false);
+  const [uniqueVersionsOnly, setUniqueVersionsOnly] = React.useState(false);
   const [minScoreThreshold, setMinScoreThreshold] = React.useState("");
   const [targetSizeOverride, setTargetSizeOverride] = React.useState("");
 
   React.useEffect(() => {
     setExcludeMyDownvotes(target?.excludeMyDownvotes ?? false);
+    setUniqueVersionsOnly(target?.uniqueVersionsOnly ?? false);
     setMinScoreThreshold(
       target?.minScoreThreshold != null ? String(target.minScoreThreshold) : "",
     );
@@ -149,6 +151,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
         variables: {
           id: targetId,
           excludeMyDownvotes,
+          uniqueVersionsOnly,
           minScoreThreshold: parsedMinScore,
           targetSizeOverride: parsedTargetSize,
         },
@@ -286,6 +289,16 @@ export function SendToSubsonicCard({ playlistId }: Props) {
                     placeholder="Use playlist settings"
                   />
                 </div>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="subsonic-unique-versions" className="text-sm">
+                  Only include one version per song
+                </Label>
+                <Switch
+                  id="subsonic-unique-versions"
+                  checked={uniqueVersionsOnly}
+                  onCheckedChange={setUniqueVersionsOnly}
+                />
               </div>
               <div className="flex justify-end">
                 <Button

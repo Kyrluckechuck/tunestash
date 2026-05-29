@@ -112,6 +112,7 @@ class SpotifyExportService:
             exclude_my_downvotes=target.exclude_my_downvotes,
             min_score_threshold=target.min_score_threshold,
             target_size_override=target.target_size_override,
+            unique_versions_only=target.unique_versions_only,
         )
 
         # Enrich the rolled songs missing a gid (ISRC → Spotify bridge).

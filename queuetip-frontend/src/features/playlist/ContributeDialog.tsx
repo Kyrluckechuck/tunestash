@@ -43,6 +43,7 @@ export function ContributeDialog({ playlistId, open, onOpenChange }: Props) {
   const [input, setInput] = React.useState("");
   const [duplicate, setDuplicate] = React.useState<DuplicateState | null>(null);
   const [jobId, setJobId] = React.useState<string | null>(null);
+  const [importExactDuplicateCount, setImportExactDuplicateCount] = React.useState<number | null>(null);
   const content = React.useMemo(() => classifyContentInput(input), [input]);
 
   const [search, { data: searchData, loading: searching }] = useLazyQuery(CatalogSearchDocument);
@@ -82,9 +83,18 @@ export function ContributeDialog({ playlistId, open, onOpenChange }: Props) {
     if (!TERMINAL_STATUSES.has(status)) return;
     stopPolling();
     if (status === "succeeded") {
-      void apollo.refetchQueries({ include: [PlaylistDetailDocument] });
+      void apollo.refetchQueries({ include: [PlaylistDetailDocument] }).then(() => {
+        const refreshed = apollo.readQuery({
+          query: PlaylistDetailDocument,
+          variables: { id: playlistId },
+        });
+        const duplicates =
+          refreshed?.playlistContributions.filter((row) => row.duplicateKind === "exact").length ??
+          0;
+        setImportExactDuplicateCount(duplicates);
+      });
     }
-  }, [jobId, jobData, stopPolling, apollo]);
+  }, [jobId, jobData, stopPolling, apollo, playlistId]);
 
   // Continue showing progress if an open dialog still has an in-flight job.
   React.useEffect(() => {
@@ -97,6 +107,7 @@ export function ContributeDialog({ playlistId, open, onOpenChange }: Props) {
     setInput("");
     setDuplicate(null);
     setJobId(null);
+    setImportExactDuplicateCount(null);
   }
 
   function handleClose() {
@@ -114,6 +125,14 @@ export function ContributeDialog({ playlistId, open, onOpenChange }: Props) {
       if (payload.alreadyPresent) {
         setDuplicate({ contributionId: payload.contribution.id, songLabel });
       } else {
+        if (payload.contribution.duplicateKind !== "none") {
+          const related = payload.contribution.duplicateWithTitles.join(", ");
+          toast.warning(
+            related
+              ? `Added. Similar entries: ${related}`
+              : "Added. This appears to be another version of an existing song."
+          );
+        }
         toast.success("Added to playlist.");
         handleClose();
       }
@@ -134,6 +153,14 @@ export function ContributeDialog({ playlistId, open, onOpenChange }: Props) {
       if (payload.alreadyPresent) {
         setDuplicate({ contributionId: payload.contribution.id, songLabel: label });
       } else {
+        if (payload.contribution.duplicateKind !== "none") {
+          const related = payload.contribution.duplicateWithTitles.join(", ");
+          toast.warning(
+            related
+              ? `Added. Similar entries: ${related}`
+              : "Added. This appears to be another version of an existing song."
+          );
+        }
         toast.success("Added to playlist.");
         handleClose();
       }
@@ -192,7 +219,12 @@ export function ContributeDialog({ playlistId, open, onOpenChange }: Props) {
             </div>
           </div>
         ) : jobId ? (
-          <ImportStatus job={job} status={status} onClose={handleClose} />
+          <ImportStatus
+            job={job}
+            status={status}
+            onClose={handleClose}
+            importExactDuplicateCount={importExactDuplicateCount}
+          />
         ) : (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -304,9 +336,10 @@ type ImportStatusProps = {
     | undefined;
   status: string | null;
   onClose: () => void;
+  importExactDuplicateCount: number | null;
 };
 
-function ImportStatus({ job, status, onClose }: ImportStatusProps) {
+function ImportStatus({ job, status, onClose, importExactDuplicateCount }: ImportStatusProps) {
   if (!job || (status !== "succeeded" && status !== "failed")) {
     return (
       <div className="space-y-4 py-4">
@@ -370,6 +403,11 @@ function ImportStatus({ job, status, onClose }: ImportStatusProps) {
         <li>Added: {job.addedCount}</li>
         <li>Already present: {job.skippedCount}</li>
         <li>Unresolved: {job.unresolvedCount}</li>
+        {importExactDuplicateCount !== null ? (
+          <li className={importExactDuplicateCount > 0 ? "font-medium text-amber-700 dark:text-amber-300" : ""}>
+            Exact duplicates detected on playlist: {importExactDuplicateCount}
+          </li>
+        ) : null}
       </ul>
       {job.unresolvedTitles.length > 0 ? (
         <details className="text-sm">

@@ -31,6 +31,7 @@ function PlaylistDetailContent({ id }: { id: string }) {
   });
   const [contributeOpen, setContributeOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = React.useState(false);
 
   const [regenerate] = useMutation(RegenerateInviteTokenDocument, {
     refetchQueries: [{ query: PlaylistDetailDocument, variables: { id } }],
@@ -51,6 +52,10 @@ function PlaylistDetailContent({ id }: { id: string }) {
 
   const playlist = data.playlist;
   const contributions = data.playlistContributions;
+  const visibleContributions = showDuplicatesOnly
+    ? contributions.filter((c) => (c.duplicateKind ?? "none") !== "none")
+    : contributions;
+  const duplicateCount = contributions.filter((c) => (c.duplicateKind ?? "none") !== "none").length;
   const myMembership = playlist.members.find((m) => m.account.id === account!.id);
   const isOwner = myMembership?.role === "owner";
 
@@ -151,15 +156,27 @@ function PlaylistDetailContent({ id }: { id: string }) {
           <Card>
             <CardHeader className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle>Contributions</CardTitle>
-              <Button size="sm" onClick={() => setContributeOpen(true)}>
-                Add songs
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={showDuplicatesOnly ? "secondary" : "outline"}
+                  onClick={() => setShowDuplicatesOnly((prev) => !prev)}
+                  disabled={duplicateCount === 0}
+                >
+                  {showDuplicatesOnly ? "Show all" : "Show duplicates"}
+                </Button>
+                <Button size="sm" onClick={() => setContributeOpen(true)}>
+                  Add songs
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
-              {contributions.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">No songs yet.</p>
+              {visibleContributions.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  {showDuplicatesOnly ? "No duplicate entries." : "No songs yet."}
+                </p>
               ) : (
-                contributions.map((c) => (
+                visibleContributions.map((c) => (
                   <ContributionRow
                     key={c.id}
                     contribution={c}

@@ -11,6 +11,7 @@ from queuetip.permissions import require_member
 from src.queuetip.resolution.catalog import catalog_search as _catalog_search
 
 from ..context import QueuetipContext
+from ..duplicates import classify_playlist_duplicates
 from ..errors import AuthRequiredError
 from ..graphql_types import (
     AccountType,
@@ -204,9 +205,17 @@ class Query:
         contributions = await ContributionService.list_for_playlist(
             account, int(playlist_id)
         )
-        return [
+        duplicate_info = classify_playlist_duplicates(contributions)
+        result = [
             ContributionType.from_model(c, list(c.votes.all())) for c in contributions
         ]
+        for row in result:
+            info = duplicate_info.get(int(row.id))
+            if info is None:
+                continue
+            row.duplicate_kind = info.kind
+            row.duplicate_with_titles = info.related_titles
+        return result
 
     @strawberry.field
     async def my_subsonic_connection(
