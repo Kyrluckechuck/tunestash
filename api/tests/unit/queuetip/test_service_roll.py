@@ -17,7 +17,7 @@ from src.queuetip.services.roll import roll_playlist
 async def test_roll_playlist_applies_exclude_downvotes_and_min_score_threshold():
     owner = await sync_to_async(Account.objects.create)(display_name="Owner")
     playlist = await sync_to_async(Playlist.objects.create)(
-        name="P", created_by=owner, min_size=0, max_size=10
+        name="P", created_by=owner, min_size=1, max_size=10
     )
     await sync_to_async(PlaylistMembership.objects.create)(
         playlist=playlist, account=owner, role="owner"
