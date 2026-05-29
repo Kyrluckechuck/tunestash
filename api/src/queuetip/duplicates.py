@@ -9,7 +9,9 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import cast
 
+from library_manager.models import Song
 from queuetip.models import Contribution
 
 _VERSION_TOKEN_RE = re.compile(
@@ -42,8 +44,9 @@ def normalize_song_text(value: str) -> str:
 
 
 def _song_label(contribution: Contribution) -> str:
-    song = contribution.song
-    artist_name = song.primary_artist.name if song.primary_artist_id else ""
+    song = cast(Song, contribution.song)
+    primary_artist = getattr(song, "primary_artist", None)
+    artist_name = getattr(primary_artist, "name", "") if primary_artist else ""
     return f"{artist_name} — {song.name}".strip(" —")
 
 
@@ -61,12 +64,12 @@ def classify_playlist_duplicates(
     by_family: dict[tuple[str, str], list[Contribution]] = defaultdict(list)
 
     for contribution in contributions:
-        song = contribution.song
+        song = cast(Song, contribution.song)
         gid = (song.gid or "").strip()
         isrc = (song.isrc or "").strip().upper()
-        artist = normalize_song_text(
-            song.primary_artist.name if song.primary_artist_id else ""
-        )
+        primary_artist = getattr(song, "primary_artist", None)
+        artist_name = getattr(primary_artist, "name", "") if primary_artist else ""
+        artist = normalize_song_text(artist_name)
         title = normalize_song_text(song.name)
         if gid:
             by_gid[gid].append(contribution)
