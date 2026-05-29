@@ -783,6 +783,26 @@ class Mutation:  # pylint: disable=too-many-public-methods
         return True
 
     @strawberry.mutation
+    async def update_sync_target_preferences(
+        self,
+        info: Info[QueuetipContext, None],
+        id: strawberry.ID,
+        exclude_my_downvotes: bool | None = None,
+        min_score_threshold: int | None = strawberry.UNSET,
+        target_size_override: int | None = strawberry.UNSET,
+    ) -> PlaylistExportTargetType:
+        """Patch per-target export preferences used at push time."""
+        account = _require_account(info)
+        target = await sync_to_async(_update_sync_target_preferences)(
+            account=account,
+            target_id=int(id),
+            exclude_my_downvotes=exclude_my_downvotes,
+            min_score_threshold=min_score_threshold,
+            target_size_override=target_size_override,
+        )
+        return PlaylistExportTargetType.from_model(target)
+
+    @strawberry.mutation
     async def sync_target_now(
         self,
         info: Info[QueuetipContext, None],
@@ -1116,4 +1136,32 @@ def _resolve_owned_target(account: Account, target_id: int) -> PlaylistExportTar
     )
     if target is None:
         raise NotFoundError(f"Sync target {target_id} not found")
+    return target
+
+
+def _update_sync_target_preferences(
+    *,
+    account: Account,
+    target_id: int,
+    exclude_my_downvotes: bool | None,
+    min_score_threshold: int | None | object,
+    target_size_override: int | None | object,
+) -> PlaylistExportTarget:
+    target = _resolve_owned_target(account, target_id)
+
+    updates: list[str] = []
+    if exclude_my_downvotes is not None:
+        target.exclude_my_downvotes = exclude_my_downvotes
+        updates.append("exclude_my_downvotes")
+    if min_score_threshold is not strawberry.UNSET:
+        target.min_score_threshold = min_score_threshold
+        updates.append("min_score_threshold")
+    if target_size_override is not strawberry.UNSET:
+        if target_size_override is not None and target_size_override < 1:
+            raise ValidationError("target_size_override must be at least 1.")
+        target.target_size_override = target_size_override
+        updates.append("target_size_override")
+
+    if updates:
+        target.save(update_fields=updates)
     return target

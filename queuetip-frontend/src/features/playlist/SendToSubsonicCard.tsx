@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useMutation, useQuery } from "@apollo/client";
 import {
   AlertCircle,
@@ -16,11 +17,15 @@ import {
   RecreateSyncTargetRemoteDocument,
   RemoveSyncTargetDocument,
   SyncTargetNowDocument,
+  UpdateSyncTargetPreferencesDocument,
 } from "@/types/generated/graphql";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 /**
  * "Reshuffle & push to Subsonic" panel — appears on the playlist page when
@@ -66,6 +71,23 @@ export function SendToSubsonicCard({ playlistId }: Props) {
     RemoveSyncTargetDocument,
     { onCompleted: () => refetch() },
   );
+  const [updatePreferences, { loading: savingPreferences }] = useMutation(
+    UpdateSyncTargetPreferencesDocument,
+    { onCompleted: () => refetch() },
+  );
+  const [excludeMyDownvotes, setExcludeMyDownvotes] = React.useState(false);
+  const [minScoreThreshold, setMinScoreThreshold] = React.useState("");
+  const [targetSizeOverride, setTargetSizeOverride] = React.useState("");
+
+  React.useEffect(() => {
+    setExcludeMyDownvotes(target?.excludeMyDownvotes ?? false);
+    setMinScoreThreshold(
+      target?.minScoreThreshold != null ? String(target.minScoreThreshold) : "",
+    );
+    setTargetSizeOverride(
+      target?.targetSizeOverride != null ? String(target.targetSizeOverride) : "",
+    );
+  }, [target]);
 
   if (!connection) {
     // No connection → nothing to push to. Settings is where one is added;
@@ -91,6 +113,48 @@ export function SendToSubsonicCard({ playlistId }: Props) {
       toast.success("Reshuffled & pushed to Subsonic.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Push failed.");
+    }
+  }
+
+  async function handleSavePreferences() {
+    try {
+      let targetId = target?.id;
+      if (!targetId) {
+        const created = await createTarget({
+          variables: { playlistId, connectionId: connection.id },
+        });
+        targetId = created.data?.createSubsonicSyncTarget.id;
+      }
+      if (!targetId) {
+        toast.error("Could not set up the Subsonic target.");
+        return;
+      }
+
+      const parsedTargetSize =
+        targetSizeOverride.trim() === "" ? null : Number(targetSizeOverride.trim());
+      if (parsedTargetSize !== null && (!Number.isInteger(parsedTargetSize) || parsedTargetSize < 1)) {
+        toast.error("Target size must be a whole number of at least 1.");
+        return;
+      }
+
+      const parsedMinScore =
+        minScoreThreshold.trim() === "" ? null : Number(minScoreThreshold.trim());
+      if (parsedMinScore !== null && !Number.isInteger(parsedMinScore)) {
+        toast.error("Minimum score must be a whole number.");
+        return;
+      }
+
+      await updatePreferences({
+        variables: {
+          id: targetId,
+          excludeMyDownvotes,
+          minScoreThreshold: parsedMinScore,
+          targetSizeOverride: parsedTargetSize,
+        },
+      });
+      toast.success("Export preferences saved.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save preferences.");
     }
   }
 
@@ -185,6 +249,54 @@ export function SendToSubsonicCard({ playlistId }: Props) {
                 </p>
               </details>
             ) : null}
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="subsonic-exclude-downvotes" className="text-sm">
+                  Exclude my downvotes
+                </Label>
+                <Switch
+                  id="subsonic-exclude-downvotes"
+                  checked={excludeMyDownvotes}
+                  onCheckedChange={setExcludeMyDownvotes}
+                />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="subsonic-min-score" className="text-xs text-muted-foreground">
+                    Minimum score
+                  </Label>
+                  <Input
+                    id="subsonic-min-score"
+                    inputMode="numeric"
+                    value={minScoreThreshold}
+                    onChange={(event) => setMinScoreThreshold(event.target.value)}
+                    placeholder="No minimum"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="subsonic-target-size" className="text-xs text-muted-foreground">
+                    Target size override
+                  </Label>
+                  <Input
+                    id="subsonic-target-size"
+                    inputMode="numeric"
+                    value={targetSizeOverride}
+                    onChange={(event) => setTargetSizeOverride(event.target.value)}
+                    placeholder="Use playlist settings"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSavePreferences}
+                  disabled={busy || savingPreferences}
+                >
+                  Save preferences
+                </Button>
+              </div>
+            </div>
             <div className="flex gap-2">
               <Button onClick={handleReshufflePush} disabled={busy}>
                 {pushBusy ? (

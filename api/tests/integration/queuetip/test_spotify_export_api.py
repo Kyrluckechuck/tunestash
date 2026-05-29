@@ -88,6 +88,27 @@ mutation CreateSpotifyExportTarget($playlistId: ID!) {
 }
 """
 
+_UPDATE_TARGET_PREFS = """
+mutation UpdateSyncTargetPreferences(
+  $id: ID!
+  $excludeMyDownvotes: Boolean
+  $minScoreThreshold: Int
+  $targetSizeOverride: Int
+) {
+  updateSyncTargetPreferences(
+    id: $id
+    excludeMyDownvotes: $excludeMyDownvotes
+    minScoreThreshold: $minScoreThreshold
+    targetSizeOverride: $targetSizeOverride
+  ) {
+    id
+    excludeMyDownvotes
+    minScoreThreshold
+    targetSizeOverride
+  }
+}
+"""
+
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
@@ -162,3 +183,40 @@ async def test_create_spotify_export_target_without_link_errors():
 
     assert result["data"] is None
     assert result.get("errors")
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_update_sync_target_preferences_persists_values():
+    account = await _make_account()
+    playlist = await _make_playlist_with_owner(account)
+    link = await _make_spotify_link(account, service_user_id="me42")
+    target = await sync_to_async(PlaylistExportTarget.objects.create)(
+        account=account,
+        playlist=playlist,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        spotify_link=link,
+    )
+
+    async with _authed_client(account.id) as client:
+        result = await _gql(
+            client,
+            _UPDATE_TARGET_PREFS,
+            {
+                "id": str(target.id),
+                "excludeMyDownvotes": True,
+                "minScoreThreshold": 1,
+                "targetSizeOverride": 15,
+            },
+        )
+
+    assert "errors" not in result, result.get("errors")
+    payload = result["data"]["updateSyncTargetPreferences"]
+    assert payload["excludeMyDownvotes"] is True
+    assert payload["minScoreThreshold"] == 1
+    assert payload["targetSizeOverride"] == 15
+
+    await sync_to_async(target.refresh_from_db)()
+    assert target.exclude_my_downvotes is True
+    assert target.min_score_threshold == 1
+    assert target.target_size_override == 15

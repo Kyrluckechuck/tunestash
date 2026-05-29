@@ -123,7 +123,7 @@ async def test_sync_target_creates_remote_from_current_contributions():
         patch(
             "src.queuetip.services.roll.roll_playlist",
             return_value=_RollStub([song.id]),
-        ),
+        ) as mock_roll,
     ):
         result = await SpotifyExportService.sync_target(target.id)
 
@@ -133,6 +133,13 @@ async def test_sync_target_creates_remote_from_current_contributions():
     assert target.remote_playlist_id == "SP_AUTO"
     assert target.last_sync_status == PlaylistExportTarget.STATUS_OK
     assert target.matched_track_count == 1
+    mock_roll.assert_called_once_with(
+        playlist,
+        account=owner,
+        exclude_my_downvotes=False,
+        min_score_threshold=None,
+        target_size_override=None,
+    )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -181,7 +188,7 @@ async def test_sync_target_updates_existing_remote_no_duplicate():
         patch(
             "src.queuetip.services.roll.roll_playlist",
             return_value=_RollStub([song.id]),
-        ),
+        ) as mock_roll,
     ):
         result = await SpotifyExportService.sync_target(target.id)
 
@@ -189,6 +196,13 @@ async def test_sync_target_updates_existing_remote_no_duplicate():
     assert "SP_EXISTING" in result.spotify_playlist_url
     assert mock_put.call_count == 1  # PUT to replace tracks
     assert mock_post.call_count == 0  # NO create-playlist call
+    mock_roll.assert_called_once_with(
+        playlist,
+        account=owner,
+        exclude_my_downvotes=False,
+        min_score_threshold=None,
+        target_size_override=None,
+    )
 
 
 @pytest.mark.django_db(transaction=True)

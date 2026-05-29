@@ -105,7 +105,13 @@ class SpotifyExportService:
         # We push the rolled subset, not every contribution.
         from .roll import roll_playlist
 
-        roll = await sync_to_async(roll_playlist)(playlist)
+        roll = await sync_to_async(roll_playlist)(
+            playlist,
+            account=target.account,
+            exclude_my_downvotes=target.exclude_my_downvotes,
+            min_score_threshold=target.min_score_threshold,
+            target_size_override=target.target_size_override,
+        )
 
         # Enrich the rolled songs missing a gid (ISRC → Spotify bridge).
         await _enrich_songs_missing_gids(roll.song_ids)

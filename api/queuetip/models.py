@@ -547,6 +547,14 @@ class PlaylistExportTarget(models.Model):
     total_track_count: models.PositiveIntegerField = models.PositiveIntegerField(
         default=0
     )
+    # Per-target export preferences applied at push time.
+    exclude_my_downvotes: models.BooleanField = models.BooleanField(default=False)
+    min_score_threshold: models.SmallIntegerField = models.SmallIntegerField(
+        null=True, blank=True
+    )
+    target_size_override: models.PositiveSmallIntegerField = (
+        models.PositiveSmallIntegerField(null=True, blank=True)
+    )
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
     if TYPE_CHECKING:
