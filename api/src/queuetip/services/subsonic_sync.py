@@ -29,6 +29,7 @@ from typing import cast
 from django.utils import timezone
 
 from queuetip.models import (
+    Account,
     Playlist,
     PlaylistExportTarget,
     SubsonicConnection,
@@ -112,7 +113,7 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
     playlist = cast(Playlist, target.playlist)
     roll = roll_playlist(
         playlist,
-        account=target.account,
+        account=cast(Account, target.account),
         exclude_my_downvotes=target.exclude_my_downvotes,
         min_score_threshold=target.min_score_threshold,
         target_size_override=target.target_size_override,
