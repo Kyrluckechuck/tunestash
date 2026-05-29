@@ -22,6 +22,7 @@ import httpx
 from asgiref.sync import sync_to_async
 
 from queuetip.models import (
+    Account,
     ExternalServiceLink,
     Playlist,
     PlaylistExportTarget,
@@ -107,7 +108,7 @@ class SpotifyExportService:
 
         roll = await sync_to_async(roll_playlist)(
             playlist,
-            account=target.account,
+            account=cast(Account, target.account),
             exclude_my_downvotes=target.exclude_my_downvotes,
             min_score_threshold=target.min_score_threshold,
             target_size_override=target.target_size_override,

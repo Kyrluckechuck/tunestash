@@ -1157,7 +1157,7 @@ def _update_sync_target_preferences(
         target.min_score_threshold = min_score_threshold
         updates.append("min_score_threshold")
     if target_size_override is not strawberry.UNSET:
-        if target_size_override is not None and target_size_override < 1:
+        if isinstance(target_size_override, int) and target_size_override < 1:
             raise ValidationError("target_size_override must be at least 1.")
         target.target_size_override = target_size_override
         updates.append("target_size_override")

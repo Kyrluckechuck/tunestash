@@ -94,6 +94,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
     // surfacing the card here would just be a dead button.
     return null;
   }
+  const connectionId = connection.id;
 
   async function handleReshufflePush() {
     try {
@@ -101,7 +102,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
       let targetId = target?.id;
       if (!targetId) {
         const created = await createTarget({
-          variables: { playlistId, connectionId: connection!.id },
+          variables: { playlistId, connectionId },
         });
         targetId = created.data?.createSubsonicSyncTarget.id;
       }
@@ -121,7 +122,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
       let targetId = target?.id;
       if (!targetId) {
         const created = await createTarget({
-          variables: { playlistId, connectionId: connection.id },
+          variables: { playlistId, connectionId },
         });
         targetId = created.data?.createSubsonicSyncTarget.id;
       }
