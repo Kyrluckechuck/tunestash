@@ -139,6 +139,7 @@ async def test_sync_target_creates_remote_from_current_contributions():
         exclude_my_downvotes=False,
         min_score_threshold=None,
         target_size_override=None,
+        unique_versions_only=False,
     )
 
 
@@ -202,6 +203,7 @@ async def test_sync_target_updates_existing_remote_no_duplicate():
         exclude_my_downvotes=False,
         min_score_threshold=None,
         target_size_override=None,
+        unique_versions_only=False,
     )
 
 

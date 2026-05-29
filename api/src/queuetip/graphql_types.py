@@ -375,7 +375,17 @@ class ContributionType:
 
 def _get_song_duration_seconds(song) -> int | None:  # type: ignore[no-untyped-def]
     """Best-effort duration extraction from downloaded audio metadata."""
-    file_path = getattr(song, "file_path", None)
+    # Never trigger a lazy ORM fetch from async GraphQL resolvers.
+    file_path_ref_id = getattr(song, "file_path_ref_id", None)
+    if not file_path_ref_id:
+        return None
+    cached_ref = getattr(song, "_state", None)
+    file_path_ref = (
+        cached_ref.fields_cache.get("file_path_ref")
+        if cached_ref is not None and hasattr(cached_ref, "fields_cache")
+        else None
+    )
+    file_path = getattr(file_path_ref, "path", None)
     if not file_path:
         return None
     try:
