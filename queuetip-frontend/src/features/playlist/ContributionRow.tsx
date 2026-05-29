@@ -20,7 +20,10 @@ type Contribution = {
     artist: string;
     spotifyGid?: string | null;
     deezerId?: string | null;
+    durationSeconds?: number | null;
   };
+  duplicateKind?: string;
+  duplicateWithTitles?: string[];
   contributedBy: { id: string; displayName: string };
   votes: Vote[];
 };
@@ -78,6 +81,16 @@ export function ContributionRow({ contribution, currentAccountId, isOwner, onRem
   }
 
   const canRemove = isOwner || contribution.contributedBy.id === currentAccountId;
+  const duplicateKind = contribution.duplicateKind ?? "none";
+  const duplicateWithTitles = contribution.duplicateWithTitles ?? [];
+  const hasDuplicates = duplicateKind !== "none";
+  const duplicateLabel =
+    duplicateKind === "exact"
+      ? "Exact duplicate"
+      : duplicateKind === "alt_version"
+        ? "Alt version"
+        : "Duplicate";
+  const duration = formatDuration(contribution.song.durationSeconds);
 
   async function handleRemove() {
     if (!confirm(`Remove "${contribution.song.title}"?`)) return;
@@ -91,7 +104,11 @@ export function ContributionRow({ contribution, currentAccountId, isOwner, onRem
   }
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 py-2 border-b last:border-b-0">
+    <div
+      className={`flex min-w-0 items-center justify-between gap-3 border-b py-2 last:border-b-0 ${
+        hasDuplicates ? "bg-amber-50/40 dark:bg-amber-900/10" : ""
+      }`}
+    >
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <div className="flex flex-col items-center gap-1">
           <Button
@@ -116,10 +133,18 @@ export function ContributionRow({ contribution, currentAccountId, isOwner, onRem
           </Button>
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium">{contribution.song.title}</div>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="truncate font-medium">{contribution.song.title}</div>
+            {hasDuplicates ? (
+              <span className="shrink-0 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
+                {duplicateLabel}
+              </span>
+            ) : null}
+          </div>
           <div className="flex min-w-0 flex-col gap-1 text-sm text-muted-foreground sm:flex-row sm:items-center sm:gap-2">
             <span className="min-w-0 truncate">
               {contribution.song.artist} • added by {contribution.contributedBy.displayName}
+              {duration ? ` • ${duration}` : ""}
             </span>
             <PlatformLinks
               title={contribution.song.title}
@@ -128,6 +153,11 @@ export function ContributionRow({ contribution, currentAccountId, isOwner, onRem
               deezerId={contribution.song.deezerId}
             />
           </div>
+          {hasDuplicates && duplicateWithTitles.length > 0 ? (
+            <p className="truncate pt-1 text-xs text-amber-800 dark:text-amber-200">
+              Also on playlist: {duplicateWithTitles.join(", ")}
+            </p>
+          ) : null}
         </div>
       </div>
       {canRemove ? (
@@ -143,4 +173,11 @@ export function ContributionRow({ contribution, currentAccountId, isOwner, onRem
       ) : null}
     </div>
   );
+}
+
+function formatDuration(durationSeconds?: number | null): string | null {
+  if (durationSeconds == null || durationSeconds <= 0) return null;
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = durationSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }

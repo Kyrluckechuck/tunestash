@@ -117,6 +117,7 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
         exclude_my_downvotes=target.exclude_my_downvotes,
         min_score_threshold=target.min_score_threshold,
         target_size_override=target.target_size_override,
+        unique_versions_only=target.unique_versions_only,
     )
 
     # Fetch the rolled songs in the engine's chosen order, with the relations

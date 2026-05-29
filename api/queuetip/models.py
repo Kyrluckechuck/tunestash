@@ -555,6 +555,7 @@ class PlaylistExportTarget(models.Model):
     target_size_override: models.PositiveSmallIntegerField = (
         models.PositiveSmallIntegerField(null=True, blank=True)
     )
+    unique_versions_only: models.BooleanField = models.BooleanField(default=False)
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
     if TYPE_CHECKING:

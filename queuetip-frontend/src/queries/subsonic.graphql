@@ -25,6 +25,7 @@ fragment PlaylistExportTargetFields on PlaylistExportTargetType {
   excludeMyDownvotes
   minScoreThreshold
   targetSizeOverride
+  uniqueVersionsOnly
   spotifyUserId
   subsonicConnection {
     ...SubsonicConnectionFields
@@ -124,12 +125,14 @@ mutation UpdateSyncTargetPreferences(
   $excludeMyDownvotes: Boolean
   $minScoreThreshold: Int
   $targetSizeOverride: Int
+  $uniqueVersionsOnly: Boolean
 ) {
   updateSyncTargetPreferences(
     id: $id
     excludeMyDownvotes: $excludeMyDownvotes
     minScoreThreshold: $minScoreThreshold
     targetSizeOverride: $targetSizeOverride
+    uniqueVersionsOnly: $uniqueVersionsOnly
   ) {
     ...PlaylistExportTargetFields
   }

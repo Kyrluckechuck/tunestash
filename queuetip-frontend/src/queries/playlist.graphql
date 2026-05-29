@@ -27,6 +27,8 @@ query PlaylistDetail($id: ID!) {
   playlistContributions(playlistId: $id) {
     id
     netScore
+    duplicateKind
+    duplicateWithTitles
     createdAt
     contributedBy {
       id
@@ -39,6 +41,7 @@ query PlaylistDetail($id: ID!) {
       isrc
       spotifyGid
       deezerId
+      durationSeconds
     }
     votes {
       account {

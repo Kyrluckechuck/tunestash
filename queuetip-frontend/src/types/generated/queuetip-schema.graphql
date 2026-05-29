@@ -40,6 +40,8 @@ type ContributionType {
   createdAt: DateTime!
   votes: [VoteType!]!
   netScore: Int!
+  duplicateKind: String!
+  duplicateWithTitles: [String!]!
 }
 
 """Date with time (isoformat)"""
@@ -114,7 +116,7 @@ type Mutation {
   createSubsonicSyncTarget(playlistId: ID!, connectionId: ID!): PlaylistExportTargetType!
   createSpotifyExportTarget(playlistId: ID!): PlaylistExportTargetType!
   removeSyncTarget(id: ID!, deleteRemote: Boolean! = false): Boolean!
-  updateSyncTargetPreferences(id: ID!, excludeMyDownvotes: Boolean = null, minScoreThreshold: Int, targetSizeOverride: Int): PlaylistExportTargetType!
+  updateSyncTargetPreferences(id: ID!, excludeMyDownvotes: Boolean = null, minScoreThreshold: Int, targetSizeOverride: Int, uniqueVersionsOnly: Boolean = null): PlaylistExportTargetType!
   syncTargetNow(id: ID!): PlaylistExportTargetType!
   recreateSyncTargetRemote(id: ID!): PlaylistExportTargetType!
 }
@@ -133,6 +135,7 @@ type PlaylistExportTargetType {
   excludeMyDownvotes: Boolean!
   minScoreThreshold: Int
   targetSizeOverride: Int
+  uniqueVersionsOnly: Boolean!
   spotifyUserId: String
   subsonicConnection: SubsonicConnectionType
 }
@@ -196,6 +199,7 @@ type SongRef {
   isrc: String
   spotifyGid: String
   deezerId: String
+  durationSeconds: Int
 }
 
 type SubsonicConnectionType {

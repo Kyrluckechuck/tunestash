@@ -790,6 +790,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
         exclude_my_downvotes: bool | None = None,
         min_score_threshold: int | None = strawberry.UNSET,
         target_size_override: int | None = strawberry.UNSET,
+        unique_versions_only: bool | None = None,
     ) -> PlaylistExportTargetType:
         """Patch per-target export preferences used at push time."""
         account = _require_account(info)
@@ -799,6 +800,7 @@ class Mutation:  # pylint: disable=too-many-public-methods
             exclude_my_downvotes=exclude_my_downvotes,
             min_score_threshold=min_score_threshold,
             target_size_override=target_size_override,
+            unique_versions_only=unique_versions_only,
         )
         return PlaylistExportTargetType.from_model(target)
 
@@ -1146,6 +1148,7 @@ def _update_sync_target_preferences(
     exclude_my_downvotes: bool | None,
     min_score_threshold: int | None | object,
     target_size_override: int | None | object,
+    unique_versions_only: bool | None,
 ) -> PlaylistExportTarget:
     target = _resolve_owned_target(account, target_id)
 
@@ -1161,6 +1164,9 @@ def _update_sync_target_preferences(
             raise ValidationError("target_size_override must be at least 1.")
         target.target_size_override = target_size_override
         updates.append("target_size_override")
+    if unique_versions_only is not None:
+        target.unique_versions_only = unique_versions_only
+        updates.append("unique_versions_only")
 
     if updates:
         target.save(update_fields=updates)

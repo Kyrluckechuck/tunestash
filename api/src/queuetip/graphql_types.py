@@ -105,6 +105,7 @@ class PlaylistExportTargetType:
     exclude_my_downvotes: bool
     min_score_threshold: int | None
     target_size_override: int | None
+    unique_versions_only: bool
 
     # Destination-specific details — at most one is populated per row.
     spotify_user_id: str | None
@@ -136,6 +137,7 @@ class PlaylistExportTargetType:
             exclude_my_downvotes=target.exclude_my_downvotes,
             min_score_threshold=target.min_score_threshold,
             target_size_override=target.target_size_override,
+            unique_versions_only=target.unique_versions_only,
             spotify_user_id=(link.service_user_id if link else None),
             subsonic_connection=(
                 SubsonicConnectionType.from_model(conn) if conn else None
@@ -328,6 +330,7 @@ class SongRef:
     # Apple Music ID — clients deep-link via the Apple search URL.
     spotify_gid: str | None
     deezer_id: str | None
+    duration_seconds: int | None
 
 
 @strawberry.type
@@ -340,6 +343,8 @@ class ContributionType:
     created_at: datetime.datetime
     votes: list[VoteType]
     net_score: int
+    duplicate_kind: str = "none"
+    duplicate_with_titles: list[str] = strawberry.field(default_factory=list)
 
     @classmethod
     def from_model(
@@ -357,6 +362,7 @@ class ContributionType:
                 isrc=song.isrc or None,
                 spotify_gid=song.gid or None,
                 deezer_id=str(song.deezer_id) if song.deezer_id else None,
+                duration_seconds=_get_song_duration_seconds(song),
             ),
             contributed_by=AccountType.from_model(
                 cast(Account, contribution.contributed_by)
@@ -365,6 +371,26 @@ class ContributionType:
             votes=[VoteType.from_model(v) for v in votes],
             net_score=sum(v.value for v in votes),
         )
+
+
+def _get_song_duration_seconds(song) -> int | None:  # type: ignore[no-untyped-def]
+    """Best-effort duration extraction from downloaded audio metadata."""
+    file_path = getattr(song, "file_path", None)
+    if not file_path:
+        return None
+    try:
+        from mutagen import File as MutagenFile
+
+        audio = MutagenFile(file_path)
+        if audio is None or getattr(audio, "info", None) is None:
+            return None
+        length = getattr(audio.info, "length", None)
+        if length is None:
+            return None
+        seconds = int(round(float(length)))
+        return seconds if seconds > 0 else None
+    except Exception:  # pylint: disable=broad-except
+        return None
 
 
 @strawberry.type
