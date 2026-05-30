@@ -7,6 +7,7 @@ import hmac
 import secrets
 import string
 from datetime import timedelta
+from typing import Any, cast
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
@@ -120,14 +121,14 @@ def verify_login_code(email: str, code: str, ip: str) -> Account | None:
     challenge.consumed_at = now
     challenge.save(update_fields=["consumed_at"])
     _log_attempt(AuthAttemptLog.METHOD_CODE, identifier, ip, True)
-    return challenge.account
+    return cast(Account, challenge.account)
 
 
 def validate_password_strength(
     raw_password: str, *, account: Account | None = None
 ) -> None:
     try:
-        validate_password(raw_password, user=account)
+        validate_password(raw_password, user=cast(Any, account))
     except DjangoValidationError as exc:
         msg = (
             " ".join(exc.messages)
@@ -167,14 +168,14 @@ def verify_password_sign_in(email: str, raw_password: str, ip: str) -> Account |
     if identity is None:
         _log_attempt(AuthAttemptLog.METHOD_PASSWORD, identifier, ip, False)
         return None
-    account = identity.account
+    account = cast(Account, identity.account)
     if not account.password_hash or not check_password(
         raw_password, account.password_hash
     ):
         _log_attempt(AuthAttemptLog.METHOD_PASSWORD, identifier, ip, False)
         return None
     _log_attempt(AuthAttemptLog.METHOD_PASSWORD, identifier, ip, True)
-    return account
+    return cast(Account, account)
 
 
 def create_password_reset_challenge(email: str, ip: str) -> str | None:
@@ -202,7 +203,7 @@ def create_password_reset_challenge(email: str, ip: str) -> str | None:
     _log_attempt(AuthAttemptLog.METHOD_PASSWORD_RESET_REQUEST, identifier, ip, True)
     if identity is None:
         return None
-    account = identity.account
+    account = cast(Account, identity.account)
     now = timezone.now()
     PasswordResetChallenge.objects.filter(
         account=account, identifier=identifier, consumed_at__isnull=True
@@ -242,11 +243,11 @@ def reset_password_from_token(token: str, new_password: str, ip: str) -> Account
     ):
         return None
     try:
-        set_account_password(challenge.account, new_password)
+        set_account_password(cast(Account, challenge.account), new_password)
     except ValidationError:
         _log_attempt(AuthAttemptLog.METHOD_PASSWORD_RESET_SUBMIT, identifier, ip, False)
         raise
     challenge.consumed_at = now
     challenge.save(update_fields=["consumed_at"])
     _log_attempt(AuthAttemptLog.METHOD_PASSWORD_RESET_SUBMIT, identifier, ip, True)
-    return challenge.account
+    return cast(Account, challenge.account)
