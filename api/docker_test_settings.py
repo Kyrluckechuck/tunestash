@@ -61,6 +61,9 @@ CELERY_TASK_EAGER_PROPAGATES = True
 LOGGING_CONFIG = None
 LOGGING = {}
 
+# Use in-memory email backend so mailoutbox fixture works.
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
 # Use simple cache for tests
 CACHES = {
     "default": {

@@ -27,6 +27,7 @@ from queuetip.models import (
 )
 
 from ..auth import make_magic_link_token
+from ..auth_flows import create_login_code_challenge
 from ..client_ip import get_client_ip
 from ..context import QueuetipContext
 from ..crypto import encrypt_secret
@@ -289,9 +290,10 @@ async def _request_magic_link(  # pylint: disable=too-many-return-statements
 
     assert account is not None
     token = make_magic_link_token(account.id)
-    await sync_to_async(send_magic_link_email)(email, token)
+    login_code = await sync_to_async(create_login_code_challenge)(account, email)
+    await sync_to_async(send_magic_link_email)(email, token, login_code)
     return RequestMagicLinkResult(
-        sent=True, message="Check your email for a sign-in link."
+        sent=True, message="Check your email for a sign-in link and one-time code."
     )
 
 
