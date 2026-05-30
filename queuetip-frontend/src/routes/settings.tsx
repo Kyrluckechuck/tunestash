@@ -1,10 +1,12 @@
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
 import { ExternalLink, LogOut, Music } from "lucide-react";
+import * as React from "react";
 import { useMutation } from "@apollo/client";
 
 import { RequireAuth } from "@/components/RequireAuth";
 import { signOut, useMe } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignOutEverywhereDocument } from "@/types/generated/graphql";
@@ -23,6 +25,12 @@ function SettingsPageContent() {
   const [openDeezerLinksInApp, setOpenDeezerLinksInApp] = useOpenDeezerLinksInApp();
   const spotifyLink = account?.externalServices.find((l) => l.service === "spotify");
   const [signOutEverywhere, { loading: signingOut }] = useMutation(SignOutEverywhereDocument);
+  const [currentPassword, setCurrentPassword] = React.useState("");
+  const [newPassword, setNewPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [passwordMessage, setPasswordMessage] = React.useState<string | null>(null);
+  const [passwordError, setPasswordError] = React.useState<string | null>(null);
+  const [savingPassword, setSavingPassword] = React.useState(false);
 
   function handleLinkSpotify() {
     // Same-origin: Vite dev proxy (or nginx in prod) forwards /auth to backend.
@@ -40,6 +48,35 @@ function SettingsPageContent() {
     await signOutEverywhere();
     await signOut();
     navigate({ to: "/sign-in" });
+  }
+
+  async function handleSetPassword(event: React.FormEvent) {
+    event.preventDefault();
+    setPasswordError(null);
+    setPasswordMessage(null);
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const res = await fetch("/auth/password/set", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      if (!res.ok) {
+        setPasswordError((await res.text()) || "Could not update password.");
+        return;
+      }
+      setPasswordMessage("Password updated.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } finally {
+      setSavingPassword(false);
+    }
   }
 
   return (
@@ -108,6 +145,49 @@ function SettingsPageContent() {
       </Card>
 
       <SubsonicConnectionSection />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Password</CardTitle>
+          <CardDescription>
+            Set a password for email/password sign-in. Magic links still work.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSetPassword} className="space-y-3">
+            <Input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
+              placeholder="Current password (if already set)"
+            />
+            <Input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder="New password"
+              required
+            />
+            <Input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder="Confirm new password"
+              required
+            />
+            {passwordError ? <p className="text-sm text-destructive">{passwordError}</p> : null}
+            {passwordMessage ? (
+              <p className="text-sm text-muted-foreground">{passwordMessage}</p>
+            ) : null}
+            <Button type="submit" disabled={savingPassword || !newPassword || !confirmPassword}>
+              {savingPassword ? "Saving..." : "Update password"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

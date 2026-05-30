@@ -150,6 +150,18 @@ USE_TZ = True
 # STATIC_URL is now set in the dynaconf configuration above
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+]
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
 # Custom configuration for downloader
 # YouTube Music cookies (for high-quality audio downloads via yt-dlp)
 youtube_cookies_location = "/config/youtube_music_cookies.txt"

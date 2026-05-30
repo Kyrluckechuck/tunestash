@@ -35,6 +35,8 @@ class Account(models.Model):
             "but no magic link has ever been clicked."
         ),
     )
+    password_hash: models.CharField = models.CharField(max_length=255, blank=True)
+    password_set_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
 
     if TYPE_CHECKING:
         id: int
@@ -340,6 +342,102 @@ class MagicLinkRequestLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.identifier} from {self.ip_address} at {self.created_at}"
+
+
+class LoginCodeChallenge(models.Model):
+    """Short-lived one-time login code tied to an email/account."""
+
+    account: models.ForeignKey = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="login_code_challenges"
+    )
+    identifier: models.EmailField = models.EmailField(max_length=254)
+    code_hash: models.CharField = models.CharField(max_length=64)
+    expires_at: models.DateTimeField = models.DateTimeField()
+    consumed_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        id: int
+        account_id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
+        indexes = [
+            models.Index(
+                fields=["identifier", "created_at"],
+                name="qt_logincode_identifier_created_idx",
+            ),
+            models.Index(
+                fields=["account", "created_at"],
+                name="qt_logincode_account_created_idx",
+            ),
+        ]
+
+
+class PasswordResetChallenge(models.Model):
+    """Single-use password reset token row (hashed-at-rest token)."""
+
+    account: models.ForeignKey = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="password_reset_challenges"
+    )
+    identifier: models.EmailField = models.EmailField(max_length=254)
+    token_hash: models.CharField = models.CharField(max_length=64)
+    expires_at: models.DateTimeField = models.DateTimeField()
+    consumed_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        id: int
+        account_id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
+        indexes = [
+            models.Index(
+                fields=["identifier", "created_at"],
+                name="qt_pwreset_identifier_created_idx",
+            ),
+            models.Index(
+                fields=["account", "created_at"], name="qt_pwreset_account_created_idx"
+            ),
+        ]
+
+
+class AuthAttemptLog(models.Model):
+    """Rate-limit/audit log for code/password auth endpoints."""
+
+    METHOD_CODE = "code"
+    METHOD_PASSWORD = "password"
+    METHOD_PASSWORD_RESET_REQUEST = "password_reset_request"
+    METHOD_PASSWORD_RESET_SUBMIT = "password_reset_submit"
+    METHOD_CHOICES = [
+        (METHOD_CODE, "Code"),
+        (METHOD_PASSWORD, "Password"),
+        (METHOD_PASSWORD_RESET_REQUEST, "Password reset request"),
+        (METHOD_PASSWORD_RESET_SUBMIT, "Password reset submit"),
+    ]
+
+    method: models.CharField = models.CharField(max_length=32, choices=METHOD_CHOICES)
+    identifier: models.EmailField = models.EmailField(max_length=254)
+    ip_address: models.CharField = models.CharField(max_length=64)
+    was_successful: models.BooleanField = models.BooleanField(default=False)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
+        indexes = [
+            models.Index(
+                fields=["method", "identifier", "created_at"],
+                name="qt_authattempt_method_ident_created_idx",
+            ),
+            models.Index(
+                fields=["method", "ip_address", "created_at"],
+                name="qt_authattempt_method_ip_created_idx",
+            ),
+        ]
 
 
 class ExternalServiceLink(models.Model):

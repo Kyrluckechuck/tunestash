@@ -8,12 +8,15 @@ import datetime as dt
 import urllib.parse
 
 from django.conf import settings
+from django.contrib.auth.hashers import check_password
 from django.utils import timezone
 
 from asgiref.sync import sync_to_async
 from fastapi import APIRouter, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.requests import Request
+
+from queuetip.models import Account
 
 from .auth import (
     SESSION_COOKIE,
@@ -23,6 +26,16 @@ from .auth import (
     read_magic_link_token,
     read_session_token,
 )
+from .auth_flows import (
+    create_password_reset_challenge,
+    reset_password_from_token,
+    set_account_password,
+    verify_login_code,
+    verify_password_sign_in,
+)
+from .client_ip import get_client_ip
+from .email import send_password_reset_email
+from .errors import ValidationError
 from .spotify_oauth import (
     InvalidStateError,
     SpotifyOAuthError,
@@ -82,6 +95,17 @@ _VERIFY_ERROR_HTML = """<!doctype html>
 </body></html>"""
 
 
+def _set_auth_cookie(response: Response, account: Account) -> None:
+    response.set_cookie(
+        SESSION_COOKIE,
+        make_session_token(account.id, session_epoch=account.session_epoch),
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=not settings.DEBUG,
+    )
+
+
 @router.get("/auth/verify")
 def verify(token: str) -> Response:
     """Verify a magic-link token, set the session cookie, confirm sign-in."""
@@ -108,22 +132,13 @@ def verify(token: str) -> Response:
             _VERIFY_ERROR_HTML.format(frontend_url=frontend_url),
             status_code=400,
         )
-    session_epoch = account.session_epoch
-
     # Persistent record that this account has actually clicked a magic link.
     # We use .update() (not save) to avoid touching auto_now-style fields
     # and to keep the write to a single column.
     _Account.objects.filter(id=account_id).update(last_signed_in_at=timezone.now())
 
     response = HTMLResponse(_VERIFY_SUCCESS_HTML.format(frontend_url=frontend_url))
-    response.set_cookie(
-        SESSION_COOKIE,
-        make_session_token(account_id, session_epoch=session_epoch),
-        max_age=SESSION_MAX_AGE,
-        httponly=True,
-        samesite="lax",
-        secure=not settings.DEBUG,
-    )
+    _set_auth_cookie(response, account)
     return response
 
 
@@ -136,6 +151,101 @@ def logout() -> Response:
         samesite="lax",
         secure=not settings.DEBUG,
     )
+    return response
+
+
+@router.post("/auth/code-login")
+async def code_login(request: Request) -> Response:
+    """Sign in by email + one-time code and set the auth cookie."""
+    payload = await request.json()
+    email = str(payload.get("email") or "")
+    code = str(payload.get("code") or "")
+    ip = get_client_ip(request)
+    account = await sync_to_async(verify_login_code)(email, code, ip)
+    if account is None:
+        return Response(status_code=401)
+    await sync_to_async(Account.objects.filter(id=account.id).update)(
+        last_signed_in_at=timezone.now()
+    )
+    response = Response(status_code=204)
+    _set_auth_cookie(response, account)
+    return response
+
+
+@router.post("/auth/password-login")
+async def password_login(request: Request) -> Response:
+    """Sign in by email + password and set the auth cookie."""
+    payload = await request.json()
+    email = str(payload.get("email") or "")
+    password = str(payload.get("password") or "")
+    ip = get_client_ip(request)
+    account = await sync_to_async(verify_password_sign_in)(email, password, ip)
+    if account is None:
+        return Response(status_code=401)
+    await sync_to_async(Account.objects.filter(id=account.id).update)(
+        last_signed_in_at=timezone.now()
+    )
+    response = Response(status_code=204)
+    _set_auth_cookie(response, account)
+    return response
+
+
+@router.post("/auth/password/set")
+async def set_password(request: Request) -> Response:
+    """Set or update password for the currently signed-in account."""
+    session_token = request.cookies.get(SESSION_COOKIE)
+    if not session_token:
+        return Response(status_code=401)
+    try:
+        payload = read_session_token(session_token)
+    except InvalidTokenError:
+        return Response(status_code=401)
+    account = await sync_to_async(Account.objects.filter(id=payload.account_id).first)()
+    if account is None or account.session_epoch != payload.session_epoch:
+        return Response(status_code=401)
+    body = await request.json()
+    new_password = str(body.get("newPassword") or "")
+    current_password = str(body.get("currentPassword") or "")
+    if account.password_hash and not await sync_to_async(check_password)(
+        current_password, account.password_hash
+    ):
+        return Response(status_code=401)
+    try:
+        await sync_to_async(set_account_password)(account, new_password)
+    except ValidationError as exc:
+        return HTMLResponse(str(exc), status_code=400)
+    return Response(status_code=204)
+
+
+@router.post("/auth/password/request-reset")
+async def request_password_reset(request: Request) -> Response:
+    """Request a reset email; always return 204 to avoid account enumeration."""
+    payload = await request.json()
+    email = str(payload.get("email") or "")
+    ip = get_client_ip(request)
+    token = await sync_to_async(create_password_reset_challenge)(email, ip)
+    if token:
+        await sync_to_async(send_password_reset_email)(email.strip().lower(), token)
+    return Response(status_code=204)
+
+
+@router.post("/auth/password/reset")
+async def password_reset(request: Request) -> Response:
+    """Reset password via single-use token."""
+    payload = await request.json()
+    token = str(payload.get("token") or "")
+    new_password = str(payload.get("newPassword") or "")
+    ip = get_client_ip(request)
+    try:
+        account = await sync_to_async(reset_password_from_token)(
+            token, new_password, ip
+        )
+    except ValidationError as exc:
+        return HTMLResponse(str(exc), status_code=400)
+    if account is None:
+        return Response(status_code=400)
+    response = Response(status_code=204)
+    _set_auth_cookie(response, account)
     return response
 
 

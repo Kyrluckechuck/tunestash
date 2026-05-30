@@ -9,6 +9,7 @@ from src.queuetip.auth import (
     make_magic_link_token,
     make_session_token,
 )
+from src.queuetip.auth_flows import create_login_code_challenge, set_account_password
 
 
 @pytest.fixture
@@ -74,6 +75,45 @@ async def test_verify_route_rejects_bad_token(async_client):
         response = await client.get("/auth/verify", params={"token": "garbage"})
     assert response.status_code == 400
     assert "Back to sign-in" in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_code_login_sets_session_cookie(async_client):
+    account = await sync_to_async(Account.objects.create)(display_name="Jo")
+    email = "jo@example.com"
+    from queuetip.models import AuthIdentity
+
+    await sync_to_async(AuthIdentity.objects.create)(
+        account=account, provider=AuthIdentity.PROVIDER_MAGIC_LINK, identifier=email
+    )
+    code = await sync_to_async(create_login_code_challenge)(account, email)
+    async with async_client as client:
+        response = await client.post(
+            "/auth/code-login", json={"email": email, "code": code}
+        )
+    assert response.status_code == 204
+    assert SESSION_COOKIE in response.headers.get("set-cookie", "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_password_login_sets_session_cookie(async_client):
+    account = await sync_to_async(Account.objects.create)(display_name="Jo")
+    email = "jo@example.com"
+    from queuetip.models import AuthIdentity
+
+    await sync_to_async(AuthIdentity.objects.create)(
+        account=account, provider=AuthIdentity.PROVIDER_MAGIC_LINK, identifier=email
+    )
+    await sync_to_async(set_account_password)(account, "correct horse battery staple")
+    async with async_client as client:
+        response = await client.post(
+            "/auth/password-login",
+            json={"email": email, "password": "correct horse battery staple"},
+        )
+    assert response.status_code == 204
+    assert SESSION_COOKIE in response.headers.get("set-cookie", "")
 
 
 @pytest.mark.asyncio
