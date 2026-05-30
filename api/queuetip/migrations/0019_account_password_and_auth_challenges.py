@@ -105,35 +105,35 @@ class Migration(migrations.Migration):
             model_name="authattemptlog",
             index=models.Index(
                 fields=["method", "identifier", "created_at"],
-                name="qt_authattempt_method_ident_created_idx",
+                name="qt_auth_meth_ident_cr_idx",
             ),
         ),
         migrations.AddIndex(
             model_name="authattemptlog",
             index=models.Index(
                 fields=["method", "ip_address", "created_at"],
-                name="qt_authattempt_method_ip_created_idx",
+                name="qt_auth_meth_ip_cr_idx",
             ),
         ),
         migrations.AddIndex(
             model_name="logincodechallenge",
             index=models.Index(
                 fields=["identifier", "created_at"],
-                name="qt_logincode_identifier_created_idx",
+                name="qt_lc_ident_cr_idx",
             ),
         ),
         migrations.AddIndex(
             model_name="logincodechallenge",
             index=models.Index(
                 fields=["account", "created_at"],
-                name="qt_logincode_account_created_idx",
+                name="qt_lc_acct_cr_idx",
             ),
         ),
         migrations.AddIndex(
             model_name="passwordresetchallenge",
             index=models.Index(
                 fields=["identifier", "created_at"],
-                name="qt_pwreset_identifier_created_idx",
+                name="qt_pr_ident_cr_idx",
             ),
         ),
         migrations.AddIndex(
