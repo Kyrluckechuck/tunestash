@@ -175,7 +175,7 @@ def verify_password_sign_in(email: str, raw_password: str, ip: str) -> Account |
         _log_attempt(AuthAttemptLog.METHOD_PASSWORD, identifier, ip, False)
         return None
     _log_attempt(AuthAttemptLog.METHOD_PASSWORD, identifier, ip, True)
-    return cast(Account, account)
+    return account
 
 
 def create_password_reset_challenge(email: str, ip: str) -> str | None:
