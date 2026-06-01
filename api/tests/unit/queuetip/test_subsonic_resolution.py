@@ -66,17 +66,11 @@ def test_normalize_deletes_apostrophes_not_substitutes():
     assert _normalize("Dont — Stop!") == "dont stop"
 
 
-def test_normalize_strips_trailing_parentheticals():
-    assert _normalize("Bohemian Rhapsody (Remastered)") == "bohemian rhapsody"
-    assert _normalize("Wonderwall [Acoustic Version]") == "wonderwall"
-
-
-def test_normalize_strips_version_dash_suffixes():
-    """Streaming titles decorate with ' - From ...', ' - Extended', etc.
-    Navidrome stores the bare title — drop the qualifier so they exact-match."""
-    assert _normalize("Bluey Theme Tune - Extended") == "bluey theme tune"
-    assert _normalize('Let It Grow - From "Dr. Seuss\' The Lorax"') == "let it grow"
-    assert _normalize("Some Song - 2011 Remaster").startswith("some song")
+def test_normalize_keeps_trailing_parentheticals():
+    assert (
+        _normalize("Bohemian Rhapsody (Remastered)") == "bohemian rhapsody remastered"
+    )
+    assert _normalize("Wonderwall [Acoustic Version]") == "wonderwall acoustic version"
 
 
 def test_normalize_keeps_legitimate_dash_titles():
@@ -98,10 +92,8 @@ def test_normalize_keeps_meaningful_trailing_parenthetical():
     assert _normalize("Jump (For My Love)") == "jump for my love"
 
 
-def test_normalize_strips_version_paren_keyword_not_first():
-    """A trailing version parenthetical is stripped even when the keyword
-    isn't the first word ('(2011 Remaster)')."""
-    assert _normalize("Some Song (2011 Remaster)") == "some song"
+def test_normalize_keeps_version_paren_keyword_not_first():
+    assert _normalize("Some Song (2011 Remaster)") == "some song 2011 remaster"
 
 
 # ── _fuzzy_title_score ─────────────────────────────────────────────────────
@@ -219,14 +211,14 @@ def test_does_not_match_different_version_by_other_artist():
     assert out is None
 
 
-def test_version_suffix_title_matches_bare_title():
-    """queuetip 'Bluey Theme Tune - Extended' matches Navidrome 'Bluey Theme
-    Tune' after suffix stripping."""
-    client = _client([_track("S1", "Bluey Theme Tune", "Bluey", artists=["Bluey"])])
-    out = resolve_song_to_subsonic_id(
-        title="Bluey Theme Tune - Extended", artist="Bluey", isrc=None, client=client
+def test_plain_title_does_not_match_remix_variant_without_isrc():
+    client = _client(
+        [_track("S1", "Bluey Theme Tune (Extended Mix)", "Bluey", artists=["Bluey"])]
     )
-    assert out == "S1"
+    out = resolve_song_to_subsonic_id(
+        title="Bluey Theme Tune", artist="Bluey", isrc=None, client=client
+    )
+    assert out is None
 
 
 def test_exact_normalized_match_picks_correct_artist():
@@ -245,14 +237,14 @@ def test_exact_normalized_match_picks_correct_artist():
 # ── Rung 4: fuzzy ──────────────────────────────────────────────────────────
 
 
-def test_fuzzy_match_picks_remastered_variant_with_matching_artist():
+def test_fuzzy_does_not_cross_plain_to_versioned_variant():
     client = _client(
         [_track("S1", "Bohemian Rhapsody (Remastered)", "Queen", artists=["Queen"])]
     )
     out = resolve_song_to_subsonic_id(
         title="Bohemian Rhapsody", artist="Queen", isrc=None, client=client
     )
-    assert out == "S1"
+    assert out is None
 
 
 def test_fuzzy_skipped_when_artist_blank():
