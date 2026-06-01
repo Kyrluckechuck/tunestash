@@ -34,6 +34,15 @@ logger = logging.getLogger(__name__)
 # on Navidrome) but false positives put the wrong track in the user's playlist.
 FUZZY_TITLE_THRESHOLD = 0.85
 
+# Version / variant markers we should preserve in canonical song identity.
+# We use this only to prevent risky plain-title ↔ remix/version matches in
+# non-authoritative rungs (title/artist + fuzzy).
+_REMIX_MARKER_RE = re.compile(r"\b(remix|mix|edit|vip)\b", re.IGNORECASE)
+_VERSION_MARKER_RE = re.compile(
+    r"\b(remaster|remastered|live|acoustic|instrumental|demo|mono|stereo)\b",
+    re.IGNORECASE,
+)
+
 
 def resolve_song_to_subsonic_id(
     *,
@@ -104,9 +113,12 @@ def resolve_song_to_subsonic_id(
 
     # Rung 3: exact normalized title + artist-list membership.
     if title:
+        wanted_kind = _title_variant_kind(title)
         for cand in candidates:
-            if _normalize(cand.title) == norm_title and _artist_matches(
-                norm_artist, cand
+            if (
+                _normalize(cand.title) == norm_title
+                and _artist_matches(norm_artist, cand)
+                and _title_variant_kind(cand.title) == wanted_kind
             ):
                 return cand.id
 
@@ -116,6 +128,7 @@ def resolve_song_to_subsonic_id(
             for cand in candidates:
                 if (
                     _artist_matches(norm_artist, cand)
+                    and _title_variant_kind(cand.title) == wanted_kind
                     and _fuzzy_title_score(norm_title, _normalize(cand.title))
                     >= FUZZY_TITLE_THRESHOLD
                 ):
@@ -188,18 +201,6 @@ def _normalize(value: str) -> str:
         into "jump", producing wrong-track matches.
     """
     lowered = value.lower().strip()
-    # Strip a trailing "(...)"/"[...]" annotation ONLY when it contains a
-    # version keyword. The keyword gate keeps meaningful parentheticals like
-    # "(For My Love)" or the leading "(Don't Fear)" intact; the punctuation
-    # pass below flattens those to spaces instead of deleting their words.
-    lowered = re.sub(_VERSION_PAREN_RE, "", lowered)
-    # Strip a trailing " - <version qualifier>" suffix. Streaming sources
-    # decorate titles like "Bluey Theme Tune - Extended", "Let It Grow - From
-    # \"The Lorax\"", "Some Song - 2011 Remaster". Navidrome usually stores the
-    # bare title, so dropping the qualifier lets the base titles exact-match.
-    # Gated on version keywords so we don't truncate legitimate dash titles
-    # (e.g. "Crystal - Stylo").
-    lowered = re.sub(_VERSION_SUFFIX_RE, "", lowered)
     # Delete apostrophes (both curly and straight) before generic punctuation
     # substitution so "don't" collapses to "dont" not "don t".
     lowered = lowered.replace("'", "").replace("’", "")
@@ -208,28 +209,17 @@ def _normalize(value: str) -> str:
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
-# Version-marker words shared by the dash-suffix and parenthetical strippers.
-_VERSION_KEYWORDS = (
-    r"from|remaster|remastered|remix|remixes|mix|live|version|edit|extended|"
-    r"soundtrack|acoustic|mono|stereo|radio|single|album|original|feat|"
-    r"featuring|deluxe|bonus|instrumental|demo|reprise|edition|anniversary"
-)
+def _title_variant_kind(value: str) -> str:
+    """Classify a title into plain/remix/versioned.
 
-# Trailing " - <qualifier>" where the qualifier begins with a version keyword.
-# Matches to end of string. Case-insensitive (input is already lower-cased when
-# this runs, but keep the flag for direct use).
-_VERSION_SUFFIX_RE = re.compile(
-    rf"\s-\s(?:{_VERSION_KEYWORDS})\b.*$",
-    re.IGNORECASE,
-)
-
-# A TRAILING "(...)" or "[...]" group that CONTAINS a version keyword anywhere
-# inside it (so "(2011 Remaster)" matches even though the keyword isn't first).
-# Anchored to end-of-string so leading/embedded parentheticals are untouched.
-_VERSION_PAREN_RE = re.compile(
-    rf"\s*[\(\[][^\)\]]*\b(?:{_VERSION_KEYWORDS})\b[^\)\]]*[\)\]]\s*$",
-    re.IGNORECASE,
-)
+    This is used to prevent unsafe fallback matches between different variants
+    of the same base title when ISRC/path are unavailable.
+    """
+    if _REMIX_MARKER_RE.search(value):
+        return "remix"
+    if _VERSION_MARKER_RE.search(value):
+        return "versioned"
+    return "plain"
 
 
 def _fuzzy_title_score(left: str, right: str) -> float:
