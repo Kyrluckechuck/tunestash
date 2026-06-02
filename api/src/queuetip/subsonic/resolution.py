@@ -103,48 +103,85 @@ def resolve_song_to_subsonic_id(
 
     # Rung 1: file-path (same-file) match — highest confidence.
     if file_path:
-        for cand in candidates:
-            if cand.path and _paths_match(file_path, cand.path):
-                return cand.id
-        for cand in candidates:
-            if (
-                cand.path
-                and _path_directory_matches(file_path, cand.path)
-                and _normalize(cand.title) == norm_title
-                and _artist_matches(norm_artist, cand)
-                and _title_variant_kind(cand.title) == _title_variant_kind(title)
-            ):
-                return cand.id
+        path_match = _resolve_by_path(
+            candidates,
+            file_path=file_path,
+            norm_title=norm_title,
+            norm_artist=norm_artist,
+            wanted_kind=_title_variant_kind(title),
+        )
+        if path_match:
+            return path_match
 
     # Rung 2: ISRC exact match.
     if isrc:
-        for cand in candidates:
-            if cand.isrc and cand.isrc.lower() == isrc.lower():
-                return cand.id
+        isrc_match = _resolve_by_isrc(candidates, isrc)
+        if isrc_match:
+            return isrc_match
 
     # Rung 3: exact normalized title + artist-list membership.
     if title:
-        wanted_kind = _title_variant_kind(title)
+        return _resolve_by_title(candidates, title, norm_title, norm_artist)
+
+    return None
+
+
+def _resolve_by_isrc(candidates: list[SubsonicTrack], isrc: str) -> str | None:
+    for cand in candidates:
+        if cand.isrc and cand.isrc.lower() == isrc.lower():
+            return cand.id
+    return None
+
+
+def _resolve_by_title(
+    candidates: list[SubsonicTrack],
+    title: str,
+    norm_title: str,
+    norm_artist: str,
+) -> str | None:
+    wanted_kind = _title_variant_kind(title)
+    for cand in candidates:
+        if (
+            _normalize(cand.title) == norm_title
+            and _artist_matches(norm_artist, cand)
+            and _title_variant_kind(cand.title) == wanted_kind
+        ):
+            return cand.id
+
+    # Rung 4: fuzzy title + artist-list membership. Skip without an artist
+    # constraint — too risky on title alone.
+    if norm_artist:
         for cand in candidates:
             if (
-                _normalize(cand.title) == norm_title
-                and _artist_matches(norm_artist, cand)
+                _artist_matches(norm_artist, cand)
                 and _title_variant_kind(cand.title) == wanted_kind
+                and _fuzzy_title_score(norm_title, _normalize(cand.title))
+                >= FUZZY_TITLE_THRESHOLD
             ):
                 return cand.id
+    return None
 
-        # Rung 4: fuzzy title + artist-list membership. Skip without an artist
-        # constraint — too risky on title alone.
-        if norm_artist:
-            for cand in candidates:
-                if (
-                    _artist_matches(norm_artist, cand)
-                    and _title_variant_kind(cand.title) == wanted_kind
-                    and _fuzzy_title_score(norm_title, _normalize(cand.title))
-                    >= FUZZY_TITLE_THRESHOLD
-                ):
-                    return cand.id
 
+def _resolve_by_path(
+    candidates: list[SubsonicTrack],
+    *,
+    file_path: str,
+    norm_title: str,
+    norm_artist: str,
+    wanted_kind: str,
+) -> str | None:
+    for cand in candidates:
+        if cand.path and _paths_match(file_path, cand.path):
+            return cand.id
+    for cand in candidates:
+        if (
+            cand.path
+            and _path_directory_matches(file_path, cand.path)
+            and _normalize(cand.title) == norm_title
+            and _artist_matches(norm_artist, cand)
+            and _title_variant_kind(cand.title) == wanted_kind
+        ):
+            return cand.id
     return None
 
 
