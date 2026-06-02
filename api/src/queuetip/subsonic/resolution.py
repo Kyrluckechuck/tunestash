@@ -60,6 +60,8 @@ def resolve_song_to_subsonic_id(
       1. File path — when TuneStash and the Subsonic server share the music
          mount, the queuetip Song.file_path matches a candidate's server
          path. This is a same-file match, definitive, immune to tag drift.
+         Navidrome may expose normalized filenames, so we also accept a shared
+         artist/album directory plus exact title/artist match before ISRC.
       2. ISRC exact (when the server populates + indexes it).
       3. Title + artist exact (artist matched against the credited-artist
          list, version-qualifier suffixes stripped).
@@ -103,6 +105,15 @@ def resolve_song_to_subsonic_id(
     if file_path:
         for cand in candidates:
             if cand.path and _paths_match(file_path, cand.path):
+                return cand.id
+        for cand in candidates:
+            if (
+                cand.path
+                and _path_directory_matches(file_path, cand.path)
+                and _normalize(cand.title) == norm_title
+                and _artist_matches(norm_artist, cand)
+                and _title_variant_kind(cand.title) == _title_variant_kind(title)
+            ):
                 return cand.id
 
     # Rung 2: ISRC exact match.
@@ -158,6 +169,21 @@ def _paths_match(tunestash_path: str, server_relative_path: str) -> bool:
     if not ts or not rel:
         return False
     return ts.endswith("/" + rel) or ts == rel
+
+
+def _path_directory_matches(tunestash_path: str, server_relative_path: str) -> bool:
+    ts_parts = _path_parts(tunestash_path)
+    rel_parts = _path_parts(server_relative_path)
+    if len(ts_parts) < 2 or len(rel_parts) < 2:
+        return False
+    ts_dir = ts_parts[:-1]
+    rel_dir = rel_parts[:-1]
+    return len(rel_dir) <= len(ts_dir) and ts_dir[-len(rel_dir) :] == rel_dir
+
+
+def _path_parts(value: str) -> list[str]:
+    normalized = value.strip().replace("\\", "/").strip("/").lower()
+    return [part for part in normalized.split("/") if part]
 
 
 def _artist_matches(norm_artist: str, cand: SubsonicTrack) -> bool:
