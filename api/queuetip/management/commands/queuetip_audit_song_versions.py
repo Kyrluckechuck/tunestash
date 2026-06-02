@@ -8,13 +8,14 @@ wrong-track exports when a library has mixed tagging quality.
 from __future__ import annotations
 
 import re
-from collections import defaultdict
 
 from django.core.management.base import BaseCommand
+from django.db.models import Case, Count, IntegerField, Max, Q, QuerySet, Value, When
 
 from library_manager.models import Song
 from queuetip.models import Contribution
 
+_VARIANT_REGEX = r"(remix|mix|edit|vip|remaster|remastered|live|acoustic|instrumental|demo|mono|stereo)"
 _REMIX_RE = re.compile(r"\b(remix|mix|edit|vip)\b", re.IGNORECASE)
 _VERSION_RE = re.compile(
     r"\b(remaster|remastered|live|acoustic|instrumental|demo|mono|stereo)\b",
@@ -61,44 +62,71 @@ class Command(BaseCommand):
         else:
             qs = Song.objects.filter(isrc__isnull=False).exclude(isrc="")
 
-        # Group by (artist, isrc) so we compare variants of the same recording
-        # as tagged in the local DB.
-        grouped: dict[tuple[int | None, str], list[Song]] = defaultdict(list)
-        for s in qs.select_related("primary_artist", "album"):
-            grouped[(s.primary_artist_id, s.isrc)].append(s)
-
-        suspicious: list[tuple[str, list[Song]]] = []
-        for (artist_id, isrc), songs in grouped.items():
-            if len(songs) < 2:
-                continue
-            kinds = {_kind(s.name) for s in songs}
-            if "plain" in kinds and ("remix" in kinds or "versioned" in kinds):
-                artist_name = (
-                    songs[0].primary_artist.name if songs[0].primary_artist else "?"
-                )
-                suspicious.append((f"{artist_name} | {isrc}", songs))
-
-        suspicious.sort(key=lambda item: item[0])
-        shown = suspicious[:limit]
-
-        if not shown:
+        suspicious_groups = self._suspicious_groups(qs)
+        total_count = suspicious_groups.count()
+        if total_count == 0:
             self.stdout.write(
                 self.style.SUCCESS("No suspicious ISRC/version collisions found.")
             )
             return
 
+        shown_groups = list(suspicious_groups[:limit])
         self.stdout.write(
             self.style.WARNING(
-                f"Found {len(suspicious)} suspicious ISRC/version collision groups "
-                f"(showing {len(shown)}):"
+                f"Found {total_count} suspicious ISRC/version collision groups "
+                f"(showing {len(shown_groups)}):"
             )
         )
-        for key, songs in shown:
+
+        for group in shown_groups:
+            songs = list(
+                qs.filter(
+                    primary_artist_id=group["primary_artist_id"],
+                    isrc=group["isrc"],
+                )
+                .select_related("primary_artist", "album", "file_path_ref")
+                .order_by("id")
+            )
+            first_song = songs[0]
+            artist_name = (
+                first_song.primary_artist.name if first_song.primary_artist else "?"
+            )
+            key = f"{artist_name} | {group['isrc']}"
             self.stdout.write(f"\n- {key}")
-            for s in sorted(songs, key=lambda x: x.id):
+            for s in songs:
                 album = s.album.name if s.album else "-"
                 path = s.file_path or "-"
                 self.stdout.write(
                     f"  song_id={s.id} kind={_kind(s.name):9} title={s.name!r} "
                     f"album={album!r} downloaded={s.downloaded} path={path!r}"
                 )
+
+    def _suspicious_groups(self, qs: QuerySet[Song]) -> QuerySet[dict[str, object]]:
+        return (
+            qs.values("primary_artist_id", "isrc")
+            .annotate(
+                song_count=Count("id"),
+                has_variant=Max(
+                    Case(
+                        When(
+                            name__iregex=_VARIANT_REGEX,
+                            then=Value(1),
+                        ),
+                        default=Value(0),
+                        output_field=IntegerField(),
+                    )
+                ),
+                has_plain=Max(
+                    Case(
+                        When(
+                            ~Q(name__iregex=_VARIANT_REGEX),
+                            then=Value(1),
+                        ),
+                        default=Value(0),
+                        output_field=IntegerField(),
+                    )
+                ),
+            )
+            .filter(song_count__gt=1, has_plain=1, has_variant=1)
+            .order_by("primary_artist_id", "isrc")
+        )
