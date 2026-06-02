@@ -163,6 +163,43 @@ def test_path_match_beats_content_and_wrong_version():
     assert out == "REAL"
 
 
+def test_path_directory_match_beats_isrc_duplicate_release():
+    """Navidrome may report a normalized filename while TuneStash stores the
+    downloader filename. If the artist/album directory and title line up,
+    prefer that local-library row over a same-ISRC duplicate from another
+    release directory."""
+    client = _client(
+        [
+            _track(
+                "RIGHT",
+                "Goddess",
+                "Krewella • NERVO • Raja Kumari",
+                artists=["Krewella", "NERVO", "Raja Kumari"],
+                path="Krewella/Goddess/01-01 - Goddess.m4a",
+            ),
+            _track(
+                "WRONG",
+                "Goddess",
+                "Krewella",
+                isrc="QZFPL2000038",
+                artists=["Krewella"],
+                path="NERVO/Goddess/01-01 - Goddess.m4a",
+            ),
+        ]
+    )
+    out = resolve_song_to_subsonic_id(
+        title="Goddess",
+        artist="Krewella",
+        isrc="QZFPL2000038",
+        client=client,
+        file_path=(
+            "/mnt/music_spotify/Krewella/Goddess/"
+            "Krewella, NERVO, Raja Kumari - Goddess.m4a"
+        ),
+    )
+    assert out == "RIGHT"
+
+
 # ── Rung 2: ISRC ───────────────────────────────────────────────────────────
 
 
