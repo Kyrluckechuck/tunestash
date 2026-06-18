@@ -33,6 +33,12 @@ def get_spotify_oauth_credentials(force_refresh: bool = False) -> Optional[dict]
 
         try:
             token = SpotifyOAuthToken.objects.get(id=1)
+            if not token.refresh_token:
+                logger.info(
+                    "Spotify OAuth token is invalidated - re-authentication required"
+                )
+                return None
+
             # Check if token is expired or force refresh requested
             if force_refresh or token.is_expired():
                 reason = "force_refresh requested" if force_refresh else "token expired"
@@ -52,6 +58,8 @@ def get_spotify_oauth_credentials(force_refresh: bool = False) -> Optional[dict]
                     logger.info("✓ Successfully refreshed Spotify OAuth token")
 
                 except Exception as refresh_error:
+                    if SpotifyOAuthService.is_hard_refresh_error(refresh_error):
+                        SpotifyOAuthService.mark_tokens_invalid()
                     logger.error(
                         f"Failed to refresh Spotify OAuth token: {refresh_error}"
                     )

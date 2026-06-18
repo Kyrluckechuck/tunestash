@@ -185,7 +185,10 @@ export function SpotifyConnectButton() {
   }, []);
 
   const isConnected =
-    data?.systemHealth.authentication.spotifyAuthMode === 'user-authenticated';
+    data?.systemHealth.authentication.spotifyAuthMode ===
+      'user-authenticated' &&
+    data.systemHealth.authentication.spotifyTokenValid !== false &&
+    data.systemHealth.authentication.spotifyTokenExpired !== true;
 
   const handleConnect = () => {
     setIsConnecting(true);

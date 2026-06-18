@@ -79,6 +79,26 @@ function Home() {
               <div className='flex items-center gap-2'>
                 {loading ? (
                   <StatusSkeleton />
+                ) : data?.systemHealth.authentication.spotifyTokenExpired ? (
+                  <>
+                    <svg
+                      className='h-4 w-4 text-red-500 flex-shrink-0'
+                      fill='currentColor'
+                      viewBox='0 0 20 20'
+                    >
+                      <path
+                        fillRule='evenodd'
+                        d='M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5zM10 14a1 1 0 100-2 1 1 0 000 2z'
+                        clipRule='evenodd'
+                      />
+                    </svg>
+                    <span className='text-sm text-gray-700 dark:text-slate-300'>
+                      Spotify OAuth:{' '}
+                      <span className='text-red-700 dark:text-red-400 font-medium'>
+                        Expired
+                      </span>
+                    </span>
+                  </>
                 ) : data?.systemHealth.authentication.spotifyAuthMode ===
                   'user-authenticated' ? (
                   <>

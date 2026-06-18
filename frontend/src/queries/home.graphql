@@ -9,6 +9,8 @@ query GetSystemStatus {
       poTokenConfigured
       spotifyUserAuthEnabled
       spotifyAuthMode
+      spotifyTokenValid
+      spotifyTokenExpired
     }
     spotifyRateLimit {
       isRateLimited

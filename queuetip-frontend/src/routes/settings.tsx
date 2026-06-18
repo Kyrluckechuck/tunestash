@@ -16,6 +16,7 @@ import {
   useOpenDeezerLinksInApp,
   useOpenSpotifyLinksInApp,
 } from "@/lib/link-preferences";
+import { isExpiredSpotifyLink } from "@/lib/spotify";
 
 function SettingsPageContent() {
   const { account } = useMe();
@@ -24,6 +25,7 @@ function SettingsPageContent() {
   const [openAppleLinksInApp, setOpenAppleLinksInApp] = useOpenAppleLinksInApp();
   const [openDeezerLinksInApp, setOpenDeezerLinksInApp] = useOpenDeezerLinksInApp();
   const spotifyLink = account?.externalServices.find((l) => l.service === "spotify");
+  const spotifyExpired = isExpiredSpotifyLink(spotifyLink);
   const [signOutEverywhere, { loading: signingOut }] = useMutation(SignOutEverywhereDocument);
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
@@ -93,7 +95,7 @@ function SettingsPageContent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {spotifyLink ? (
+          {spotifyLink && !spotifyExpired ? (
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-medium">Linked ✓</div>
@@ -105,7 +107,9 @@ function SettingsPageContent() {
             </div>
           ) : (
             <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">Not linked.</div>
+              <div className="text-sm text-muted-foreground">
+                {spotifyExpired ? "Authorization expired." : "Not linked."}
+              </div>
               <Button onClick={handleLinkSpotify}>
                 <ExternalLink className="h-4 w-4 mr-2" /> Link Spotify
               </Button>

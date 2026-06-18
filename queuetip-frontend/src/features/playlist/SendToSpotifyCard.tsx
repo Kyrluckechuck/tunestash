@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { isExpiredSpotifyLink } from "@/lib/spotify";
 
 /**
  * "Reshuffle & push to Spotify" panel — appears on the playlist page when
@@ -33,8 +34,9 @@ type Props = {
 
 export function SendToSpotifyCard({ playlistId }: Props) {
   const { account } = useMe();
+  const spotifyLink = account?.externalServices.find((l) => l.service === "spotify");
   const spotifyLinked =
-    account?.externalServices.some((l) => l.service === "spotify") ?? false;
+    Boolean(spotifyLink) && !isExpiredSpotifyLink(spotifyLink);
 
   const { data: targetsData, refetch } = useQuery(MyPlaylistSyncTargetsDocument, {
     variables: { playlistId },
