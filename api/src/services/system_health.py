@@ -103,6 +103,19 @@ class SystemHealthService:
         return True
 
     @staticmethod
+    def _spotify_oauth_expired_status() -> Dict[str, Any]:
+        return {
+            "valid": False,
+            "expired": True,
+            "expires_in_hours": None,
+            "error_message": (
+                "Spotify OAuth token has expired and refresh failed. "
+                "Please re-authenticate."
+            ),
+            "transient": False,
+        }
+
+    @staticmethod
     def _check_spotify_oauth_token_status() -> Dict[str, Any]:
         """
         Check Spotify OAuth token validity and expiration status.
@@ -128,6 +141,9 @@ class SystemHealthService:
 
         try:
             token = SpotifyOAuthToken.objects.get(id=1)
+
+            if not token.refresh_token:
+                return SystemHealthService._spotify_oauth_expired_status()
 
             # Check if token needs refresh (expired or expiring within 5 minutes)
             if token.is_expired():
@@ -158,6 +174,9 @@ class SystemHealthService:
                             f"({refresh_error}). Will retry automatically."
                         )
                     else:
+                        from src.services.spotify_oauth import SpotifyOAuthService
+
+                        SpotifyOAuthService.mark_tokens_invalid()
                         error_message = (
                             "Spotify OAuth token has expired and refresh "
                             "failed. Please re-authenticate."

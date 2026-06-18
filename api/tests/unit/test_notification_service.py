@@ -384,6 +384,25 @@ class TestSpotifyOAuthAlert:
             call_kwargs = mock_apprise.notify.call_args[1]
             assert "Spotify OAuth" in call_kwargs["title"]
 
+    def test_sends_queuetip_spotify_oauth_failed_alert(
+        self, service, notification_settings
+    ):
+        with patch("apprise.Apprise") as mock_apprise_cls:
+            mock_apprise = MagicMock()
+            mock_apprise.notify.return_value = True
+            mock_apprise_cls.return_value = mock_apprise
+
+            sent = service.notify_queuetip_spotify_oauth_failed(
+                account_label="O",
+                error_message="Spotify token refresh failed: 400 invalid_grant",
+            )
+
+        assert sent is True
+        call_kwargs = mock_apprise.notify.call_args[1]
+        assert "Queuetip Spotify OAuth Expired" in call_kwargs["title"]
+        assert "O" in call_kwargs["body"]
+        assert "re-link Spotify" in call_kwargs["body"]
+
     def test_transient_failure_no_alert_below_threshold(
         self, service, notification_settings
     ):

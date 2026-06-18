@@ -23,9 +23,12 @@ from queuetip.models import (
     PlaylistMembership,
 )
 from src.queuetip.services.spotify_export import (
+    EXPIRED_SPOTIFY_SERVICE_USER_ID,
     RemotePlaylistDeletedError,
+    SpotifyExportError,
     SpotifyExportService,
 )
+from src.queuetip.spotify_oauth import SpotifyOAuthError
 
 
 class _RollStub:
@@ -235,3 +238,41 @@ async def test_sync_target_raises_when_remote_deleted_state():
 
     with pytest.raises(RemotePlaylistDeletedError):
         await SpotifyExportService.sync_target(target.id)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_sync_target_discards_spotify_link_and_notifies_on_invalid_grant():
+    owner = await sync_to_async(Account.objects.create)(display_name="O")
+    playlist = await sync_to_async(Playlist.objects.create)(name="P", created_by=owner)
+    await sync_to_async(PlaylistMembership.objects.create)(
+        playlist=playlist, account=owner, role="owner"
+    )
+    link = await sync_to_async(_fresh_link)(owner, expires_in=-60)
+    target = await sync_to_async(PlaylistExportTarget.objects.create)(
+        account=owner,
+        playlist=playlist,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        spotify_link=link,
+    )
+
+    with (
+        patch(
+            "src.queuetip.services.spotify_export.refresh_access_token",
+            side_effect=SpotifyOAuthError(
+                "Spotify token refresh failed: 400 invalid_grant"
+            ),
+        ),
+        patch("src.services.notification.NotificationService") as notification_cls,
+    ):
+        with pytest.raises(SpotifyExportError, match="re-link Spotify"):
+            await SpotifyExportService.sync_target(target.id)
+
+    await sync_to_async(link.refresh_from_db)()
+    assert link.access_token == ""
+    assert link.refresh_token == ""
+    assert link.service_user_id == EXPIRED_SPOTIFY_SERVICE_USER_ID
+    await sync_to_async(target.refresh_from_db)()
+    assert target.last_sync_status == PlaylistExportTarget.STATUS_FAILED
+    assert "re-link Spotify" in target.last_error
+    notification_cls.return_value.notify_queuetip_spotify_oauth_failed.assert_called_once()

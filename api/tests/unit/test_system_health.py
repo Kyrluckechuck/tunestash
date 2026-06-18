@@ -5,8 +5,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from django.utils import timezone
+
+import pytest
 from downloader.premium_detector import PoTokenValidationResult
 
+from library_manager.models import SpotifyOAuthToken
 from src.services.system_health import (
     AuthenticationStatus,
     StorageStatus,
@@ -287,3 +291,39 @@ class TestSpotifyRefreshErrorClassification:
 
         exc = requests.ConnectionError("Connection refused")
         assert SystemHealthService._is_transient_spotify_refresh_error(exc) is True
+
+
+@pytest.mark.django_db
+class TestSpotifyOAuthExpiredState:
+    """Tests for persisted expired Spotify OAuth state after hard refresh failure."""
+
+    @staticmethod
+    def _http_error(status_code: int) -> Exception:
+        import requests
+
+        response = requests.Response()
+        response.status_code = status_code
+        response._content = b'{"error":"invalid_grant"}'
+        return requests.HTTPError(response=response)
+
+    def test_hard_refresh_failure_discards_tokens_but_keeps_expired_state(self):
+        SpotifyOAuthToken.objects.create(
+            id=1,
+            access_token="access-secret",
+            refresh_token="refresh-secret",
+            expires_at=timezone.now() - timedelta(hours=1),
+        )
+
+        with patch(
+            "src.services.spotify_oauth.SpotifyOAuthService.refresh_access_token",
+            side_effect=self._http_error(400),
+        ):
+            status = SystemHealthService._check_spotify_oauth_token_status()
+
+        token = SpotifyOAuthToken.objects.get(id=1)
+        assert token.access_token == ""
+        assert token.refresh_token == ""
+        assert status["valid"] is False
+        assert status["expired"] is True
+        assert status["transient"] is False
+        assert "re-authenticate" in status["error_message"]

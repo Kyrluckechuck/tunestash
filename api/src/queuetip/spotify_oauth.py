@@ -70,6 +70,15 @@ class SpotifyOAuthError(Exception):
     """Raised for OAuth flow failures (bad state, token-exchange failure, etc.)."""
 
 
+class SpotifyTokenRefreshError(SpotifyOAuthError):
+    """Raised when Spotify rejects a refresh-token request."""
+
+    def __init__(self, status_code: int, body: str) -> None:
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"Spotify token refresh failed: {status_code} {body}")
+
+
 class InvalidStateError(SpotifyOAuthError):
     """State token missing, tampered, expired, or replayed."""
 
@@ -180,10 +189,16 @@ def refresh_access_token(refresh_token: str) -> dict[str, Any]:
         timeout=10.0,
     )
     if response.status_code != 200:
-        raise SpotifyOAuthError(
-            f"Spotify token refresh failed: {response.status_code} {response.text}"
-        )
+        raise SpotifyTokenRefreshError(response.status_code, response.text)
     return dict(response.json())
+
+
+def is_hard_refresh_error(exc: Exception) -> bool:
+    """True when Spotify says the stored refresh token cannot be reused."""
+    if isinstance(exc, SpotifyTokenRefreshError):
+        return exc.status_code in (400, 401)
+    message = str(exc).lower()
+    return "invalid_grant" in message or " 400 " in message or " 401 " in message
 
 
 def get_spotify_user_id(access_token: str) -> str:

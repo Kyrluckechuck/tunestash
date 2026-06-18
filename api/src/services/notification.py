@@ -31,6 +31,7 @@ class NotificationService:
     ALERT_YOUTUBE_API_TRANSIENT = "youtube_api_transient"
     ALERT_SPOTIFY_OAUTH_FAILED = "spotify_oauth_failed"
     ALERT_SPOTIFY_OAUTH_TRANSIENT = "spotify_oauth_transient"
+    ALERT_QUEUETIP_SPOTIFY_OAUTH_FAILED = "queuetip_spotify_oauth_failed"
     ALERT_HIGH_ERROR_RATE = "high_error_rate"
 
     # Transient YouTube API failures escalate in two stages. At LOG_THRESHOLD
@@ -341,6 +342,25 @@ class NotificationService:
             return {self.ALERT_HIGH_ERROR_RATE: sent}
 
         return {self.ALERT_HIGH_ERROR_RATE: False}
+
+    def notify_queuetip_spotify_oauth_failed(
+        self, *, account_label: str, error_message: str
+    ) -> bool:
+        """Notify that a Queuetip user's Spotify refresh token expired."""
+        if not self._is_configured():
+            logger.info("[NOTIFY] Notifications not configured, skipping")
+            return False
+
+        name = self.get_instance_name()
+        return self._send(
+            title=f"{name}: Queuetip Spotify OAuth Expired",
+            body=(
+                f"Queuetip Spotify authorization expired for {account_label}. "
+                "The stored token secrets were discarded. Ask the user to "
+                f"re-link Spotify before exporting again. Last error: {error_message}"
+            ),
+            alert_type=self.ALERT_QUEUETIP_SPOTIFY_OAUTH_FAILED,
+        )
 
     def _send(
         self, title: str, body: str, alert_type: str, send_once: bool = False

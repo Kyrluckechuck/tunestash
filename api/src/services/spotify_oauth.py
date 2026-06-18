@@ -135,6 +135,22 @@ class SpotifyOAuthService:
         return cast(Dict[str, Any], response.json())
 
     @staticmethod
+    def is_hard_refresh_error(exc: Exception) -> bool:
+        """True when Spotify says the stored refresh token cannot be reused."""
+        if isinstance(exc, requests.HTTPError) and exc.response is not None:
+            return exc.response.status_code in (400, 401)
+        return False
+
+    @staticmethod
+    def mark_tokens_invalid() -> None:
+        """Discard stored Spotify token secrets while preserving reauth state."""
+        SpotifyOAuthToken.objects.filter(id=1).update(
+            access_token="",
+            refresh_token="",
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+    @staticmethod
     def save_tokens(token_data: Dict[str, Any]) -> SpotifyOAuthToken:
         """
         Save OAuth tokens to database (singleton pattern).
@@ -185,6 +201,9 @@ class SpotifyOAuthService:
         except SpotifyOAuthToken.DoesNotExist:
             return None
 
+        if not token.refresh_token:
+            return None
+
         # Check if token needs refresh
         if token.is_expired():
             # Refresh the token
@@ -195,7 +214,9 @@ class SpotifyOAuthService:
                 token = await sync_to_async(SpotifyOAuthService.save_tokens)(
                     new_token_data
                 )
-            except requests.HTTPError:
+            except requests.HTTPError as exc:
+                if SpotifyOAuthService.is_hard_refresh_error(exc):
+                    await sync_to_async(SpotifyOAuthService.mark_tokens_invalid)()
                 # Refresh failed - token is invalid
                 return None
 

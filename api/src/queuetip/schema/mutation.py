@@ -1079,9 +1079,16 @@ def _create_spotify_export_target(
     if membership is None:
         raise NotFoundError(f"Playlist {playlist_id} not found")
 
-    link = ExternalServiceLink.objects.filter(
-        account=account, service=ExternalServiceLink.SERVICE_SPOTIFY
-    ).first()
+    from src.queuetip.services.spotify_export import EXPIRED_SPOTIFY_SERVICE_USER_ID
+
+    link = (
+        ExternalServiceLink.objects.filter(
+            account=account, service=ExternalServiceLink.SERVICE_SPOTIFY
+        )
+        .exclude(service_user_id=EXPIRED_SPOTIFY_SERVICE_USER_ID)
+        .exclude(refresh_token="")
+        .first()
+    )
     if link is None:
         raise NotFoundError("Spotify is not linked. Connect Spotify in settings first.")
 

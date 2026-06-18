@@ -33,6 +33,7 @@ from ..errors import NotFoundError
 from ..spotify_oauth import (
     SPOTIFY_API_BASE,
     SpotifyOAuthError,
+    is_hard_refresh_error,
     refresh_access_token,
 )
 
@@ -41,6 +42,7 @@ logger = logging.getLogger(__name__)
 TOKEN_REFRESH_LEEWAY_SECONDS = 60
 TRACK_BATCH_SIZE = 100
 PREFLIGHT_BATCH_SIZE = 50  # Spotify /v1/tracks allows up to 50 ids per request
+EXPIRED_SPOTIFY_SERVICE_USER_ID = "__spotify_auth_expired__"
 
 
 class SpotifyExportError(Exception):
@@ -270,6 +272,10 @@ def _validate_and_collect_uris(
 
 async def _ensure_fresh_token(link: ExternalServiceLink) -> str:
     """Refresh the access token if it's near expiry. Returns the current token."""
+    if not link.refresh_token:
+        raise SpotifyExportError(
+            "Could not refresh Spotify access. Please re-link Spotify."
+        )
     if link.expires_at > timezone.now() + dt.timedelta(
         seconds=TOKEN_REFRESH_LEEWAY_SECONDS
     ):
@@ -279,6 +285,8 @@ async def _ensure_fresh_token(link: ExternalServiceLink) -> str:
         try:
             tokens = refresh_access_token(decrypt_token(link.refresh_token))
         except SpotifyOAuthError as exc:
+            if is_hard_refresh_error(exc):
+                _discard_expired_spotify_link(link, str(exc))
             raise SpotifyExportError(
                 f"Could not refresh Spotify access. Please re-link Spotify. ({exc})"
             ) from exc
@@ -293,6 +301,47 @@ async def _ensure_fresh_token(link: ExternalServiceLink) -> str:
         return access_token
 
     return await sync_to_async(_refresh_and_save)()
+
+
+def _discard_expired_spotify_link(
+    link: ExternalServiceLink, error_message: str
+) -> None:
+    account_label = str(link.account)
+    for target in PlaylistExportTarget.objects.filter(
+        spotify_link=link,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+    ):
+        target.last_sync_status = PlaylistExportTarget.STATUS_FAILED
+        target.last_error = (
+            "Spotify authorization expired. Please re-link Spotify in settings."
+        )
+        target.last_synced_at = timezone.now()
+        target.save(
+            update_fields=[
+                "last_sync_status",
+                "last_error",
+                "last_synced_at",
+            ]
+        )
+    link.access_token = ""
+    link.refresh_token = ""
+    link.service_user_id = EXPIRED_SPOTIFY_SERVICE_USER_ID
+    link.expires_at = timezone.now()
+    link.save(
+        update_fields=[
+            "access_token",
+            "refresh_token",
+            "service_user_id",
+            "expires_at",
+        ]
+    )
+
+    from src.services.notification import NotificationService
+
+    NotificationService().notify_queuetip_spotify_oauth_failed(
+        account_label=account_label,
+        error_message=error_message,
+    )
 
 
 def _record_success(
