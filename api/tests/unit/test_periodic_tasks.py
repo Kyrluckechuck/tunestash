@@ -847,6 +847,7 @@ class TestSongFailureBackoff(TestCase):
         # Fifth failure: still 7 days (capped)
         song.increment_failed_count(FailureReason.TEMPORARY_ERROR)
         assert song.get_retry_backoff_days() == 7
+        assert song.unavailable is False
 
     def test_backoff_days_spotify_not_found(self):
         """Test longer backoff for Spotify 404 errors."""
@@ -873,6 +874,7 @@ class TestSongFailureBackoff(TestCase):
         song.increment_failed_count(FailureReason.SPOTIFY_NOT_FOUND)
         assert song.failure_reason == FailureReason.BOTH_UNAVAILABLE
         assert song.get_retry_backoff_days() == 30
+        assert song.unavailable is True
 
     def test_backoff_days_both_unavailable(self):
         """Test flat 30-day backoff for both unavailable."""
