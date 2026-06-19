@@ -435,8 +435,10 @@ class Song(models.Model):
         ):
             self.failure_reason = FailureReason.BOTH_UNAVAILABLE
 
-        if self.failed_count > 3:
-            self.unavailable = True
+        # Transient provider failures must not become a catalog verdict merely
+        # because they happened repeatedly. Only an explicit cross-provider
+        # unavailable result may set this user-facing state.
+        self.unavailable = self.failure_reason == FailureReason.BOTH_UNAVAILABLE
         self.save()
 
     def get_retry_backoff_days(self) -> int:

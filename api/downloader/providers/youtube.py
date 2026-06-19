@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -29,19 +28,12 @@ logger = logging.getLogger(__name__)
 # Minimum confidence threshold for accepting a match
 MIN_MATCH_CONFIDENCE = 0.6
 
+
 # Duration tolerance for matching (10 seconds)
 DURATION_TOLERANCE_MS = 10000
 
 # Request timeout for yt-dlp operations
 YTDLP_TIMEOUT = 60
-
-# yt-dlp's search code path (_extract_response in yt_dlp/extractor/youtube/_base.py)
-# explicitly does NOT retry on 403/429 — it treats them as permanent. In our case
-# they're transient YouTube per-IP quota windows. Retry once after a short backoff
-# to catch tracks that hit a brief throttle window. Keep this short to bound the
-# worker delay; one retry is enough to recover from short windows without
-# significantly slowing the worker during sustained throttles.
-SEARCH_RETRY_BACKOFF_SECONDS = 15
 
 # Fixed, ultra-stable video used by probe_auth() to validate that cookies + PO
 # token still authenticate the watch-page download path. "Never Gonna Give You
@@ -222,50 +214,12 @@ class YouTubeMusicProvider(DownloadProvider):
         isrc: Optional[str] = None,
         duration_ms: Optional[int] = None,
     ) -> Optional[TrackMatch]:
-        """Synchronous search implementation."""
-        import yt_dlp
+        """Search YouTube Music's song catalog, excluding ordinary videos."""
         from downloader.track_matcher import score_track_match
-
-        # extract_flat=True keeps yt-dlp from sequentially re-fetching full
-        # video info per candidate (~3s each). Search-result page already
-        # carries title/uploader/channel/duration/id — everything scoring
-        # needs. Bumping to 10 candidates costs ~0.1s but doubles match
-        # confidence sample size.
-        search_query = f"ytsearch10:{artist} - {title}"
-        opts = _build_ydl_opts(self._cookies_path, self._po_token)
-        opts["extract_flat"] = True
-        opts["default_search"] = "ytsearch"
+        from ytmusicapi import YTMusic
 
         try:
-            info = None
-            for attempt in range(2):  # 1 initial + 1 retry
-                try:
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        info = ydl.extract_info(search_query, download=False)
-                    break  # success — exit retry loop
-                except yt_dlp.utils.DownloadError as ydl_err:
-                    err_msg = str(ydl_err)
-                    is_throttle = "403" in err_msg or "429" in err_msg
-                    if attempt == 0 and is_throttle:
-                        code = "403" if "403" in err_msg else "429"
-                        # [SEARCH-THROTTLE] prefix makes these greppable in
-                        # /config/logs/worker.log so the operator can see how
-                        # many tracks are hitting YouTube's per-IP quota.
-                        logger.warning(
-                            f"[SEARCH-THROTTLE] Got HTTP {code} on search for "
-                            f"'{artist} - {title}', backing off "
-                            f"{SEARCH_RETRY_BACKOFF_SECONDS}s and retrying once"
-                        )
-                        time.sleep(SEARCH_RETRY_BACKOFF_SECONDS)
-                        continue
-                    # Not a throttle, or retry also failed — bubble up to the
-                    # outer handler which logs + returns None.
-                    raise
-
-            if not info:
-                return None
-
-            entries = info.get("entries", [info])
+            entries = YTMusic().search(f"{artist} {title}", filter="songs", limit=10)
             if not entries:
                 return None
 
@@ -274,14 +228,18 @@ class YouTubeMusicProvider(DownloadProvider):
             best_confidence = 0.0
 
             for entry in entries:
-                if not entry or not entry.get("id"):
+                video_id = entry.get("videoId")
+                if not video_id:
                     continue
 
                 result_title = entry.get("title", "")
-                result_artist = entry.get("uploader", entry.get("channel", ""))
-                result_duration_ms = int(entry.get("duration", 0) * 1000)
+                result_artist = " • ".join(
+                    str(item.get("name", "")).strip()
+                    for item in entry.get("artists", [])
+                    if item.get("name")
+                )
+                result_duration_ms = int(entry.get("duration_seconds") or 0) * 1000
                 result_duration_s = result_duration_ms / 1000.0
-                video_id = entry["id"]
 
                 if duration_ms and result_duration_ms:
                     duration_diff = abs(duration_ms - result_duration_ms)
@@ -315,7 +273,7 @@ class YouTubeMusicProvider(DownloadProvider):
                         provider_track_id=video_id,
                         title=result_title,
                         artist=result_artist,
-                        album=album or "",
+                        album=(entry.get("album") or {}).get("name") or album or "",
                         duration_ms=result_duration_ms,
                         confidence=confidence,
                         cover_url=f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
@@ -332,17 +290,9 @@ class YouTubeMusicProvider(DownloadProvider):
             return None
 
         except Exception as e:
-            err_msg = str(e)
-            # Distinguish throttle-exhausted failures from other errors so
-            # operators can filter for the YouTube-anti-abuse pattern via
-            # grep [SEARCH-THROTTLE-EXHAUSTED] in /config/logs/worker.log.
-            if "403" in err_msg or "429" in err_msg:
-                logger.error(
-                    f"[SEARCH-THROTTLE-EXHAUSTED] Search for '{artist} - {title}' "
-                    f"failed after retry: {e}"
-                )
-            else:
-                logger.error(f"[youtube] Search failed for '{artist} - {title}': {e}")
+            logger.error(
+                f"[youtube] YouTube Music search failed for '{artist} - {title}': {e}"
+            )
             return None
 
     async def download_track(
@@ -372,7 +322,7 @@ class YouTubeMusicProvider(DownloadProvider):
         """Synchronous download implementation."""
         import yt_dlp
 
-        url = f"https://www.youtube.com/watch?v={track_match.provider_track_id}"
+        url = f"https://music.youtube.com/watch?v={track_match.provider_track_id}"
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
