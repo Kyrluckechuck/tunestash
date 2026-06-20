@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 import pytest
+from asgiref.sync import sync_to_async
 from tests.factories import (
     AlbumFactory,
     ArtistFactory,
@@ -60,6 +61,22 @@ class TestArtistService:
         result = await service.get_page(page=1, page_size=50, search="Mango")
         assert len(result.items) == 1
         assert result.items[0].name == "Mango"
+
+    @pytest.mark.asyncio
+    async def test_get_page_search_approximates_typo(self, service):
+        await sync_to_async(ArtistFactory)(
+            name="Relient K", tracking_tier=1, gid="relient"
+        )
+        await sync_to_async(ArtistFactory)(
+            name="Relyant K", tracking_tier=1, gid="relyant"
+        )
+        await sync_to_async(ArtistFactory)(
+            name="Random Artist", tracking_tier=1, gid="random"
+        )
+
+        result = await service.get_page(page=1, page_size=50, search="Reliant K")
+        assert result.items
+        assert result.items[0].name == "Relient K"
 
     @pytest.mark.asyncio
     async def test_get_page_sorts_by_name_asc(self, service, artists):

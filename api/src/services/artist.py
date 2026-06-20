@@ -2,6 +2,7 @@
 import logging
 from typing import Any, List, Optional
 
+from django.contrib.postgres.search import TrigramSimilarity
 from django.db.models import Count, Exists, F, OuterRef, Q
 
 from asgiref.sync import sync_to_async
@@ -21,6 +22,7 @@ from ..graphql_types.models import Artist, MutationResult
 from .base import BaseService, PageResult
 
 logger = logging.getLogger(__name__)
+ARTIST_SEARCH_SIMILARITY_THRESHOLD = 0.3
 
 
 class ArtistService(BaseService[Artist]):
@@ -69,8 +71,12 @@ class ArtistService(BaseService[Artist]):
             queryset = queryset.filter(tracking_tier=tracking_tier)
 
         if search:
-            queryset = queryset.filter(
-                Q(name__icontains=search) | Q(gid__icontains=search)
+            queryset = queryset.annotate(
+                _search_similarity=TrigramSimilarity("name", search)
+            ).filter(
+                Q(name__icontains=search)
+                | Q(gid__icontains=search)
+                | Q(_search_similarity__gte=ARTIST_SEARCH_SIMILARITY_THRESHOLD)
             )
 
         if has_undownloaded is not None:
@@ -110,6 +116,13 @@ class ArtistService(BaseService[Artist]):
         timestamp_fields = {"last_synced_at", "last_downloaded_at", "added_at"}
 
         order_expressions: List[Any] = ["id"]
+
+        if search and sort_by is None:
+            order_expressions = [
+                F("_search_similarity").desc(nulls_last=True),
+                "name",
+                "id",
+            ]
 
         if isinstance(sort_by, str):
             mapped_field = sort_field_map.get(sort_by)
@@ -168,7 +181,12 @@ class ArtistService(BaseService[Artist]):
         queryset = self.model.objects.filter(deezer_id__isnull=True)
 
         if search:
-            queryset = queryset.filter(name__icontains=search)
+            queryset = queryset.annotate(
+                _search_similarity=TrigramSimilarity("name", search)
+            ).filter(
+                Q(name__icontains=search)
+                | Q(_search_similarity__gte=ARTIST_SEARCH_SIMILARITY_THRESHOLD)
+            )
 
         queryset = queryset.annotate(
             _downloaded_song_count=Count("song", filter=Q(song__downloaded=True)),
@@ -186,6 +204,14 @@ class ArtistService(BaseService[Artist]):
             "-_downloaded_song_count",
             "id",
         ]
+
+        if search and sort_by is None:
+            order_expressions = [
+                F("_search_similarity").desc(nulls_last=True),
+                "-_downloaded_song_count",
+                "name",
+                "id",
+            ]
 
         sort_field_map: dict[str, str] = {
             "name": "name",
