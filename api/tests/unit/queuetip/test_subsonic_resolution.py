@@ -271,6 +271,42 @@ def test_exact_normalized_match_picks_correct_artist():
     assert out == "RIGHT"
 
 
+def test_exact_title_beats_base_title_fallback():
+    client = _client(
+        [
+            _track("BASE", "Million Pound Girl", "Fuse ODG", artists=["Fuse ODG"]),
+            _track(
+                "EXACT",
+                "Million Pound Girl (Badder Than Bad)",
+                "Fuse ODG",
+                artists=["Fuse ODG"],
+            ),
+        ]
+    )
+    out = resolve_song_to_subsonic_id(
+        title="Million Pound Girl (Badder Than Bad)",
+        artist="Fuse ODG",
+        isrc=None,
+        client=client,
+    )
+    assert out == "EXACT"
+
+
+def test_fallback_matches_base_title_when_versioned_title_missing():
+    """If the exact version is absent, a same-artist base-title fallback
+    should still resolve the song rather than leaving it unmatched."""
+    client = _client(
+        [_track("BASE", "Million Pound Girl", "Fuse ODG", artists=["Fuse ODG"])]
+    )
+    out = resolve_song_to_subsonic_id(
+        title="Million Pound Girl (Badder Than Bad)",
+        artist="Fuse ODG",
+        isrc=None,
+        client=client,
+    )
+    assert out == "BASE"
+
+
 # ── Rung 4: fuzzy ──────────────────────────────────────────────────────────
 
 

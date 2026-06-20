@@ -42,6 +42,7 @@ _VERSION_MARKER_RE = re.compile(
     r"\b(remaster|remastered|live|acoustic|instrumental|demo|mono|stereo)\b",
     re.IGNORECASE,
 )
+_TRAILING_PAREN_SUFFIX_RE = re.compile(r"\s*[\(\[][^\)\]]+[\)\]]\s*$")
 
 
 def resolve_song_to_subsonic_id(
@@ -66,6 +67,8 @@ def resolve_song_to_subsonic_id(
       3. Title + artist exact (artist matched against the credited-artist
          list, version-qualifier suffixes stripped).
       4. Fuzzy title + artist.
+      5. Base-title fallback + artist — last resort for release naming drift
+         where the same recording is indexed without an appended subtitle.
 
     The caller passes already-resolved strings rather than a Song object so
     this module stays decoupled from the ORM (easy to unit-test, no DB).
@@ -157,6 +160,20 @@ def _resolve_by_title(
                 and _title_variant_kind(cand.title) == wanted_kind
                 and _fuzzy_title_score(norm_title, _normalize(cand.title))
                 >= FUZZY_TITLE_THRESHOLD
+            ):
+                return cand.id
+
+    # Rung 5: base-title fallback. If the exact version is missing on the
+    # server, allow a same-artist match on the title with trailing
+    # parenthetical/bracket suffixes removed. This keeps "exact first" but
+    # lets release naming drift fall back to the underlying recording.
+    if norm_artist and wanted_kind == "plain":
+        fallback_title = _normalize(_strip_trailing_suffixes(title))
+        for cand in candidates:
+            if (
+                _artist_matches(norm_artist, cand)
+                and _title_variant_kind(cand.title) == "plain"
+                and _normalize(_strip_trailing_suffixes(cand.title)) == fallback_title
             ):
                 return cand.id
     return None
@@ -283,6 +300,19 @@ def _title_variant_kind(value: str) -> str:
     if _VERSION_MARKER_RE.search(value):
         return "versioned"
     return "plain"
+
+
+def _strip_trailing_suffixes(value: str) -> str:
+    """Remove trailing parenthetical/bracket suffixes.
+
+    Used only for the final fallback rung when exact title matching fails.
+    """
+    stripped = value.strip()
+    while True:
+        next_value = _TRAILING_PAREN_SUFFIX_RE.sub("", stripped).strip()
+        if next_value == stripped:
+            return stripped
+        stripped = next_value
 
 
 def _fuzzy_title_score(left: str, right: str) -> float:
