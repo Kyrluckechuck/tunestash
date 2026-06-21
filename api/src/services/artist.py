@@ -3,7 +3,17 @@ import logging
 from typing import Any, List, Optional
 
 from django.contrib.postgres.search import TrigramSimilarity
-from django.db.models import Count, Exists, F, OuterRef, Q
+from django.db.models import (
+    Case,
+    Count,
+    Exists,
+    F,
+    IntegerField,
+    OuterRef,
+    Q,
+    Value,
+    When,
+)
 
 from asgiref.sync import sync_to_async
 
@@ -67,7 +77,7 @@ class ArtistService(BaseService[Artist]):
         page, page_size = self.validate_page_params(page, page_size)
         queryset = self.model.objects.all()
 
-        if tracking_tier is not None:
+        if tracking_tier is not None and search is None:
             queryset = queryset.filter(tracking_tier=tracking_tier)
 
         if search:
@@ -78,6 +88,20 @@ class ArtistService(BaseService[Artist]):
                 | Q(gid__icontains=search)
                 | Q(_search_similarity__gte=ARTIST_SEARCH_SIMILARITY_THRESHOLD)
             )
+            if tracking_tier is not None:
+                if tracking_tier == 0:
+                    tracking_boost_condition = When(tracking_tier=0, then=Value(1))
+                elif tracking_tier == 1:
+                    tracking_boost_condition = When(tracking_tier__gte=1, then=Value(1))
+                else:
+                    tracking_boost_condition = When(tracking_tier=2, then=Value(1))
+                queryset = queryset.annotate(
+                    _tracking_boost=Case(
+                        tracking_boost_condition,
+                        default=Value(0),
+                        output_field=IntegerField(),
+                    )
+                )
 
         if has_undownloaded is not None:
             album_types_to_download = get_album_types_to_download()
@@ -118,11 +142,19 @@ class ArtistService(BaseService[Artist]):
         order_expressions: List[Any] = ["id"]
 
         if search and sort_by is None:
-            order_expressions = [
-                F("_search_similarity").desc(nulls_last=True),
-                "name",
-                "id",
-            ]
+            if tracking_tier is not None:
+                order_expressions = [
+                    F("_search_similarity").desc(nulls_last=True),
+                    F("_tracking_boost").desc(nulls_last=True),
+                    "name",
+                    "id",
+                ]
+            else:
+                order_expressions = [
+                    F("_search_similarity").desc(nulls_last=True),
+                    "name",
+                    "id",
+                ]
 
         if isinstance(sort_by, str):
             mapped_field = sort_field_map.get(sort_by)
