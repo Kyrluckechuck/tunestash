@@ -79,6 +79,28 @@ class TestArtistService:
         assert result.items[0].name == "Relient K"
 
     @pytest.mark.asyncio
+    async def test_get_page_search_ignores_tracking_filter_for_scope(self, service):
+        await sync_to_async(ArtistFactory)(
+            name="Gyptian", tracking_tier=0, gid="gyptian"
+        )
+        await sync_to_async(ArtistFactory)(
+            name="Gyptian Live", tracking_tier=1, gid="gyptian-live"
+        )
+        await sync_to_async(ArtistFactory)(
+            name="Unrelated Artist", tracking_tier=1, gid="unrelated"
+        )
+
+        result = await service.get_page(
+            page=1, page_size=50, tracking_tier=1, search="Gyptian"
+        )
+        names = [artist.name for artist in result.items]
+
+        assert "Gyptian" in names
+        assert "Gyptian Live" in names
+        assert "Unrelated Artist" not in names
+        assert names[0] == "Gyptian"
+
+    @pytest.mark.asyncio
     async def test_get_page_sorts_by_name_asc(self, service, artists):
         result = await service.get_page(
             page=1, page_size=50, sort_by="name", sort_direction="asc"
