@@ -4,6 +4,7 @@ import asyncio
 from typing import Any, Optional
 
 from celery_app import app as celery_app
+from downloader.providers.base import TrackMetadata
 
 from ..models import Album, Artist
 from ..models import DownloadProvider as DownloadProviderEnum
@@ -86,21 +87,22 @@ def _try_resolve_to_deezer(song: Song) -> None:
             logger.debug("Name search failed for song %s: %s", song.id, e)
 
 
-def _build_track_metadata(song: Song) -> Any:
+def _build_track_metadata(song: Song) -> TrackMetadata:
     """Build TrackMetadata for a song, enriching from Deezer when available."""
-    from downloader.providers.base import TrackMetadata
-
     artist_name = song.primary_artist.name  # type: ignore[attr-defined]
     album_name = song.album.name if song.album else ""  # type: ignore[attr-defined]
+    album_deezer_id = getattr(song.album, "deezer_id", None) if song.album else None
     duration_ms = 0
     isrc = song.isrc
+    genres: tuple[str, ...] = ()
 
     # Enrich from Deezer API for missing fields
-    if song.deezer_id:
+    if song.deezer_id or album_deezer_id:
         try:
             from src.providers.deezer import DeezerMetadataProvider
 
-            dz_track = DeezerMetadataProvider().get_track(song.deezer_id)
+            provider = DeezerMetadataProvider()
+            dz_track = provider.get_track(song.deezer_id) if song.deezer_id else None
             if dz_track:
                 if not album_name and dz_track.album_name:
                     album_name = dz_track.album_name
@@ -110,6 +112,10 @@ def _build_track_metadata(song: Song) -> Any:
                     isrc = dz_track.isrc
                 if dz_track.artist_name:
                     artist_name = dz_track.artist_name
+            if album_deezer_id:
+                dz_album = provider.get_album(album_deezer_id)
+                if dz_album and dz_album.genres:
+                    genres = tuple(dz_album.genres)
         except Exception:
             pass
 
@@ -121,6 +127,7 @@ def _build_track_metadata(song: Song) -> Any:
         album_artist=artist_name,
         duration_ms=duration_ms,
         isrc=isrc,
+        genres=genres,
     )
 
 

@@ -462,6 +462,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
 
     album_data = provider.get_album(album.deezer_id)
     cover_url = album_data.image_url if album_data else None
+    album_genres = tuple(album_data.genres) if album_data and album_data.genres else ()
 
     songs_to_download: list[tuple[Song, TrackMetadata]] = []
 
@@ -540,6 +541,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
             total_tracks=len(deezer_tracks),
             disc_number=track.disc_number,
             cover_url=cover_url,
+            genres=album_genres,
         )
         songs_to_download.append((song, metadata))
 
