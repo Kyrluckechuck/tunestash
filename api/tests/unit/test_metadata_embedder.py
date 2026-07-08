@@ -3,17 +3,14 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from downloader.providers import metadata as metadata_provider
 from downloader.providers.base import TrackMatch, TrackMetadata
-from downloader.providers.metadata import (
-    MetadataEmbedder,
-    create_metadata_from_match,
-)
 
 
 @pytest.fixture
 def embedder():
     """Create a MetadataEmbedder instance."""
-    return MetadataEmbedder()
+    return metadata_provider.MetadataEmbedder()
 
 
 @pytest.fixture
@@ -142,6 +139,35 @@ class TestMetadataEmbedderMP4:
         assert tags_dict["----:com.apple.iTunes:ISRC"] == [b"USUG11904206"]
 
     @pytest.mark.unit
+    def test_embed_mp4_removes_stale_genre_when_metadata_has_none(
+        self, embedder, tmp_path
+    ):
+        """Test stale MP4 genre tags are removed when no source genre exists."""
+        metadata = TrackMetadata(
+            spotify_id="test",
+            title="Rise (Epic Nightcore Version)",
+            artist="DJ Siar",
+            album="Rise (Epic Nightcore Version)",
+            album_artist="DJ Siar",
+            duration_ms=180000,
+        )
+        file_path = tmp_path / "test.m4a"
+        file_path.write_bytes(b"fake audio data")
+
+        tags_dict = {"\xa9gen": ["[Missing Genre]"]}
+        mock_mp4 = MagicMock()
+        mock_mp4.__setitem__ = lambda self, k, v: tags_dict.__setitem__(k, v)
+        mock_mp4.__delitem__ = lambda self, k: tags_dict.__delitem__(k)
+        mock_mp4.__contains__ = lambda self, k: k in tags_dict
+        mock_mp4_class = MagicMock(return_value=mock_mp4)
+
+        with patch("mutagen.mp4.MP4", mock_mp4_class):
+            result = embedder._embed_mp4_metadata(file_path, metadata, None)
+
+        assert result is True
+        assert "\xa9gen" not in tags_dict
+
+    @pytest.mark.unit
     def test_embed_mp4_cover_art_from_track_match(
         self, embedder, spotify_metadata, track_match, tmp_path
     ):
@@ -264,6 +290,35 @@ class TestMetadataEmbedderFLAC:
             embedder._embed_flac_metadata(file_path, spotify_metadata, None)
 
         assert tags_dict["GENRE"] == ["synth-pop", "r&b"]
+
+    @pytest.mark.unit
+    def test_embed_flac_removes_stale_genre_when_metadata_has_none(
+        self, embedder, tmp_path
+    ):
+        """Test stale FLAC genre tags are removed when no source genre exists."""
+        metadata = TrackMetadata(
+            spotify_id="test",
+            title="Rise (Epic Nightcore Version)",
+            artist="DJ Siar",
+            album="Rise (Epic Nightcore Version)",
+            album_artist="DJ Siar",
+            duration_ms=180000,
+        )
+        file_path = tmp_path / "test.flac"
+        file_path.write_bytes(b"fake audio data")
+
+        tags_dict = {"GENRE": ["[Missing Genre]"]}
+        mock_flac = MagicMock()
+        mock_flac.__setitem__ = lambda self, k, v: tags_dict.__setitem__(k, v)
+        mock_flac.__delitem__ = lambda self, k: tags_dict.__delitem__(k)
+        mock_flac.__contains__ = lambda self, k: k in tags_dict
+        mock_flac_class = MagicMock(return_value=mock_flac)
+
+        with patch("mutagen.flac.FLAC", mock_flac_class):
+            result = embedder._embed_flac_metadata(file_path, metadata, None)
+
+        assert result is True
+        assert "GENRE" not in tags_dict
 
 
 class TestMetadataEmbedderDispatch:
@@ -432,7 +487,7 @@ class TestCreateSpotifyMetadataFromMatch:
     @pytest.mark.unit
     def test_create_from_match_full(self, track_match):
         """Test creating metadata from a full track match."""
-        metadata = create_metadata_from_match(
+        metadata = metadata_provider.create_metadata_from_match(
             track_match,
             spotify_id="spotify123",
             album_artist="Album Artist",
@@ -453,7 +508,7 @@ class TestCreateSpotifyMetadataFromMatch:
     @pytest.mark.unit
     def test_create_from_match_default_album_artist(self, track_match):
         """Test album artist defaults to artist."""
-        metadata = create_metadata_from_match(track_match)
+        metadata = metadata_provider.create_metadata_from_match(track_match)
 
         assert metadata.album_artist == track_match.artist
 
@@ -470,7 +525,7 @@ class TestCreateSpotifyMetadataFromMatch:
             confidence=0.9,
         )
 
-        metadata = create_metadata_from_match(match)
+        metadata = metadata_provider.create_metadata_from_match(match)
 
         assert metadata.title == "Song"
         assert metadata.artist == "Artist"

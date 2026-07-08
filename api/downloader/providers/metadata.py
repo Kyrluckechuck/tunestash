@@ -96,6 +96,8 @@ class MetadataEmbedder:
 
         if track_metadata.genres:
             audio["\xa9gen"] = [", ".join(track_metadata.genres)]
+        elif "\xa9gen" in audio:
+            del audio["\xa9gen"]
 
         if track_metadata.copyright:
             audio["cprt"] = [track_metadata.copyright]
@@ -162,6 +164,8 @@ class MetadataEmbedder:
 
         if track_metadata.genres:
             audio["GENRE"] = list(track_metadata.genres)
+        elif "GENRE" in audio:
+            del audio["GENRE"]
 
         if track_metadata.copyright:
             audio["COPYRIGHT"] = [track_metadata.copyright]

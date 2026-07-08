@@ -73,6 +73,69 @@ class TestBuildTrackMetadata:
         assert metadata.album == "DB Album"
 
     @patch("src.providers.deezer.DeezerMetadataProvider")
+    def test_uses_linked_album_genres(self, mock_provider_cls):
+        """Linked Deezer album genres should be included in track metadata."""
+        from library_manager.models import Album
+
+        song_no_album = self._make_song(album=None)
+        artist = song_no_album.primary_artist
+        album = Album.objects.create(name="DB Album", artist=artist, deezer_id=99999)
+        song_no_album.album = album
+        song_no_album.save(update_fields=["album_id"])
+        song = (
+            type(song_no_album)
+            .objects.select_related("primary_artist", "album")
+            .get(id=song_no_album.id)
+        )
+
+        mock_track = MagicMock()
+        mock_track.album_name = "API Album"
+        mock_track.duration_ms = 240000
+        mock_track.isrc = "USRC12345678"
+        mock_track.artist_name = "Deezer Artist"
+        mock_album = MagicMock()
+        mock_album.genres = ["Pop", "Films/Games"]
+        provider = mock_provider_cls.return_value
+        provider.get_track.return_value = mock_track
+        provider.get_album.return_value = mock_album
+
+        metadata = _build_track_metadata(song)
+
+        assert metadata.genres == ("Pop", "Films/Games")
+        provider.get_album.assert_called_once_with(99999)
+
+    @patch("src.providers.deezer.DeezerMetadataProvider")
+    def test_uses_linked_album_genres_without_song_deezer_id(self, mock_provider_cls):
+        """Album genres do not require the song itself to have a Deezer ID."""
+        from library_manager.models import Album
+
+        song_no_album = self._make_song(
+            album=None,
+            deezer_id=None,
+            youtube_id="yt_album_genre_only",
+        )
+        artist = song_no_album.primary_artist
+        album = Album.objects.create(name="DB Album", artist=artist, deezer_id=99999)
+        song_no_album.album = album
+        song_no_album.save(update_fields=["album_id"])
+        song = (
+            type(song_no_album)
+            .objects.select_related("primary_artist", "album")
+            .get(id=song_no_album.id)
+        )
+
+        mock_album = MagicMock()
+        mock_album.genres = ["Electro"]
+        provider = mock_provider_cls.return_value
+        provider.get_album.return_value = mock_album
+
+        metadata = _build_track_metadata(song)
+
+        assert metadata.genres == ("Electro",)
+        provider.get_track.assert_not_called()
+        provider.get_album.assert_called_once_with(99999)
+
+    @patch("src.providers.deezer.DeezerMetadataProvider")
     def test_handles_deezer_api_failure(self, mock_provider_cls):
         """If Deezer API fails, should still produce valid metadata."""
         mock_provider_cls.return_value.get_track.side_effect = Exception("API error")

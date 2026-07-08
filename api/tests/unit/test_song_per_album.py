@@ -127,9 +127,13 @@ def _make_deezer_track(
     return track
 
 
-def _make_album_data(image_url: str = "https://example.com/cover.jpg") -> MagicMock:
+def _make_album_data(
+    image_url: str = "https://example.com/cover.jpg",
+    genres: list[str] | None = None,
+) -> MagicMock:
     data = MagicMock()
     data.image_url = image_url
+    data.genres = genres or []
     return data
 
 
@@ -237,6 +241,53 @@ class TestDownloadCreatesPerAlbumSongs:
         existing.refresh_from_db()
         assert existing.deezer_id == 888
         assert existing.gid == "7MqMH46N0yZoGTf3Sj7nAc"  # original row, preserved
+
+    @patch("downloader.providers.fallback.FallbackDownloader")
+    @patch("src.providers.deezer.DeezerMetadataProvider")
+    def test_passes_album_genres_to_download_metadata(
+        self, mock_provider_cls, mock_downloader_cls
+    ) -> None:
+        """Deezer album genres should be embedded into downloaded tracks."""
+        artist = Artist.objects.create(name="Sinnon Nightcore", gid="artist-genre")
+        album = Album.objects.create(
+            name="Rise (Epic Nightcore Version)",
+            artist=artist,
+            deezer_id=616926781,
+            wanted=True,
+        )
+
+        provider = mock_provider_cls.return_value
+        provider.get_album_tracks.return_value = [
+            _make_deezer_track(
+                deezer_id=2894716571,
+                name="Rise (Epic Nightcore Version)",
+                isrc="UKZGC2406465",
+                artist_name="Sinnon Nightcore",
+            ),
+        ]
+        provider.get_album.return_value = _make_album_data(
+            genres=["Pop", "Films/Games"]
+        )
+
+        captured_metadata = []
+        result_mock = MagicMock()
+        result_mock.success = True
+        result_mock.file_path = "/mnt/music/Sinnon Nightcore/Rise/Rise.m4a"
+        result_mock.provider_used = "youtube"
+
+        async def fake_download(metadata):
+            captured_metadata.append(metadata)
+            return result_mock
+
+        downloader_instance = mock_downloader_cls.return_value
+        downloader_instance.download_track = fake_download
+        downloader_instance.close = AsyncMock()
+
+        downloaded, failed = _download_deezer_album(album, _make_task_history())
+
+        assert downloaded == 1
+        assert failed == 0
+        assert captured_metadata[0].genres == ("Pop", "Films/Games")
 
     @patch("downloader.providers.fallback.FallbackDownloader")
     @patch("src.providers.deezer.DeezerMetadataProvider")
