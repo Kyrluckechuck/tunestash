@@ -5,10 +5,10 @@ This module provides validation functions for Spotify identifiers and URIs.
 """
 
 import re
-from typing import Any, Dict, Optional
+from typing import Optional
 
 
-def is_local_track(track: Dict[str, Any]) -> bool:
+def is_local_track(track: object) -> bool:
     """
     Check if a track is a local file added to a Spotify playlist.
 

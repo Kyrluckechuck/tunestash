@@ -190,6 +190,7 @@ def _collect_song_candidates(
 ) -> tuple[list[tuple[int, str, str]], list[str]]:
     """Build (song_id, gid, label) for a rolled selection's songs; songs
     without a gid (after enrichment) go to skipped. Preserves roll order."""
+    from library_manager.models import Artist
     from library_manager.models import Song as SongModel
 
     candidates: list[tuple[int, str, str]] = []
@@ -201,7 +202,7 @@ def _collect_song_candidates(
     )
     for song in songs:
         gid = (song.gid or "").strip()
-        artist = song.primary_artist.name if song.primary_artist_id else ""  # type: ignore[attr-defined]
+        artist = cast(Artist, song.primary_artist).name
         label = f"{artist} — {song.name}".strip(" —")
         if not gid:
             skipped.append(label)

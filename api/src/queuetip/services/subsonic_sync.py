@@ -23,8 +23,9 @@ natural shape with no benefit.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from django.utils import timezone
 
@@ -45,6 +46,16 @@ from ..subsonic import (
 )
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from library_manager.models import Artist, Song
+
+
+class CeleryTask(Protocol):
+    """Subset of a Celery task used when queuing missing tracks."""
+
+    def apply_async(self, *, args: Sequence[str | int], task_id: str) -> object:
+        raise NotImplementedError
 
 
 @dataclass
@@ -135,9 +146,7 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
     queued_downloads: list[int] = []
 
     for song in songs:
-        artist_name = (
-            song.primary_artist.name if song.primary_artist_id else ""  # type: ignore[attr-defined]
-        )
+        artist_name = cast("Artist", song.primary_artist).name
         # Resolution misses must never abort the whole sync — a missing track
         # is a normal condition (user hasn't downloaded it into Navidrome yet).
         try:
@@ -253,7 +262,7 @@ def _mark_remote_deleted(target: PlaylistExportTarget) -> None:
     target.save(update_fields=["last_synced_at", "last_sync_status", "last_error"])
 
 
-def _maybe_queue_download(song) -> bool:  # type: ignore[no-untyped-def]
+def _maybe_queue_download(song: "Song") -> bool:
     """Queue a TuneStash download for an unmatched song so it may appear on
     the user's Navidrome before the next sync.
 
@@ -274,7 +283,12 @@ def _maybe_queue_download(song) -> bool:  # type: ignore[no-untyped-def]
         logger.debug("[subsonic-sync] download helpers unavailable: %s", exc)
         return False
 
-    def _queue(task_name: str, key: str, task, args: list) -> bool:  # type: ignore[no-untyped-def]
+    def _queue(
+        task_name: str,
+        key: str,
+        task: CeleryTask,
+        args: Sequence[str | int],
+    ) -> bool:
         task_id = generate_task_id(task_name, key)
         is_pending, _ = is_task_pending_or_running(task_id)
         if is_pending:

@@ -1,7 +1,7 @@
 """Strawberry GraphQL types for Queuetip."""
 
 import datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import strawberry
 
@@ -16,6 +16,9 @@ from queuetip.models import (
     SubsonicConnection,
     Vote,
 )
+
+if TYPE_CHECKING:
+    from library_manager.models import Artist, Song
 
 
 @strawberry.type
@@ -358,7 +361,7 @@ class ContributionType:
             song=SongRef(
                 id=strawberry.ID(str(song.id)),
                 title=song.name,
-                artist=song.primary_artist.name,  # type: ignore[attr-defined]
+                artist=cast("Artist", song.primary_artist).name,
                 isrc=song.isrc or None,
                 spotify_gid=song.gid or None,
                 deezer_id=str(song.deezer_id) if song.deezer_id else None,
@@ -373,7 +376,7 @@ class ContributionType:
         )
 
 
-def _get_song_duration_seconds(song) -> int | None:  # type: ignore[no-untyped-def]
+def _get_song_duration_seconds(song: "Song") -> int | None:
     """Best-effort duration extraction from downloaded audio metadata."""
     # Never trigger a lazy ORM fetch from async GraphQL resolvers.
     file_path_ref_id = getattr(song, "file_path_ref_id", None)
