@@ -213,8 +213,8 @@ An example compose setup is included. Follow these steps:
 
 4. Access the applications:
    - **TuneStash production frontend**: http://localhost:5000
-   - **QueueTip production frontend**: http://localhost:3001
-   - **QueueTip API health endpoint**: http://localhost:5050/health
+   - **QueueTip production frontend**: http://localhost:3001 by default (`QUEUETIP_FRONTEND_PORT` may override it)
+   - **QueueTip API health endpoint**: http://localhost:5050/health by default (`QUEUETIP_PORT` may override it)
    - **Development**: the local Compose override runs the TuneStash Vite frontend on http://localhost:3000 and the QueueTip Vite frontend on http://localhost:3001.
 
 5. Useful commands:
