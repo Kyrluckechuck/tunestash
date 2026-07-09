@@ -9,6 +9,7 @@ from django.db.models.functions import Now
 
 from celery.exceptions import Retry as CeleryRetry
 from celery_app import app as celery_app
+from downloader.providers.fallback import DownloadChainResult
 from downloader.spotipy_tasks import SpotifyRateLimitError
 from downloader.utils import sanitize_and_strip_url
 
@@ -568,10 +569,10 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        async def _download_all() -> list:
+        async def _download_all() -> list[DownloadChainResult | BaseException]:
             sem = asyncio.Semaphore(PER_ALBUM_TRACK_CONCURRENCY)
 
-            async def _one(metadata: Any) -> Any:
+            async def _one(metadata: TrackMetadata) -> DownloadChainResult:
                 async with sem:
                     return await downloader.download_track(metadata)
 
@@ -841,7 +842,7 @@ def download_playlist(
 
         from .maintenance import _download_deezer_songs_via_fallback
 
-        songs_to_download = []
+        songs_to_download: list[Song] = []
         ordered_songs = []
         for item in raw_tracks:
             if check_task_cancellation(task_history):

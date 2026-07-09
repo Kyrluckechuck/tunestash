@@ -62,8 +62,8 @@ class Command(BaseCommand):
 
     def handle(self, *args: object, **options: object) -> None:
         apply_changes = bool(options["apply"])
-        limit = cast("int | None", options.get("limit"))
-        song_ids = cast("list[int] | None", options.get("song_ids"))
+        limit = cast(int | None, options.get("limit"))
+        song_ids = cast(list[int] | None, options.get("song_ids"))
 
         queryset = (
             Song.objects.filter(downloaded=True, file_path_ref__isnull=False)
