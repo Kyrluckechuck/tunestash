@@ -294,11 +294,11 @@ jobs:
           DJANGO_DEBUG: "False"
           DJANGO_SECRET_KEY: "django-insecure-ci-testing-key"
           AUTH_SECRET_KEY: "ci-testing-auth-key"
-          QUEUETIP_FERNET_KEY: "jB4Do3Gt5GcQkkQxN0YQbptA_qSiyMRuQZ4MyM1PltY="
           POSTGRES_DB: "tunestash"
           POSTGRES_USER: "slm_user"
           POSTGRES_PASSWORD: "slm_dev_password"
         run: |
+          export QUEUETIP_FERNET_KEY="$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
           mkdir -p "${SLM_CONFIG_DIR}/db/data"
 
           # Start postgres and wait for healthy
