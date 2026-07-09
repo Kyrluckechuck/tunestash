@@ -4,7 +4,7 @@ Task management service for handling Celery task operations.
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from django.utils import timezone
 
@@ -378,24 +378,28 @@ class TaskManagementService:
             # Batch fetch entities
             artists = {a.id: a.name for a in Artist.objects.filter(id__in=artist_ids)}
             # For albums, include artist name for better context
-            albums = {
-                a.id: f"{a.artist.name} - {a.name}" if a.artist else a.name
-                for a in Album.objects.select_related("artist").filter(id__in=album_ids)
-            }
+            albums: dict[int, str] = {}
+            for album in Album.objects.select_related("artist").filter(
+                id__in=album_ids
+            ):
+                artist = cast(Artist | None, album.artist)
+                albums[album.id] = (
+                    f"{artist.name} - {album.name}"
+                    if artist is not None
+                    else album.name
+                )
             # For tracks/songs, include artist name for better context
             # Songs are looked up by Spotify GID (not database ID)
-            tracks = {
-                s.gid: (
-                    f"{s.primary_artist.name} - {s.name}"
-                    if s.primary_artist
-                    else s.name
+            tracks: dict[str, str] = {}
+            for song in Song.objects.select_related("primary_artist").filter(
+                gid__in=track_gids
+            ):
+                artist = cast(Artist | None, song.primary_artist)
+                tracks[song.gid] = (
+                    f"{artist.name} - {song.name}" if artist is not None else song.name
                 )
-                for s in Song.objects.select_related("primary_artist").filter(
-                    gid__in=track_gids
-                )
-            }
             playlists_by_id = {
-                p.id: p.name
+                int(p.pk): p.name
                 for p in TrackedPlaylist.objects.filter(id__in=playlist_ids)
             }
             playlists_by_url = {
