@@ -1,8 +1,33 @@
 # TuneStash
 
-A music library sync tool that tracks your artists and playlists via Deezer metadata, then downloads the music locally via YouTube Music with fallback providers (Tidal, Qobuz, Monochrome).
+TuneStash is a Docker-first music library system with two separate web applications:
 
-## Features
+| Application | Purpose | Access model |
+| --- | --- | --- |
+| **TuneStash** | Private library administration, metadata tracking, downloads, and media-server integration. | No built-in user authentication; protect it at the network or reverse-proxy layer. |
+| **QueueTip** | Collaborative playlist curation and export. | Authenticated end users only; it cannot access the TuneStash admin GraphQL schema. |
+
+Both applications share the TuneStash database and background worker, but QueueTip is served by a dedicated API process with a deliberately limited schema.
+
+## How It Works
+
+### TuneStash library management
+
+1. Track artists, playlists, and external music lists from the TuneStash admin UI.
+2. TuneStash uses Deezer for artist, album, and track metadata, then schedules work through Celery.
+3. Download workers resolve requested tracks through the configured provider chain, beginning with YouTube Music and falling back to Tidal, Qobuz, or Monochrome where configured.
+4. Downloaded music is tagged, organized in the configured music directory, and can trigger a Navidrome rescan or update generated M3U playlists.
+5. The admin UI exposes task state, failures, provider metrics, metadata changes, and DB-backed application settings.
+
+### QueueTip collaborative playlists
+
+1. A QueueTip user creates a playlist and shares its invite link.
+2. Members add songs, albums, or playlists from Spotify, Apple Music, or Deezer, then vote on contributions.
+3. A roll selects a scored, randomized playlist from those contributions; duplicate variants are indicated rather than automatically removed.
+4. Each user can push the current roll to their own Spotify or Subsonic/OpenSubsonic destination. Repeated pushes replace the contents of the same remote playlist.
+5. Missing Subsonic tracks can be queued for the TuneStash worker to download, then included by a later push.
+
+## TuneStash Features
 
 - **Artist tracking** -- Mark artists as tracked to auto-download new releases and missing albums
   - Automatically checks for and queues missing albums (hourly)
@@ -27,6 +52,15 @@ A music library sync tool that tracks your artists and playlists via Deezer meta
 - **In-app settings** -- All configuration managed through the Settings page (DB-backed with sensible defaults)
 - **Dark mode** -- System/light/dark theme toggle
 
+## QueueTip Features
+
+- **Collaborative playlists** -- Invite members, contribute tracks or collections, vote, and review duplicate versions.
+- **Music-link intake** -- Accept Spotify, Apple Music, and Deezer tracks, albums, and playlists through one input.
+- **Authenticated access** -- Magic-link sign-in, short-code fallback, optional account passwords, password reset, session revocation, and signup allowlists.
+- **Exports** -- Create stable Spotify and Subsonic/OpenSubsonic destinations, with per-target export preferences and track-resolution status.
+- **Browser link preferences** -- Choose whether Spotify, Apple Music, and Deezer links open as app URIs or web URLs in the current browser.
+- **Public-process isolation** -- The QueueTip API mounts only QueueTip routes and GraphQL types; TuneStash administration is unreachable from that process.
+
 ## Notes
 While this has a lot of opportunity to improve, it's reached a "stable" state for my personal usage. Therefore I will fix critical issues as I encounter them, but will not actively be working on additional features except when inspiration hits me, or there are specific community requests.
 
@@ -38,11 +72,13 @@ We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for
 
 ## Security & Authentication
 
-**Important Security Notice**: This application **does not include built-in authentication**. It is designed for personal use in trusted environments.
+TuneStash and QueueTip have different security models.
 
-### If You Need Authentication
+### TuneStash admin UI
 
-If you plan to expose this application externally or want to add authentication, consider:
+TuneStash itself has no built-in end-user authentication and is intended for a trusted private environment. Do not expose the TuneStash frontend or API directly to the internet. Protect it with a VPN, firewall, or reverse-proxy authentication layer.
+
+If you need external access to the TuneStash admin UI, consider:
 
 - **Reverse proxy with authentication**: Use [Traefik](https://traefik.io/) with auth middleware, [nginx](https://nginx.org/) with auth modules, or [Caddy](https://caddyserver.com/) with auth plugins
 - **Authentication gateways**:
@@ -52,9 +88,20 @@ If you plan to expose this application externally or want to add authentication,
 - **VPN access**: Keep the application internal and access via VPN (WireGuard, OpenVPN, etc.)
 - **Network-level protection**: Firewall rules, VPC isolation, or private networks only
 
-### Security Best Practices
+### QueueTip
 
-- **Never expose this application directly to the internet** without proper authentication
+QueueTip is the public-facing collaborative surface. It has its own magic-link and optional password authentication, rate limits auth flows, and defaults to invite-only account creation. It deliberately runs in a separate FastAPI process that does not import the TuneStash admin GraphQL schema.
+
+For a production QueueTip deployment:
+
+- Set `QUEUETIP_PUBLIC_URL` and `QUEUETIP_FRONTEND_URL` to the browser-facing HTTPS URL.
+- Register `<QUEUETIP_PUBLIC_URL>/auth/spotify/callback` with Spotify when Spotify export is enabled.
+- Set a persistent `QUEUETIP_FERNET_KEY`; it encrypts stored QueueTip secrets such as Subsonic credentials.
+- Configure SMTP settings in TuneStash so magic-link, invite, and reset emails can be delivered.
+- Keep the QueueTip frontend behind HTTPS and configure trusted proxies where applicable.
+
+### Shared operational practices
+
 - **Use HTTPS** in production environments with proper TLS certificates
 - **Keep the application updated** and monitor for security advisories
 - **Limit network access** to trusted users and networks only
@@ -164,9 +211,11 @@ An example compose setup is included. Follow these steps:
    docker compose up --build -d
    ```
 
-4. Access the app:
-   - **Development**: http://localhost:3000 (Frontend dev server with HMR)
-   - **Production**: http://localhost:5000 (Nginx serving frontend + API)
+4. Access the applications:
+   - **TuneStash production frontend**: http://localhost:5000
+   - **QueueTip production frontend**: http://localhost:3001
+   - **QueueTip API health endpoint**: http://localhost:5050/health
+   - **Development**: the local Compose override runs the TuneStash Vite frontend on http://localhost:3000 and the QueueTip Vite frontend on http://localhost:3001.
 
 5. Useful commands:
    ```bash
@@ -192,17 +241,21 @@ An example compose setup is included. Follow these steps:
 1. **Setup dependencies:**
    ```bash
    make setup
+   cd queuetip-frontend && yarn install
    ```
+
+   `make setup` installs the TuneStash API and frontend dependencies. QueueTip
+   has its own frontend package, so install it separately when working outside
+   Docker.
 
 2. **Start the development environment:**
    ```bash
    make dev
    ```
 
-   This starts all three services:
-   - **API Server** (http://localhost:5000/graphql)
-   - **Frontend Server** (http://localhost:3000)
-   - **Celery Worker** (background task processing)
+   This legacy local workflow starts the TuneStash API, frontend, and Celery
+   worker. It does not start QueueTip; use `make dev-container` for the full
+   multi-service development stack, including the QueueTip API and frontend.
 
 ### Development Commands
 
