@@ -24,6 +24,9 @@ const authedMeMock = {
         id: "1",
         displayName: "Already In",
         email: "already-in@example.com",
+        createdAt: "2026-05-19T00:00:00Z",
+        isAdmin: false,
+        externalServices: [],
       },
     },
   },
@@ -85,7 +88,7 @@ describe("SignInPage", () => {
     ];
 
     render(
-      <MockedProvider mocks={[anonMeMock, ...mocks]}>
+      <MockedProvider mocks={[anonMeMock, publicSettingsMock(false), ...mocks]}>
         <SignInPage />
       </MockedProvider>,
     );
@@ -109,7 +112,7 @@ describe("SignInPage", () => {
     ];
 
     render(
-      <MockedProvider mocks={[anonMeMock, ...errorMock]}>
+      <MockedProvider mocks={[anonMeMock, publicSettingsMock(false), ...errorMock]}>
         <SignInPage />
       </MockedProvider>,
     );
@@ -151,7 +154,7 @@ describe("SignInPage", () => {
   it("redirects to /playlists when the user is already signed in", async () => {
     nextSearch = {};
     render(
-      <MockedProvider mocks={[authedMeMock]}>
+      <MockedProvider mocks={[authedMeMock, publicSettingsMock(false)]}>
         <SignInPage />
       </MockedProvider>,
     );
@@ -164,7 +167,7 @@ describe("SignInPage", () => {
   it("honours ?next=… when redirecting an already-signed-in user", async () => {
     nextSearch = { next: "/playlists/42" };
     render(
-      <MockedProvider mocks={[authedMeMock]}>
+      <MockedProvider mocks={[authedMeMock, publicSettingsMock(false)]}>
         <SignInPage />
       </MockedProvider>,
     );

@@ -2,7 +2,8 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { MockedProvider } from "@apollo/client/testing";
+import { useQuery } from "@apollo/client";
+import { MockedProvider, type MockedResponse } from "@apollo/client/testing";
 
 import { ContributeDialog } from "@/features/playlist/ContributeDialog";
 import {
@@ -10,6 +11,7 @@ import {
   BulkImportPlaylistDocument,
   ContributeFromLinkDocument,
   PlaylistDetailDocument,
+  type PlaylistDetailQuery,
 } from "@/types/generated/graphql";
 
 vi.mock("@tanstack/react-router", async (importOriginal) => {
@@ -37,40 +39,46 @@ vi.mock("sonner", () => ({
 
 const PLAYLIST_ID = "42";
 
-const playlistDetailRefetchMock = {
-  request: { query: PlaylistDetailDocument, variables: { id: PLAYLIST_ID } },
-  result: {
-    data: {
-      playlist: {
-        __typename: "PlaylistType",
-        id: PLAYLIST_ID,
-        name: "Test Playlist",
-        description: "",
-        inviteToken: "tok-xyz",
-        engineSettings: {
-          __typename: "EngineSettings",
-          minSize: 1,
-          maxSize: null,
-          tHigh: 3,
-          tLow: 3,
-          base: 0.85,
-          pFloor: 0.15,
-        },
-        createdBy: { __typename: "AccountType", id: "1", displayName: "Owner" },
-        members: [],
-      },
-      playlistContributions: [],
+const playlistDetailData = {
+  playlist: {
+    __typename: "PlaylistType",
+    id: PLAYLIST_ID,
+    name: "Test Playlist",
+    description: "",
+    inviteToken: "tok-xyz",
+    engineSettings: {
+      __typename: "EngineSettings",
+      minSize: 1,
+      maxSize: null,
+      tHigh: 3,
+      tLow: 3,
+      base: 0.85,
+      pFloor: 0.15,
     },
+    createdBy: { __typename: "AccountType", id: "1", displayName: "Owner" },
+    members: [],
   },
+  playlistContributions: [],
+} satisfies PlaylistDetailQuery;
+
+const playlistDetailRefetchMock: MockedResponse<PlaylistDetailQuery> = {
+  request: { query: PlaylistDetailDocument, variables: { id: PLAYLIST_ID } },
+  result: { data: playlistDetailData },
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function renderDialog(mocks: any[], onOpenChange = vi.fn()) {
+function PlaylistQueryHarness({ children }: { children: React.ReactNode }) {
+  useQuery(PlaylistDetailDocument, { variables: { id: PLAYLIST_ID } });
+  return <>{children}</>;
+}
+
+function renderDialog(mocks: ReadonlyArray<MockedResponse>, onOpenChange = vi.fn()) {
   return {
     onOpenChange,
     ...render(
-      <MockedProvider mocks={mocks}>
-        <ContributeDialog playlistId={PLAYLIST_ID} open={true} onOpenChange={onOpenChange} />
+      <MockedProvider mocks={[playlistDetailRefetchMock, ...mocks]}>
+        <PlaylistQueryHarness>
+          <ContributeDialog playlistId={PLAYLIST_ID} open={true} onOpenChange={onOpenChange} />
+        </PlaylistQueryHarness>
       </MockedProvider>
     ),
   };

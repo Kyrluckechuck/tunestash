@@ -249,15 +249,17 @@ jobs:
           SHORT_SHA=${GITHUB_SHA::7}
           docker pull ghcr.io/${{ steps.owner.outputs.value }}/tunestash:sha-${SHORT_SHA}
           docker pull ghcr.io/${{ steps.owner.outputs.value }}/tunestash-frontend:sha-${SHORT_SHA}
+          docker pull ghcr.io/${{ steps.owner.outputs.value }}/queuetip-frontend:sha-${SHORT_SHA}
 
           # Tag them for local use
           docker tag ghcr.io/${{ steps.owner.outputs.value }}/tunestash:sha-${SHORT_SHA} local-backend:latest
           docker tag ghcr.io/${{ steps.owner.outputs.value }}/tunestash-frontend:sha-${SHORT_SHA} local-frontend:latest
+          docker tag ghcr.io/${{ steps.owner.outputs.value }}/queuetip-frontend:sha-${SHORT_SHA} local-queuetip-frontend:latest
 
       - name: Verify images loaded
         run: |
           echo "✅ Images loaded for testing:"
-          docker images | grep -E "(local-backend|local-frontend)"
+          docker images | grep -E "(local-backend|local-frontend|local-queuetip-frontend)"
 
       - name: Create temp dirs for volumes
         id: mktemp
@@ -288,9 +290,11 @@ jobs:
           MUSIC_DIR: ${{ steps.mktemp.outputs.music-dir }}
           BACKEND_IMAGE: local-backend:latest
           FRONTEND_IMAGE: local-frontend:latest
+          QUEUETIP_FRONTEND_IMAGE: local-queuetip-frontend:latest
           DJANGO_DEBUG: "False"
           DJANGO_SECRET_KEY: "django-insecure-ci-testing-key"
           AUTH_SECRET_KEY: "ci-testing-auth-key"
+          QUEUETIP_FERNET_KEY: "jB4Do3Gt5GcQkkQxN0YQbptA_qSiyMRuQZ4MyM1PltY="
           POSTGRES_DB: "tunestash"
           POSTGRES_USER: "slm_user"
           POSTGRES_PASSWORD: "slm_dev_password"
@@ -359,6 +363,33 @@ jobs:
           curl -f http://localhost:5000/healthz
           echo ""
           echo "✅ API health check passed"
+
+          # Start QueueTip through its nginx frontend to exercise the public
+          # deployment path, including backend proxying and GraphQL routing.
+          docker compose up -d queuetip-frontend
+          echo "⏰ Waiting for QueueTip frontend to become available..."
+          for i in {1..30}; do
+            if curl -fsS http://localhost:3001/health > /dev/null; then
+              echo "✅ QueueTip frontend is available after ${i} attempts"
+              break
+            fi
+            echo "⏳ QueueTip frontend not ready yet (attempt $i/30)..."
+            sleep 2
+          done
+
+          if ! curl -fsS http://localhost:3001/health > /dev/null; then
+            echo "❌ QueueTip frontend never became available"
+            docker compose ps queuetip queuetip-frontend
+            docker compose logs queuetip queuetip-frontend
+            exit 1
+          fi
+
+          echo "Testing QueueTip GraphQL endpoint through nginx proxy..."
+          curl -fsS \
+            -H "content-type: application/json" \
+            --data '{"query":"query { publicSettings { signupAllowlistEnforced } }"}' \
+            http://localhost:3001/graphql | jq -e '.data.publicSettings.signupAllowlistEnforced | type == "boolean"'
+          echo "✅ QueueTip proxy and GraphQL smoke checks passed"
 
       - name: Show logs on failure
         if: failure()

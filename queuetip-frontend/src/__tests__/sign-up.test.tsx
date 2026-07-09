@@ -24,6 +24,9 @@ const authedMeMock = {
         id: "1",
         displayName: "Already In",
         email: "already-in@example.com",
+        createdAt: "2026-05-19T00:00:00Z",
+        isAdmin: false,
+        externalServices: [],
       },
     },
   },
@@ -94,7 +97,7 @@ describe("SignUpPage", () => {
     ];
 
     render(
-      <MockedProvider mocks={[anonMeMock, ...mocks]}>
+      <MockedProvider mocks={[anonMeMock, publicSettingsMock(false), ...mocks]}>
         <SignUpPage />
       </MockedProvider>,
     );
@@ -111,7 +114,7 @@ describe("SignUpPage", () => {
   it("keeps the Create account button disabled until both fields are filled", async () => {
     const user = userEvent.setup();
     render(
-      <MockedProvider mocks={[anonMeMock]}>
+      <MockedProvider mocks={[anonMeMock, publicSettingsMock(false)]}>
         <SignUpPage />
       </MockedProvider>,
     );
@@ -152,7 +155,7 @@ describe("SignUpPage", () => {
   it("redirects to /playlists when the user is already signed in", async () => {
     nextSearch = {};
     render(
-      <MockedProvider mocks={[authedMeMock]}>
+      <MockedProvider mocks={[authedMeMock, publicSettingsMock(false)]}>
         <SignUpPage />
       </MockedProvider>,
     );
@@ -164,7 +167,7 @@ describe("SignUpPage", () => {
   it("honours ?next=… when redirecting an already-signed-in user", async () => {
     nextSearch = { next: "/playlists/42" };
     render(
-      <MockedProvider mocks={[authedMeMock]}>
+      <MockedProvider mocks={[authedMeMock, publicSettingsMock(false)]}>
         <SignUpPage />
       </MockedProvider>,
     );
