@@ -96,8 +96,6 @@ module = [
   "api.src.services.playlist",
   "api.src.services.history",
   "api.src.services.task_history",
-  "api.src.services.task_management",
-  "api.src.services.celery_task_management", 
   "api.library_manager.helpers",
 ]
 disable_error_code = ["attr-defined", "call-arg", "var-annotated"]
@@ -149,11 +147,9 @@ disable_error_code = ["return-value", "call-arg"]
 # Temporarily suppress errors for files with extensive Django/Celery integration issues
 [[tool.mypy.overrides]]
 module = [
-    "library_manager.tasks",
-    "library_manager.helpers", 
-    "downloader.*",
-    "src.services.task_management",
-    "src.services.celery_task_management",
+  "library_manager.tasks",
+  "library_manager.helpers",
+  "downloader.*",
 ]
 ignore_errors = true
 
