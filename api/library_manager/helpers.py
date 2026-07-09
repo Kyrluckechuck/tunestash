@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # Celery Task Deduplication Utilities
 
 
-def generate_task_id(task_name: str, *args, **kwargs) -> str:
+def generate_task_id(task_name: str, *args: object, **kwargs: object) -> str:
     """
     Generate a deterministic task ID based on task name and arguments.
 

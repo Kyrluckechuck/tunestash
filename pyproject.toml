@@ -148,7 +148,6 @@ disable_error_code = ["return-value", "call-arg"]
 [[tool.mypy.overrides]]
 module = [
   "library_manager.tasks",
-  "library_manager.helpers",
   "downloader.*",
 ]
 ignore_errors = true
