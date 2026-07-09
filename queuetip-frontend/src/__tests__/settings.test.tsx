@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MockedProvider } from "@apollo/client/testing";
 
 import { SettingsPage } from "@/routes/settings";
-import { MeDocument, SignOutEverywhereDocument } from "@/types/generated/graphql";
+import {
+  MeDocument,
+  MySubsonicConnectionDocument,
+  SignOutEverywhereDocument,
+} from "@/types/generated/graphql";
 
 const mockNavigate = vi.fn();
 
@@ -31,6 +35,7 @@ const meWithSpotify = (services: Array<{ service: string; serviceUserId: string 
         id: "1",
         displayName: "Jo",
         createdAt: "2026-05-19T00:00:00Z",
+        isAdmin: false,
         externalServices: services.map((s) => ({
           __typename: "ExternalServiceLinkType",
           service: s.service,
@@ -47,6 +52,11 @@ const signOutEverywhereMock = {
   result: { data: { signOutEverywhere: { __typename: "SignOutEverywhereResult", success: true } } },
 };
 
+const subsonicConnectionMock = {
+  request: { query: MySubsonicConnectionDocument },
+  result: { data: { mySubsonicConnection: null } },
+};
+
 describe("SettingsPage", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -55,7 +65,7 @@ describe("SettingsPage", () => {
   it("shows the Link Spotify button when not linked", async () => {
     const mock = meWithSpotify([]);
     render(
-      <MockedProvider mocks={[mock, mock]}>
+      <MockedProvider mocks={[mock, mock, subsonicConnectionMock]}>
         <SettingsPage />
       </MockedProvider>
     );
@@ -65,7 +75,7 @@ describe("SettingsPage", () => {
   it("shows the linked state with the service user id", async () => {
     const mock = meWithSpotify([{ service: "spotify", serviceUserId: "alice42" }]);
     render(
-      <MockedProvider mocks={[mock, mock]}>
+      <MockedProvider mocks={[mock, mock, subsonicConnectionMock]}>
         <SettingsPage />
       </MockedProvider>
     );
@@ -76,7 +86,7 @@ describe("SettingsPage", () => {
   it("stores browser link preferences for Spotify, Apple Music, and Deezer app links", async () => {
     const mock = meWithSpotify([]);
     render(
-      <MockedProvider mocks={[mock, mock]}>
+      <MockedProvider mocks={[mock, mock, subsonicConnectionMock]}>
         <SettingsPage />
       </MockedProvider>
     );
@@ -109,7 +119,7 @@ describe("SettingsPage", () => {
   it("sign out everywhere button calls the mutation and navigates to sign-in", async () => {
     const mock = meWithSpotify([]);
     render(
-      <MockedProvider mocks={[mock, mock, signOutEverywhereMock]}>
+      <MockedProvider mocks={[mock, mock, subsonicConnectionMock, signOutEverywhereMock]}>
         <SettingsPage />
       </MockedProvider>
     );

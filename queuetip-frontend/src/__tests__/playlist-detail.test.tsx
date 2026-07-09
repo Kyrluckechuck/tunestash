@@ -5,7 +5,13 @@ import { describe, expect, it, vi } from "vitest";
 import { MockedProvider } from "@apollo/client/testing";
 
 import { PlaylistDetail } from "@/routes/playlists.$id";
-import { CastVoteDocument, MeDocument, PlaylistDetailDocument } from "@/types/generated/graphql";
+import {
+  CastVoteDocument,
+  MeDocument,
+  MyPlaylistSyncTargetsDocument,
+  MySubsonicConnectionDocument,
+  PlaylistDetailDocument,
+} from "@/types/generated/graphql";
 
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
@@ -104,10 +110,32 @@ const playlistDetailMock = {
   },
 };
 
+const subsonicConnectionMock = {
+  request: { query: MySubsonicConnectionDocument },
+  result: { data: { mySubsonicConnection: null } },
+};
+
+const syncTargetsMock = {
+  request: {
+    query: MyPlaylistSyncTargetsDocument,
+    variables: { playlistId: "10" },
+  },
+  result: { data: { myPlaylistSyncTargets: [] } },
+};
+
 describe("PlaylistDetail", () => {
   it("renders the playlist name, members, and a contribution", async () => {
     render(
-      <MockedProvider mocks={[meMock, meMock, playlistDetailMock]}>
+      <MockedProvider
+        mocks={[
+          meMock,
+          meMock,
+          meMock,
+          playlistDetailMock,
+          syncTargetsMock,
+          subsonicConnectionMock,
+        ]}
+      >
         <PlaylistDetail />
       </MockedProvider>
     );
@@ -165,7 +193,17 @@ describe("PlaylistDetail", () => {
     };
 
     render(
-      <MockedProvider mocks={[meForVote, meForVote, playlistDetailMock, castVoteMock]}>
+      <MockedProvider
+        mocks={[
+          meForVote,
+          meForVote,
+          meForVote,
+          playlistDetailMock,
+          syncTargetsMock,
+          subsonicConnectionMock,
+          castVoteMock,
+        ]}
+      >
         <PlaylistDetail />
       </MockedProvider>
     );

@@ -29,6 +29,7 @@ const meMock = {
         id: "1",
         displayName: "Owner",
         createdAt: "2026-05-19T00:00:00Z",
+        isAdmin: false,
         externalServices: [],
       },
     },
@@ -62,7 +63,7 @@ const playlistsMock = {
 describe("PlaylistsIndex", () => {
   it("renders the user's playlists", async () => {
     render(
-      <MockedProvider mocks={[meMock, playlistsMock]}>
+      <MockedProvider mocks={[meMock, meMock, playlistsMock]}>
         <PlaylistsIndex />
       </MockedProvider>,
     );
@@ -71,7 +72,7 @@ describe("PlaylistsIndex", () => {
 
   it("shows member count for a playlist", async () => {
     render(
-      <MockedProvider mocks={[meMock, playlistsMock]}>
+      <MockedProvider mocks={[meMock, meMock, playlistsMock]}>
         <PlaylistsIndex />
       </MockedProvider>,
     );
@@ -83,6 +84,7 @@ describe("PlaylistsIndex", () => {
     render(
       <MockedProvider
         mocks={[
+          meMock,
           meMock,
           { ...playlistsMock, result: { data: { myPlaylists: [] } } },
         ]}
@@ -99,6 +101,7 @@ describe("PlaylistsIndex", () => {
     render(
       <MockedProvider
         mocks={[
+          meMock,
           meMock,
           { ...playlistsMock, result: { data: { myPlaylists: [] } } },
         ]}
