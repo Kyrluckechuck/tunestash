@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import strawberry
 
 
-def _serialize_datetime(value: Any) -> str:
+def _serialize_datetime(value: object) -> str:
     """Serialize datetime to ISO 8601 string."""
     if isinstance(value, datetime):
         return value.isoformat()
     raise ValueError(f"Cannot serialize {value} as DateTime")
 
 
-def _parse_datetime(value: Any) -> datetime:
+def _parse_datetime(value: object) -> datetime:
     """Parse ISO 8601 string to datetime."""
     if isinstance(value, str):
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
