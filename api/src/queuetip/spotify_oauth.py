@@ -9,8 +9,8 @@ CSRF model mirrors TuneStash's `src.routes.auth`:
     attacker cannot forge a state token because they lack the signing key.
     (TuneStash uses an opaque random token + in-memory presence-check; ours
     is signed which is strictly stronger for forgery prevention.)
-  * Single-use tracking via `_consume_state` prevents replay within the
-    token's 5-minute validity window.
+  * Database-backed single-use tracking via `_consume_state` prevents replay
+    within the token's 5-minute validity window, including after restarts.
 
 No per-user cookie binding: the user may sign in on origin A (e.g.
 http://localhost:3001) but be returned by Spotify to origin B (e.g.
@@ -21,8 +21,6 @@ without requiring same-origin cookies between authorize and callback.
 
 from __future__ import annotations
 
-import threading
-import time
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any
@@ -42,28 +40,13 @@ _STATE_SALT = "queuetip.spotify.oauth-state"
 STATE_MAX_AGE = 300  # 5 minutes
 
 
-# Single-use state tracker. Stores `{state_token: issued_at_epoch}`. Entries
-# older than STATE_MAX_AGE are reaped on read. In-memory because state tokens
-# are short-lived; a process restart just forces users to retry the OAuth
-# flow, which is acceptable. Mirrors TuneStash's `_oauth_states` dict.
-_used_states: dict[str, float] = {}
-_used_states_lock = threading.Lock()
-
-
 def _consume_state(token: str) -> bool:
     """Record `token` as used. Returns True if it was unused before this call,
     False if it was already consumed (replay). Also reaps expired entries.
     """
-    now = time.time()
-    with _used_states_lock:
-        # Reap expired entries opportunistically.
-        cutoff = now - STATE_MAX_AGE
-        for k in [k for k, ts in _used_states.items() if ts < cutoff]:
-            del _used_states[k]
-        if token in _used_states:
-            return False
-        _used_states[token] = now
-        return True
+    from src.queuetip.replay import consume_token
+
+    return consume_token("spotify_oauth_state", token, STATE_MAX_AGE)
 
 
 class SpotifyOAuthError(Exception):

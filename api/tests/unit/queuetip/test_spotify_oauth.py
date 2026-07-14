@@ -11,15 +11,6 @@ from src.queuetip import routes as queuetip_routes
 from src.queuetip import spotify_oauth
 
 
-@pytest.fixture(autouse=True)
-def _clear_used_states():
-    """Wipe the single-use state tracker between tests so they don't see
-    each other's tokens as 'already consumed'."""
-    spotify_oauth._used_states.clear()
-    yield
-    spotify_oauth._used_states.clear()
-
-
 def test_state_round_trip():
     token = spotify_oauth.make_state_token(42)
     payload = spotify_oauth.read_state_token(token)

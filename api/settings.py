@@ -1,8 +1,14 @@
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 import dynaconf
 from celery_beat_schedule import CELERY_BEAT_SCHEDULE
+
+DEV_MODE = os.getenv("TUNESTASH_DEV_MODE", "false").lower() == "true"
+_development_secret = "django-insecure-development-only-key"
+_development_db_password = "slm_dev_password"
 
 # django_stubs_ext is a dev-only dependency for type checking
 # Only import and monkeypatch if available (dev environment)
@@ -31,9 +37,10 @@ settings = dynaconf.DjangoDynaconf(
         "/config/settings.yaml",
     ],
     # Override defaults for API-specific settings
-    SECRET_KEY=os.getenv("DJANGO_SECRET_KEY", "django-insecure-development-only-key"),
-    DEBUG=os.getenv("DJANGO_DEBUG", "True").lower() == "true",
-    ALLOWED_HOSTS=["*"],
+    SECRET_KEY=os.getenv("DJANGO_SECRET_KEY")
+    or (_development_secret if DEV_MODE else ""),
+    DEBUG=os.getenv("DJANGO_DEBUG", "true" if DEV_MODE else "false").lower() == "true",
+    ALLOWED_HOSTS=os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(","),
     # API-specific installed apps (keeping core Django + adding API needs)
     INSTALLED_APPS=[
         "django.contrib.admin",
@@ -82,7 +89,8 @@ settings = dynaconf.DjangoDynaconf(
             "ENGINE": "django.db.backends.postgresql",
             "NAME": os.getenv("POSTGRES_DB", "tunestash"),
             "USER": os.getenv("POSTGRES_USER", "slm_user"),
-            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "slm_dev_password"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD")
+            or (_development_db_password if DEV_MODE else ""),
             "HOST": os.getenv("POSTGRES_HOST", "localhost"),
             "PORT": os.getenv("POSTGRES_PORT", "5432"),
             # Keep connections alive for 10 minutes (helps long-running processes like Celery Beat)
@@ -336,3 +344,28 @@ for _qt_key, _qt_val in {
     "QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST": QUEUETIP_REQUIRE_SIGNUP_ALLOWLIST,
 }.items():
     settings.set(_qt_key, _qt_val)
+
+
+def _validate_production_configuration() -> None:
+    """Prevent a non-debug deployment from silently using development defaults."""
+    if DEV_MODE or os.getenv("CI", "").lower() == "true":
+        return
+
+    required_values = {
+        "DJANGO_SECRET_KEY": os.getenv("DJANGO_SECRET_KEY", ""),
+        "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
+    }
+    missing = [name for name, value in required_values.items() if not value]
+    if missing:
+        raise ImproperlyConfigured(
+            "Production configuration is incomplete; set: " + ", ".join(missing)
+        )
+
+    service = os.getenv("TUNESTASH_SERVICE", "")
+    if service in {"queuetip", "worker"} and not QUEUETIP_FERNET_KEY:
+        raise ImproperlyConfigured(
+            "QUEUETIP_FERNET_KEY must be set for the " f"{service} service"
+        )
+
+
+_validate_production_configuration()

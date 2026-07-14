@@ -13,14 +13,6 @@ from src.queuetip.auth import SESSION_COOKIE, make_session_token
 from src.queuetip.crypto import decrypt_token
 
 
-@pytest.fixture(autouse=True)
-def _clear_used_states():
-    """Single-use state tracker is module-global; reset between tests."""
-    spotify_oauth._used_states.clear()
-    yield
-    spotify_oauth._used_states.clear()
-
-
 def _authed_client(account_id: int) -> httpx.AsyncClient:
     transport = httpx.ASGITransport(app=app)
     client = httpx.AsyncClient(transport=transport, base_url="http://testserver")
