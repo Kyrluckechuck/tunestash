@@ -344,6 +344,27 @@ class MagicLinkRequestLog(models.Model):
         return f"{self.identifier} from {self.ip_address} at {self.created_at}"
 
 
+class AuthReplayGuard(models.Model):
+    """Persisted single-use guard for short-lived authentication tokens."""
+
+    kind: models.CharField = models.CharField(max_length=32)
+    token_digest: models.CharField = models.CharField(max_length=64)
+    consumed_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    expires_at: models.DateTimeField = models.DateTimeField(db_index=True)
+
+    if TYPE_CHECKING:
+        id: int
+
+    class Meta(TypedModelMeta):
+        app_label = "queuetip"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kind", "token_digest"],
+                name="queuetip_auth_replay_kind_digest_unique",
+            )
+        ]
+
+
 class LoginCodeChallenge(models.Model):
     """Short-lived one-time login code tied to an email/account."""
 

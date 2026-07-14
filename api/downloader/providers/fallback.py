@@ -106,6 +106,7 @@ class DownloadProviderChain:
             return True
 
         try:
+            provider: DownloadProvider
             if provider_name == "youtube":
                 provider = YouTubeMusicProvider()
                 if not await provider.is_available():

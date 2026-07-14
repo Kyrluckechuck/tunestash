@@ -5,9 +5,6 @@ django-sesame, which is coupled to AUTH_USER_MODEL — Queuetip's Account is a
 standalone model, not the project user model.
 """
 
-import hashlib
-import threading
-import time
 from dataclasses import dataclass
 
 from django.core import signing
@@ -39,28 +36,12 @@ def make_magic_link_token(account_id: int) -> str:
     return signing.dumps({"aid": account_id}, salt=_MAGIC_SALT)
 
 
-# Single-use guard for magic-link tokens. Stores {token_digest: consumed_epoch};
-# entries older than the token lifetime are reaped on read. In-memory, mirroring
-# the OAuth state guard (spotify_oauth._used_states): a process restart drops the
-# set, which only re-opens the already narrow (signature + 15-min-expiry-bound)
-# replay window. A DB-backed nonce would close that residual gap fully.
-_consumed_magic: dict[str, float] = {}
-_consumed_magic_lock = threading.Lock()
-
-
 def _consume_magic_token(token: str) -> bool:
     """Record `token` as used. Returns True if it was unused before this call,
     False if it was already consumed (replay)."""
-    digest = hashlib.sha256(token.encode()).hexdigest()
-    now = time.time()
-    with _consumed_magic_lock:
-        cutoff = now - MAGIC_LINK_MAX_AGE
-        for k in [k for k, ts in _consumed_magic.items() if ts < cutoff]:
-            del _consumed_magic[k]
-        if digest in _consumed_magic:
-            return False
-        _consumed_magic[digest] = now
-        return True
+    from src.queuetip.replay import consume_token
+
+    return consume_token("magic_link", token, MAGIC_LINK_MAX_AGE)
 
 
 def read_magic_link_token(token: str) -> int:

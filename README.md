@@ -124,6 +124,7 @@ All settings are configurable through the in-app Settings page. On first run, se
 Notes:
 - Secrets like `DJANGO_SECRET_KEY` should be set via environment variables in `.env`.
 - Database and Celery broker settings are configured via environment variables in `.env` (see `.env.example`).
+- Production Compose requires explicit secret and database-password values. Set `TUNESTASH_DEV_MODE=true` only for local development to enable development defaults.
 
 ### Download Providers
 
