@@ -345,7 +345,7 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
     # protection without requiring same-origin cookies. Mirrors TuneStash's
     # `src/routes/auth.py` pattern.
     try:
-        state_payload = read_state_token(state)
+        state_payload = await sync_to_async(read_state_token)(state)
     except InvalidStateError:
         return HTMLResponse(
             "<h1>Sign-in link expired or tampered. Try again.</h1>", status_code=400
