@@ -2,8 +2,11 @@
 
 import os
 
-from settings import *  # noqa: F401,F403
-from settings import settings as dynaconf_settings
+os.environ.setdefault("DJANGO_SECRET_KEY", "django-insecure-ci-testing-key")
+os.environ.setdefault("DJANGO_DEBUG", "true")
+
+from settings import *  # noqa: E402,F401,F403
+from settings import settings as dynaconf_settings  # noqa: E402
 
 # Provide dummy Spotify credentials for tests
 # These allow the Spotipy client to initialize without raising SpotifyOauthError
