@@ -322,14 +322,14 @@ class Mutation:  # pylint: disable=too-many-public-methods
         self,
         info: Info[QueuetipContext, None],
         name: str,
-        description: str = "",
+        description: str | None = None,
     ) -> PlaylistType:
         """Create a new playlist owned by the current account."""
         account = _require_account(info)
         if not name.strip():
             raise ValidationError("Playlist name cannot be empty.")
         playlist = await PlaylistService.create(
-            account, name=name, description=description
+            account, name=name, description=description or ""
         )
         return await _build_playlist_type(playlist)
 

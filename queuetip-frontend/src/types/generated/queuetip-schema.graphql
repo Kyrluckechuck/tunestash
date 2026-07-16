@@ -92,7 +92,7 @@ type MembershipType {
 
 type Mutation {
   requestMagicLink(email: String!, displayName: String = null): RequestMagicLinkResult!
-  createPlaylist(name: String!, description: String! = ""): PlaylistType!
+  createPlaylist(name: String!, description: String = null): PlaylistType!
   inviteToQueuetip(email: String!): RequestMagicLinkResult!
   removeQueuetipInvite(email: String!): RequestMagicLinkResult!
   updatePlaylistSettings(id: ID!, name: String = null, description: String = null, engine: EngineSettingsInput = null): PlaylistType!

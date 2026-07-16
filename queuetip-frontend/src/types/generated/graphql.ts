@@ -189,7 +189,7 @@ export type MutationContributeFromSearchArgs = {
 
 
 export type MutationCreatePlaylistArgs = {
-  description?: Scalars['String']['input'];
+  description?: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
 };
 
