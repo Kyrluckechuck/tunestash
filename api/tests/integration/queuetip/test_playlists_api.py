@@ -39,13 +39,13 @@ async def test_create_playlist_returns_playlist_with_owner_member():
         result = await _gql(
             client,
             """
-            mutation($name: String!) {
-              createPlaylist(name: $name) {
+            mutation($name: String!, $description: String) {
+              createPlaylist(name: $name, description: $description) {
                 id name inviteToken members { account { displayName } role }
               }
             }
             """,
-            {"name": "Friday Mix"},
+            {"name": "Friday Mix", "description": None},
         )
     data = result["data"]["createPlaylist"]
     assert data["name"] == "Friday Mix"
