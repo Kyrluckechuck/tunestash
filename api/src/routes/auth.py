@@ -46,7 +46,7 @@ async def initiate_oauth(request: Request) -> RedirectResponse:
 
     redirect_uri = f"{scheme}://{host}/auth/spotify/callback"
 
-    auth_url, state = SpotifyOAuthService.get_authorization_url(
+    auth_url, state = await sync_to_async(SpotifyOAuthService.get_authorization_url)(
         redirect_uri=redirect_uri
     )
 
@@ -158,7 +158,9 @@ async def oauth_callback(
 
     try:
         # Exchange code for tokens
-        token_data = SpotifyOAuthService.exchange_code_for_tokens(code, redirect_uri)
+        token_data = await sync_to_async(SpotifyOAuthService.exchange_code_for_tokens)(
+            code, redirect_uri
+        )
 
         # Save tokens to database
         await sync_to_async(SpotifyOAuthService.save_tokens)(token_data)
