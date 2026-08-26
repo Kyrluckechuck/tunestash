@@ -83,7 +83,7 @@ def create_queuetip_app() -> FastAPI:
     from .schema import schema
 
     app.include_router(
-        GraphQLRouter(schema, context_getter=get_context),  # type: ignore[arg-type]
+        GraphQLRouter(schema, context_getter=get_context),
         prefix="/graphql",
     )
     app.include_router(auth_router)
