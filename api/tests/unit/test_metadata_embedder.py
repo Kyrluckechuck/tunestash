@@ -207,6 +207,39 @@ class TestMetadataEmbedderMP4:
         mock_get.assert_called_once()
         assert track_match.cover_url in str(mock_get.call_args)
 
+    @pytest.mark.unit
+    def test_update_basic_mp4_metadata_preserves_unrelated_tags(
+        self, embedder, tmp_path
+    ):
+        """Renaming a file must not discard genre or recording identifiers."""
+        file_path = tmp_path / "test.m4a"
+        file_path.write_bytes(b"fake audio data")
+        tags_dict = {
+            "\xa9gen": ["Electronic"],
+            "----:com.apple.iTunes:ISRC": [b"US1234567890"],
+        }
+        mock_mp4 = MagicMock()
+        mock_mp4.__setitem__ = lambda self, key, value: tags_dict.__setitem__(
+            key, value
+        )
+        mock_mp4_class = MagicMock(return_value=mock_mp4)
+
+        with patch("mutagen.mp4.MP4", mock_mp4_class):
+            result = embedder.update_basic_metadata(
+                file_path,
+                title="New Song",
+                artist="New Artist",
+                album="New Album",
+            )
+
+        assert result is True
+        assert tags_dict["\xa9nam"] == ["New Song"]
+        assert tags_dict["\xa9ART"] == ["New Artist"]
+        assert tags_dict["\xa9alb"] == ["New Album"]
+        assert tags_dict["\xa9gen"] == ["Electronic"]
+        assert tags_dict["----:com.apple.iTunes:ISRC"] == [b"US1234567890"]
+        mock_mp4.save.assert_called_once()
+
 
 class TestMetadataEmbedderFLAC:
     """Tests for FLAC metadata embedding."""

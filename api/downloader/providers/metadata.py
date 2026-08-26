@@ -61,6 +61,45 @@ class MetadataEmbedder:
             logger.error(f"Failed to embed metadata in {file_path}: {e}")
             return False
 
+    def update_basic_metadata(
+        self,
+        file_path: Path,
+        title: str,
+        artist: str,
+        album: str,
+    ) -> bool:
+        """Update identity tags while preserving unrelated embedded metadata."""
+        suffix = file_path.suffix.lower()
+
+        try:
+            if suffix in (".m4a", ".mp4", ".aac"):
+                from mutagen.mp4 import MP4
+
+                audio = MP4(str(file_path))
+                audio["\xa9nam"] = [title]
+                audio["\xa9ART"] = [artist]
+                audio["\xa9alb"] = [album]
+                audio["aART"] = [artist]
+            elif suffix == ".flac":
+                from mutagen.flac import FLAC
+
+                audio = FLAC(str(file_path))
+                audio["TITLE"] = [title]
+                audio["ARTIST"] = [artist]
+                audio["ALBUM"] = [album]
+                audio["ALBUMARTIST"] = [artist]
+            else:
+                logger.warning(
+                    "Unsupported audio format for metadata update: %s", suffix
+                )
+                return False
+
+            audio.save()
+            return True
+        except Exception as e:
+            logger.error("Failed to update basic metadata in %s: %s", file_path, e)
+            return False
+
     def _embed_mp4_metadata(
         self,
         file_path: Path,
