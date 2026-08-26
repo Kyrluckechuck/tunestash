@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@apollo/client/react';
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import {
   GetSystemStatusDocument,
   DisconnectSpotifyDocument,
@@ -161,11 +162,8 @@ function ensureGlobalModalMounted() {
   container.id = 'spotify-restart-modal-root';
   document.body.appendChild(container);
 
-  // Use React 18's createRoot for the singleton modal
-  import('react-dom/client').then(({ createRoot }) => {
-    const root = createRoot(container);
-    root.render(<GlobalRestartModal />);
-  });
+  const root = createRoot(container);
+  root.render(<GlobalRestartModal />);
 }
 
 export function SpotifyConnectButton() {
