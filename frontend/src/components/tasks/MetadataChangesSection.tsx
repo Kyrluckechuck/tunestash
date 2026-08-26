@@ -213,7 +213,7 @@ export function MetadataChangesSection() {
 
     const confirmed = await confirm({
       title: 'Apply All Metadata Updates',
-      message: `This will apply ${pendingCount} pending update${pendingCount === 1 ? '' : 's'}, affecting approximately ${summary?.totalAffectedSongs || 0} song${summary?.totalAffectedSongs === 1 ? '' : 's'}. Files will be re-downloaded with the new names.`,
+      message: `This will apply ${pendingCount} pending update${pendingCount === 1 ? '' : 's'}, affecting approximately ${summary?.totalAffectedSongs || 0} downloaded song${summary?.totalAffectedSongs === 1 ? '' : 's'}. Files will be updated in place; only files that cannot be migrated will be re-downloaded.`,
       confirmText: 'Apply All',
       cancelText: 'Cancel',
       variant: 'warning',
@@ -406,11 +406,11 @@ export function MetadataChangesSection() {
                             </div>
                             {update.affectedSongsCount > 0 && isPending && (
                               <div className='mt-1 text-xs text-gray-500 dark:text-slate-400'>
-                                {update.affectedSongsCount} song
+                                {update.affectedSongsCount} downloaded song
                                 {update.affectedSongsCount === 1
                                   ? ''
                                   : 's'}{' '}
-                                will be re-downloaded
+                                will be updated in place
                               </div>
                             )}
                           </div>

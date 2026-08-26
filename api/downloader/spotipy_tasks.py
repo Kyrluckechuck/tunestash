@@ -373,7 +373,7 @@ def track_artists_in_playlist(playlist_url: str, task_id: Optional[str] = None) 
             continue
 
         primary_artist_info = {
-            "name": primary_artist["name"],
+            "name": (primary_artist.get("name") or "Unknown Artist").strip(),
             "gid": primary_artist_gid,
             "tracking_tier": TrackingTier.TRACKED,
         }

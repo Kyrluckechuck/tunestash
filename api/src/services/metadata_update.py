@@ -290,7 +290,10 @@ class MetadataUpdateService:
             if sp is None:
                 raise RuntimeError("Spotify client not initialized")
             spotify_data = sp.artist(artist.gid)
-            return "Spotify", spotify_data.get("name", "")
+            provider_name = (spotify_data.get("name") or "").strip()
+            if not provider_name:
+                raise RuntimeError(f"Spotify returned no name for artist #{artist.id}")
+            return "Spotify", provider_name
 
         raise RuntimeError(f"Artist #{artist.id} has no Deezer ID or Spotify GID")
 
@@ -314,7 +317,10 @@ class MetadataUpdateService:
             if sp is None:
                 raise RuntimeError("Spotify client not initialized")
             spotify_data = sp.album(album.spotify_gid)
-            return "Spotify", spotify_data.get("name", "")
+            provider_name = (spotify_data.get("name") or "").strip()
+            if not provider_name:
+                raise RuntimeError(f"Spotify returned no name for album #{album.id}")
+            return "Spotify", provider_name
 
         raise RuntimeError(f"Album #{album.id} has no Deezer ID or Spotify GID")
 
@@ -338,7 +344,10 @@ class MetadataUpdateService:
             if sp is None:
                 raise RuntimeError("Spotify client not initialized")
             spotify_data = sp.track(song.gid)
-            return "Spotify", spotify_data.get("name", "")
+            provider_name = (spotify_data.get("name") or "").strip()
+            if not provider_name:
+                raise RuntimeError(f"Spotify returned no name for song #{song.id}")
+            return "Spotify", provider_name
 
         raise RuntimeError(f"Song #{song.id} has no Deezer ID or Spotify GID")
 
