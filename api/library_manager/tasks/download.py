@@ -717,7 +717,9 @@ def _match_or_create_song_from_spotify_track(
     track_name = track_data.get("name", "Unknown Track")
     artists = track_data.get("artists", [])
     artist_name = (
-        artists[0].get("name", "Unknown Artist") if artists else "Unknown Artist"
+        (artists[0].get("name") or "Unknown Artist").strip()
+        if artists
+        else "Unknown Artist"
     )
     artist_gid = artists[0].get("id", "") if artists else ""
 

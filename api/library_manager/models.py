@@ -1512,7 +1512,7 @@ class PendingMetadataUpdate(models.Model):
     When we detect that an artist, album, or song name has changed on Spotify
     (compared to what we have stored locally), we create a record here instead
     of automatically updating. The user can then review and choose to apply
-    the change (triggering a re-download with updated metadata) or dismiss it.
+    the change. Downloaded files are migrated in place when possible.
 
     Uses Django's ContentType framework for polymorphic references to
     Artist, Album, or Song models.
