@@ -6,7 +6,7 @@ including migrating existing files and cleaning up old files.
 
 import logging
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, cast
 
 from django.conf import settings
 
@@ -14,6 +14,7 @@ from downloader.providers.metadata import MetadataEmbedder
 
 from library_manager.metadata_detection import dismiss_superseded_updates
 from library_manager.models import (
+    Artist,
     FilePath,
     MetadataUpdateStatus,
     PendingMetadataUpdate,
@@ -54,7 +55,7 @@ def _metadata_destination(song: Song, current_path: Path) -> Path:
     """Return the canonical path for a song's current model names."""
     output_root = Path(getattr(settings, "OUTPUT_PATH", "/mnt/music_spotify"))
     artist_name = (
-        song.primary_artist.name
+        cast(Artist, song.primary_artist).name
         if song.primary_artist is not None
         else "Unknown Artist"
     )
@@ -109,7 +110,7 @@ def _migrate_downloaded_song(song: Song) -> bool:
         return False
 
     artist_name = (
-        song.primary_artist.name
+        cast(Artist, song.primary_artist).name
         if song.primary_artist is not None
         else "Unknown Artist"
     )
