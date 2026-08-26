@@ -1,15 +1,20 @@
 """Celery tasks for metadata update operations.
 
 These tasks handle applying metadata updates detected from Spotify,
-including re-downloading songs and cleaning up old files.
+including migrating existing files and cleaning up old files.
 """
 
 import logging
 from pathlib import Path
 from typing import Any, List
 
+from django.conf import settings
+
+from downloader.providers.metadata import MetadataEmbedder
+
 from library_manager.metadata_detection import dismiss_superseded_updates
 from library_manager.models import (
+    FilePath,
     MetadataUpdateStatus,
     PendingMetadataUpdate,
     Song,
@@ -26,6 +31,108 @@ from .core import (
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_filename(name: str) -> str:
+    """Match download path rules for metadata migrations."""
+    replacements = {
+        "/": "-",
+        "\\": "-",
+        ":": "-",
+        "*": "",
+        "?": "",
+        '"': "'",
+        "<": "",
+        ">": "",
+        "|": "-",
+    }
+    result = name
+    for old, new in replacements.items():
+        result = result.replace(old, new)
+    return result[:100].strip()
+
+
+def _metadata_destination(song: Song, current_path: Path) -> Path:
+    """Return the canonical path for a song's current model names."""
+    output_root = Path(getattr(settings, "OUTPUT_PATH", "/mnt/music_spotify"))
+    artist_name = (
+        song.primary_artist.name if song.primary_artist_id else "Unknown Artist"
+    )
+    album_name = song.album.name if song.album_id else "Unknown Album"
+    extension = current_path.suffix.lstrip(".") or "m4a"
+    return (
+        output_root
+        / _sanitize_filename(artist_name)
+        / _sanitize_filename(album_name)
+        / f"{_sanitize_filename(artist_name)} - {_sanitize_filename(song.name)}.{extension}"
+    )
+
+
+def _migrate_downloaded_song(song: Song) -> bool:
+    """Rewrite tags and move one downloaded file without replacing its audio."""
+    if not song.file_path:
+        return False
+
+    current_path = Path(song.file_path)
+    if not current_path.is_file():
+        logger.warning(
+            "Cannot migrate missing file for song %s: %s", song.id, current_path
+        )
+        return False
+
+    output_root = Path(getattr(settings, "OUTPUT_PATH", "/mnt/music_spotify")).resolve()
+    try:
+        if not current_path.resolve().is_relative_to(output_root):
+            logger.warning("Leaving non-library file in place for song %s", song.id)
+            return False
+    except (OSError, ValueError):
+        return False
+
+    if (
+        song.file_path_ref_id
+        and Song.objects.filter(file_path_ref_id=song.file_path_ref_id, downloaded=True)
+        .exclude(pk=song.pk)
+        .exists()
+    ):
+        logger.warning(
+            "Cannot migrate shared file for song %s: %s", song.id, current_path
+        )
+        return False
+
+    destination = _metadata_destination(song, current_path)
+    if destination != current_path and destination.exists():
+        logger.warning(
+            "Metadata migration collision for song %s: %s", song.id, destination
+        )
+        return False
+
+    artist_name = (
+        song.primary_artist.name if song.primary_artist_id else "Unknown Artist"
+    )
+    album_name = song.album.name if song.album_id else "Unknown Album"
+    if not MetadataEmbedder().update_basic_metadata(
+        current_path,
+        title=song.name,
+        artist=artist_name,
+        album=album_name,
+    ):
+        return False
+
+    if destination != current_path:
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            current_path.replace(destination)
+        except OSError as exc:
+            logger.error(
+                "Failed to move migrated song %s to %s: %s", song.id, destination, exc
+            )
+            return False
+
+    file_path, _ = FilePath.objects.get_or_create(path=str(destination))
+    song.file_path_ref = file_path
+    song.downloaded = True
+    song.save(update_fields=["file_path_ref", "downloaded"])
+    return True
+
+
 @celery_app.task(bind=True, name="library_manager.tasks.apply_metadata_update")
 def apply_metadata_update(self: Any, update_id: int) -> None:
     """
@@ -34,12 +141,9 @@ def apply_metadata_update(self: Any, update_id: int) -> None:
     This task:
     1. Gets the PendingMetadataUpdate record
     2. Updates the entity's name in the database
-    3. For each downloaded song affected:
-       a. Stores the old file path
-       b. Marks song as downloaded=False
-       c. Queues for re-download
-    4. Marks the update as APPLIED
-    5. Queues cleanup for the old files after re-downloads
+    3. Rewrites metadata and moves each downloaded file in place
+    4. Queues only failed migrations for re-download
+    5. Marks the update as APPLIED
 
     Args:
         update_id: ID of the PendingMetadataUpdate to apply
@@ -76,7 +180,7 @@ def apply_metadata_update(self: Any, update_id: int) -> None:
         return
 
     content_type = update.content_type
-    model_class = content_type.model_class()  # type: ignore[attr-defined]
+    model_class = content_type.model_class()
     if model_class is None:
         complete_task(
             task_history,
@@ -84,7 +188,7 @@ def apply_metadata_update(self: Any, update_id: int) -> None:
             error_message="Invalid content type - cannot resolve model class",
         )
         return
-    model_name = content_type.model.lower()  # type: ignore[attr-defined]
+    model_name = content_type.model.lower()
 
     try:
         entity = model_class.objects.get(id=update.object_id)
@@ -109,39 +213,38 @@ def apply_metadata_update(self: Any, update_id: int) -> None:
 
         update_task_progress(task_history, 0.2, "Collecting affected songs...")
 
-        # Collect songs that need re-downloading
-        songs_to_redownload: List[Song] = []
-        old_file_paths: List[str] = []
+        # Migrate existing files first; only failed migrations are redownloaded.
+        affected_songs: List[Song] = []
 
         if model_name == "artist":
-            songs_to_redownload = list(
+            affected_songs = list(
                 Song.objects.filter(
-                    primary_artist_id=entity.id,
-                    downloaded=True,
-                )
+                    primary_artist_id=entity.id, downloaded=True
+                ).select_related("primary_artist", "album", "file_path_ref")
             )
         elif model_name == "album":
-            songs_to_redownload = list(
-                Song.objects.filter(
-                    album_id=entity.id,
-                    downloaded=True,
+            affected_songs = list(
+                Song.objects.filter(album_id=entity.id, downloaded=True).select_related(
+                    "primary_artist", "album", "file_path_ref"
                 )
             )
-        elif model_name == "song":
-            if entity.downloaded:
-                songs_to_redownload = [entity]
+        elif model_name == "song" and entity.downloaded:
+            affected_songs = [entity]
 
-        # Store old paths and mark songs for re-download
-        for song in songs_to_redownload:
-            if song.file_path:
-                old_file_paths.append(song.file_path)
+        songs_to_redownload: List[Song] = []
+        migrated_count = 0
+        for song in affected_songs:
+            if _migrate_downloaded_song(song):
+                migrated_count += 1
+                continue
+            songs_to_redownload.append(song)
             song.downloaded = False
-            song.save()
+            song.save(update_fields=["downloaded"])
 
         update_task_progress(
             task_history,
             0.3,
-            f"Marked {len(songs_to_redownload)} songs for re-download...",
+            f"Migrated {migrated_count} files; queued {len(songs_to_redownload)} for re-download...",
         )
 
         if check_task_cancellation(task_history):
@@ -174,16 +277,6 @@ def apply_metadata_update(self: Any, update_id: int) -> None:
                     logger.info(
                         f"Queued download_track_by_spotify_gid for song #{entity.id}"
                     )
-
-        update_task_progress(task_history, 0.7, "Scheduling file cleanup...")
-
-        # Queue cleanup of old files (after a delay to allow re-downloads to complete)
-        if old_file_paths:
-            cleanup_old_files.apply_async(
-                args=[old_file_paths],
-                countdown=300,  # 5 minute delay
-            )
-            logger.info(f"Scheduled cleanup of {len(old_file_paths)} old files")
 
         # Mark update as applied
         update.mark_applied()
