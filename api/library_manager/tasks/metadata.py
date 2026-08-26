@@ -54,9 +54,11 @@ def _metadata_destination(song: Song, current_path: Path) -> Path:
     """Return the canonical path for a song's current model names."""
     output_root = Path(getattr(settings, "OUTPUT_PATH", "/mnt/music_spotify"))
     artist_name = (
-        song.primary_artist.name if song.primary_artist_id else "Unknown Artist"
+        song.primary_artist.name
+        if song.primary_artist is not None
+        else "Unknown Artist"
     )
-    album_name = song.album.name if song.album_id else "Unknown Album"
+    album_name = song.album.name if song.album is not None else "Unknown Album"
     extension = current_path.suffix.lstrip(".") or "m4a"
     return (
         output_root
@@ -66,6 +68,8 @@ def _metadata_destination(song: Song, current_path: Path) -> Path:
     )
 
 
+# The validation steps intentionally use guard clauses so unsafe files fail closed.
+# pylint: disable=too-many-return-statements
 def _migrate_downloaded_song(song: Song) -> bool:
     """Rewrite tags and move one downloaded file without replacing its audio."""
     if not song.file_path:
@@ -87,8 +91,8 @@ def _migrate_downloaded_song(song: Song) -> bool:
         return False
 
     if (
-        song.file_path_ref_id
-        and Song.objects.filter(file_path_ref_id=song.file_path_ref_id, downloaded=True)
+        song.file_path_ref is not None
+        and Song.objects.filter(file_path_ref=song.file_path_ref, downloaded=True)
         .exclude(pk=song.pk)
         .exists()
     ):
@@ -105,9 +109,11 @@ def _migrate_downloaded_song(song: Song) -> bool:
         return False
 
     artist_name = (
-        song.primary_artist.name if song.primary_artist_id else "Unknown Artist"
+        song.primary_artist.name
+        if song.primary_artist is not None
+        else "Unknown Artist"
     )
-    album_name = song.album.name if song.album_id else "Unknown Album"
+    album_name = song.album.name if song.album is not None else "Unknown Album"
     if not MetadataEmbedder().update_basic_metadata(
         current_path,
         title=song.name,
@@ -180,7 +186,7 @@ def apply_metadata_update(self: Any, update_id: int) -> None:
         return
 
     content_type = update.content_type
-    model_class = content_type.model_class()
+    model_class = getattr(content_type, "model_class")()
     if model_class is None:
         complete_task(
             task_history,
@@ -188,7 +194,7 @@ def apply_metadata_update(self: Any, update_id: int) -> None:
             error_message="Invalid content type - cannot resolve model class",
         )
         return
-    model_name = content_type.model.lower()
+    model_name = getattr(content_type, "model").lower()
 
     try:
         entity = model_class.objects.get(id=update.object_id)
