@@ -14,6 +14,7 @@ from downloader.providers.metadata import MetadataEmbedder
 
 from library_manager.metadata_detection import dismiss_superseded_updates
 from library_manager.models import (
+    Album,
     Artist,
     FilePath,
     MetadataUpdateStatus,
@@ -59,7 +60,9 @@ def _metadata_destination(song: Song, current_path: Path) -> Path:
         if song.primary_artist is not None
         else "Unknown Artist"
     )
-    album_name = song.album.name if song.album is not None else "Unknown Album"
+    album_name = (
+        cast(Album, song.album).name if song.album is not None else "Unknown Album"
+    )
     extension = current_path.suffix.lstrip(".") or "m4a"
     return (
         output_root
@@ -114,7 +117,9 @@ def _migrate_downloaded_song(song: Song) -> bool:
         if song.primary_artist is not None
         else "Unknown Artist"
     )
-    album_name = song.album.name if song.album is not None else "Unknown Album"
+    album_name = (
+        cast(Album, song.album).name if song.album is not None else "Unknown Album"
+    )
     if not MetadataEmbedder().update_basic_metadata(
         current_path,
         title=song.name,
