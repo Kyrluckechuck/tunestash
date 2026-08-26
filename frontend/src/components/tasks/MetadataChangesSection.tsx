@@ -111,6 +111,10 @@ export function MetadataChangesSection() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
   const [actionInProgress, setActionInProgress] = useState<number | null>(null);
+  const [selectedUpdateIds, setSelectedUpdateIds] = useState<Set<number>>(
+    new Set()
+  );
+  const [isApplyingSelected, setIsApplyingSelected] = useState(false);
 
   const graphqlStatus: MetadataUpdateStatus | undefined =
     statusFilter === 'all'
@@ -132,23 +136,23 @@ export function MetadataChangesSection() {
     }
   );
 
-  const [applyUpdate] = useMutation(ApplyMetadataUpdateDocument, {
-    refetchQueries: [{ query: GetPendingMetadataUpdatesDocument }],
-  });
+  const [applyUpdate] = useMutation(ApplyMetadataUpdateDocument);
 
-  const [dismissUpdate] = useMutation(DismissMetadataUpdateDocument, {
-    refetchQueries: [{ query: GetPendingMetadataUpdatesDocument }],
-  });
+  const [dismissUpdate] = useMutation(DismissMetadataUpdateDocument);
 
   const [applyAllUpdates, { loading: isApplyingAll }] = useMutation(
-    ApplyAllMetadataUpdatesDocument,
-    {
-      refetchQueries: [{ query: GetPendingMetadataUpdatesDocument }],
-    }
+    ApplyAllMetadataUpdatesDocument
   );
 
   const updates = data?.pendingMetadataUpdates?.edges || [];
   const summary = data?.pendingMetadataUpdates?.summary;
+  const pendingUpdates = updates.filter(update => update.status === 'PENDING');
+  const selectedPendingUpdates = pendingUpdates.filter(update =>
+    selectedUpdateIds.has(update.id)
+  );
+  const allPendingSelected =
+    pendingUpdates.length > 0 &&
+    pendingUpdates.every(update => selectedUpdateIds.has(update.id));
 
   const handleApply = useCallback(
     async (updateId: number, entityName: string) => {
@@ -242,6 +246,79 @@ export function MetadataChangesSection() {
     }
   }, [applyAllUpdates, confirm, toast, refetch, summary]);
 
+  const handleToggleUpdate = useCallback((updateId: number) => {
+    setSelectedUpdateIds(current => {
+      const next = new Set(current);
+      if (next.has(updateId)) {
+        next.delete(updateId);
+      } else {
+        next.add(updateId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleAllPending = useCallback(() => {
+    setSelectedUpdateIds(current => {
+      const next = new Set(current);
+      const shouldSelectAll = pendingUpdates.some(
+        update => !next.has(update.id)
+      );
+      pendingUpdates.forEach(update => {
+        if (shouldSelectAll) {
+          next.add(update.id);
+        } else {
+          next.delete(update.id);
+        }
+      });
+      return next;
+    });
+  }, [pendingUpdates]);
+
+  const handleApplySelected = useCallback(async () => {
+    if (selectedPendingUpdates.length === 0) return;
+
+    const confirmed = await confirm({
+      title: 'Apply Selected Metadata Updates',
+      message: `This will apply ${selectedPendingUpdates.length} selected update${selectedPendingUpdates.length === 1 ? '' : 's'}. Downloaded files will be updated in place when possible.`,
+      confirmText: 'Apply Selected',
+      cancelText: 'Cancel',
+      variant: 'warning',
+    });
+
+    if (!confirmed) return;
+
+    setIsApplyingSelected(true);
+    try {
+      const results = await Promise.all(
+        selectedPendingUpdates.map(update =>
+          applyUpdate({ variables: { updateId: update.id } })
+        )
+      );
+      const failed = results.filter(
+        result => !result.data?.applyMetadataUpdate?.success
+      );
+      if (failed.length === 0) {
+        toast.success(
+          `Applied ${selectedPendingUpdates.length} metadata update${selectedPendingUpdates.length === 1 ? '' : 's'}`
+        );
+        setSelectedUpdateIds(new Set());
+        refetch();
+      } else {
+        toast.error(
+          `${failed.length} metadata update${failed.length === 1 ? '' : 's'} failed to apply`
+        );
+        refetch();
+      }
+    } catch (error) {
+      toast.error(
+        `Error applying selected updates: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      setIsApplyingSelected(false);
+    }
+  }, [applyUpdate, confirm, refetch, selectedPendingUpdates, toast]);
+
   // Group updates by entity type
   const groupedUpdates = updates.reduce(
     (acc, update) => {
@@ -268,10 +345,22 @@ export function MetadataChangesSection() {
   return (
     <div className='bg-white dark:bg-slate-800 rounded-lg shadow-sm dark:shadow-none border border-gray-200 dark:border-slate-700'>
       <div className='px-6 py-4 border-b border-gray-200 dark:border-slate-700'>
-        <div className='flex items-center justify-between'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
           <h2 className='text-lg font-semibold text-gray-900 dark:text-slate-100'>
             Metadata Changes
           </h2>
+          {statusFilter === 'pending' && selectedPendingUpdates.length > 0 && (
+            <button
+              type='button'
+              onClick={handleApplySelected}
+              disabled={isApplyingSelected || isApplyingAll}
+              className='px-4 py-2 text-sm font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+            >
+              {isApplyingSelected
+                ? 'Applying...'
+                : 'Apply Selected (' + selectedPendingUpdates.length + ')'}
+            </button>
+          )}
           {statusFilter === 'pending' && pendingCount > 0 && (
             <button
               type='button'
@@ -336,7 +425,19 @@ export function MetadataChangesSection() {
       )}
 
       <div className='p-6'>
-        {loading ? (
+        {statusFilter === 'pending' && pendingUpdates.length > 0 && (
+          <label className='mb-4 flex items-center gap-2 text-sm text-gray-600 dark:text-slate-400'>
+            <input
+              type='checkbox'
+              checked={allPendingSelected}
+              onChange={handleToggleAllPending}
+              aria-label='Select all pending metadata updates'
+              className='h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500'
+            />
+            Select all pending metadata updates
+          </label>
+        )}
+        {loading && !data ? (
           <div className='text-center py-8 text-gray-500 dark:text-slate-400'>
             <div className='animate-spin text-4xl mb-4'>⏳</div>
             <p>Loading metadata changes...</p>
@@ -382,6 +483,18 @@ export function MetadataChangesSection() {
                               : 'bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700'
                           }`}
                         >
+                          {isPending && (
+                            <input
+                              type='checkbox'
+                              checked={selectedUpdateIds.has(update.id)}
+                              onChange={() => handleToggleUpdate(update.id)}
+                              aria-label={
+                                'Select metadata update for ' +
+                                update.entityName
+                              }
+                              className='h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-3'
+                            />
+                          )}
                           <div className='flex-1 min-w-0'>
                             <div className='flex items-center gap-2'>
                               <span
