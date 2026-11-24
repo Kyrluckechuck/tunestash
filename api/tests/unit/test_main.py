@@ -7,6 +7,19 @@ import pytest
 from src.main import Settings, create_app, get_settings
 
 
+class TestStartupTokenConfiguration:
+    @pytest.mark.parametrize("token, warns", [("A" * 120, False), (None, True)])
+    def test_uses_runtime_token_source(self, caplog, token, warns):
+        from src.main import _validate_runtime_configuration
+
+        with patch("lib.config_class.Config") as config:
+            config.return_value.po_token = token
+            _validate_runtime_configuration()
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("PO token validation failed" in msg for msg in messages) is warns
+
+
 class TestMainApplication:
     """Test main application functionality."""
 

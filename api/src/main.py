@@ -294,12 +294,15 @@ def _validate_runtime_configuration() -> None:
         )
 
     # PO token validation - REQUIRED for premium
-    po_token = getattr(cfg, "po_token", None)
+    from lib.config_class import Config
+
+    # Downloads use DB-backed settings, not the legacy YAML-only token.
+    po_token = Config().po_token
     po_token_result = CookieValidator.validate_po_token(po_token)
     if not po_token_result.valid:
         logger.warning(
             "PO token validation failed: %s. This system requires YouTube Music Premium. "
-            "Set 'po_token' in /config/settings.yaml. "
+            "Set 'po_token' on the TuneStash Settings page. "
             "See https://github.com/yt-dlp/yt-dlp/wiki/Extractors#po-token-guide for instructions.",
             po_token_result.error_message,
         )
