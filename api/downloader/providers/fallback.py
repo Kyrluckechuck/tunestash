@@ -8,17 +8,13 @@ tries multiple download providers in sequence until one succeeds.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from .audio_converter import AudioConversionError, convert_flac_to_m4a
-from .base import (
-    DownloadProvider,
-    QualityPreference,
-    TrackMatch,
-    TrackMetadata,
-)
+from .base import DownloadProvider, QualityPreference, TrackMatch, TrackMetadata
 from .metadata import MetadataEmbedder
 from .monochrome import MonochromeProvider
 from .qobuz import QobuzProvider
@@ -29,10 +25,95 @@ from .youtube import YouTubeMusicProvider
 
 logger = logging.getLogger(__name__)
 
+# Bounds for diagnostics so a single noisy provider cannot flood task history
+# or file logs. Credentials and signed URLs must never be persisted.
+MAX_OUTCOME_DETAIL_LENGTH = 300
+MAX_OUTCOMES = 8
+
+# Fail-closed URL handling: keep only the host. Userinfo, opaque path segments,
+# query strings and fragments can all carry signed tokens, so they are dropped.
+_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+_URL_HOST_RE = re.compile(r"^https?://(?:[^/@]*@)?([^/?#:]+)", re.IGNORECASE)
+# Credential assignments: JSON keys, token-style keys with any prefix
+# (access_token, refresh_token, X-Api-Key), and bearer credentials.
+_CREDENTIAL_KV_RE = re.compile(
+    r"(?i)(\"?[\w-]*(token|secret|password|passwd|pwd|api[_-]?key|apikey|"
+    r"auth|credential|cookie)[\w-]*\"?\s*[:=]\s*)([^,;&}\s]+)"
+)
+_AUTH_HEADER_RE = re.compile(
+    r"(?i)\b(authorization|cookie|set-cookie|proxy-authorization)\s*:\s*.*$"
+)
+_BEARER_RE = re.compile(r"(?i)\bbearer\s+[^\s,;]+")
+
+# Typed literals shared across the chain and download task; no enum framework.
+OutcomeStage = Literal[
+    "init",
+    "search",
+    "download",
+    "conversion",
+    "metadata",
+    "validation",
+    "lyrics",
+    "summary",
+    "chain",
+]
+OutcomeKind = Literal[
+    "unavailable",
+    "error",
+    "no_result_unknown",
+    "warning",
+    "success",
+    "omitted",
+]
+
+
+def _safe_url(match: re.Match[str]) -> str:
+    host_match = _URL_HOST_RE.match(match.group(0))
+    if not host_match:
+        return "[url redacted]"
+    return f"url:{host_match.group(1)}"
+
+
+def sanitize_provider_detail(detail: object) -> str:
+    """Return a short, credential-free diagnostic string for a provider error.
+
+    URLs are reduced to their host and credential assignments are removed in
+    full. Plain prose containing words like "key" or "session" without a value
+    is preserved.
+    """
+    text = str(detail) if detail is not None else ""
+    text = text.replace("\n", " ").replace("\r", " ")
+    text = _URL_RE.sub(_safe_url, text)
+    text = _BEARER_RE.sub("Bearer [redacted]", text)
+    text = _AUTH_HEADER_RE.sub(r"\1=[redacted]", text)
+    text = _CREDENTIAL_KV_RE.sub(r"\1[redacted]", text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    if len(text) > MAX_OUTCOME_DETAIL_LENGTH:
+        text = text[: MAX_OUTCOME_DETAIL_LENGTH - 3] + "..."
+    return text
+
+
+@dataclass
+class ProviderOutcome:
+    """A bounded, sanitized record of one provider attempt in the chain.
+
+    ``truncated`` records the number of outcomes omitted by chain truncation.
+    """
+
+    provider: str
+    stage: OutcomeStage
+    outcome: OutcomeKind
+    detail: str = ""
+    truncated: int = 0
+
 
 @dataclass
 class DownloadChainResult:
-    """Result of a download chain attempt."""
+    """Result of a download chain attempt.
+
+    ``provider_outcomes`` is additive and defaulted, so existing callers that
+    construct the six original fields continue to work unchanged.
+    """
 
     success: bool
     file_path: Optional[Path]
@@ -40,6 +121,7 @@ class DownloadChainResult:
     error_message: Optional[str]
     track_match: Optional[TrackMatch]
     validation_result: Optional[ValidationResult]
+    provider_outcomes: list[ProviderOutcome] = field(default_factory=list)
 
 
 # Backward-compatible alias
@@ -166,9 +248,18 @@ class DownloadProviderChain:
                 error_message="No fallback providers configured",
                 track_match=None,
                 validation_result=None,
+                provider_outcomes=[
+                    ProviderOutcome(
+                        provider="none",
+                        stage="init",
+                        outcome="unavailable",
+                        detail="No fallback providers configured",
+                    )
+                ],
             )
 
         last_error = "All providers failed"
+        outcomes: list[ProviderOutcome] = []
 
         for provider_name in self._provider_order:
             logger.info(
@@ -178,10 +269,26 @@ class DownloadProviderChain:
 
             if not await self._ensure_provider_initialized(provider_name):
                 logger.warning(f"[{provider_name}] Provider not available, skipping")
+                outcomes.append(
+                    ProviderOutcome(
+                        provider=provider_name,
+                        stage="init",
+                        outcome="unavailable",
+                        detail="Provider unavailable during initialization",
+                    )
+                )
                 continue
 
             provider = self._providers.get(provider_name)
             if not provider:
+                outcomes.append(
+                    ProviderOutcome(
+                        provider=provider_name,
+                        stage="init",
+                        outcome="unavailable",
+                        detail="Provider instance missing after initialization",
+                    )
+                )
                 continue
 
             result = await self._try_provider(
@@ -189,9 +296,35 @@ class DownloadProviderChain:
                 track_metadata=track_metadata,
                 output_filename=output_filename,
             )
+            outcomes.extend(result.provider_outcomes)
+            if len(outcomes) > MAX_OUTCOMES:
+                # Keep first and most recent attempts and record how many were
+                # dropped. Silent truncation hides provider failures.
+                kept = outcomes[:1] + outcomes[-(MAX_OUTCOMES - 1) :]
+                omitted = len(outcomes) - len(kept)
+                kept.append(
+                    ProviderOutcome(
+                        provider="chain",
+                        stage="summary",
+                        outcome="omitted",
+                        detail=f"{omitted} provider outcomes omitted",
+                        truncated=omitted,
+                    )
+                )
+                outcomes = kept
 
             if result.success:
-                return result
+                # Retain earlier failures alongside the success so diagnostics
+                # do not discard useful context about a recovered chain.
+                return DownloadChainResult(
+                    success=True,
+                    file_path=result.file_path,
+                    provider_used=result.provider_used,
+                    error_message=result.error_message,
+                    track_match=result.track_match,
+                    validation_result=result.validation_result,
+                    provider_outcomes=outcomes,
+                )
 
             last_error = result.error_message or f"{provider_name} failed"
             logger.info(f"[{provider_name}] Failed: {last_error}")
@@ -203,6 +336,21 @@ class DownloadProviderChain:
             error_message=last_error,
             track_match=None,
             validation_result=None,
+            provider_outcomes=outcomes,
+        )
+
+    @staticmethod
+    def _outcome(
+        provider: str,
+        stage: OutcomeStage,
+        outcome: OutcomeKind,
+        detail: object = "",
+    ) -> ProviderOutcome:
+        return ProviderOutcome(
+            provider=provider,
+            stage=stage,
+            outcome=outcome,
+            detail=sanitize_provider_detail(detail),
         )
 
     async def _try_provider(
@@ -223,17 +371,28 @@ class DownloadProviderChain:
                 duration_ms=track_metadata.duration_ms,
             )
             if match is None:
+                # Providers commonly return None for network failures as well
+                # as a genuine empty result, so this is not a catalog verdict.
+                detail = "Search returned no result (no match or provider failure)"
                 logger.info(
-                    f"[{provider_name}] No match found for "
+                    f"[{provider_name}] {detail} for "
                     f"'{track_metadata.artist} - {track_metadata.title}'"
                 )
                 return DownloadChainResult(
                     success=False,
                     file_path=None,
                     provider_used=provider_name,
-                    error_message="No matching track found",
+                    error_message=detail,
                     track_match=None,
                     validation_result=None,
+                    provider_outcomes=[
+                        self._outcome(
+                            provider_name,
+                            "search",
+                            "no_result_unknown",
+                            detail,
+                        )
+                    ],
                 )
 
             logger.info(
@@ -241,14 +400,17 @@ class DownloadProviderChain:
                 f"(confidence: {match.confidence:.2f})"
             )
         except Exception as e:
-            logger.error(f"[{provider_name}] Search failed: {e}")
+            logger.error(
+                f"[{provider_name}] Search failed: {sanitize_provider_detail(e)}"
+            )
             return DownloadChainResult(
                 success=False,
                 file_path=None,
                 provider_used=provider_name,
-                error_message=f"Search failed: {e}",
+                error_message=f"Search failed: {sanitize_provider_detail(e)}",
                 track_match=None,
                 validation_result=None,
+                provider_outcomes=[self._outcome(provider_name, "search", "error", e)],
             )
 
         # Step 2: Download the track
@@ -276,28 +438,45 @@ class DownloadProviderChain:
 
             if not download_result.success or download_result.file_path is None:
                 logger.error(
-                    f"[{provider_name}] Download failed: {download_result.error}"
+                    f"[{provider_name}] Download failed: "
+                    f"{sanitize_provider_detail(download_result.error)}"
                 )
                 return DownloadChainResult(
                     success=False,
                     file_path=None,
                     provider_used=provider_name,
-                    error_message=download_result.error or "Download failed",
+                    error_message=sanitize_provider_detail(
+                        download_result.error or "Download failed"
+                    ),
                     track_match=match,
                     validation_result=None,
+                    provider_outcomes=[
+                        self._outcome(
+                            provider_name,
+                            "download",
+                            "error",
+                            download_result.error or "Download failed",
+                        )
+                    ],
                 )
 
             file_path = download_result.file_path
             logger.info(f"[{provider_name}] Downloaded to: {file_path}")
         except Exception as e:
-            logger.error(f"[{provider_name}] Download failed with exception: {e}")
+            logger.error(
+                f"[{provider_name}] Download failed with exception: "
+                f"{sanitize_provider_detail(e)}"
+            )
             return DownloadChainResult(
                 success=False,
                 file_path=None,
                 provider_used=provider_name,
-                error_message=f"Download failed: {e}",
+                error_message=f"Download failed: {sanitize_provider_detail(e)}",
                 track_match=match,
                 validation_result=None,
+                provider_outcomes=[
+                    self._outcome(provider_name, "download", "error", e)
+                ],
             )
 
         # Step 3: Convert FLAC to M4A if user requested HIGH quality
@@ -316,15 +495,25 @@ class DownloadProviderChain:
                 )
                 logger.info(f"[{provider_name}] Converted to: {file_path}")
             except AudioConversionError as e:
-                logger.error(f"[{provider_name}] FLAC to M4A conversion failed: {e}")
+                logger.error(
+                    f"[{provider_name}] FLAC to M4A conversion failed: "
+                    f"{sanitize_provider_detail(e)}"
+                )
                 return DownloadChainResult(
                     success=False,
                     file_path=None,
                     provider_used=provider_name,
-                    error_message=f"Format conversion failed: {e}",
+                    error_message=f"Format conversion failed: {sanitize_provider_detail(e)}",
                     track_match=match,
                     validation_result=None,
+                    provider_outcomes=[
+                        self._outcome(provider_name, "conversion", "error", e)
+                    ],
                 )
+
+        # Non-fatal problems still deserve diagnostics, but must not turn a
+        # downloaded file into a failure.
+        warnings: list[ProviderOutcome] = []
 
         # Step 4: Embed metadata
         try:
@@ -334,11 +523,15 @@ class DownloadProviderChain:
                 track_match=match,
             )
             if not metadata_success:
-                logger.warning(
-                    f"[{provider_name}] Failed to embed metadata, file may lack tags"
+                detail = "Metadata embedding returned false; file may lack tags"
+                logger.warning(f"[{provider_name}] {detail}")
+                warnings.append(
+                    self._outcome(provider_name, "metadata", "warning", detail)
                 )
         except Exception as e:
-            logger.warning(f"[{provider_name}] Metadata embedding failed: {e}")
+            detail = f"Metadata embedding failed: {sanitize_provider_detail(e)}"
+            logger.warning(f"[{provider_name}] {detail}")
+            warnings.append(self._outcome(provider_name, "metadata", "warning", detail))
 
         # Step 5: Validate the downloaded file
         validation_result: Optional[ValidationResult] = None
@@ -349,11 +542,17 @@ class DownloadProviderChain:
             )
 
             if not validation_result.is_valid:
-                logger.warning(
-                    f"[{provider_name}] Validation failed: {validation_result.errors}"
+                detail = f"Validation failed: {sanitize_provider_detail(validation_result.errors)}"
+                logger.warning(f"[{provider_name}] {detail}")
+                warnings.append(
+                    self._outcome(provider_name, "validation", "warning", detail)
                 )
         except Exception as e:
-            logger.warning(f"[{provider_name}] Validation failed with exception: {e}")
+            detail = f"Validation failed with exception: {sanitize_provider_detail(e)}"
+            logger.warning(f"[{provider_name}] {detail}")
+            warnings.append(
+                self._outcome(provider_name, "validation", "warning", detail)
+            )
 
         # Step 6: Clean up old .lrc files and fetch fresh lyrics (non-blocking)
         try:
@@ -375,7 +574,9 @@ class DownloadProviderChain:
                 ),
             )
         except Exception as e:
-            logger.debug(f"[{provider_name}] Lyrics fetch failed (non-fatal): {e}")
+            detail = f"Lyrics fetch failed (non-fatal): {sanitize_provider_detail(e)}"
+            logger.debug(f"[{provider_name}] {detail}")
+            warnings.append(self._outcome(provider_name, "lyrics", "warning", detail))
 
         logger.info(
             f"[{provider_name}] Successfully downloaded and processed: "
@@ -389,6 +590,10 @@ class DownloadProviderChain:
             error_message=None,
             track_match=match,
             validation_result=validation_result,
+            provider_outcomes=[
+                self._outcome(provider_name, "download", "success"),
+                *warnings,
+            ],
         )
 
     def _get_expected_extension(self, provider_name: str) -> str:

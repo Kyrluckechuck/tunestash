@@ -9,7 +9,7 @@ from django.db.models.functions import Now
 
 from celery.exceptions import Retry as CeleryRetry
 from celery_app import app as celery_app
-from downloader.providers.fallback import DownloadChainResult
+from downloader.providers.fallback import DownloadChainResult, sanitize_provider_detail
 from downloader.spotipy_tasks import SpotifyRateLimitError
 from downloader.utils import sanitize_and_strip_url
 
@@ -45,6 +45,104 @@ FALLBACK_PROVIDER_MAP = {
     "qobuz": DownloadProviderEnum.QOBUZ,
     "monochrome": DownloadProviderEnum.MONOCHROME,
 }
+
+# Provider diagnostics share one bounded, explicit summary line per track.
+_MAX_HISTORY_MESSAGES = 45  # leave room for the 95% progress entry (cap is 50)
+
+
+def _is_metadata_unavailable_error(message: str) -> bool:
+    """True only for genuine metadata-source absence verdicts.
+
+    Generic exceptions, provider failures and "not in database" lookup errors
+    must never be relabeled as content being unavailable.
+    """
+    lowered = (message or "").lower()
+    return (
+        "no tracks found on deezer" in lowered
+        or "not found on deezer" in lowered
+        or "couldn't be found on deezer" in lowered
+        or "has no deezer_id" in lowered
+    )
+
+
+def _content_unavailable_prefix(message: str) -> str:
+    return "Content unavailable: " if _is_metadata_unavailable_error(message) else ""
+
+
+def _provider_outcome_log_messages(
+    song_id: int, result: DownloadChainResult | BaseException
+) -> list[str]:
+    """Build one bounded, credential-free diagnostic line per outcome.
+
+    File logs keep every outcome; only the task-history summary is bounded.
+    """
+    if isinstance(result, BaseException):
+        detail = sanitize_provider_detail(result)
+        return [
+            f"song_id={song_id} provider=unknown stage=chain "
+            f"outcome=error detail={detail}"
+        ]
+
+    messages: list[str] = []
+    for outcome in result.provider_outcomes:
+        detail = sanitize_provider_detail(outcome.detail)
+        messages.append(
+            f"song_id={song_id} provider={outcome.provider} "
+            f"stage={outcome.stage} outcome={outcome.outcome} detail={detail}"
+        )
+    if not messages:
+        messages.append(
+            f"song_id={song_id} provider="
+            f"{result.provider_used or 'unknown'} stage=chain "
+            f"outcome=error detail="
+            f"{sanitize_provider_detail(result.error_message or 'download failed')}"
+        )
+    return messages
+
+
+def _build_provider_failure_summary(
+    failed: list[tuple[int, DownloadChainResult | BaseException]],
+) -> str:
+    """Summarize failed tracks by provider for file logs and task history."""
+    messages: list[str] = []
+    for song_id, result in failed:
+        messages.extend(_provider_outcome_log_messages(song_id, result))
+    return "; ".join(messages)
+
+
+def _persist_provider_history(
+    task_history: TaskHistory,
+    failed: list[tuple[int, DownloadChainResult | BaseException]],
+) -> None:
+    """Persist provider diagnostics with ONE save, preserving progress logs.
+
+    Existing progress entries are kept. If there are more messages than fit in
+    the reserved capacity, an explicit "+N more" marker replaces the last kept
+    line so dropped diagnostics are never silent.
+    """
+    messages = _build_provider_failure_summary(failed).split("; ") if failed else []
+    if not messages:
+        return
+
+    existing = list(task_history.log_messages or [])
+    available = max(0, _MAX_HISTORY_MESSAGES - len(existing))
+    omitted = max(0, len(messages) - available)
+    kept = messages[:available]
+    if omitted:
+        marker = (
+            f"[provider diagnostics] +{omitted} more provider outcome(s) omitted "
+            f"from task history (see file logs)"
+        )
+        if kept:
+            kept[-1] = marker
+        else:
+            kept.append(marker)
+
+    timestamp = task_history.started_at.isoformat()
+    entries = [{"timestamp": timestamp, "message": m} for m in kept]
+    task_history.log_messages = [*existing, *entries]
+    task_history.save(update_fields=["log_messages"])
+
 
 # Per-album track-download concurrency. Worker concurrency × this value =
 # global yt-dlp parallelism. Default 3 keeps us well under YouTube rate
@@ -348,7 +446,9 @@ def download_single_album(self: Any, album_id: int) -> None:
         dl_count, fail_count = _download_deezer_album(album, task_history)
         total = dl_count + fail_count
         if fail_count > 0:
-            prefix = "Content unavailable: " if dl_count == 0 else ""
+            # Zero downloads from provider failures are temporary, not a
+            # catalog verdict; never attach "Content unavailable:" here.
+            prefix = ""
             msg = f"{prefix}Downloaded {dl_count}/{total} tracks"
             complete_task(task_history, success=False, error_message=msg)
             logger.warning(f"Partial failure for album {album.name}: {msg}")
@@ -370,7 +470,7 @@ def download_single_album(self: Any, album_id: int) -> None:
     except CeleryRetry:
         raise
     except ValueError as e:
-        error_msg = f"Content unavailable: {str(e)}"
+        error_msg = f"{_content_unavailable_prefix(str(e))}{str(e)}"
         logger.warning(error_msg)
         if task_history:
             complete_task(task_history, success=False, error_message=error_msg)
@@ -564,6 +664,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
 
     downloaded_count = 0
     failed_count = 0
+    failed_results: list[tuple[int, DownloadChainResult | BaseException]] = []
 
     try:
         loop = asyncio.new_event_loop()
@@ -588,9 +689,13 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         for (song, _metadata), result in zip(songs_to_download, results):
             if isinstance(result, BaseException):
                 failed_count += 1
+                failed_results.append((song.id or 0, result))
                 song.increment_failed_count()
                 song.save()
-                logger.warning(f"Failed to download '{song.name}': {result}")
+                logger.warning(
+                    f"Failed to download '{song.name}' "
+                    f"(song_id={song.id}): {sanitize_provider_detail(result)}"
+                )
                 continue
 
             if result.success and result.file_path:
@@ -612,10 +717,14 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
                     logger.debug(f"M3U regen failed (non-fatal): {m3u_err}")
             else:
                 failed_count += 1
-                song.increment_failed_count()
+                failed_results.append((song.id or 0, result))
+                song.increment_failed_count()  # TEMPORARY_ERROR: no catalog verdict
                 song.save()
+                for message in _provider_outcome_log_messages(song.id or 0, result):
+                    logger.warning(message)
                 logger.warning(
-                    f"Failed to download '{song.name}': {result.error_message}"
+                    f"Failed to download '{song.name}' (song_id={song.id}): "
+                    f"{sanitize_provider_detail(result.error_message)}"
                 )
 
     finally:
@@ -629,9 +738,23 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         album.downloaded = True
         album.save()
     elif downloaded_count == 0:
-        album.increment_failed_count(AlbumFailureReason.ALL_TRACKS_UNAVAILABLE)
+        # Zero downloaded tracks is not evidence that the catalog lacks the
+        # album. Only a genuine metadata-source verdict (DEEZER_NO_TRACKS,
+        # raised earlier) may mark content permanently unavailable.
+        # No downloaded tracks is not a catalog verdict.
+        album.increment_failed_count(AlbumFailureReason.TEMPORARY_ERROR)
     else:
         album.increment_failed_count(AlbumFailureReason.PARTIAL_FAILURE)
+
+    if failed_results:
+        summary = _build_provider_failure_summary(failed_results)
+        logger.warning(
+            "Provider failure summary for album '%s' (album_id=%s): %s",
+            album.name,
+            album.id,
+            summary[:3000],
+        )
+        _persist_provider_history(task_history, failed_results)
 
     update_task_progress(
         task_history,
@@ -1041,7 +1164,7 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
     except CeleryRetry:
         raise
     except ValueError as e:
-        error_msg = f"Content unavailable: {str(e)}"
+        error_msg = f"{_content_unavailable_prefix(str(e))}{str(e)}"
         logger.warning(error_msg)
         if task_history:
             complete_task(task_history, success=False, error_message=error_msg)
@@ -1123,7 +1246,9 @@ def download_album_by_deezer_id(self: Any, deezer_album_id: int) -> None:
         dl_count, fail_count = _download_deezer_album(album, task_history)
         total = dl_count + fail_count
         if fail_count > 0:
-            prefix = "Content unavailable: " if dl_count == 0 else ""
+            # Zero downloads from provider failures are temporary, not a
+            # catalog verdict; never attach "Content unavailable:" here.
+            prefix = ""
             msg = f"{prefix}Downloaded {dl_count}/{total} tracks"
             complete_task(task_history, success=False, error_message=msg)
             logger.warning(f"Partial failure for album {album.name}: {msg}")
@@ -1204,7 +1329,7 @@ def download_track_by_spotify_gid(self: Any, track_gid: str) -> None:
     except CeleryRetry:
         raise
     except ValueError as e:
-        error_msg = f"Content unavailable: {str(e)}"
+        error_msg = f"{_content_unavailable_prefix(str(e))}{str(e)}"
         logger.warning(error_msg)
         if task_history:
             complete_task(task_history, success=False, error_message=error_msg)
@@ -1295,13 +1420,12 @@ def download_deezer_track(self: Any, song_id: int) -> None:
         else:
             song.increment_failed_count()
             song.save()
-            is_unavailable = result.error_message and (
-                "No matching track found" in result.error_message
-                or "All providers failed" in result.error_message
-            )
-            prefix = "Content unavailable: " if is_unavailable else ""
+            for message in _provider_outcome_log_messages(song.id, result):
+                logger.warning(message)
+            _persist_provider_history(task_history, [(song.id, result)])
             error_msg = (
-                f"{prefix}Failed to download '{song.name}': {result.error_message}"
+                f"Failed to download '{song.name}' (song_id={song.id}): "
+                f"{sanitize_provider_detail(result.error_message)}"
             )
             logger.warning(error_msg)
             complete_task(task_history, success=False, error_message=error_msg)
