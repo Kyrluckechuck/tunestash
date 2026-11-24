@@ -56,4 +56,4 @@ spotipy>=2.26.0,<3
 ytmusicapi>=1.5.0
 
 # Audio download (FallbackDownloader searches YouTube/Tidal/Qobuz via yt-dlp)
-yt-dlp[default]>=2026.3.3  # Includes yt-dlp-ejs for JavaScript execution (YouTube bot protection)
+yt-dlp[default]>=2026.11.23  # Includes yt-dlp-ejs for JavaScript execution (YouTube bot protection)
