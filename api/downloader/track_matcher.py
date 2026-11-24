@@ -49,27 +49,31 @@ _LANGUAGE_MARKERS = {
     "turkish version",
 }
 
-_VARIANT_MARKERS = {
-    "remix",
-    "acoustic",
-    "live",
-    "instrumental",
-    "demo",
-    "radio edit",
-    "radio version",
-    "radio mix",
-    "club mix",
-    "club version",
-    "extended",
-    "extended mix",
-    "stripped",
-    "unplugged",
-    "a cappella",
-    "acapella",
-    "karaoke",
-    "sped up",
-    "slowed",
-}
+# Each family lists descriptors that mean the same version. Longer aliases
+# come first so "extended mix" is not reduced to a bare "extended".
+_VARIANT_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("remix", ("remix",)),
+    ("acoustic", ("acoustic version", "acoustic")),
+    ("live", ("live version", "live")),
+    ("instrumental", ("instrumental version", "instrumental")),
+    ("demo", ("demo",)),
+    ("radio", ("radio edit", "radio version", "radio mix")),
+    ("club", ("club mix", "club version")),
+    ("extended", ("extended mix", "extended version", "extended")),
+    ("stripped", ("stripped",)),
+    ("unplugged", ("unplugged",)),
+    ("a cappella", ("a cappella", "acapella")),
+    ("karaoke", ("karaoke",)),
+    ("sped up", ("sped up",)),
+    ("slowed", ("slowed",)),
+    ("piano", ("piano version", "piano")),
+    ("mix cut", ("mix cut",)),
+    ("mixed", ("mixed",)),
+)
+
+# Bare descriptors are variants only when they are the whole tag. Otherwise
+# ordinary titles such as "(Piano Man)" or "(Mixed Emotions)" are misclassified.
+_BARE_ONLY_VARIANT_MARKERS = {"piano", "mixed"}
 
 _MINOR_MARKERS = {
     "remaster",
@@ -83,6 +87,38 @@ _MINOR_MARKERS = {
 }
 
 _FEAT_RE = re.compile(r"^(feat\.?|ft\.?|featuring)\s+", re.IGNORECASE)
+
+# Artist credits use many separators across providers: commas and ampersands
+# in metadata, bullets from YouTube Music, "feat"/"ft" in titles. Split on all
+# of them so a collaboration is compared by its members rather than as one
+# long string that fuzzily resembles an unrelated solo artist.
+_ARTIST_SPLIT_RE = re.compile(
+    r"\s*(?:,|&|;|/|\||•|\+|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\band\b)\s*",
+    re.IGNORECASE,
+)
+_LEADING_THE_RE = re.compile(r"^the\s+")
+
+# Version words unambiguous enough to detect even without parentheses, so
+# "Mixed" does not silently equal "Mix Cut" just because the characters are
+# close. Single generic words such as "live" are intentionally excluded.
+_STANDALONE_VARIANT_MARKERS = (
+    "mix cut",
+    "piano version",
+    "extended mix",
+    "extended version",
+    "radio edit",
+    "radio version",
+    "radio mix",
+    "live version",
+    "club mix",
+    "club version",
+    "sped up",
+    "slowed",
+)
+
+# A version/language conflict is disqualifying at every caller threshold
+# (currently 0.6-0.7) without raising those thresholds for normal matches.
+_VERSION_CONFLICT_CAP = 0.5
 
 
 def extract_title_tags(title: str) -> tuple[str, list[str]]:
@@ -119,6 +155,217 @@ def normalize_for_matching(name: str) -> str:
     return s.lower()
 
 
+# Stylized stage names commonly substitute punctuation for letters (P!nk,
+# Ke$ha). Apply only these narrow, recognizable substitutions; arbitrary
+# punctuation stripping would create unsafe aliases.
+_ARTIST_ALIAS_TRANSLATION = str.maketrans(
+    {
+        "!": "i",
+        "$": "s",
+        "@": "a",
+        "0": "o",
+        "3": "e",
+    }
+)
+
+
+def _normalize_artist_alias(artist: str) -> str:
+    return normalize_for_matching(artist.translate(_ARTIST_ALIAS_TRANSLATION))
+
+
+def _compact_artist_alias(artist: str) -> str:
+    return re.sub(r"\s+", "", _normalize_artist_alias(artist))
+
+
+def _artist_credit_tokens(artist: str) -> set[str]:
+    """Split an artist credit into normalized individual artist names."""
+    tokens: set[str] = set()
+    for part in _ARTIST_SPLIT_RE.split(artist):
+        normalized = _normalize_artist_alias(part)
+        normalized = _LEADING_THE_RE.sub("", normalized).strip()
+        if normalized:
+            tokens.add(normalized)
+    return tokens
+
+
+def _token_appears_in(token: str, other: str) -> bool:
+    return re.search(rf"\b{re.escape(token)}\b", other) is not None
+
+
+def _credit_is_band_alias(subset: set[str], superset: set[str]) -> bool:
+    """Match a band's short credit to its members' full names.
+
+    "Hall & Oates" versus "Daryl Hall & John Oates" needs every short-credit
+    member to appear in a longer-credit member. Requiring at least two members
+    keeps single-word lookalikes such as "Pink" versus "Pink Floyd" distinct.
+    """
+    if len(subset) < 2:
+        return False
+    return all(
+        any(_token_appears_in(token, other) for other in superset) for token in subset
+    )
+
+
+def _artists_are_alias_equivalent(search_artist: str, result_artist: str) -> bool:
+    """Return whether credits are the same name with benign spelling variation."""
+    search_norm = _normalize_artist_alias(search_artist)
+    result_norm = _normalize_artist_alias(result_artist)
+    if not search_norm or not result_norm:
+        return False
+    if search_norm == result_norm:
+        return True
+    if _compact_artist_alias(search_artist) == _compact_artist_alias(result_artist):
+        return True
+
+    search_tokens = _artist_credit_tokens(search_artist)
+    result_tokens = _artist_credit_tokens(result_artist)
+    if search_tokens & result_tokens:
+        return True
+    if _credit_is_band_alias(search_tokens, result_tokens):
+        return True
+    if _credit_is_band_alias(result_tokens, search_tokens):
+        return True
+
+    # Tolerate small spelling differences within a single credit, but not the
+    # much larger gap between unrelated names.
+    for search_token in search_tokens:
+        for result_token in result_tokens:
+            if SequenceMatcher(None, search_token, result_token).ratio() >= 0.9:
+                return True
+    return False
+
+
+def artists_are_compatible(search_artist: str, result_artist: str) -> bool:
+    """Return whether two artist credits can refer to the same recording.
+
+    This is a hard gate rather than another fuzzy contribution: a partially
+    similar title must not let two clearly unrelated artists through. Missing
+    artist data is left to the aggregate score.
+    """
+    search_norm = _normalize_artist_alias(search_artist)
+    result_norm = _normalize_artist_alias(result_artist)
+    if not search_norm or not result_norm:
+        return True
+    return _artists_are_alias_equivalent(search_artist, result_artist)
+
+
+def _variant_marker_match(normalized_tag: str, marker: str) -> Optional[re.Match]:
+    """Find a variant descriptor, with exact matching for bare generic words."""
+    if marker in _BARE_ONLY_VARIANT_MARKERS:
+        return re.fullmatch(re.escape(marker), normalized_tag)
+    return re.search(
+        rf"(?<!\w){re.escape(marker)}(?!\w)",
+        normalized_tag,
+    )
+
+
+def _canonical_variant_keys(
+    normalized_tag: str, raw_tag: Optional[str] = None
+) -> set[str]:
+    """Map equivalent version descriptors to one key.
+
+    "Extended Mix" and "Extended Version" share a key, as do edit/version
+    pairs. Named variants keep their qualifier: different remixers and demo
+    years stay distinct. A live recording keeps its venue so two different
+    venues remain distinct. A trailing "s" is only a possessive when the raw
+    tag actually used "'s"; a real word such as "Mr S" is kept.
+    """
+    is_possessive = bool(raw_tag and re.search(r"['\u2019]s\b", raw_tag, re.IGNORECASE))
+    # Split "Demo2019" so the descriptor and its qualifier are both visible.
+    normalized_tag = re.sub(r"(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])", " ", normalized_tag)
+    normalized_tag = _MULTI_SPACE_RE.sub(" ", normalized_tag).strip()
+
+    keys: set[str] = set()
+    for family, aliases in _VARIANT_FAMILIES:
+        for alias in aliases:
+            match = _variant_marker_match(normalized_tag, alias)
+            if not match:
+                continue
+            if family == "live":
+                remainder = (
+                    normalized_tag[: match.start()]
+                    + " "
+                    + normalized_tag[match.end() :]
+                )
+                remainder = re.sub(
+                    r"^(?:version|edit)\b\s*", "", remainder.strip()
+                ).strip()
+                remainder = re.sub(r"^from\b", "at", remainder).strip()
+                if re.match(r"^(?:at|in)\b", remainder):
+                    keys.add(f"live {remainder}")
+                else:
+                    keys.add("live")
+            elif family in ("remix", "demo"):
+                remainder = (
+                    normalized_tag[: match.start()]
+                    + " "
+                    + normalized_tag[match.end() :]
+                ).strip()
+                remainder = re.sub(r"^(?:by|from)\b\s*", "", remainder)
+                if is_possessive:
+                    remainder = re.sub(r"\s+s$", "", remainder)
+                remainder = re.sub(r"\b(?:version|edit|mix)\b", " ", remainder).strip()
+                remainder = _MULTI_SPACE_RE.sub(" ", remainder).strip()
+                keys.add(f"{family} {remainder}".strip())
+            else:
+                keys.add(family)
+            break
+    return keys
+
+
+def _tag_identity_keys(tag: str) -> set[tuple[str, str]]:
+    """Return canonical (category, key) pairs for a tag."""
+    category = _classify_tag(tag)
+    if not category or category == "feat":
+        return set()
+
+    normalized = normalize_for_matching(tag)
+    if category == "variant":
+        return {("variant", key) for key in _canonical_variant_keys(normalized, tag)}
+    return {(category, normalized)}
+
+
+def _version_signature(title: str, tags: list[str]) -> set[tuple[str, str]]:
+    """Collect variant/language distinctions from tags and unambiguous title words."""
+    signature: set[tuple[str, str]] = set()
+    for tag in tags:
+        signature.update(
+            pair
+            for pair in _tag_identity_keys(tag)
+            if pair[0] in ("variant", "language")
+        )
+
+    normalized_title = normalize_for_matching(title)
+    normalized_tags = [normalize_for_matching(tag) for tag in tags]
+    for marker in _STANDALONE_VARIANT_MARKERS:
+        if not _variant_marker_match(normalized_title, marker):
+            continue
+        # A tag already parsed this marker and may carry a qualifier (for
+        # example "Live Version at Wembley"). Adding the bare marker key again
+        # would create a false conflict with "Live at Wembley".
+        if any(marker in normalized_tag for normalized_tag in normalized_tags):
+            continue
+        signature.update(("variant", key) for key in _canonical_variant_keys(marker))
+    return signature
+
+
+def has_version_conflict(
+    search_title: str,
+    result_title: str,
+    search_tags: list[str],
+    result_tags: list[str],
+) -> bool:
+    """Return whether the source and result request different versions.
+
+    Minor differences such as a remaster are deliberately ignored; variant and
+    language differences are not. This is independent of ISRC/duration so a
+    wrong version cannot be accepted just because those signals are absent.
+    """
+    return _version_signature(search_title, search_tags) != _version_signature(
+        result_title, result_tags
+    )
+
+
 def _classify_tag(tag: str) -> Optional[str]:
     """Classify a tag into a severity category."""
     normalized = tag.strip().lower()
@@ -130,9 +377,8 @@ def _classify_tag(tag: str) -> Optional[str]:
         if marker in normalized:
             return "language"
 
-    for marker in _VARIANT_MARKERS:
-        if marker in normalized:
-            return "variant"
+    if _canonical_variant_keys(normalized):
+        return "variant"
 
     for marker in _MINOR_MARKERS:
         if marker in normalized:
@@ -149,16 +395,12 @@ def compute_tag_penalty(source_tags: list[str], result_tags: list[str]) -> float
     variants (e.g., Remix vs Acoustic) are correctly penalized.
     """
     source_pairs = set()
-    for t in source_tags:
-        cls = _classify_tag(t)
-        if cls and cls != "feat":
-            source_pairs.add((cls, normalize_for_matching(t)))
+    for tag in source_tags:
+        source_pairs.update(_tag_identity_keys(tag))
 
     result_pairs = set()
-    for t in result_tags:
-        cls = _classify_tag(t)
-        if cls and cls != "feat":
-            result_pairs.add((cls, normalize_for_matching(t)))
+    for tag in result_tags:
+        result_pairs.update(_tag_identity_keys(tag))
 
     if source_pairs == result_pairs:
         return 0.0
@@ -186,6 +428,11 @@ def compute_tag_penalty(source_tags: list[str], result_tags: list[str]) -> float
     return min(penalty, 0.5)
 
 
+def _normalize_isrc(isrc: str) -> str:
+    """Normalize provider ISRC whitespace/case once for every comparison."""
+    return isrc.strip().upper()
+
+
 def score_track_match(
     search_title: str,
     search_artist: str,
@@ -205,14 +452,40 @@ def score_track_match(
     # Extract tags and get core titles
     source_core, source_tags = extract_title_tags(search_title)
     result_core, result_tags = extract_title_tags(result_title)
+    version_conflict = has_version_conflict(
+        search_title, result_title, source_tags, result_tags
+    )
+    normalized_search_isrc = _normalize_isrc(search_isrc) if search_isrc else ""
+    normalized_result_isrc = _normalize_isrc(result_isrc) if result_isrc else ""
+    # A blank/whitespace-only ISRC is not identity evidence: it must neither
+    # bypass the artist gate nor count as a matched ISRC in the weighted score.
+    isrc_present = bool(normalized_search_isrc and normalized_result_isrc)
+    isrc_equal = isrc_present and normalized_search_isrc == normalized_result_isrc
+
+    # Artist compatibility is a gate, not a weighted hint. Without it, close
+    # titles can carry unrelated artists over the acceptance threshold. An
+    # identical provider ISRC is strong identity evidence for transliterated
+    # names, but it cannot override an explicit version conflict.
+    if not artists_are_compatible(search_artist, result_artist):
+        if not (isrc_equal and not version_conflict):
+            return 0.0
 
     norm_source_title = normalize_for_matching(source_core)
     norm_result_title = normalize_for_matching(result_core)
-    norm_source_artist = normalize_for_matching(search_artist)
-    norm_result_artist = normalize_for_matching(result_artist)
+    norm_source_artist = _normalize_artist_alias(search_artist)
+    norm_result_artist = _normalize_artist_alias(result_artist)
 
     title_sim = SequenceMatcher(None, norm_source_title, norm_result_title).ratio()
-    artist_sim = SequenceMatcher(None, norm_source_artist, norm_result_artist).ratio()
+    if _artists_are_alias_equivalent(search_artist, result_artist):
+        artist_sim = 1.0
+    else:
+        artist_sim = SequenceMatcher(
+            None, norm_source_artist, norm_result_artist
+        ).ratio()
+    if isrc_equal and not version_conflict:
+        # The same ISRC identifies the same recording even when providers use
+        # different scripts or transliterations for the artist name.
+        artist_sim = max(artist_sim, 0.75)
 
     weighted_score = 0.0
     weights_used = 0.0
@@ -225,9 +498,9 @@ def score_track_match(
     weighted_score += 0.35 * artist_sim
     weights_used += 0.35
 
-    # ISRC: weight 0.20 (only if both provided)
-    if search_isrc and result_isrc:
-        isrc_match = 1.0 if search_isrc.upper() == result_isrc.upper() else 0.0
+    # ISRC: weight 0.20 (only if both provided and non-blank after normalization)
+    if isrc_present:
+        isrc_match = 1.0 if isrc_equal else 0.0
         weighted_score += 0.20 * isrc_match
         weights_used += 0.20
 
@@ -250,6 +523,11 @@ def score_track_match(
     # Apply tag penalty
     tag_penalty = compute_tag_penalty(source_tags, result_tags)
     score -= tag_penalty
+
+    # A version/language mismatch stays rejected regardless of how much the
+    # title, artist, ISRC, and duration agree.
+    if version_conflict:
+        score = min(score, _VERSION_CONFLICT_CAP)
 
     return max(0.0, min(1.0, score))
 

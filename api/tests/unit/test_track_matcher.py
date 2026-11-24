@@ -4,6 +4,7 @@ from downloader.track_matcher import (
     album_type_score,
     compute_tag_penalty,
     extract_title_tags,
+    has_version_conflict,
     normalize_for_matching,
     score_track_match,
 )
@@ -136,6 +137,53 @@ class TestScoreTrackMatch:
             result_isrc="USRC12345678",
         )
         assert boosted >= base
+
+    def test_isrc_whitespace_normalization_is_consistent(self) -> None:
+        padded = score_track_match(
+            "Bailando",
+            "Enrique Iglesias",
+            "Bailando",
+            "Enrique Iglesias",
+            search_isrc=" USRC12345678 ",
+            result_isrc="usrc12345678",
+        )
+        exact = score_track_match(
+            "Bailando",
+            "Enrique Iglesias",
+            "Bailando",
+            "Enrique Iglesias",
+            search_isrc="USRC12345678",
+            result_isrc="USRC12345678",
+        )
+        assert padded == exact
+
+    def test_blank_isrcs_do_not_bypass_artist_gate(self) -> None:
+        score = score_track_match(
+            "Avoidant",
+            "CHEZ",
+            "Avoidance",
+            "Detz",
+            search_isrc="   ",
+            result_isrc=" ",
+        )
+        assert score == 0.0
+
+    def test_blank_isrcs_do_not_count_as_a_match(self) -> None:
+        baseline = score_track_match(
+            "Bailando",
+            "Enrique Iglesias",
+            "Bailando",
+            "Enrique Iglesias",
+        )
+        blank = score_track_match(
+            "Bailando",
+            "Enrique Iglesias",
+            "Bailando",
+            "Enrique Iglesias",
+            search_isrc="   ",
+            result_isrc=" ",
+        )
+        assert blank == baseline
 
     def test_spanish_version_penalized(self) -> None:
         clean = score_track_match(
@@ -327,6 +375,385 @@ class TestM3UResolutionRanking:
             "Eagles",
         )
         assert score >= 0.7
+
+
+class TestArtistCompatibility:
+    """Artist credit must be an independent gate, not just a fuzzy score."""
+
+    def test_rejects_unrelated_artists_with_similar_titles(self) -> None:
+        # Production regression: CHEZ "Avoidant" was matched to Detz
+        # "Avoidance" at 0.6618, above the 0.6 acceptance threshold.
+        score = score_track_match("Avoidant", "CHEZ", "Avoidance", "Detz")
+        assert score < 0.6
+
+    def test_rejects_unrelated_artists_without_isrc_or_duration(self) -> None:
+        # Production regression: Jon Pumper "Change (Piano Version)" was
+        # matched to jame "Change" at 0.7143.
+        score = score_track_match(
+            "Change (Piano Version)",
+            "Jon Pumper",
+            "Change",
+            "jame",
+        )
+        assert score < 0.6
+
+    def test_accepts_comma_and_ampersand_collaboration_credit(self) -> None:
+        comma = score_track_match(
+            "Song",
+            "Artist A, Artist B",
+            "Song",
+            "Artist A & Artist B",
+        )
+        assert comma >= 0.9
+
+    def test_accepts_bullet_separated_youtube_credit(self) -> None:
+        score = score_track_match(
+            "Levitating",
+            "Dua Lipa",
+            "Levitating",
+            "Dua Lipa • DaBaby",
+        )
+        assert score >= 0.7
+
+    def test_accepts_featured_artist_credit(self) -> None:
+        score = score_track_match(
+            "Song",
+            "Artist A feat. Artist B",
+            "Song",
+            "Artist A featuring Artist B",
+        )
+        assert score >= 0.9
+
+    def test_many_collaborators_are_not_rejected_by_count(self) -> None:
+        score = score_track_match(
+            "All Stars",
+            "Artist A, Artist B, Artist C, Artist D",
+            "All Stars",
+            "Artist A • Artist B • Artist C • Artist D",
+        )
+        assert score >= 0.8
+
+    def test_same_primary_artist_with_extra_collaborator_is_retained(self) -> None:
+        score = score_track_match(
+            "Song",
+            "Artist A",
+            "Song",
+            "Artist A • Artist B",
+        )
+        assert score >= 0.8
+
+    def test_slash_and_compact_alias_ac_dc(self) -> None:
+        score = score_track_match(
+            "Thunderstruck",
+            "AC/DC",
+            "Thunderstruck",
+            "ACDC",
+        )
+        assert score >= 0.9
+
+    def test_punctuation_alias_pink(self) -> None:
+        score = score_track_match(
+            "So What",
+            "P!nk",
+            "So What",
+            "Pink",
+        )
+        assert score >= 0.9
+
+    def test_punctuation_alias_kesha(self) -> None:
+        score = score_track_match(
+            "Tik Tok",
+            "Ke$ha",
+            "Tik Tok",
+            "Kesha",
+        )
+        assert score >= 0.9
+
+    def test_band_short_credit_matches_full_member_credit(self) -> None:
+        score = score_track_match(
+            "Maneater",
+            "Hall & Oates",
+            "Maneater",
+            "Daryl Hall & John Oates",
+        )
+        assert score >= 0.8
+
+    def test_band_full_credit_matches_short_member_credit(self) -> None:
+        score = score_track_match(
+            "Maneater",
+            "Daryl Hall & John Oates",
+            "Maneater",
+            "Hall & Oates",
+        )
+        assert score >= 0.8
+
+    def test_single_word_is_not_a_substring_alias(self) -> None:
+        score = score_track_match(
+            "So What",
+            "Pink",
+            "So What",
+            "Pink Floyd",
+        )
+        assert score < 0.6
+
+    def test_short_artist_names_are_not_substring_aliases(self) -> None:
+        air_score = score_track_match(
+            "Song",
+            "Air",
+            "Song",
+            "Air Supply",
+        )
+        prince_score = score_track_match(
+            "Song",
+            "Prince",
+            "Song",
+            "Prince Royce",
+        )
+        assert air_score < 0.6
+        assert prince_score < 0.6
+
+    def test_vevo_suffix_is_not_an_automatic_alias(self) -> None:
+        score = score_track_match(
+            "Song",
+            "Artist",
+            "Song",
+            "ArtistVEVO",
+        )
+        assert score < 0.6
+
+    def test_identical_isrc_allows_transliterated_artist_names(self) -> None:
+        score = score_track_match(
+            "Song",
+            "Мельница",
+            "Song",
+            "Melnitsa",
+            search_isrc="USRC12345678",
+            result_isrc="USRC12345678",
+            search_duration_s=240.0,
+            result_duration_s=240.0,
+        )
+        assert score >= 0.8
+
+    def test_isrc_does_not_override_version_conflict(self) -> None:
+        score = score_track_match(
+            "Song (Extended Mix)",
+            "Artist",
+            "Song (Acoustic Version)",
+            "Artist",
+            search_isrc="USRC12345678",
+            result_isrc="USRC12345678",
+            search_duration_s=240.0,
+            result_duration_s=240.0,
+        )
+        assert score < 0.6
+
+
+class TestVersionProtection:
+    """Version distinctions must survive even when the aggregate is high."""
+
+    def test_plain_title_does_not_match_piano_version(self) -> None:
+        score = score_track_match(
+            "Change",
+            "Jon Pumper",
+            "Change (Piano Version)",
+            "Jon Pumper",
+        )
+        assert score < 0.6
+
+    def test_piano_version_does_not_match_plain_title(self) -> None:
+        score = score_track_match(
+            "Change (Piano Version)",
+            "Jon Pumper",
+            "Change",
+            "Jon Pumper",
+        )
+        assert score < 0.6
+
+    def test_mixed_is_not_identical_to_mix_cut(self) -> None:
+        score = score_track_match("Mixed", "Fatum", "Mix Cut", "Fatum")
+        assert score < 0.6
+
+    def test_bracketed_mix_cut_is_not_identical_to_plain_title(self) -> None:
+        score = score_track_match(
+            "Mixed",
+            "Fatum",
+            "Mixed (Mix Cut)",
+            "Fatum",
+        )
+        assert score < 0.6
+
+    def test_same_version_still_matches_strongly(self) -> None:
+        score = score_track_match(
+            "Change (Piano Version)",
+            "Jon Pumper",
+            "Change (Piano Version)",
+            "Jon Pumper",
+        )
+        assert score >= 0.9
+
+    def test_remaster_remains_acceptable(self) -> None:
+        score = score_track_match(
+            "Bohemian Rhapsody",
+            "Queen",
+            "Bohemian Rhapsody (2011 Remaster)",
+            "Queen",
+        )
+        assert score >= 0.7
+
+    def test_extended_mix_and_extended_version_are_equivalent(self) -> None:
+        assert (
+            score_track_match(
+                "Song (Extended Mix)",
+                "Artist",
+                "Song (Extended Version)",
+                "Artist",
+            )
+            >= 0.9
+        )
+        assert (
+            score_track_match(
+                "Song (Extended Mix)",
+                "Artist",
+                "Song (Extended)",
+                "Artist",
+            )
+            >= 0.9
+        )
+
+    def test_radio_edit_and_radio_version_are_equivalent(self) -> None:
+        score = score_track_match(
+            "Song (Radio Edit)",
+            "Artist",
+            "Song (Radio Version)",
+            "Artist",
+        )
+        assert score >= 0.9
+
+    def test_acoustic_and_acoustic_version_are_equivalent(self) -> None:
+        score = score_track_match(
+            "Song (Acoustic)",
+            "Artist",
+            "Song (Acoustic Version)",
+            "Artist",
+        )
+        assert score >= 0.9
+
+    def test_live_and_live_version_are_equivalent(self) -> None:
+        score = score_track_match(
+            "Song (Live)",
+            "Artist",
+            "Song (Live Version)",
+            "Artist",
+        )
+        assert score >= 0.9
+
+    def test_same_live_venue_still_matches(self) -> None:
+        score = score_track_match(
+            "Song (Live at Wembley)",
+            "Artist",
+            "Song (Live at Wembley)",
+            "Artist",
+        )
+        assert score >= 0.9
+
+    def test_different_live_venues_remain_distinct(self) -> None:
+        score = score_track_match(
+            "Song (Live at Wembley)",
+            "Artist",
+            "Song (Live at O2)",
+            "Artist",
+        )
+        assert score < 0.6
+
+    def test_piano_and_mixed_words_in_titles_are_not_variants(self) -> None:
+        piano_penalty = compute_tag_penalty([], ["Piano Man"])
+        mixed_penalty = compute_tag_penalty([], ["Mixed Emotions"])
+        assert piano_penalty == 0.0
+        assert mixed_penalty == 0.0
+
+    def test_named_remixes_remain_distinct(self) -> None:
+        foo = score_track_match(
+            "Song (Foo Remix)",
+            "Artist",
+            "Song (Foo Remix)",
+            "Artist",
+        )
+        bar = score_track_match(
+            "Song (Foo Remix)",
+            "Artist",
+            "Song (Bar Remix)",
+            "Artist",
+        )
+        assert foo >= 0.9
+        assert bar < 0.6
+
+    def test_remix_by_alias_matches_named_remix(self) -> None:
+        score = score_track_match(
+            "Song (Foo Remix)",
+            "Artist",
+            "Song (Remix by Foo)",
+            "Artist",
+        )
+        assert score >= 0.9
+
+    def test_named_demos_remain_distinct(self) -> None:
+        same = score_track_match(
+            "Song (Demo2019)",
+            "Artist",
+            "Song (Demo 2019)",
+            "Artist",
+        )
+        different = score_track_match(
+            "Song (Demo2019)",
+            "Artist",
+            "Song (Demo2020)",
+            "Artist",
+        )
+        assert same >= 0.9
+        assert different < 0.6
+
+    def test_standalone_version_words_do_not_conflict(self) -> None:
+        cases = (
+            ("Song - Extended Version", "Song (Extended Mix)"),
+            ("Song - Radio Mix", "Song (Radio Edit)"),
+            ("Song - Live Version", "Song (Live)"),
+        )
+        for search_title, result_title in cases:
+            _, search_tags = extract_title_tags(search_title)
+            _, result_tags = extract_title_tags(result_title)
+            assert not has_version_conflict(
+                search_title,
+                result_title,
+                search_tags,
+                result_tags,
+            )
+
+    def test_live_version_with_venue_matches_live_with_venue(self) -> None:
+        score = score_track_match(
+            "Song (Live Version at Wembley)",
+            "Artist",
+            "Song (Live at Wembley)",
+            "Artist",
+        )
+        assert score >= 0.9
+
+    def test_real_trailing_s_in_remixer_is_not_stripped(self) -> None:
+        different = score_track_match(
+            "Song (Mr S Remix)",
+            "Artist",
+            "Song (Mr Remix)",
+            "Artist",
+        )
+        assert different < 0.6
+
+    def test_possessive_remixer_still_matches_plain_remixer(self) -> None:
+        score = score_track_match(
+            "Song (Foo's Remix)",
+            "Artist",
+            "Song (Foo Remix)",
+            "Artist",
+        )
+        assert score >= 0.9
 
 
 class TestAlbumTypeScore:
