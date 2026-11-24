@@ -533,7 +533,8 @@ class TestFallbackDownloaderDownloadTrack:
         result = await downloader.download_track(spotify_metadata)
 
         assert result.success is False
-        assert "No matching track" in result.error_message
+        assert "no result" in result.error_message.lower()
+        assert result.provider_outcomes[0].outcome == "no_result_unknown"
 
     @pytest.mark.asyncio
     @pytest.mark.unit
