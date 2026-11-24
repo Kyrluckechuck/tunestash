@@ -8,6 +8,7 @@ from django.test import override_settings
 
 import pytest
 
+from library_manager.metadata_detection import detect_song_name_change
 from library_manager.models import (
     Album,
     Artist,
@@ -141,3 +142,25 @@ def test_metadata_update_does_not_rewrite_shared_file(tmp_path):
     assert result is False
     assert Path(song.file_path).is_file()
     update_tags.assert_not_called()
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
+def test_metadata_detection_ignores_blank_provider_name():
+    """A blank provider value must not create an actionable rename."""
+    artist = Artist.objects.create(name="Artist", gid="artist-blank-name")
+    album = Album.objects.create(
+        name="Album",
+        spotify_gid="album-blank-name",
+        artist=artist,
+        total_tracks=1,
+    )
+    song = Song.objects.create(
+        name="Rise Up",
+        gid="song-blank-name",
+        primary_artist=artist,
+        album=album,
+    )
+
+    assert detect_song_name_change(song, "") is False
+    assert not PendingMetadataUpdate.objects.exists()

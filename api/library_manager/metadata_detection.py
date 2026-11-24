@@ -93,6 +93,16 @@ def _create_or_update_pending_change(
     Returns:
         The PendingMetadataUpdate instance, or None if change was reverted
     """
+    normalized_new_value = new_value.strip()
+    if not normalized_new_value:
+        logger.warning(
+            "Ignoring blank metadata value for %s #%s",
+            entity.__class__.__name__,
+            entity.id,
+        )
+        return None
+    new_value = normalized_new_value
+
     content_type = ContentType.objects.get_for_model(entity)
 
     try:
@@ -171,13 +181,15 @@ def detect_artist_name_change(
     if artist.name == new_name:
         return False
 
-    _create_or_update_pending_change(
-        entity=artist,
-        field_name="name",
-        old_value=artist.name,
-        new_value=new_name,
+    return (
+        _create_or_update_pending_change(
+            entity=artist,
+            field_name="name",
+            old_value=artist.name,
+            new_value=new_name,
+        )
+        is not None
     )
-    return True
 
 
 def detect_album_name_change(
@@ -214,13 +226,15 @@ def detect_album_name_change(
             )
             return False
 
-    _create_or_update_pending_change(
-        entity=album,
-        field_name="name",
-        old_value=album.name,
-        new_value=new_name,
+    return (
+        _create_or_update_pending_change(
+            entity=album,
+            field_name="name",
+            old_value=album.name,
+            new_value=new_name,
+        )
+        is not None
     )
-    return True
 
 
 def detect_song_name_change(
@@ -264,13 +278,15 @@ def detect_song_name_change(
             )
             return False
 
-    _create_or_update_pending_change(
-        entity=song,
-        field_name="name",
-        old_value=song.name,
-        new_value=new_name,
+    return (
+        _create_or_update_pending_change(
+            entity=song,
+            field_name="name",
+            old_value=song.name,
+            new_value=new_name,
+        )
+        is not None
     )
-    return True
 
 
 def dismiss_superseded_updates(
