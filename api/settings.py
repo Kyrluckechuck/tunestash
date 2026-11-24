@@ -194,8 +194,14 @@ overwrite = False
 print_exceptions = True
 
 # Logging configuration to reduce verbosity
+# Keep Django's root handlers when Celery configures worker logging; downloader
+# loggers inherit these handlers and otherwise lose their persistent output.
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+settings.set("CELERY_WORKER_HIJACK_ROOT_LOGGER", CELERY_WORKER_HIJACK_ROOT_LOGGER)
+
 # File logging is enabled when TUNESTASH_SERVICE is set (per-service in compose).
-# Rotates daily at midnight, keeps 2 backups → today + yesterday + day-before = 72h.
+# Rotate daily or at 5 MiB, gzip archives, expire after 30 days. All services
+# share a 128 MiB budget; this is a ceiling, not a target allocation.
 # Falls back silently to console-only if /config/logs is not writable, so the app
 # never fails to start over a logging permissions issue.
 _log_service = os.environ.get("TUNESTASH_SERVICE", "")
@@ -206,10 +212,8 @@ if _log_service:
     try:
         _log_dir.mkdir(parents=True, exist_ok=True)
         _file_handler = {
-            "class": "logging.handlers.TimedRotatingFileHandler",
+            "class": "lib.logging_handlers.RetainedFileHandler",
             "filename": str(_log_dir / f"{_log_service}.log"),
-            "when": "midnight",
-            "backupCount": 2,
             "formatter": "verbose",
             "encoding": "utf-8",
         }
@@ -275,6 +279,8 @@ LOGGING = {
     },
 }
 # Storage configuration (replaces deprecated DEFAULT_FILE_STORAGE and STATICFILES_STORAGE)
+settings.set("LOGGING", LOGGING)
+
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",

@@ -2,8 +2,16 @@ networks:
   slm_net:
     name: slm_net
 
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+    compress: "true"
+
 services:
   postgres:
+    logging: *bounded-logging
     image: postgres:18-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-tunestash}
@@ -26,6 +34,7 @@ services:
     restart: unless-stopped
 
   valkey:
+    logging: *bounded-logging
     image: valkey/valkey:8-alpine
     command: >-
       valkey-server
@@ -89,11 +98,7 @@ services:
     volumes:
       - config_storage:/config
       - music_storage:/mnt/music_spotify
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "5"
+    logging: *bounded-logging
     # Memory limits for API server
     deploy:
       resources:
@@ -103,6 +108,7 @@ services:
           memory: 512M # Soft limit - guaranteed minimum
 
   queuetip:
+    logging: *bounded-logging
     image: ${BACKEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash:latest}
     environment:
       - CI=${CI:-false}
@@ -151,6 +157,7 @@ services:
           memory: 256M
 
   queuetip-frontend:
+    logging: *bounded-logging
     image: ${QUEUETIP_FRONTEND_IMAGE:-ghcr.io/kyrluckechuck/queuetip-frontend:latest}
     depends_on:
       queuetip:
@@ -162,6 +169,7 @@ services:
     restart: unless-stopped
 
   frontend:
+    logging: *bounded-logging
     # Nginx frontend service - serves static files and proxies API
     image: ${FRONTEND_IMAGE:-ghcr.io/kyrluckechuck/tunestash-frontend:latest}
     depends_on:
@@ -204,11 +212,7 @@ services:
     volumes:
       - config_storage:/config
       - music_storage:/mnt/music_spotify
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "5"
+    logging: *bounded-logging
     restart: unless-stopped
     networks:
       - slm_net
@@ -243,11 +247,7 @@ services:
     volumes:
       - config_storage:/config
       - music_storage:/mnt/music_spotify
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "5"
+    logging: *bounded-logging
     restart: unless-stopped
     networks:
       - slm_net
