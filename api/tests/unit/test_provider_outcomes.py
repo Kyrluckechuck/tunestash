@@ -108,6 +108,31 @@ class TestSanitizeProviderDetail:
         assert "XYZ" not in cleaned
         assert "cdn.example" in cleaned
 
+    @pytest.mark.parametrize(
+        "detail,secrets",
+        [
+            ('password="my secret pass" failed', ["my", "secret"]),
+            ('api_key: "abc def"', ["abc", "def"]),
+            ("token='abc def'", ["abc", "def"]),
+            ('{"password":"a \\"b c\\" d","ok":1}', ["b c", " d"]),
+            ("socks5://u:pw@host:1080 refused", ["u:pw", "pw@"]),
+            ("proxy ftp://user:p/w@host/x failed", ["user", "p/w"]),
+            ("cookie=a=b; c=d", ["a=b", "c=d"]),
+            ("password=my secret pass", ["my", "secret"]),
+            (r"{\"password\":\"escaped private value\"}", ["escaped", "private"]),
+        ],
+    )
+    def test_credential_shapes_are_fully_redacted(self, detail, secrets):
+        cleaned = sanitize_provider_detail(detail)
+        for secret in secrets:
+            assert secret not in cleaned.replace("[redacted]", ""), (detail, cleaned)
+
+    def test_scheme_agnostic_url_keeps_only_host(self):
+        cleaned = sanitize_provider_detail("socks5://u:pw@proxy.example:1080/x#y bad")
+        assert "proxy.example" in cleaned
+        assert "pw" not in cleaned
+        assert "#y" not in cleaned
+
     def test_ordinary_prose_keywords_are_preserved(self):
         cleaned = sanitize_provider_detail(
             "session expired and key not found for track"

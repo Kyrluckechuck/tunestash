@@ -117,26 +117,26 @@ def _persist_provider_history(
     """Persist provider diagnostics with ONE save, preserving progress logs.
 
     Existing progress entries are kept. If there are more messages than fit in
-    the reserved capacity, an explicit "+N more" marker replaces the last kept
-    line so dropped diagnostics are never silent.
+    the reserved capacity, the last slot holds an explicit "+N more" marker whose
+    N counts every dropped diagnostic, so omissions are never silent.
     """
-    messages = _build_provider_failure_summary(failed).split("; ") if failed else []
+    messages: list[str] = []
+    for song_id, result in failed:
+        messages.extend(_provider_outcome_log_messages(song_id, result))
     if not messages:
         return
 
     existing = list(task_history.log_messages or [])
     available = max(0, _MAX_HISTORY_MESSAGES - len(existing))
-    omitted = max(0, len(messages) - available)
-    kept = messages[:available]
-    if omitted:
-        marker = (
+    kept = messages
+    if len(messages) > available:
+        # Reserve one slot for the marker so the omitted count is exact.
+        kept = messages[: max(0, available - 1)]
+        omitted = len(messages) - len(kept)
+        kept.append(
             f"[provider diagnostics] +{omitted} more provider outcome(s) omitted "
             f"from task history (see file logs)"
         )
-        if kept:
-            kept[-1] = marker
-        else:
-            kept.append(marker)
 
     timestamp = task_history.started_at.isoformat()
     entries = [{"timestamp": timestamp, "message": m} for m in kept]

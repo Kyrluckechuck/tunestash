@@ -97,6 +97,7 @@ _ARTIST_SPLIT_RE = re.compile(
     re.IGNORECASE,
 )
 _LEADING_THE_RE = re.compile(r"^the\s+")
+_DASH_SUFFIX_RE = re.compile(r"\s[-–—]\s")
 
 # Version words unambiguous enough to detect even without parentheses, so
 # "Mixed" does not silently equal "Mix Cut" just because the characters are
@@ -137,6 +138,22 @@ def extract_title_tags(title: str) -> tuple[str, list[str]]:
             tags.append(inner.lower())
 
     core = _PAREN_TAG_RE.sub("", title).strip()
+
+    # Spotify-style "Song - Foo Remix". Only a suffix that is a recognized
+    # version/language/minor descriptor becomes a tag; any other hyphen is part
+    # of the title ("Part 2 - The Return").
+    dash_tags: list[str] = []
+    while True:
+        separators = list(_DASH_SUFFIX_RE.finditer(core))
+        if not separators:
+            break
+        last = separators[-1]
+        suffix = core[last.end() :].strip()
+        if not core[: last.start()].strip() or not _classify_tag(suffix):
+            break
+        dash_tags.append(suffix.lower())
+        core = core[: last.start()].strip()
+    tags.extend(reversed(dash_tags))
     return core, tags
 
 

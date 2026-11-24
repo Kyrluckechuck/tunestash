@@ -31,14 +31,32 @@ MAX_OUTCOME_DETAIL_LENGTH = 300
 MAX_OUTCOMES = 8
 
 # Fail-closed URL handling: keep only the host. Userinfo, opaque path segments,
-# query strings and fragments can all carry signed tokens, so they are dropped.
-_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
-_URL_HOST_RE = re.compile(r"^https?://(?:[^/@]*@)?([^/?#:]+)", re.IGNORECASE)
+# query strings and fragments can all carry signed tokens, so they are dropped
+# for every scheme (http, socks5, ftp, ...).
+_URL_RE = re.compile(r"[a-z][a-z0-9+.-]*://[^\s\"'<>]+", re.IGNORECASE)
+_URL_AUTHORITY_RE = re.compile(r"^[a-z][a-z0-9+.-]*://([^/?#]*)(.*)$", re.IGNORECASE)
+
+
+def _credential_key(words: str) -> str:
+    return rf"[\"']?[\w-]*(?:{words})[\w-]*[\"']?\s*[:=]\s*"
+
+
 # Credential assignments: JSON keys, token-style keys with any prefix
-# (access_token, refresh_token, X-Api-Key), and bearer credentials.
+# (access_token, refresh_token, X-Api-Key). Quoted values are consumed whole.
+_QUOTED_VALUE = r"\"(?:\\.|[^\"\\])*(?:\"|$)|'(?:\\.|[^'\\])*(?:'|$)"
 _CREDENTIAL_KV_RE = re.compile(
-    r"(?i)(\"?[\w-]*(token|secret|password|passwd|pwd|api[_-]?key|apikey|"
-    r"auth|credential|cookie)[\w-]*\"?\s*[:=]\s*)([^,;&}\s]+)"
+    r"(?i)("
+    + _credential_key(
+        r"token|secret|password|passwd|pwd|api[_-]?key|apikey|auth|credential|cookie"
+    )
+    + r")(?:"
+    + _QUOTED_VALUE
+    + r"|[^,;&}\s]+)"
+)
+# Unquoted cookie/password-style values cannot be bounded reliably (spaces,
+# "a=b; c=d"), so everything after the key is dropped.
+_GREEDY_CREDENTIAL_RE = re.compile(
+    r"(?i)(" + _credential_key(r"cookie|passw(?:or)?d|pwd|secret") + r")(?![\"'])(.*)$"
 )
 _AUTH_HEADER_RE = re.compile(
     r"(?i)\b(authorization|cookie|set-cookie|proxy-authorization)\s*:\s*.*$"
@@ -68,10 +86,16 @@ OutcomeKind = Literal[
 
 
 def _safe_url(match: re.Match[str]) -> str:
-    host_match = _URL_HOST_RE.match(match.group(0))
-    if not host_match:
+    parsed = _URL_AUTHORITY_RE.match(match.group(0))
+    if not parsed:
         return "[url redacted]"
-    return f"url:{host_match.group(1)}"
+    authority, rest = parsed.groups()
+    # An '@' outside the authority means userinfo containing a raw '/', '?' or
+    # '#', so the authority cannot be trusted.
+    if "@" in rest:
+        return "[url redacted]"
+    host = authority.rsplit("@", 1)[-1].split(":", 1)[0]
+    return f"url:{host}" if host else "[url redacted]"
 
 
 def sanitize_provider_detail(detail: object) -> str:
@@ -82,10 +106,15 @@ def sanitize_provider_detail(detail: object) -> str:
     is preserved.
     """
     text = str(detail) if detail is not None else ""
+    # Escaped payloads have ambiguous quote boundaries; omit them rather than
+    # unescaping values and accidentally exposing the rest of a secret.
+    if "\\" in text and _CREDENTIAL_KV_RE.search(text.replace("\\", "")):
+        return "[redacted]"
     text = text.replace("\n", " ").replace("\r", " ")
     text = _URL_RE.sub(_safe_url, text)
     text = _BEARER_RE.sub("Bearer [redacted]", text)
     text = _AUTH_HEADER_RE.sub(r"\1=[redacted]", text)
+    text = _GREEDY_CREDENTIAL_RE.sub(r"\1[redacted]", text)
     text = _CREDENTIAL_KV_RE.sub(r"\1[redacted]", text)
     text = re.sub(r"\s{2,}", " ", text).strip()
     if len(text) > MAX_OUTCOME_DETAIL_LENGTH:
@@ -227,7 +256,10 @@ class DownloadProviderChain:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to initialize {provider_name}: {e}")
+            logger.error(
+                f"Failed to initialize {provider_name}: "
+                f"{sanitize_provider_detail(e)}"
+            )
             return False
 
     async def download_track(
@@ -327,7 +359,9 @@ class DownloadProviderChain:
                 )
 
             last_error = result.error_message or f"{provider_name} failed"
-            logger.info(f"[{provider_name}] Failed: {last_error}")
+            logger.info(
+                f"[{provider_name}] Failed: {sanitize_provider_detail(last_error)}"
+            )
 
         return DownloadChainResult(
             success=False,

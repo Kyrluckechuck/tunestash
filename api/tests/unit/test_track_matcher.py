@@ -728,6 +728,43 @@ class TestVersionProtection:
                 result_tags,
             )
 
+    def test_dash_suffix_versions_match_parenthetical_versions(self) -> None:
+        cases = (
+            ("Song - Foo Remix", "Song (Foo Remix)"),
+            ("Song - Live", "Song (Live)"),
+            ("Song - Acoustic", "Song (Acoustic)"),
+            ("Song - Remastered 2011", "Song"),
+        )
+        for search_title, result_title in cases:
+            score = score_track_match(
+                search_title,
+                "Artist",
+                result_title,
+                "Artist",
+                search_isrc="USRC12345678",
+                result_isrc="USRC12345678",
+            )
+            assert score >= 0.9, (search_title, result_title, score)
+
+    def test_dash_suffix_named_remixer_difference_still_conflicts(self) -> None:
+        score = score_track_match(
+            "Song - Foo Remix",
+            "Artist",
+            "Song (Bar Remix)",
+            "Artist",
+            search_isrc="USRC12345678",
+            result_isrc="USRC12345678",
+        )
+        assert score < 0.6
+
+    def test_natural_dash_titles_are_preserved(self) -> None:
+        core, tags = extract_title_tags("Part 2 - The Return")
+        assert core == "Part 2 - The Return"
+        assert tags == []
+        core, tags = extract_title_tags("Song - Foo Remix")
+        assert core == "Song"
+        assert tags == ["foo remix"]
+
     def test_live_version_with_venue_matches_live_with_venue(self) -> None:
         score = score_track_match(
             "Song (Live Version at Wembley)",

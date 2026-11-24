@@ -93,6 +93,37 @@ class TestPersistProviderHistory:
         assert any("song_id=1" in m for m in messages)
 
     @patch("library_manager.tasks.download.logger")
+    def test_omitted_count_is_exact_and_total_within_reserve(self, mock_logger):
+        history = TaskHistoryFactory.create(
+            task_id="provider-history-exact", log_messages=[]
+        )
+        failed = [
+            (i, _result([ProviderOutcome("tidal", "search", "error", "boom")]))
+            for i in range(60)
+        ]
+        _persist_provider_history(history, failed)
+
+        refreshed = TaskHistory.objects.get(id=history.id)
+        messages = [e["message"] for e in refreshed.log_messages]
+        real = [m for m in messages if m.startswith("song_id=")]
+        marker = [m for m in messages if "omitted" in m]
+        assert len(messages) <= 45
+        assert len(marker) == 1
+        assert f"+{60 - len(real)} more" in marker[0]
+
+    @patch("library_manager.tasks.download.logger")
+    def test_semicolon_in_detail_does_not_invent_entries(self, mock_logger):
+        history = TaskHistoryFactory.create(
+            task_id="provider-history-semicolon", log_messages=[]
+        )
+        _persist_provider_history(
+            history,
+            [(1, _result([ProviderOutcome("tidal", "search", "error", "a; b; c")]))],
+        )
+        refreshed = TaskHistory.objects.get(id=history.id)
+        assert len(refreshed.log_messages) == 1
+
+    @patch("library_manager.tasks.download.logger")
     def test_omitted_count_is_explicit_and_capacity_is_reserved(self, mock_logger):
         history = TaskHistoryFactory.create(
             task_id="provider-history-bounded", log_messages=[]
