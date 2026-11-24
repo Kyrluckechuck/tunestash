@@ -2,6 +2,47 @@
 
 This guide covers debugging worker crashes, performance issues, and other runtime problems in the Tunestash.
 
+## Persistent Application Logs
+
+Application services write to `/config/logs/<service>.log` when
+`TUNESTASH_SERVICE` is set. This storage survives container recreation.
+Provider loggers must retain the root file handler after Celery initializes;
+`CELERY_WORKER_HIJACK_ROOT_LOGGER` is disabled and registered with Dynaconf.
+
+- Rotate at UTC midnight or approximately 5 MiB, whichever comes first.
+- Compress archives with gzip and retain complete daily intervals for 30 days,
+  unless the shared disk budget requires earlier deletion.
+- Share a **128 MiB routine budget** across service logs, including active files.
+  Maintenance runs on rotation and at most once a minute per process; active
+  growth between sweeps can temporarily exceed this budget. Active files are
+  never removed. The supported budget cannot exceed the 1 GiB emergency ceiling.
+- Use process-safe write/rotation locks and a separate shared archive-maintenance
+  lock. Routine writes do not wait on directory-wide maintenance.
+- Bound individual persistent diagnostic records to 16,384 characters.
+- Keep Docker stdout separately: the base Compose services use three 10 MiB
+  JSON log files each, with compressed archives. These settings require container
+  recreation and updating externally maintained production Compose files;
+  pulling a new image alone does not apply them.
+
+Avoid logging cookies, tokens, authorization headers, or signed media URLs.
+Normal root logging remains at INFO; broad DEBUG logging is not required to
+diagnose provider failures.
+
+## Legacy Availability Repair
+
+`repair_legacy_availability` defaults to dry-run. It only targets undownloaded
+songs marked unavailable after a temporary failure **before** the June 19, 2026
+fix (`c1763a2`, 20:02:34 UTC). Applying requires a new JSON audit file:
+
+```bash
+docker compose exec web python manage.py repair_legacy_availability
+docker compose exec web python manage.py repair_legacy_availability --apply --audit-file /config/legacy-availability-audit.json
+```
+
+The repair changes only `unavailable`; it preserves failure counters, timestamps,
+and reasons, and queues no downloads. Existing audit files are never overwritten.
+Do not bulk-retry the repaired population without safe recording matching.
+
 ## Worker Diagnostics
 
 The application includes comprehensive diagnostic logging to help debug worker crashes and performance issues.

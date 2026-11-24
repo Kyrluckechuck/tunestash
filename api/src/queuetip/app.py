@@ -78,12 +78,12 @@ def create_queuetip_app() -> FastAPI:
             close_old_connections()
         return response
 
-    from .context import get_context
+    from .context import QueuetipContext, get_context
     from .routes import router as auth_router
     from .schema import schema
 
     app.include_router(
-        GraphQLRouter(schema, context_getter=get_context),
+        GraphQLRouter[QueuetipContext, None](schema, context_getter=get_context),
         prefix="/graphql",
     )
     app.include_router(auth_router)
