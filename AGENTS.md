@@ -125,6 +125,11 @@ When returning GraphQL types from Django models, avoid accidental lazy database 
 
 Reference implementation: `api/src/services/album.py`.
 
+Uvicorn may construct the app while its event loop is already running. Defer
+validation that reads DB-backed settings to an async startup hook and run the
+sync validator through `sync_to_async`. Settings helpers may otherwise swallow
+async ORM errors and return defaults, falsely reporting missing credentials.
+
 ## Frontend Patterns
 
 When adding a new filter or query parameter to an Apollo-cached GraphQL query, update the relevant `keyArgs` array in `frontend/src/apolloClient.ts`. Otherwise Apollo may return cached results for different filter values.

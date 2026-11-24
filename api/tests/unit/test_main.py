@@ -19,6 +19,35 @@ class TestStartupTokenConfiguration:
         messages = [record.getMessage() for record in caplog.records]
         assert any("PO token validation failed" in msg for msg in messages) is warns
 
+    @pytest.mark.asyncio
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.parametrize("token,warns", [("A" * 120, False), (None, True)])
+    async def test_uvicorn_startup_reads_database_token(self, caplog, token, warns):
+        from django.db import connections
+
+        from asgiref.sync import sync_to_async
+
+        from library_manager.models import AppSetting
+
+        try:
+            if token is not None:
+                await sync_to_async(AppSetting.objects.update_or_create)(
+                    key="po_token", defaults={"value": token}
+                )
+            else:
+                await sync_to_async(AppSetting.objects.filter(key="po_token").delete)()
+            Settings.reset()
+            with patch("downloader.spotipy_tasks.OAuthSpotifyClient") as spotify:
+                spotify.return_value.sp = None
+                app = create_app()
+                await app.router.startup()
+                await app.router.shutdown()
+        finally:
+            await sync_to_async(connections.close_all)()
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("PO token validation failed" in msg for msg in messages) is warns
+
 
 class TestMainApplication:
     """Test main application functionality."""

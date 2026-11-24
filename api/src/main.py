@@ -140,6 +140,10 @@ def create_app() -> FastAPI:
             os.getenv("GIT_SHA", "unset"),
         )
 
+        # Uvicorn constructs the app inside its event loop. Settings validation
+        # reads Django models, so it must run in a sync thread at startup.
+        await sync_to_async(_validate_runtime_configuration)()
+
         @sync_to_async
         def cleanup_orphaned_tasks() -> None:
             try:
@@ -196,10 +200,6 @@ def create_app() -> FastAPI:
     static_root = getattr(dj_settings, "STATIC_ROOT", None)
     if static_root and Path(static_root).exists():
         app.mount("/static", StaticFiles(directory=str(static_root)), name="static")
-
-    # Run configuration validation after app is fully constructed
-    # (function defined below)
-    _validate_runtime_configuration()
 
     @app.get("/healthz")
     async def healthcheck() -> dict[str, object]:
