@@ -236,11 +236,32 @@ class Query:
         """Return the caller's export targets for this playlist (Spotify,
         Subsonic, future). One row per destination type at most."""
         account = _require_account(info)
-        targets = await sync_to_async(
-            lambda: list(
+
+        def _load() -> list[PlaylistExportTargetType]:
+            from library_manager.models import TaskHistory
+
+            from ..export_queue import export_sync_task_id
+
+            targets = list(
                 PlaylistExportTarget.objects.filter(
                     account=account, playlist_id=int(playlist_id)
                 ).select_related("spotify_link", "subsonic_connection")
             )
-        )()
-        return [PlaylistExportTargetType.from_model(t) for t in targets]
+            task_ids = {export_sync_task_id(target.id): target.id for target in targets}
+            active_task_ids = set(
+                TaskHistory.objects.filter(
+                    task_id__in=task_ids,
+                    status__in=TaskHistory.ACTIVE_STATUSES,
+                ).values_list("task_id", flat=True)
+            )
+            active_target_ids = {
+                task_ids[task_id] for task_id in active_task_ids if task_id in task_ids
+            }
+            return [
+                PlaylistExportTargetType.from_model(
+                    target, sync_queued=target.id in active_target_ids
+                )
+                for target in targets
+            ]
+
+        return await sync_to_async(_load)()

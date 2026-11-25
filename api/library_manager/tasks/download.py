@@ -928,8 +928,6 @@ def download_playlist(
         update_task_progress(
             task_history, 0.0, f"Starting playlist download: {playlist_url}"
         )
-        task_history.status = "RUNNING"
-        task_history.save()
 
         if check_task_cancellation(task_history):
             logger.info(f"Playlist download cancelled: {playlist_url}")

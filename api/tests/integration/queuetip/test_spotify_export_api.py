@@ -5,12 +5,15 @@ Covers:
 - createSpotifyExportTarget find-or-creates a Spotify PlaylistExportTarget
 """
 
+from unittest.mock import patch
+
 from django.utils import timezone
 
 import httpx
 import pytest
 from asgiref.sync import sync_to_async
 
+from library_manager.models import TaskHistory
 from queuetip.models import (
     Account,
     ExternalServiceLink,
@@ -20,6 +23,7 @@ from queuetip.models import (
 )
 from src.queuetip.app import app
 from src.queuetip.auth import SESSION_COOKIE, make_session_token
+from src.queuetip.export_queue import export_sync_task_id
 
 
 def _authed_client(account_id: int) -> httpx.AsyncClient:
@@ -105,6 +109,26 @@ mutation UpdateSyncTargetPreferences(
     excludeMyDownvotes
     minScoreThreshold
     targetSizeOverride
+  }
+}
+"""
+
+_MY_SYNC_TARGETS = """
+query MyPlaylistSyncTargets($playlistId: ID!) {
+  myPlaylistSyncTargets(playlistId: $playlistId) {
+    id
+    lastSyncStatus
+    syncQueued
+  }
+}
+"""
+
+_SYNC_NOW = """
+mutation SyncTargetNow($id: ID!) {
+  syncTargetNow(id: $id) {
+    id
+    lastSyncStatus
+    syncQueued
   }
 }
 """
@@ -220,3 +244,67 @@ async def test_update_sync_target_preferences_persists_values():
     assert target.exclude_my_downvotes is True
     assert target.min_score_threshold == 1
     assert target.target_size_override == 15
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_sync_target_now_queues_without_running_provider():
+    account = await _make_account()
+    playlist = await _make_playlist_with_owner(account)
+    link = await _make_spotify_link(account, service_user_id="queue-user")
+    target = await sync_to_async(PlaylistExportTarget.objects.create)(
+        account=account,
+        playlist=playlist,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        spotify_link=link,
+        last_sync_status=PlaylistExportTarget.STATUS_OK,
+    )
+
+    with patch("queuetip.tasks.sync_export_target.apply_async") as publish:
+        async with _authed_client(account.id) as client:
+            result = await _gql(client, _SYNC_NOW, {"id": str(target.id)})
+
+    assert "errors" not in result, result.get("errors")
+    payload = result["data"]["syncTargetNow"]
+    assert payload["id"] == str(target.id)
+    assert payload["syncQueued"] is True
+    # Enqueueing must not rewrite the last completed provider state.
+    assert payload["lastSyncStatus"] == PlaylistExportTarget.STATUS_OK
+    publish.assert_called_once()
+    assert publish.call_args.kwargs["args"][0] == target.id
+    assert len(publish.call_args.kwargs["args"]) == 2
+
+    claim = await sync_to_async(TaskHistory.objects.get)(
+        task_id=export_sync_task_id(target.id)
+    )
+    assert claim.status == "PENDING"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_my_playlist_sync_targets_reports_queued_claim():
+    account = await _make_account()
+    playlist = await _make_playlist_with_owner(account)
+    link = await _make_spotify_link(account, service_user_id="queued-query")
+    target = await sync_to_async(PlaylistExportTarget.objects.create)(
+        account=account,
+        playlist=playlist,
+        destination_type=PlaylistExportTarget.DEST_SPOTIFY,
+        spotify_link=link,
+    )
+    await sync_to_async(TaskHistory.objects.create)(
+        task_id=export_sync_task_id(target.id),
+        type="SYNC",
+        entity_type="PLAYLIST",
+        entity_id=str(playlist.id),
+        status="RUNNING",
+    )
+
+    async with _authed_client(account.id) as client:
+        result = await _gql(client, _MY_SYNC_TARGETS, {"playlistId": str(playlist.id)})
+
+    assert "errors" not in result, result.get("errors")
+    rows = result["data"]["myPlaylistSyncTargets"]
+    assert len(rows) == 1
+    assert rows[0]["id"] == str(target.id)
+    assert rows[0]["syncQueued"] is True

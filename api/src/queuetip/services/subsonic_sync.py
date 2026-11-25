@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from django.utils import timezone
 
@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from library_manager.models import Artist, Song
+    from queuetip.tasks import ExportGuard
 
 
 class CeleryTask(Protocol):
@@ -73,7 +74,9 @@ class SubsonicSyncError(Exception):
     """
 
 
-def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
+def sync_subsonic_target(
+    target_id: int, guard: "ExportGuard | None" = None
+) -> SubsonicSyncResult:
     """Resolve queuetip songs on the playlist behind `target_id` and push the
     matched set to the user's Subsonic server.
 
@@ -104,7 +107,7 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
     try:
         password = decrypt_secret(connection.password_encrypted)
     except CryptoError as exc:
-        _record_failure(target, f"Could not decrypt credentials: {exc}")
+        _record_failure(target, f"Could not decrypt credentials: {exc}", guard)
         raise SubsonicSyncError(str(exc)) from exc
 
     client = SubsonicClient(
@@ -113,6 +116,11 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
         password=password,
         auth_mode=connection.auth_mode,
     )
+
+    def _write(fields: dict[str, Any]) -> bool:
+        if guard is not None:
+            return bool(guard.write_target(**fields))
+        return bool(PlaylistExportTarget.objects.filter(pk=target.pk).update(**fields))
 
     # Roll the selection engine over the playlist's CURRENT contributions.
     # Each sync is a fresh random curation (queuetip's core mechanic) — we
@@ -158,7 +166,7 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
                 file_path=song.file_path,
             )
         except SubsonicAuthError as exc:
-            _record_failure(target, f"Authentication failed: {exc}")
+            _record_failure(target, f"Authentication failed: {exc}", guard)
             raise SubsonicSyncError(str(exc)) from exc
         except SubsonicError as exc:
             # Transient — log and skip, don't fail the whole sync.
@@ -179,31 +187,74 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
                 queued_downloads.append(song.id)
 
     # Push to the remote — create-or-update.
+    created_remote_id: str | None = None
+    persisted = False
+
+    def _cleanup_created() -> None:
+        if not created_remote_id:
+            return
+        if guard is not None and not guard.should_cleanup_created_remote(
+            persisted=persisted
+        ):
+            return
+        if guard is None and persisted:
+            return
+        try:
+            client.delete_playlist(created_remote_id)
+        except SubsonicError:
+            logger.warning(
+                "[subsonic-sync] cleanup failed for remote %s", created_remote_id
+            )
+
     try:
+        if guard is not None and not guard.is_active():
+            raise SubsonicSyncError("Sync target was removed.")
         if target.remote_playlist_id:
+            if not PlaylistExportTarget.objects.filter(pk=target.pk).exists():
+                raise SubsonicSyncError("Sync target was removed.")
             client.overwrite_playlist(target.remote_playlist_id, matched_ids)
         else:
-            target.remote_playlist_id = client.create_playlist(
-                playlist.name, matched_ids
-            )
+            if not PlaylistExportTarget.objects.filter(pk=target.pk).exists():
+                raise SubsonicSyncError("Sync target was removed.")
+            created_remote_id = client.create_playlist(playlist.name, matched_ids)
+            # Persist the new remote id before anything else can fail. A retry
+            # must update this playlist, never create a second one.
+            if not _write({"remote_playlist_id": created_remote_id}):
+                try:
+                    client.delete_playlist(created_remote_id)
+                except SubsonicError:
+                    logger.warning(
+                        "[subsonic-sync] target %s vanished after creating remote %s",
+                        target.id,
+                        created_remote_id,
+                    )
+                raise SubsonicSyncError("Sync target was removed.")
+            target.remote_playlist_id = created_remote_id
+            persisted = True
+        if guard is not None and not guard.is_active():
+            _cleanup_created()
+            raise SubsonicSyncError("Sync target was removed.")
     except SubsonicNotFoundError as exc:
-        _mark_remote_deleted(target)
+        _mark_remote_deleted(target, guard)
         raise SubsonicSyncError(
             "Subsonic playlist was deleted. Re-create from the queuetip UI."
         ) from exc
     except SubsonicAuthError as exc:
-        _record_failure(target, f"Authentication failed: {exc}")
+        _record_failure(target, f"Authentication failed: {exc}", guard)
         raise SubsonicSyncError(str(exc)) from exc
     except SubsonicError as exc:
-        _record_failure(target, f"Subsonic push failed: {exc}")
+        _record_failure(target, f"Subsonic push failed: {exc}", guard)
         raise SubsonicSyncError(str(exc)) from exc
 
-    _record_success(
+    if not _record_success(
         target,
         matched_count=len(matched_ids),
         total_count=len(roll.song_ids),
         unmatched_titles=unmatched_titles,
-    )
+        guard=guard,
+    ):
+        _cleanup_created()
+        raise SubsonicSyncError("Sync target was removed.")
 
     return SubsonicSyncResult(
         matched_count=len(matched_ids),
@@ -216,13 +267,22 @@ def sync_subsonic_target(target_id: int) -> SubsonicSyncResult:
 # ── Persistence helpers ─────────────────────────────────────────────────────
 
 
+def _write_target(
+    target: PlaylistExportTarget, guard: "ExportGuard | None", fields: dict[str, Any]
+) -> bool:
+    if guard is not None:
+        return bool(guard.write_target(**fields))
+    return bool(PlaylistExportTarget.objects.filter(pk=target.pk).update(**fields))
+
+
 def _record_success(
     target: PlaylistExportTarget,
     *,
     matched_count: int,
     total_count: int,
     unmatched_titles: list[str],
-) -> None:
+    guard: "ExportGuard | None" = None,
+) -> bool:
     target.last_synced_at = timezone.now()
     target.last_error = ""
     target.matched_track_count = matched_count
@@ -233,33 +293,55 @@ def _record_success(
         if unmatched_titles
         else PlaylistExportTarget.STATUS_OK
     )
-    target.save(
-        update_fields=[
-            "remote_playlist_id",
-            "last_synced_at",
-            "last_error",
-            "matched_track_count",
-            "total_track_count",
-            "unmatched_track_titles",
-            "last_sync_status",
-        ]
+    return _write_target(
+        target,
+        guard,
+        {
+            "remote_playlist_id": target.remote_playlist_id,
+            "last_synced_at": target.last_synced_at,
+            "last_error": target.last_error,
+            "matched_track_count": target.matched_track_count,
+            "total_track_count": target.total_track_count,
+            "unmatched_track_titles": target.unmatched_track_titles,
+            "last_sync_status": target.last_sync_status,
+        },
     )
 
 
-def _record_failure(target: PlaylistExportTarget, message: str) -> None:
+def _record_failure(
+    target: PlaylistExportTarget, message: str, guard: "ExportGuard | None" = None
+) -> None:
     target.last_synced_at = timezone.now()
     target.last_sync_status = PlaylistExportTarget.STATUS_FAILED
     target.last_error = message
-    target.save(update_fields=["last_synced_at", "last_sync_status", "last_error"])
+    _write_target(
+        target,
+        guard,
+        {
+            "last_synced_at": target.last_synced_at,
+            "last_sync_status": target.last_sync_status,
+            "last_error": target.last_error,
+        },
+    )
 
 
-def _mark_remote_deleted(target: PlaylistExportTarget) -> None:
+def _mark_remote_deleted(
+    target: PlaylistExportTarget, guard: "ExportGuard | None" = None
+) -> None:
     target.last_synced_at = timezone.now()
     target.last_sync_status = PlaylistExportTarget.STATUS_REMOTE_DELETED
     target.last_error = (
         "The Subsonic playlist was deleted. Click 'Recreate on Subsonic' to start over."
     )
-    target.save(update_fields=["last_synced_at", "last_sync_status", "last_error"])
+    _write_target(
+        target,
+        guard,
+        {
+            "last_synced_at": target.last_synced_at,
+            "last_sync_status": target.last_sync_status,
+            "last_error": target.last_error,
+        },
+    )
 
 
 def _maybe_queue_download(song: "Song") -> bool:

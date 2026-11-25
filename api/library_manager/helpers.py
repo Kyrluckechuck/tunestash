@@ -1,13 +1,19 @@
 import hashlib
 import logging
-from typing import Dict, List, Optional
+from datetime import timedelta
+from typing import Any, Dict, List, Optional, Sequence
 
+from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
+from django.utils import timezone
 
-from .models import Artist, TrackedPlaylist, TrackingTier
-from .tasks.core import TaskPriority
+from .models import Artist, TaskHistory, TrackedPlaylist, TrackingTier
 
 logger = logging.getLogger(__name__)
+
+# A PENDING claim that never started within this window is assumed lost
+# (purged queue, dropped message) and may be reclaimed.
+STALE_CLAIM_AGE = timedelta(hours=6)
 
 # Celery Task Deduplication Utilities
 
@@ -73,11 +79,20 @@ def is_task_pending_or_running(task_id: str) -> tuple[bool, str]:
     except TaskResult.DoesNotExist:
         pass
 
-    # Check TaskHistory (app tracking) - tracks tasks from when they begin executing
+    # Check TaskHistory (app tracking): enqueue claims (PENDING) and running tasks
     try:
         task_history = TaskHistory.objects.get(task_id=task_id)
         if task_history.status in task_history_active_states:
-            return True, f"TaskHistory.status={task_history.status}"
+            claim_expired = (
+                task_history.status == "PENDING"
+                and task_history.started_at < timezone.now() - STALE_CLAIM_AGE
+            )
+            if not claim_expired:
+                return True, f"TaskHistory.status={task_history.status}"
+            logger.info(
+                f"[DEDUP] Reclaiming stale PENDING claim for {task_id} "
+                f"(queued {task_history.started_at})"
+            )
         # Terminal state - delete so we can re-queue with same task_id
         logger.info(
             f"[DEDUP] Clearing stale TaskHistory for {task_id} "
@@ -90,12 +105,128 @@ def is_task_pending_or_running(task_id: str) -> tuple[bool, str]:
     return False, ""
 
 
+def enqueue_deduped(
+    task: Any,
+    *,
+    task_id: str,
+    args: Optional[Sequence[Any]] = None,
+    kwargs: Optional[Dict[str, Any]] = None,
+    priority: Optional[int] = None,
+    task_type: str = "UNKNOWN",
+    entity_type: str = "UNKNOWN",
+    entity_id: str = "unknown",
+    claim_nonce: Optional[str] = None,
+    nonce_key: str = "nonce",
+    initial_metadata: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Publish ``task`` unless an active task with ``task_id`` already exists.
+
+    The dedup decision is a single atomic INSERT of a PENDING TaskHistory row
+    (``task_id`` is unique), so two concurrent callers cannot both publish.
+    The task body adopts that row via ``create_task_history`` when it starts.
+    The claim is released if publishing fails.
+
+    ``claim_nonce`` / ``nonce_key`` are optional and backwards compatible.
+    When a nonce is supplied, the publish-failure cleanup also requires the
+    claim to still carry that nonce in its ``log_messages`` metadata, so a
+    newer generation that reused the same row cannot be deleted by a stale
+    publisher. Pass ``nonce_key="export_sync_nonce"`` for QueueTip claims.
+
+    ``initial_metadata`` is written in the same INSERT as the PENDING claim,
+    so publishers cannot race to overwrite another generation's nonce.
+
+    Returns True if the task was published, False if an active claim exists.
+    """
+    is_pending, reason = is_task_pending_or_running(task_id)
+    if is_pending:
+        logger.info(f"[DEDUP] Skipping {task_id}: {reason}")
+        return False
+
+    try:
+        with transaction.atomic():
+            claim = TaskHistory.objects.create(
+                task_id=task_id,
+                type=task_type,
+                entity_type=entity_type,
+                entity_id=str(entity_id),
+                status="PENDING",
+                log_messages=[initial_metadata] if initial_metadata else [],
+            )
+    except IntegrityError:
+        logger.info(f"[DEDUP] Skipping {task_id}: claimed concurrently")
+        return False
+
+    publish_kwargs: Dict[str, Any] = {"args": list(args or []), "task_id": task_id}
+    if kwargs:
+        publish_kwargs["kwargs"] = kwargs
+    if priority is not None:
+        publish_kwargs["priority"] = priority
+    try:
+        task.apply_async(**publish_kwargs)
+    except Exception:
+        cleanup = TaskHistory.objects.filter(pk=claim.pk, status="PENDING")
+        if claim_nonce is not None:
+            # The nonce lives in the JSON log metadata written by the caller
+            # at publish time; only release the exact attempt we created.
+            cleanup = cleanup.filter(log_messages__contains=[{nonce_key: claim_nonce}])
+        cleanup.delete()
+        raise
+    return True
+
+
+def enqueue_fetch_all_albums_for_artist(
+    artist_id: int, priority: Optional[int] = None, task: Any = None
+) -> bool:
+    """Queue an album fetch for an artist; one active fetch per artist."""
+    if task is None:
+        from .tasks import fetch_all_albums_for_artist as task
+    return enqueue_deduped(
+        task,
+        task_id=generate_task_id(
+            "library_manager.tasks.fetch_all_albums_for_artist", artist_id
+        ),
+        args=[artist_id],
+        priority=priority,
+        task_type="FETCH",
+        entity_type="ARTIST",
+        entity_id=str(artist_id),
+    )
+
+
+def enqueue_download_missing_albums_for_artist(
+    artist_id: int,
+    delay: int = 0,
+    priority: Optional[int] = None,
+    task: Any = None,
+) -> bool:
+    """Queue a missing-album download for an artist.
+
+    The task id ignores ``delay`` so every caller shares one id and dedupes
+    against the others.
+    """
+    if task is None:
+        from .tasks import download_missing_albums_for_artist as task
+    return enqueue_deduped(
+        task,
+        task_id=generate_task_id(
+            "library_manager.tasks.download_missing_albums_for_artist", artist_id
+        ),
+        args=[artist_id],
+        kwargs={"delay": delay},
+        priority=priority,
+        task_type="DOWNLOAD",
+        entity_type="ARTIST",
+        entity_id=str(artist_id),
+    )
+
+
 def update_tracked_artists_albums(
     already_enqueued_artists: List[int],
     artists_to_enqueue: List[Artist],
     priority: Optional[int] = None,
 ) -> None:
-    # Local import to avoid circular import during module initialization
+    # Local imports to avoid circular import during module initialization
+    from .task_priorities import TaskPriority
     from .tasks import fetch_all_albums_for_artist
 
     # Use background priority for artist sync if not specified
@@ -106,23 +237,8 @@ def update_tracked_artists_albums(
         if artist.id in already_enqueued_artists:
             continue
 
-        # Generate deterministic task ID for deduplication
-        task_id = generate_task_id(
-            "library_manager.tasks.fetch_all_albums_for_artist", artist.id
-        )
-
-        # Skip if task is already queued or running
-        is_pending, reason = is_task_pending_or_running(task_id)
-        if is_pending:
-            logger.info(
-                f"[DEDUP] Skipping fetch_all_albums_for_artist for artist {artist.id}: "
-                f"task_id={task_id}, reason={reason}"
-            )
-            continue
-
-        # Queue task asynchronously with deterministic ID for deduplication
-        fetch_all_albums_for_artist.apply_async(
-            args=[artist.id], task_id=task_id, priority=effective_priority
+        enqueue_fetch_all_albums_for_artist(
+            artist.id, priority=effective_priority, task=fetch_all_albums_for_artist
         )
 
 
@@ -131,8 +247,9 @@ def download_missing_tracked_artists(
     artists_to_enqueue: List[Artist],
     priority: Optional[int] = None,
 ) -> None:
-    # Local import to avoid circular import during module initialization
+    # Local imports to avoid circular import during module initialization
     from .models import SpotifyRateLimitState
+    from .task_priorities import TaskPriority
     from .tasks import download_missing_albums_for_artist
 
     # Check rate limit before queuing any tasks - prevents cascade failures
@@ -155,28 +272,11 @@ def download_missing_tracked_artists(
         if artist.id in already_enqueued_artists:
             continue
 
-        # Generate deterministic task ID for deduplication
-        task_id = generate_task_id(
-            "library_manager.tasks.download_missing_albums_for_artist",
+        enqueue_download_missing_albums_for_artist(
             artist.id,
             delay=5,
-        )
-
-        # Skip if task is already queued or running
-        is_pending, reason = is_task_pending_or_running(task_id)
-        if is_pending:
-            logger.info(
-                f"[DEDUP] Skipping download_missing_albums_for_artist for artist {artist.id}: "
-                f"task_id={task_id}, reason={reason}"
-            )
-            continue
-
-        # Queue the task asynchronously with deterministic ID for deduplication
-        download_missing_albums_for_artist.apply_async(
-            args=[artist.id],
-            kwargs={"delay": 5},
-            task_id=task_id,
             priority=effective_priority,
+            task=download_missing_albums_for_artist,
         )
 
 
@@ -185,8 +285,9 @@ def download_non_enqueued_playlists(
     playlists_to_enqueue: List[TrackedPlaylist],
     priority: Optional[int] = None,
 ) -> None:
-    # Local import to avoid circular import during module initialization
+    # Local imports to avoid circular import during module initialization
     from .models import PlaylistStatus, SpotifyRateLimitState
+    from .task_priorities import TaskPriority
     from .tasks import download_playlist, sync_deezer_playlist
 
     logger.info(
@@ -236,19 +337,16 @@ def download_non_enqueued_playlists(
             task_id = generate_task_id(
                 "library_manager.tasks.sync_deezer_playlist", playlist.id
             )
-            is_pending, reason = is_task_pending_or_running(task_id)
-            if is_pending:
-                logger.info(
-                    f"[DEDUP] Skipping sync_deezer_playlist for '{playlist.name}': "
-                    f"task_id={task_id}, reason={reason}"
-                )
-                continue
-            sync_deezer_playlist.apply_async(
-                args=[playlist.id],
+            if enqueue_deduped(
+                sync_deezer_playlist,
                 task_id=task_id,
+                args=[playlist.id],
                 priority=effective_priority,
-            )
-            logger.info(f"[ENQUEUE] Queued Deezer sync: {playlist.name}")
+                task_type="SYNC",
+                entity_type="PLAYLIST",
+                entity_id=str(playlist.id),
+            ):
+                logger.info(f"[ENQUEUE] Queued Deezer sync: {playlist.name}")
         else:
             # Spotify playlist — skip if rate limited
             if spotify_rate_limited:
@@ -261,23 +359,19 @@ def download_non_enqueued_playlists(
                 tracking_tier=playlist.auto_track_tier,
             )
 
-            is_pending, reason = is_task_pending_or_running(task_id)
-            if is_pending:
-                logger.info(
-                    f"[DEDUP] Skipping download_playlist for '{playlist.name}': "
-                    f"task_id={task_id}, reason={reason}"
-                )
-                continue
-
-            download_playlist.apply_async(
+            if enqueue_deduped(
+                download_playlist,
+                task_id=task_id,
                 kwargs={
                     "playlist_url": playlist.url,
                     "tracking_tier": playlist.auto_track_tier,
                 },
-                task_id=task_id,
                 priority=effective_priority,
-            )
-            logger.info(f"[ENQUEUE] Queued Spotify download: {playlist.name}")
+                task_type="DOWNLOAD",
+                entity_type="PLAYLIST",
+                entity_id=str(playlist.id),
+            ):
+                logger.info(f"[ENQUEUE] Queued Spotify download: {playlist.name}")
 
 
 def enqueue_playlists(
@@ -320,18 +414,14 @@ def enqueue_batch_artist_operations(
 
         # Enqueue operations based on artist status
         if "fetch" in operations:
-            from .tasks import fetch_all_albums_for_artist
-
             # fetch_all_albums_for_artist doesn't accept extra parameters
-            fetch_all_albums_for_artist.delay(artist.id)
-            operation_counts["fetch"] = operation_counts.get("fetch", 0) + 1
+            if enqueue_fetch_all_albums_for_artist(artist.id):
+                operation_counts["fetch"] = operation_counts.get("fetch", 0) + 1
 
         if "download" in operations and artist.tracking_tier >= TrackingTier.TRACKED:
-            from .tasks import download_missing_albums_for_artist
-
             # Only download task accepts the delay parameter
-            download_missing_albums_for_artist.delay(artist.id, **extra_args)
-            operation_counts["download"] = operation_counts.get("download", 0) + 1
+            if enqueue_download_missing_albums_for_artist(artist.id, **extra_args):
+                operation_counts["download"] = operation_counts.get("download", 0) + 1
 
     return operation_counts
 

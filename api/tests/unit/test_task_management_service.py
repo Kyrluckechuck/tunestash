@@ -287,9 +287,14 @@ class TestTaskManagementService:
     async def test_cancel_running_tasks_by_name_success(self, task_management_service):
         """Test cancelling running tasks by name successfully."""
         with (
-            patch("library_manager.models.TaskHistory"),
+            patch("library_manager.models.TaskHistory") as mock_task_history,
             patch("src.services.task_management.sync_to_async") as mock_sync_to_async,
         ):
+            # Conditional cancel update succeeds for each running row
+            mock_task_history.objects.filter.return_value.aupdate = AsyncMock(
+                return_value=1
+            )
+
             # Mock running tasks
             mock_task1 = Mock()
             mock_task1.task_id = "task_1"

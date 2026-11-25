@@ -73,7 +73,8 @@ def test_metadata_update_migrates_file_without_redownload(tmp_path):
     song.refresh_from_db()
     destination = tmp_path / "New Artist" / "New Album" / "New Artist - Old Song.m4a"
     assert destination.is_file()
-    assert not (tmp_path / "Old Artist" / "Old Album" / "old-file.m4a").exists()
+    # The original is intentionally retained; no automatic unlink is done.
+    assert (tmp_path / "Old Artist" / "Old Album" / "old-file.m4a").is_file()
     assert song.downloaded is True
     assert song.file_path == str(destination)
     update_tags.assert_called_once()

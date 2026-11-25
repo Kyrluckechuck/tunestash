@@ -109,8 +109,6 @@ class TestHelpers(TestCase):
         self, mock_download, mock_fetch
     ):
         """Test that enqueue_batch_artist_operations uses database IDs."""
-        from unittest.mock import call
-
         artists = Artist.objects.filter(tracking_tier=1)
 
         operation_counts = enqueue_batch_artist_operations(
@@ -118,17 +116,12 @@ class TestHelpers(TestCase):
         )
 
         # Verify operations were called with database IDs using .delay()
-        expected_fetch_calls = [
-            call(self.artist1.id),
-            call(self.artist2.id),
-        ]
-        expected_download_calls = [
-            call(self.artist1.id),
-            call(self.artist2.id),
-        ]
-
-        mock_fetch.delay.assert_has_calls(expected_fetch_calls, any_order=True)
-        mock_download.delay.assert_has_calls(expected_download_calls, any_order=True)
+        assert sorted(
+            c.kwargs["args"][0] for c in mock_fetch.apply_async.call_args_list
+        ) == [self.artist1.id, self.artist2.id]
+        assert sorted(
+            c.kwargs["args"][0] for c in mock_download.apply_async.call_args_list
+        ) == [self.artist1.id, self.artist2.id]
 
         # Verify operation counts
         assert operation_counts["fetch"] == 2
@@ -140,8 +133,6 @@ class TestHelpers(TestCase):
         self, mock_download, mock_fetch
     ):
         """Test that enqueue_artist_sync_with_download uses database IDs."""
-        from unittest.mock import call
-
         artists = Artist.objects.filter(tracking_tier=1)
 
         operation_counts = enqueue_artist_sync_with_download(
@@ -150,18 +141,17 @@ class TestHelpers(TestCase):
 
         # Verify operations were called with database IDs using .delay()
         # fetch task doesn't accept extra args
-        expected_fetch_calls = [
-            call(self.artist1.id),
-            call(self.artist2.id),
-        ]
+        assert sorted(
+            c.kwargs["args"][0] for c in mock_fetch.apply_async.call_args_list
+        ) == [self.artist1.id, self.artist2.id]
         # download task accepts delay kwarg
-        expected_download_calls = [
-            call(self.artist1.id, delay=0),
-            call(self.artist2.id, delay=0),
-        ]
-
-        mock_fetch.delay.assert_has_calls(expected_fetch_calls, any_order=True)
-        mock_download.delay.assert_has_calls(expected_download_calls, any_order=True)
+        assert all(
+            c.kwargs["kwargs"] == {"delay": 0}
+            for c in mock_download.apply_async.call_args_list
+        )
+        assert sorted(
+            c.kwargs["args"][0] for c in mock_download.apply_async.call_args_list
+        ) == [self.artist1.id, self.artist2.id]
 
         # Verify operation counts
         assert operation_counts["fetch"] == 2
@@ -176,8 +166,8 @@ class TestHelpers(TestCase):
             artists, auto_download=False
         )
 
-        # Should only call fetch.delay(), not download
-        assert mock_fetch.delay.call_count == 2
+        # Should only enqueue fetch, not download
+        assert mock_fetch.apply_async.call_count == 2
         assert operation_counts["fetch"] == 2
         assert "download" not in operation_counts
 

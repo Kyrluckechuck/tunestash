@@ -14,7 +14,9 @@ import re
 import time
 import unicodedata
 import uuid
-from typing import Optional, cast
+from typing import Any, Optional, cast
+
+from django.utils import timezone
 
 import psutil
 from celery.utils.log import get_task_logger
@@ -119,6 +121,37 @@ def create_task_history(
     # Check if task history already exists for this task
     existing_task = TaskHistory.objects.filter(task_id=generated_task_id).first()
     if existing_task:
+        if existing_task.status == "PENDING":
+            # Adopt the claim made at enqueue time (see enqueue_deduped). A
+            # reused claim can still hold lifecycle data from an earlier run,
+            # so reset every per-attempt field, not just the timestamps.
+            # The conditional UPDATE keeps this from reviving a row that was
+            # CANCELLED/COMPLETED between the read and the write.
+            now = timezone.now()
+            fields: dict[str, Any] = {
+                "status": "RUNNING",
+                "started_at": now,
+                "last_heartbeat": now,
+                "completed_at": None,
+                "error_message": None,
+                "duration_seconds": None,
+                "progress_percentage": 0.0,
+                "log_messages": [],
+            }
+            if task_type:
+                fields["type"] = task_type
+            if entity_type:
+                fields["entity_type"] = entity_type
+            if entity_id:
+                fields["entity_id"] = str(entity_id)
+            updated = TaskHistory.objects.filter(
+                pk=existing_task.pk, status="PENDING"
+            ).update(**fields)
+            if not updated:
+                # A terminal write won the race; do not hand the caller a stale
+                # object that looks RUNNING.
+                existing_task.refresh_from_db(fields=["status"])
+        existing_task.refresh_from_db()
         return existing_task
 
     # Log memory usage at task start
@@ -140,12 +173,39 @@ def update_task_progress(
     task_history: TaskHistory, progress: float, message: Optional[str] = None
 ) -> None:
     """Update task progress, heartbeat, and add log message"""
-    task_history.status = "RUNNING"
-    task_history.progress_percentage = progress
-    task_history.update_heartbeat()  # Update heartbeat on progress
+    # Conditional UPDATE: a cancel/finish written by another process must not be
+    # reverted to RUNNING by this stale in-memory instance.
+    now = timezone.now()
+    updated = TaskHistory.objects.filter(
+        pk=task_history.pk, status__in=TaskHistory.ACTIVE_STATUSES
+    ).update(status="RUNNING", progress_percentage=progress, last_heartbeat=now)
+    if updated:
+        task_history.status = "RUNNING"
+        task_history.progress_percentage = progress
+        task_history.last_heartbeat = now
+    else:
+        task_history.refresh_from_db(fields=["status"])
     if message:
         task_history.add_log_message(message)
-    task_history.save()
+
+
+def mark_task_running(task_history: TaskHistory) -> bool:
+    """Move a task row to RUNNING without clobbering a concurrent terminal write.
+
+    Conditional UPDATE restricted to non-terminal statuses: a CANCELLED or
+    completed row written by another process is never revived by a stale
+    in-memory copy. Returns True when this call performed the transition.
+    """
+    now = timezone.now()
+    updated = TaskHistory.objects.filter(
+        pk=task_history.pk, status__in=TaskHistory.ACTIVE_STATUSES
+    ).update(status="RUNNING", last_heartbeat=now)
+    if updated:
+        task_history.status = "RUNNING"
+        task_history.last_heartbeat = now
+    else:
+        task_history.refresh_from_db(fields=["status"])
+    return bool(updated)
 
 
 def update_task_heartbeat(task_history: TaskHistory) -> None:

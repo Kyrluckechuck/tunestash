@@ -13,6 +13,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
 
+from downloader.filesystem_safety import (
+    UnsafePathError,
+    is_within,
+    sanitize_component,
+)
+
 from .audio_converter import AudioConversionError, convert_flac_to_m4a
 from .base import DownloadProvider, QualityPreference, TrackMatch, TrackMetadata
 from .metadata import MetadataEmbedder
@@ -461,8 +467,18 @@ class DownloadProviderChain:
 
             ext = self._get_expected_extension(provider_name)
             album_dir = self._output_dir / safe_artist / safe_album
-            album_dir.mkdir(parents=True, exist_ok=True)
             output_path = album_dir / f"{base_filename}.{ext}"
+            # Fail closed if a sanitized name or a symlinked directory would
+            # place the download outside the configured output root.
+            if not is_within(output_path, self._output_dir):
+                raise UnsafePathError(
+                    f"Refusing download destination outside library: {output_path}"
+                )
+            album_dir.mkdir(parents=True, exist_ok=True)
+            if not is_within(output_path, self._output_dir):
+                raise UnsafePathError(
+                    f"Download destination escaped library: {output_path}"
+                )
 
             download_result = await provider.download_track(
                 track_match=match,
@@ -649,26 +665,12 @@ class DownloadProviderChain:
             return "m4a"
 
     def _sanitize_filename(self, name: str) -> str:
-        replacements = {
-            "/": "-",
-            "\\": "-",
-            ":": "-",
-            "*": "",
-            "?": "",
-            '"': "'",
-            "<": "",
-            ">": "",
-            "|": "-",
-        }
-        result = name
-        for old, new in replacements.items():
-            result = result.replace(old, new)
+        """Sanitize a provider-supplied filename component.
 
-        max_length = 100
-        if len(result) > max_length:
-            result = result[:max_length]
-
-        return result.strip()
+        Shares the metadata migration sanitizer so dot-only components cannot
+        turn a download directory into a ``..`` traversal segment.
+        """
+        return sanitize_component(name)
 
     async def close(self) -> None:
         """Clean up resources."""

@@ -136,6 +136,7 @@ type PlaylistExportTargetType {
   minScoreThreshold: Int
   targetSizeOverride: Int
   uniqueVersionsOnly: Boolean!
+  syncQueued: Boolean!
   spotifyUserId: String
   subsonicConnection: SubsonicConnectionType
 }

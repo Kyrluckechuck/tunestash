@@ -36,8 +36,6 @@ def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
         update_task_progress(
             task_history, 0.0, f"Starting fetch for artist {artist.name}"
         )
-        task_history.status = "RUNNING"
-        task_history.save()
 
         if not artist.deezer_id:
             msg = (

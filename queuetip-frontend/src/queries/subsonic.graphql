@@ -17,6 +17,7 @@ fragment PlaylistExportTargetFields on PlaylistExportTargetType {
   destinationType
   remotePlaylistId
   lastSyncStatus
+  syncQueued
   lastError
   lastSyncedAt
   unmatchedTrackTitles

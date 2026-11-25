@@ -6,6 +6,8 @@ import logging
 import os
 import signal
 import sys
+from datetime import datetime
+from datetime import timezone as dt_timezone
 from types import FrameType
 from typing import Any, Optional
 
@@ -19,6 +21,7 @@ from celery.signals import (
     task_prerun,
     worker_process_init,
     worker_process_shutdown,
+    worker_ready,
     worker_shutdown,
 )
 
@@ -28,6 +31,10 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
 # Initialize Django before creating Celery app
 
 django.setup()
+
+# Captured in the main process before prefork children exist; used to tell
+# this worker's tasks apart from ones orphaned by a previous worker.
+_PROCESS_BOOT_TIME = datetime.now(dt_timezone.utc)
 
 # Configure logger for signal handlers (before Celery app creation)
 logger = logging.getLogger("celery_diagnostics")
@@ -253,29 +260,40 @@ def worker_process_init_handler(sender: Any = None, **kwargs: Any) -> None:
         )
         log_process_state("Worker process initialization")
 
-    _cleanup_orphaned_tasks()
+    # Orphan cleanup is NOT done here: this hook fires for every prefork child,
+    # including respawns after a memory/time-limit recycle, while a sibling
+    # child may be mid-task. See worker_ready_handler.
 
     # Always check and log Spotify rate limit status on startup
     _log_spotify_rate_limit_status()
 
 
-def _cleanup_orphaned_tasks() -> None:
-    """Mark orphaned RUNNING tasks as FAILED on worker startup.
+@worker_ready.connect  # type: ignore[misc]
+def worker_ready_handler(sender: Any = None, **kwargs: Any) -> None:
+    """Fail tasks orphaned by the previous worker, once per worker boot."""
+    _cleanup_orphaned_tasks()
+
+
+def _cleanup_orphaned_tasks(boot_time: Optional[datetime] = None) -> None:
+    """Mark RUNNING tasks left over from a previous worker as FAILED.
 
     When a worker dies (OOM, Docker restart, SIGKILL), any tasks that were
     RUNNING get stuck in that state forever. With task_acks_late=True, Celery
     re-queues the messages, but stale RUNNING TaskHistory records block the
     dedup system (is_task_pending_or_running) from accepting the re-queued work.
 
-    Since this is a single-worker setup, any RUNNING task at startup is
-    provably orphaned — the previous worker process is dead.
+    Only rows whose last heartbeat predates this worker's boot are orphaned:
+    anything this worker started has a heartbeat at or after ``boot_time``.
     """
     from django.utils import timezone
 
     from library_manager.models import TaskHistory
 
+    cutoff = boot_time or _PROCESS_BOOT_TIME
     try:
-        orphaned = TaskHistory.objects.filter(status="RUNNING")
+        orphaned = TaskHistory.objects.filter(
+            status="RUNNING", last_heartbeat__lt=cutoff
+        )
         count = orphaned.count()
         if count > 0:
             orphaned.update(

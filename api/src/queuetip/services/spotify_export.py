@@ -14,7 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from dataclasses import dataclass, field
-from typing import cast
+from typing import TYPE_CHECKING, Any, cast
 
 from django.utils import timezone
 
@@ -36,6 +36,9 @@ from ..spotify_oauth import (
     is_hard_refresh_error,
     refresh_access_token,
 )
+
+if TYPE_CHECKING:
+    from queuetip.tasks import ExportGuard
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +74,9 @@ class SpotifyExportService:
     """Stateless namespace for pushing a queuetip playlist's state to Spotify."""
 
     @staticmethod
-    async def sync_target(target_id: int) -> "SpotifyExportResult":
+    async def sync_target(
+        target_id: int, guard: "ExportGuard | None" = None
+    ) -> "SpotifyExportResult":
         """Roll the playlist's current contributions and push them to Spotify.
 
         The "reshuffle & push" action for a Spotify target: runs the selection
@@ -128,31 +133,91 @@ class SpotifyExportService:
         )
         skipped_titles.extend(stale_titles)
 
+        async def _write(fields: dict[str, Any]) -> bool:
+            if guard is not None:
+                return bool(await sync_to_async(guard.write_target)(**fields))
+            return await sync_to_async(
+                lambda: bool(
+                    PlaylistExportTarget.objects.filter(pk=target.pk).update(**fields)
+                )
+            )()
+
+        async def _active() -> bool:
+            if guard is not None:
+                return bool(await sync_to_async(guard.is_active)())
+            return await sync_to_async(
+                lambda: PlaylistExportTarget.objects.filter(pk=target.pk).exists()
+            )()
+
+        created_playlist_id: str | None = None
         created_new = False
+        cleaned_up = False
+        persisted = False
+
+        async def _cleanup() -> None:
+            nonlocal cleaned_up
+            if not created_playlist_id or cleaned_up:
+                return
+            if guard is not None:
+                safe = await sync_to_async(guard.should_cleanup_created_remote)(
+                    persisted=persisted
+                )
+            else:
+                # Legacy direct call: only a never-persisted remote is safe.
+                safe = not persisted
+            if not safe:
+                return
+            cleaned_up = True
+            await sync_to_async(_best_effort_delete_remote)(
+                access_token, created_playlist_id
+            )
+
         try:
+            if not await _active():
+                raise SpotifyExportError("Sync target was removed.")
             if target.remote_playlist_id:
                 playlist_url = await sync_to_async(_replace_tracks)(
                     access_token, target.remote_playlist_id, valid_uris
                 )
             else:
-                playlist_url, playlist_id = await sync_to_async(_create_playlist)(
-                    access_token, link.service_user_id, playlist.name
-                )
+                playlist_url, created_playlist_id = await sync_to_async(
+                    _create_playlist
+                )(access_token, link.service_user_id, playlist.name)
+                # Persist before adding tracks: a later failure must retry this
+                # playlist, not create a second remote.
+                if not await _write({"remote_playlist_id": created_playlist_id}):
+                    await _cleanup()
+                    raise SpotifyExportError("Sync target was removed.")
+                target.remote_playlist_id = created_playlist_id
+                persisted = True
                 await sync_to_async(_add_tracks_in_batches)(
-                    access_token, playlist_id, valid_uris
+                    access_token, created_playlist_id, valid_uris
                 )
-                target.remote_playlist_id = playlist_id
                 created_new = True
+            # Re-fence after remote mutation before any final persistence.
+            if not await _active():
+                await _cleanup()
+                raise SpotifyExportError("Sync target was removed.")
         except RemotePlaylistDeletedError:
-            await sync_to_async(_mark_remote_deleted)(target)
+            await sync_to_async(_mark_remote_deleted)(target, guard)
+            raise
+        except SpotifyExportError:
+            if created_playlist_id and (
+                guard is None or not await sync_to_async(guard.is_active)()
+            ):
+                await _cleanup()
             raise
 
-        await sync_to_async(_record_success)(
+        recorded = await sync_to_async(_record_success)(
             target,
             matched_count=len(valid_uris),
             total_count=len(valid_uris) + len(skipped_titles),
             unmatched=skipped_titles,
+            guard=guard,
         )
+        if recorded is False:
+            await _cleanup()
+            raise SpotifyExportError("Sync target was removed.")
 
         return SpotifyExportResult(
             spotify_playlist_url=playlist_url,
@@ -317,12 +382,10 @@ def _discard_expired_spotify_link(
             "Spotify authorization expired. Please re-link Spotify in settings."
         )
         target.last_synced_at = timezone.now()
-        target.save(
-            update_fields=[
-                "last_sync_status",
-                "last_error",
-                "last_synced_at",
-            ]
+        PlaylistExportTarget.objects.filter(pk=target.pk).update(
+            last_sync_status=target.last_sync_status,
+            last_error=target.last_error,
+            last_synced_at=target.last_synced_at,
         )
     link.access_token = ""
     link.refresh_token = ""
@@ -345,13 +408,40 @@ def _discard_expired_spotify_link(
     )
 
 
+def _target_write(
+    target: PlaylistExportTarget, guard: "ExportGuard | None", fields: dict[str, Any]
+) -> bool:
+    if guard is not None:
+        return bool(guard.write_target(**fields))
+    return bool(PlaylistExportTarget.objects.filter(pk=target.pk).update(**fields))
+
+
+def _best_effort_delete_remote(access_token: str, playlist_id: str) -> None:
+    """Best-effort cleanup of a remote playlist created by this attempt."""
+    try:
+        response = httpx.delete(
+            f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/followers",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15.0,
+        )
+        if response.status_code not in (200, 204):
+            logger.warning(
+                "[EXPORT] Could not remove newly created playlist %s: %s",
+                playlist_id,
+                response.status_code,
+            )
+    except Exception as exc:  # noqa: BLE001 - best effort only
+        logger.warning("[EXPORT] Failed to delete remote playlist: %s", exc)
+
+
 def _record_success(
     target: PlaylistExportTarget,
     *,
     matched_count: int,
     total_count: int,
     unmatched: list[str],
-) -> None:
+    guard: "ExportGuard | None" = None,
+) -> bool:
     target.last_synced_at = timezone.now()
     target.last_error = ""
     target.matched_track_count = matched_count
@@ -362,20 +452,24 @@ def _record_success(
         if unmatched
         else PlaylistExportTarget.STATUS_OK
     )
-    target.save(
-        update_fields=[
-            "remote_playlist_id",  # set on first export
-            "last_synced_at",
-            "last_error",
-            "matched_track_count",
-            "total_track_count",
-            "unmatched_track_titles",
-            "last_sync_status",
-        ]
+    return _target_write(
+        target,
+        guard,
+        {
+            "remote_playlist_id": target.remote_playlist_id,
+            "last_synced_at": target.last_synced_at,
+            "last_error": target.last_error,
+            "matched_track_count": target.matched_track_count,
+            "total_track_count": target.total_track_count,
+            "unmatched_track_titles": target.unmatched_track_titles,
+            "last_sync_status": target.last_sync_status,
+        },
     )
 
 
-def _mark_remote_deleted(target: PlaylistExportTarget) -> None:
+def _mark_remote_deleted(
+    target: PlaylistExportTarget, guard: "ExportGuard | None" = None
+) -> None:
     """User deleted the Spotify playlist out from under us. Halt automation
     and surface the state — never silently re-create (lifecycle Principle 2)."""
     target.last_sync_status = PlaylistExportTarget.STATUS_REMOTE_DELETED
@@ -383,7 +477,15 @@ def _mark_remote_deleted(target: PlaylistExportTarget) -> None:
         "The Spotify playlist was deleted. Click 'Recreate on Spotify' to start over."
     )
     target.last_synced_at = timezone.now()
-    target.save(update_fields=["last_sync_status", "last_error", "last_synced_at"])
+    _target_write(
+        target,
+        guard,
+        {
+            "last_sync_status": target.last_sync_status,
+            "last_error": target.last_error,
+            "last_synced_at": target.last_synced_at,
+        },
+    )
 
 
 def _replace_tracks(access_token: str, playlist_id: str, uris: list[str]) -> str:

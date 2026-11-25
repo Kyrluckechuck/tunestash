@@ -93,9 +93,6 @@ def _sync_tracked_playlist_internal(
         update_task_progress(
             task_history, 0.0, f"Starting playlist sync: {tracked_playlist.name}"
         )
-        # Mark as running
-        task_history.status = "RUNNING"
-        task_history.save()
 
         # Enqueue the actual download task
         priority = 2  # Default priority since task.priority not available in Celery
@@ -169,8 +166,6 @@ def sync_deezer_playlist(
             entity_type="PLAYLIST",
             task_name="sync_deezer_playlist",
         )
-        task_history.status = "RUNNING"
-        task_history.save()
         update_task_progress(
             task_history, 0.0, f"Starting Deezer playlist sync: {playlist.name}"
         )

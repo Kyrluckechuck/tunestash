@@ -207,10 +207,12 @@ class TestPeriodicTasks(TestCase):
         #              unwanted_album (wanted=False),
         #              appears_on_album (album_group excluded),
         #              untracked_album (artist not tracked)
-        assert mock_download.delay.call_count == 2
+        assert mock_download.apply_async.call_count == 2
 
         # Extract the album IDs that were queued
-        queued_album_ids = [call[0][0] for call in mock_download.delay.call_args_list]
+        queued_album_ids = [
+            call.kwargs["args"][0] for call in mock_download.apply_async.call_args_list
+        ]
 
         # Verify correct albums were queued
         assert self.missing_album1.id in queued_album_ids
@@ -245,7 +247,7 @@ class TestPeriodicTasks(TestCase):
         queue_missing_albums_for_tracked_artists()
 
         # Should only queue 150 albums (not all 202 = 200 + 2 from setUp)
-        assert mock_download.delay.call_count == 150
+        assert mock_download.apply_async.call_count == 150
 
     @patch("library_manager.tasks.periodic.download_single_album")
     def test_queue_missing_albums_handles_no_albums(self, mock_download):
@@ -261,7 +263,7 @@ class TestPeriodicTasks(TestCase):
         queue_missing_albums_for_tracked_artists()
 
         # Should not queue any albums
-        assert mock_download.delay.call_count == 0
+        assert mock_download.apply_async.call_count == 0
 
     @patch("library_manager.tasks.periodic.download_single_album")
     def test_queue_missing_albums_applies_album_type_filter(self, mock_download):
@@ -285,7 +287,9 @@ class TestPeriodicTasks(TestCase):
         queue_missing_albums_for_tracked_artists()
 
         # Verify EP was not queued if 'ep' not in get_album_types_to_download()
-        queued_album_ids = [call[0][0] for call in mock_download.delay.call_args_list]
+        queued_album_ids = [
+            call.kwargs["args"][0] for call in mock_download.apply_async.call_args_list
+        ]
 
         if "ep" not in get_album_types_to_download():
             assert excluded_type_album.id not in queued_album_ids
@@ -299,7 +303,9 @@ class TestPeriodicTasks(TestCase):
         queue_missing_albums_for_tracked_artists()
 
         # Verify appears_on album was excluded
-        queued_album_ids = [call[0][0] for call in mock_download.delay.call_args_list]
+        queued_album_ids = [
+            call.kwargs["args"][0] for call in mock_download.apply_async.call_args_list
+        ]
         assert self.appears_on_album.id not in queued_album_ids
 
         # Verify the constant is configured as expected
@@ -313,7 +319,7 @@ class TestPeriodicTasks(TestCase):
         # Repeated raises so subsequent passes (oldest-first re-iterates the
         # same album when the failed call didn't make it into queued_ids)
         # still have side-effect values to consume.
-        mock_download.delay.side_effect = [
+        mock_download.apply_async.side_effect = [
             Exception("Queue error"),
             None,
             Exception("Queue error"),
@@ -326,7 +332,7 @@ class TestPeriodicTasks(TestCase):
         # Should have attempted to queue at least both setup albums, possibly
         # more due to the dual-direction scan retrying failed-and-not-deduped
         # albums.
-        assert mock_download.delay.call_count >= 2
+        assert mock_download.apply_async.call_count >= 2
 
 
 class TestRetryFailedSongsTask(TestCase):
@@ -849,6 +855,23 @@ class TestSongFailureBackoff(TestCase):
         assert song.get_retry_backoff_days() == 7
         assert song.unavailable is False
 
+    def test_backoff_days_temporary_error_zero_at_failed_count_zero(self):
+        """failed_count=0 must yield a nonnegative int backoff."""
+        from library_manager.models import FailureReason, Song
+
+        song = Song.objects.create(
+            name="Temp Zero",
+            gid="temp_backoff_zero",
+            primary_artist=self.artist,
+            failed_count=0,
+            downloaded=False,
+            failure_reason=FailureReason.TEMPORARY_ERROR,
+        )
+        backoff = song.get_retry_backoff_days()
+        assert isinstance(backoff, int)
+        assert backoff >= 0
+        assert backoff == 0
+
     def test_backoff_days_spotify_not_found(self):
         """Test longer backoff for Spotify 404 errors."""
         from library_manager.models import FailureReason, Song
@@ -1168,6 +1191,18 @@ class TestAlbumFailureSemantics(TestCase):
         album.failed_count = 50
         assert album.get_retry_backoff_days() == 7  # still capped at 7
 
+    def test_backoff_temporary_error_zero_at_failed_count_zero(self):
+        """failed_count=0 must yield a nonnegative int backoff."""
+        from library_manager.models import AlbumFailureReason
+
+        album = self._make_album(spotify_gid="album_backoff_zero")
+        album.failure_reason = AlbumFailureReason.TEMPORARY_ERROR
+        album.failed_count = 0
+        backoff = album.get_retry_backoff_days()
+        assert isinstance(backoff, int)
+        assert backoff >= 0
+        assert backoff == 0
+
     def test_is_ready_for_retry_respects_extended_backoff(self):
         """Album with high fc + extended backoff is not ready until window passes."""
         from datetime import timedelta
@@ -1334,9 +1369,11 @@ class TestPeriodicQueueDualDirection(TestCase):
 
         queue_missing_albums_for_tracked_artists()
 
-        queued_ids = {call[0][0] for call in mock_download.delay.call_args_list}
+        queued_ids = {
+            call.kwargs["args"][0] for call in mock_download.apply_async.call_args_list
+        }
         # 200 albums + budget 150 → 150 calls
-        assert mock_download.delay.call_count == 150
+        assert mock_download.apply_async.call_count == 150
 
         # The first 50 created (oldest by id) should at least partially be in
         # the queue thanks to the oldest-first pass (50-album budget).
@@ -1367,7 +1404,9 @@ class TestPeriodicQueueDualDirection(TestCase):
         queue_missing_albums_for_tracked_artists()
 
         # Should queue exactly 3 (deduped), not 6
-        queued_ids = [call[0][0] for call in mock_download.delay.call_args_list]
+        queued_ids = [
+            call.kwargs["args"][0] for call in mock_download.apply_async.call_args_list
+        ]
         assert len(queued_ids) == 3
         assert set(queued_ids) == {x.id for x in a}
 
@@ -1641,7 +1680,7 @@ class TestTieredDownloadQueue(TestCase):
 
         queue_missing_albums_for_tracked_artists()
 
-        calls = [c.args[0] for c in mock_dl.delay.call_args_list]
+        calls = [c.kwargs["args"][0] for c in mock_dl.apply_async.call_args_list]
         assert self.fav_album.id in calls
         assert self.tracked_album.id in calls
         fav_idx = calls.index(self.fav_album.id)
@@ -1659,8 +1698,8 @@ class TestTieredDownloadQueue(TestCase):
 
         queue_missing_albums_for_tracked_artists()
 
-        assert mock_dl.delay.called
-        queued_ids = [c.args[0] for c in mock_dl.delay.call_args_list]
+        assert mock_dl.apply_async.called
+        queued_ids = [c.kwargs["args"][0] for c in mock_dl.apply_async.call_args_list]
         assert self.tracked_album.id in queued_ids
         assert self.fav_album.id not in queued_ids
 
@@ -1683,7 +1722,7 @@ class TestTieredDownloadQueue(TestCase):
 
         queue_missing_albums_for_tracked_artists()
 
-        queued_ids = [c.args[0] for c in mock_dl.delay.call_args_list]
+        queued_ids = [c.kwargs["args"][0] for c in mock_dl.apply_async.call_args_list]
         # Total must not exceed 150
         assert len(queued_ids) <= 150
         # The tracked album must not have been queued (favourites filled all slots)

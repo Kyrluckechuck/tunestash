@@ -352,9 +352,9 @@ class ArtistService(BaseService[Artist]):
                 if updated_fields:
                     await existing.asave(update_fields=updated_fields)
 
-                from library_manager.tasks import fetch_all_albums_for_artist
+                from library_manager.helpers import enqueue_fetch_all_albums_for_artist
 
-                await sync_to_async(fetch_all_albums_for_artist.delay)(existing.id)
+                await sync_to_async(enqueue_fetch_all_albums_for_artist)(existing.id)
 
                 return MutationResult(
                     success=True,
@@ -368,9 +368,9 @@ class ArtistService(BaseService[Artist]):
                 tracking_tier=TrackingTier.TRACKED,
             )
 
-            from library_manager.tasks import fetch_all_albums_for_artist
+            from library_manager.helpers import enqueue_fetch_all_albums_for_artist
 
-            await sync_to_async(fetch_all_albums_for_artist.delay)(django_artist.id)
+            await sync_to_async(enqueue_fetch_all_albums_for_artist)(django_artist.id)
 
             return MutationResult(
                 success=True,
@@ -446,9 +446,11 @@ class ArtistService(BaseService[Artist]):
 
         if auto_download:
             # Local import to avoid circular import during module initialization
-            from library_manager.tasks import download_missing_albums_for_artist
+            from library_manager.helpers import (
+                enqueue_download_missing_albums_for_artist,
+            )
 
-            await sync_to_async(download_missing_albums_for_artist.delay)(
+            await sync_to_async(enqueue_download_missing_albums_for_artist)(
                 django_artist.id
             )
 
@@ -459,9 +461,9 @@ class ArtistService(BaseService[Artist]):
             # Convert string to int since frontend sends database ID
             artist_db_id = int(artist_id)
             django_artist = await self.model.objects.aget(id=artist_db_id)
-            from library_manager.tasks import fetch_all_albums_for_artist
+            from library_manager.helpers import enqueue_fetch_all_albums_for_artist
 
-            await sync_to_async(fetch_all_albums_for_artist.delay)(django_artist.id)
+            await sync_to_async(enqueue_fetch_all_albums_for_artist)(django_artist.id)
             return await self._to_graphql_type_async(django_artist)
         except ValueError as exc:
             raise ValueError(f"Invalid artist ID format: {artist_id}") from exc
@@ -478,9 +480,11 @@ class ArtistService(BaseService[Artist]):
 
             # Start download task for missing albums
             # Local import to avoid circular import during module initialization
-            from library_manager.tasks import download_missing_albums_for_artist
+            from library_manager.helpers import (
+                enqueue_download_missing_albums_for_artist,
+            )
 
-            await sync_to_async(download_missing_albums_for_artist.delay)(
+            await sync_to_async(enqueue_download_missing_albums_for_artist)(
                 django_artist.id
             )
 

@@ -47,7 +47,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
   });
   const connection = connData?.mySubsonicConnection ?? null;
 
-  const { data: targetsData, refetch } = useQuery(MyPlaylistSyncTargetsDocument, {
+  const { data: targetsData, refetch, startPolling, stopPolling } = useQuery(MyPlaylistSyncTargetsDocument, {
     variables: { playlistId },
     fetchPolicy: "cache-and-network",
   });
@@ -55,6 +55,14 @@ export function SendToSubsonicCard({ playlistId }: Props) {
     targetsData?.myPlaylistSyncTargets.find(
       (t) => t.destinationType === "subsonic",
     ) ?? null;
+
+  React.useEffect(() => {
+    if (target?.syncQueued) {
+      startPolling(2000);
+    } else {
+      stopPolling();
+    }
+  }, [target?.syncQueued, startPolling, stopPolling]);
 
   const [createTarget, { loading: creating }] = useMutation(
     CreateSubsonicSyncTargetDocument,
@@ -113,7 +121,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
         return;
       }
       await pushNow({ variables: { id: targetId } });
-      toast.success("Reshuffled & pushed to Subsonic.");
+      toast.success("Reshuffle queued for Subsonic.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Push failed.");
     }
@@ -166,7 +174,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
     if (!target) return;
     try {
       await recreateRemote({ variables: { id: target.id } });
-      toast.success("Re-created on Subsonic.");
+      toast.success("Subsonic recreate queued.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Recreate failed.");
     }
@@ -192,7 +200,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
   // Any in-flight mutation disables all action buttons so a push can't race a
   // remove/recreate (which create vs delete the same target). The push button's
   // spinner label still keys off the push action specifically.
-  const pushBusy = creating || pushing;
+  const pushBusy = creating || pushing || Boolean(target?.syncQueued);
   const busy = pushBusy || removing || recreating;
 
   return (
@@ -201,7 +209,7 @@ export function SendToSubsonicCard({ playlistId }: Props) {
         <CardTitle className="flex items-center gap-2 text-base">
           <Server className="h-4 w-4" />
           {connection.label}
-          {target ? <SyncStatusBadge status={target.lastSyncStatus} /> : null}
+          {target ? <SyncStatusBadge status={target.lastSyncStatus} syncQueued={target.syncQueued} /> : null}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -315,7 +323,8 @@ export function SendToSubsonicCard({ playlistId }: Props) {
               <Button onClick={handleReshufflePush} disabled={busy}>
                 {pushBusy ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Pushing…
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />{" "}
+                    {target?.syncQueued && !pushing ? "Queued…" : "Pushing…"}
                   </>
                 ) : (
                   <>
@@ -336,7 +345,20 @@ export function SendToSubsonicCard({ playlistId }: Props) {
   );
 }
 
-function SyncStatusBadge({ status }: { status: string }) {
+function SyncStatusBadge({
+  status,
+  syncQueued,
+}: {
+  status: string;
+  syncQueued: boolean;
+}) {
+  if (syncQueued) {
+    return (
+      <Badge variant="secondary" className="gap-1 ml-auto">
+        <Loader2 className="h-3 w-3 animate-spin" /> Queued
+      </Badge>
+    );
+  }
   if (status === "ok") {
     return (
       <Badge variant="default" className="gap-1 ml-auto">

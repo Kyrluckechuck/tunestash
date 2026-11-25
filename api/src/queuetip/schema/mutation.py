@@ -30,7 +30,7 @@ from ..auth import make_magic_link_token
 from ..auth_flows import create_login_code_challenge
 from ..client_ip import get_client_ip
 from ..context import QueuetipContext
-from ..crypto import encrypt_secret
+from ..crypto import CryptoError, decrypt_secret, encrypt_secret
 from ..email import send_magic_link_email
 from ..errors import AuthRequiredError, NotFoundError, ValidationError
 from ..graphql_types import (
@@ -813,40 +813,15 @@ class Mutation:  # pylint: disable=too-many-public-methods
         info: Info[QueuetipContext, None],
         id: strawberry.ID,
     ) -> PlaylistExportTargetType:
-        """Trigger a sync run immediately and wait for the result. Used by
-        the 'Sync now' UI button. Long-running tasks return after the run."""
+        """Queue a sync run immediately. The mutation returns the target with
+        ``syncQueued=true``; the worker performs the provider push."""
         account = _require_account(info)
-        target = await sync_to_async(_resolve_owned_target)(account, int(id))
-        # Run synchronously so the GraphQL response contains the post-sync
-        # state — better UX than a fire-and-forget task and a poll loop.
-        if target.destination_type == PlaylistExportTarget.DEST_SUBSONIC:
-            from ..services.subsonic_sync import SubsonicSyncError, sync_subsonic_target
-
-            try:
-                await sync_to_async(sync_subsonic_target)(target.id)
-            except SubsonicSyncError as exc:
-                raise ValidationError(str(exc)) from exc
-        elif target.destination_type == PlaylistExportTarget.DEST_SPOTIFY:
-            from ..services.spotify_export import (
-                RemotePlaylistDeletedError,
-                SpotifyExportError,
-                SpotifyExportService,
-            )
-
-            try:
-                await SpotifyExportService.sync_target(target.id)
-            except RemotePlaylistDeletedError as exc:
-                raise ValidationError(str(exc)) from exc
-            except SpotifyExportError as exc:
-                raise ValidationError(str(exc)) from exc
-        else:
-            raise ValidationError(
-                f"Unknown destination_type: {target.destination_type}"
-            )
-
-        # Refresh after the sync ran so we return post-sync state.
-        target = await sync_to_async(_resolve_owned_target)(account, int(id))
-        return PlaylistExportTargetType.from_model(target)
+        target = await sync_to_async(_queue_export_target)(
+            account, int(id), recreate=False
+        )
+        return PlaylistExportTargetType.from_model(
+            target, sync_queued=await sync_to_async(_target_sync_active)(target.id)
+        )
 
     @strawberry.mutation
     async def recreate_sync_target_remote(
@@ -855,46 +830,15 @@ class Mutation:  # pylint: disable=too-many-public-methods
         id: strawberry.ID,
     ) -> PlaylistExportTargetType:
         """Recover from STATUS_REMOTE_DELETED by clearing remote_playlist_id
-        and triggering a fresh create. The explicit-intent escape hatch
+        and queueing a fresh create. The explicit-intent escape hatch
         required by Lifecycle Principle 2."""
         account = _require_account(info)
-
-        def _clear_and_sync() -> PlaylistExportTarget:
-            target = _resolve_owned_target(account, int(id))
-            target.remote_playlist_id = ""
-            target.last_sync_status = PlaylistExportTarget.STATUS_PENDING
-            target.last_error = ""
-            target.save(
-                update_fields=[
-                    "remote_playlist_id",
-                    "last_sync_status",
-                    "last_error",
-                ]
-            )
-            return target
-
-        target = await sync_to_async(_clear_and_sync)()
-
-        if target.destination_type == PlaylistExportTarget.DEST_SUBSONIC:
-            from ..services.subsonic_sync import SubsonicSyncError, sync_subsonic_target
-
-            try:
-                await sync_to_async(sync_subsonic_target)(target.id)
-            except SubsonicSyncError as exc:
-                raise ValidationError(str(exc)) from exc
-        elif target.destination_type == PlaylistExportTarget.DEST_SPOTIFY:
-            from ..services.spotify_export import (
-                SpotifyExportError,
-                SpotifyExportService,
-            )
-
-            try:
-                await SpotifyExportService.sync_target(target.id)
-            except SpotifyExportError as exc:
-                raise ValidationError(str(exc)) from exc
-
-        target = await sync_to_async(_resolve_owned_target)(account, int(id))
-        return PlaylistExportTargetType.from_model(target)
+        target = await sync_to_async(_queue_export_target)(
+            account, int(id), recreate=True
+        )
+        return PlaylistExportTargetType.from_model(
+            target, sync_queued=await sync_to_async(_target_sync_active)(target.id)
+        )
 
 
 # ── Helpers for Subsonic mutations (sync) ──────────────────────────────────
@@ -1117,6 +1061,103 @@ def _create_spotify_export_target(
     return _select_related_target(target.id)
 
 
+def _target_sync_active(target_id: int) -> bool:
+    from ..export_queue import is_export_sync_active
+
+    return is_export_sync_active(target_id)
+
+
+def _validate_target_credentials(target: PlaylistExportTarget) -> None:
+    """Fail before enqueue when the target cannot possibly authenticate.
+
+    This is a local/structural check only; the worker still performs the real
+    provider authentication without holding up uvicorn.
+    """
+    if target.destination_type == PlaylistExportTarget.DEST_SUBSONIC:
+        conn = cast(SubsonicConnection, target.subsonic_connection)
+        if conn is None or conn.account_id != target.account_id:
+            raise ValidationError("Subsonic connection not found for this target.")
+        try:
+            decrypt_secret(conn.password_encrypted)
+        except CryptoError as exc:
+            raise ValidationError(
+                "Could not decrypt Subsonic credentials. Update the connection."
+            ) from exc
+        return
+
+    if target.destination_type == PlaylistExportTarget.DEST_SPOTIFY:
+        from src.queuetip.services.spotify_export import (
+            EXPIRED_SPOTIFY_SERVICE_USER_ID,
+        )
+
+        link = cast(ExternalServiceLink, target.spotify_link)
+        if (
+            link is None
+            or link.account_id != target.account_id
+            or link.service != ExternalServiceLink.SERVICE_SPOTIFY
+        ):
+            raise ValidationError("Spotify account not found for this target.")
+        if (
+            not link.refresh_token
+            or link.service_user_id == EXPIRED_SPOTIFY_SERVICE_USER_ID
+        ):
+            raise ValidationError(
+                "Spotify authorization expired. Please re-link Spotify in settings."
+            )
+        return
+
+    raise ValidationError(f"Unknown destination_type: {target.destination_type}")
+
+
+def _queue_export_target(
+    account: Account,
+    target_id: int,
+    *,
+    recreate: bool,
+) -> PlaylistExportTarget:
+    """Validate and enqueue one sync while holding the target row lock.
+
+    ``syncTargetNow`` and ``recreateSyncTargetRemote`` share this path and the
+    deterministic task id, so they cannot interleave remote work. The recreate
+    intent is recorded on the durable claim; the worker clears the remote id
+    only after it owns that claim, so a publish failure cannot lose a valid
+    remote playlist id.
+    """
+    from ..export_queue import enqueue_export_sync, is_export_sync_active
+
+    with transaction.atomic():
+        target = (
+            PlaylistExportTarget.objects.select_for_update()
+            .filter(id=target_id, account=account)
+            .first()
+        )
+        if target is None:
+            raise NotFoundError(f"Sync target {target_id} not found")
+
+        _validate_target_credentials(target)
+
+        if recreate:
+            if is_export_sync_active(target.id):
+                raise ValidationError(
+                    "A sync is already queued or running. Wait for it to finish "
+                    "before recreating."
+                )
+        elif target.last_sync_status == PlaylistExportTarget.STATUS_REMOTE_DELETED:
+            raise ValidationError(
+                "The remote playlist was deleted. Recreate it from the queuetip UI."
+            )
+
+        # Claim creation is serialized with deletion by the target row lock.
+        # No target state is mutated here: the worker applies staged recreate
+        # only after it wins the durable claim.
+        if not enqueue_export_sync(target, recreate=recreate):
+            raise ValidationError(
+                "A sync is already queued or running for this target."
+            )
+
+    return _select_related_target(target.id)
+
+
 def _select_related_target(target_id: int) -> PlaylistExportTarget:
     """Fetch a target with both credential FKs prefetched so converting it to
     the GraphQL type in an async resolver doesn't trigger a lazy DB load."""
@@ -1126,30 +1167,73 @@ def _select_related_target(target_id: int) -> PlaylistExportTarget:
 
 
 def _remove_target(account: Account, target_id: int, delete_remote: bool) -> None:
-    target = _resolve_owned_target(account, target_id)
-    if (
-        delete_remote
-        and target.destination_type == PlaylistExportTarget.DEST_SUBSONIC
-        and target.remote_playlist_id
-        and target.subsonic_connection_id
-    ):
-        from ..crypto import CryptoError, decrypt_secret
+    """Cancel the claim and delete the target in one target->claim transaction.
 
-        conn = cast(SubsonicConnection, target.subsonic_connection)
-        try:
-            password = decrypt_secret(conn.password_encrypted)
-            client = SubsonicClient(
-                server_url=conn.server_url,
-                username=conn.username,
-                password=password,
-                auth_mode=conn.auth_mode,
+    The optional remote delete happens after commit, never under row locks.
+    """
+    from library_manager.models import TaskHistory
+
+    from ..export_queue import export_sync_task_id
+
+    remote_delete: tuple[str, str, str, str, str] | None = None
+    with transaction.atomic():
+        target = (
+            PlaylistExportTarget.objects.select_for_update()
+            .filter(id=target_id, account=account)
+            .select_related("subsonic_connection")
+            .first()
+        )
+        if target is None:
+            raise NotFoundError(f"Sync target {target_id} not found")
+
+        claim = (
+            TaskHistory.objects.select_for_update()
+            .filter(
+                task_id=export_sync_task_id(target.id),
+                status__in=TaskHistory.ACTIVE_STATUSES,
             )
-            client.delete_playlist(target.remote_playlist_id)
+            .first()
+        )
+        if claim is not None:
+            claim.status = "CANCELLED"
+            claim.completed_at = timezone.now()
+            claim.save(update_fields=["status", "completed_at"])
+
+        if (
+            delete_remote
+            and target.destination_type == PlaylistExportTarget.DEST_SUBSONIC
+            and target.remote_playlist_id
+            and target.subsonic_connection_id
+        ):
+            conn = cast(SubsonicConnection, target.subsonic_connection)
+            secret = ""
+            try:
+                secret = decrypt_secret(conn.password_encrypted)
+            except CryptoError:
+                pass
+            remote_delete = (
+                conn.server_url,
+                conn.username,
+                conn.auth_mode,
+                secret,
+                target.remote_playlist_id,
+            )
+        target.delete()
+
+    # No DB row locks are held while making the outbound request.
+    if remote_delete is not None:
+        server_url, username, auth_mode, password, remote_id = remote_delete
+        try:
+            client = SubsonicClient(
+                server_url=server_url,
+                username=username,
+                password=password,
+                auth_mode=auth_mode,
+            )
+            client.delete_playlist(remote_id)
         except (CryptoError, SubsonicError):
-            # Best-effort cleanup — proceed to delete the local row even if
-            # the remote delete failed (user can clean it up manually).
+            # Best effort — the local row is already gone.
             pass
-    target.delete()
 
 
 def _resolve_owned_target(account: Account, target_id: int) -> PlaylistExportTarget:

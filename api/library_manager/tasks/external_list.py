@@ -16,7 +16,13 @@ from ..models import (
     TrackMappingCache,
     TrackMappingStatus,
 )
-from .core import TaskPriority, complete_task, create_task_history, logger
+from .core import (
+    TaskPriority,
+    complete_task,
+    create_task_history,
+    logger,
+    mark_task_running,
+)
 
 
 def _sync_external_list_internal(
@@ -34,8 +40,7 @@ def _sync_external_list_internal(
         entity_type="PLAYLIST",
         task_name="sync_external_list",
     )
-    task_history.status = "RUNNING"
-    task_history.save()
+    mark_task_running(task_history)
 
     try:
         provider = get_provider(external_list.source)

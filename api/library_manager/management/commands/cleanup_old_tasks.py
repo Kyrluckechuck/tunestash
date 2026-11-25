@@ -35,6 +35,7 @@ class Command(BaseCommand):
             self.stdout.write(f'  Total tasks: {stats["total_tasks"]}')
             self.stdout.write(f'  Completed tasks: {stats["completed_tasks"]}')
             self.stdout.write(f'  Failed tasks: {stats["failed_tasks"]}')
+            self.stdout.write(f'  Cancelled tasks: {stats["cancelled_tasks"]}')
             self.stdout.write(f'  Running tasks: {stats["running_tasks"]}')
             self.stdout.write(f'  Pending tasks: {stats["pending_tasks"]}')
             self.stdout.write(f'  Tasks with logs: {stats["tasks_with_logs"]}')
@@ -55,7 +56,7 @@ class Command(BaseCommand):
 
         cutoff_date = timezone.now() - timedelta(days=days_to_keep)
         old_tasks = TaskHistory.objects.filter(
-            status__in=["COMPLETED", "FAILED"], started_at__lt=cutoff_date
+            status__in=TaskHistory.TERMINAL_STATUSES, started_at__lt=cutoff_date
         )
 
         old_count = old_tasks.count()

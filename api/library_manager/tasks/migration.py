@@ -17,6 +17,7 @@ from .core import (
     complete_task,
     create_task_history,
     logger,
+    mark_task_running,
     normalize_name,
     update_task_progress,
 )
@@ -152,8 +153,6 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
             entity_type="ARTIST",
             task_name="migrate_artist_to_deezer",
         )
-        task_history.status = "RUNNING"
-        task_history.save()
         update_task_progress(
             task_history,
             0.0,
@@ -336,8 +335,7 @@ def resolve_all_artists_to_deezer(
         entity_type="SYSTEM",
         task_name="resolve_all_artists_to_deezer",
     )
-    task_history.status = "RUNNING"
-    task_history.save()
+    mark_task_running(task_history)
 
     try:
         queryset = Artist.objects.filter(

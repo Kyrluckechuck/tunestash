@@ -103,7 +103,9 @@ _STAT_COMPUTERS: dict[str, Any] = {
     "failed_songs": lambda: Song.objects.filter(
         downloaded=False, failed_count__gt=0
     ).count(),
-    "active_tasks": lambda: TaskHistory.objects.filter(status="IN_PROGRESS").count(),
+    "active_tasks": lambda: TaskHistory.objects.filter(
+        status__in=TaskHistory.ACTIVE_STATUSES
+    ).count(),
     "total_albums": _total_albums,
     "downloaded_albums": lambda: (
         _album_download_annotations().filter(dl=F("total"), total__gt=0).count()

@@ -13,6 +13,14 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from downloader.filesystem_safety import (
+    UnsafePathError,
+    assert_within,
+    is_within,
+    safe_join,
+    secure_write,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,11 +66,29 @@ def write_playlist_m3u(
     if not playlist_songs.exists():
         return None
 
-    playlist_dir = output_base_dir / playlist_dir_name
-    playlist_dir.mkdir(parents=True, exist_ok=True)
+    root = output_base_dir.resolve()
+    try:
+        # A configured directory name or a symlinked directory must not send
+        # playlist files outside the music library.
+        playlist_dir = safe_join(root, playlist_dir_name, fallback="Playlists")
+        if not is_within(playlist_dir, root):
+            logger.warning("Playlist directory outside library root; skipping")
+            return None
+        playlist_dir.mkdir(parents=True, exist_ok=True)
+        if not is_within(playlist_dir, root):
+            logger.warning("Playlist directory escaped library root; skipping")
+            return None
 
-    safe_name = _sanitize_playlist_name(playlist.name)
-    m3u_path = playlist_dir / f"TS - {safe_name}.m3u"
+        safe_name = _sanitize_playlist_name(playlist.name)
+        # The playlist name already has its 200-character limit applied; do not
+        # truncate the composed filename again (which would lose the extension).
+        m3u_path = assert_within(playlist_dir, f"TS - {safe_name}.m3u")
+        if not is_within(m3u_path, root):
+            logger.warning("Playlist target outside library root; skipping")
+            return None
+    except (UnsafePathError, OSError, ValueError) as exc:
+        logger.warning("Unsafe playlist destination: %s", exc)
+        return None
 
     lines = ["#EXTM3U", f"#PLAYLIST:TS | {playlist.name}"]
 
@@ -84,9 +110,20 @@ def write_playlist_m3u(
             except ValueError:
                 lines.append(str(file_path))
 
-    m3u_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    secure_write(m3u_path, "\n".join(lines) + "\n")
     logger.debug(f"Wrote M3U playlist to {m3u_path}")
     return m3u_path
+
+
+def _safe_song_path(path: Path, output_base_dir: Path) -> Optional[Path]:
+    """Return ``path`` only when it resolves inside the music library."""
+    root = output_base_dir.resolve()
+    try:
+        if is_within(path, root) and path.is_file() and not path.is_symlink():
+            return path
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Path]:  # type: ignore[name-defined]  # noqa: F821, E501
@@ -101,7 +138,7 @@ def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Pat
 
     # Direct match
     if song.downloaded and song.file_path_ref:
-        return Path(song.file_path_ref.path)
+        return _safe_song_path(Path(song.file_path_ref.path), output_base_dir)
 
     # ISRC fallback — prefer single > album > ep > compilation
     if song.isrc:
@@ -128,7 +165,7 @@ def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Pat
                 best_match = candidate
 
         if best_match and best_match.file_path_ref:
-            return Path(best_match.file_path_ref.path)
+            return _safe_song_path(Path(best_match.file_path_ref.path), output_base_dir)
 
     # Name+artist fallback — score candidates, use album type as tiebreaker
     if song.primary_artist_id:
@@ -168,7 +205,7 @@ def _resolve_song_file_path(song: "Song", output_base_dir: Path) -> Optional[Pat
                 best_path = Path(candidate.file_path_ref.path)
 
         if best_path and best_key[0] >= 0.6:
-            return best_path
+            return _safe_song_path(best_path, output_base_dir)
 
     return None
 

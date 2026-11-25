@@ -141,14 +141,18 @@ class TaskManagementService:
             purged_count = 0
 
             def purge_queues() -> int:
+                # Purge by name: control.purge() empties every queue the app
+                # consumes, including the QueueTip queues (bulk-import jobs).
                 total = 0
-                for queue in queues_to_purge:
-                    try:
-                        count = celery_app.control.purge()
-                        if count:
-                            total += count
-                    except Exception:
-                        pass
+                with celery_app.connection_for_write() as conn:
+                    channel = conn.default_channel
+                    for queue in queues_to_purge:
+                        try:
+                            count = channel.queue_purge(queue)
+                            if count:
+                                total += count
+                        except Exception:
+                            pass
                 return total
 
             purged_count = await sync_to_async(purge_queues)()
@@ -215,11 +219,15 @@ class TaskManagementService:
             for task_history in running_tasks:
                 try:
                     # Mark the task as cancelled
-                    task_history.status = "CANCELLED"
-                    task_history.completed_at = timezone.now()
-                    task_history.error_message = "Task cancelled by user"
-                    await task_history.asave()
-                    cancelled_count += 1
+                    # Conditional so a task that just finished is not overwritten
+                    cancelled = await TaskHistory.objects.filter(
+                        pk=task_history.pk, status="RUNNING"
+                    ).aupdate(
+                        status="CANCELLED",
+                        completed_at=timezone.now(),
+                        error_message="Task cancelled by user",
+                    )
+                    cancelled_count += cancelled
                 except Exception as e:
                     print(f"Failed to cancel running task {task_history.task_id}: {e}")
 
@@ -254,10 +262,15 @@ class TaskManagementService:
             for task_history in running_tasks:
                 try:
                     # Mark as cancelled in TaskHistory
-                    task_history.status = "CANCELLED"
-                    task_history.completed_at = timezone.now()
-                    task_history.error_message = "Task cancelled by user"
-                    await task_history.asave()
+                    cancelled = await TaskHistory.objects.filter(
+                        pk=task_history.pk, status="RUNNING"
+                    ).aupdate(
+                        status="CANCELLED",
+                        completed_at=timezone.now(),
+                        error_message="Task cancelled by user",
+                    )
+                    if not cancelled:
+                        continue
 
                     # Also mark as REVOKED in TaskResult if it exists
                     await TaskResult.objects.filter(

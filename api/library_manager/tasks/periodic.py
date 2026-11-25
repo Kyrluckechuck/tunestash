@@ -384,8 +384,24 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
                 continue
 
             try:
-                download_single_album.delay(album.id)
+                from ..helpers import enqueue_deduped, generate_task_id
+
+                # Deduped by claim so a backlogged downloads queue is not
+                # re-flooded with the same album on every beat run.
+                published = enqueue_deduped(
+                    download_single_album,
+                    task_id=generate_task_id(
+                        "library_manager.tasks.download_single_album", album.id
+                    ),
+                    args=[album.id],
+                    task_type="DOWNLOAD",
+                    entity_type="ALBUM",
+                    entity_id=str(album.id),
+                )
                 queued_ids.add(album.id)
+                if not published:
+                    skipped += 1
+                    continue
                 if is_recheck:
                     rechecks += 1
                 else:

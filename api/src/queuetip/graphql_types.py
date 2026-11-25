@@ -109,13 +109,20 @@ class PlaylistExportTargetType:
     min_score_threshold: int | None
     target_size_override: int | None
     unique_versions_only: bool
+    # Active TaskHistory claim for this target, derived without a migration.
+    sync_queued: bool
 
     # Destination-specific details — at most one is populated per row.
     spotify_user_id: str | None
     subsonic_connection: SubsonicConnectionType | None
 
     @classmethod
-    def from_model(cls, target: PlaylistExportTarget) -> "PlaylistExportTargetType":
+    def from_model(
+        cls,
+        target: PlaylistExportTarget,
+        *,
+        sync_queued: bool = False,
+    ) -> "PlaylistExportTargetType":
         link = (
             cast(ExternalServiceLink, target.spotify_link)
             if target.spotify_link_id
@@ -141,6 +148,7 @@ class PlaylistExportTargetType:
             min_score_threshold=target.min_score_threshold,
             target_size_override=target.target_size_override,
             unique_versions_only=target.unique_versions_only,
+            sync_queued=sync_queued,
             spotify_user_id=(link.service_user_id if link else None),
             subsonic_connection=(
                 SubsonicConnectionType.from_model(conn) if conn else None

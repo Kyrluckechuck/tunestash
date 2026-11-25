@@ -193,27 +193,40 @@ def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> N
     require_download_capability()
 
     missing_known_songs_list = (
-        Song.objects.filter(bitrate=0, unavailable=False)
+        Song.objects.filter(bitrate=0, downloaded=False)
         .order_by("created_at")
         .select_related("primary_artist")
-        .filter(primary_artist__tracking_tier__gte=1)[:100]
+        .filter(primary_artist__tracking_tier__gte=1)
     )
     failed_known_songs_list = Song.objects.filter(
-        failed_count__gt=0, bitrate=0, unavailable=False
-    ).order_by("created_at")[:100]
-    # Combine results for iterating
+        failed_count__gt=0, bitrate=0, downloaded=False
+    ).order_by("created_at")
+    # Combine results for iterating. Readiness is checked while scanning so a
+    # capped block of old, backoff-blocked rows cannot starve newer ready ones.
     missing_known_songs_list = missing_known_songs_list | failed_known_songs_list
 
-    if missing_known_songs_list.count() == 0:
+    if not missing_known_songs_list.exists():
         logger.info("All songs downloaded, exiting missing known song loop!")
         return
 
     songs_to_download = []
-    for song in missing_known_songs_list.iterator():
+    seen_ids: set[int] = set()
+    for song in missing_known_songs_list.iterator(chunk_size=200):
+        if song.id in seen_ids:
+            continue
+        seen_ids.add(song.id)
+        if not song.is_ready_for_retry():
+            continue
         if song.gid or song.deezer_id:
             songs_to_download.append(song)
+            if len(songs_to_download) >= 100:
+                break
         else:
             logger.warning(f"Song {song.id} has no provider ID, skipping")
+
+    if not songs_to_download:
+        logger.info("No missing known songs ready for retry")
+        return
 
     if songs_to_download:
         logger.info(
@@ -300,7 +313,8 @@ def validate_undownloaded_songs(
       - up to  50 low-confidence songs (bitrate=0), sorted by failed_count ASC
         so high-fc dead-ends drain last and just get "tried eventually"
 
-    Each song can only be attempted once per week (tracked via
+    Songs still in failure backoff are skipped (is_ready_for_retry). Each
+    song can only be attempted once per week (tracked via
     last_download_attempt field). Runs every 12 hours but respects the
     weekly per-song limit.
     """
@@ -320,60 +334,60 @@ def validate_undownloaded_songs(
 
     # High confidence: songs with bitrate>0 (previously identified, just not
     # yet on disk) — biggest batch since these are most likely to recover.
-    non_downloaded_songs_that_should_exist = (
-        Song.objects.filter(bitrate__gt=0, unavailable=False, downloaded=False)
-        .filter(not_recently_attempted)
-        .order_by("created_at")[:100]
-    )
-    non_downloaded_songs_that_maybe_should_exist = (
-        Song.objects.filter(bitrate__gt=0, unavailable=True, downloaded=False)
-        .filter(not_recently_attempted)
-        .order_by("created_at")[:100]
-    )
+    non_downloaded_songs_that_should_exist = Song.objects.filter(
+        bitrate__gt=0, unavailable=False, downloaded=False
+    ).filter(not_recently_attempted)
+    non_downloaded_songs_that_maybe_should_exist = Song.objects.filter(
+        bitrate__gt=0, unavailable=True, downloaded=False
+    ).filter(not_recently_attempted)
     # Low confidence: songs that never even partially identified (bitrate=0).
     # Smaller batch + ordered by failed_count ASC so high-fc dead-ends drain
     # last. Without this, brand-new "no provider has it" songs would never
     # retry except via the wasteful album loop.
-    non_downloaded_songs_low_confidence = (
-        Song.objects.filter(bitrate=0, downloaded=False)
-        .filter(not_recently_attempted)
-        .order_by("failed_count", "created_at")[:50]
+    non_downloaded_songs_low_confidence = Song.objects.filter(
+        bitrate=0, downloaded=False
+    ).filter(not_recently_attempted)
+
+    batches = (
+        (non_downloaded_songs_that_should_exist.order_by("created_at"), 100),
+        (non_downloaded_songs_that_maybe_should_exist.order_by("created_at"), 100),
+        (
+            non_downloaded_songs_low_confidence.order_by("failed_count", "created_at"),
+            50,
+        ),
     )
-
-    non_downloaded_songs = (
-        non_downloaded_songs_that_should_exist
-        | non_downloaded_songs_that_maybe_should_exist
-        | non_downloaded_songs_low_confidence
-    )
-
-    non_downloaded_songs_count = non_downloaded_songs.count()
-
-    # No songs to attempt
-    if non_downloaded_songs_count == 0:
-        logger.info(
-            "No songs to validate (all downloaded or attempted within last week)"
-        )
-        return
 
     song_ids = []
     songs_to_download = []
-    for song in non_downloaded_songs.iterator():
-        if song.gid or song.deezer_id:
-            songs_to_download.append(song)
-            song_ids.append(song.id)
-        else:
-            logger.warning(f"Song {song.id} has no provider ID, skipping")
+    for queryset, limit in batches:
+        batch_ready = 0
+        for song in queryset.iterator(chunk_size=200):
+            if not song.is_ready_for_retry():
+                continue
+            if song.gid or song.deezer_id:
+                songs_to_download.append(song)
+                song_ids.append(song.id)
+                batch_ready += 1
+                if batch_ready >= limit:
+                    break
+            else:
+                logger.warning(f"Song {song.id} has no provider ID, skipping")
+
+    if not songs_to_download:
+        logger.info(
+            "No songs to validate (all downloaded, in backoff, or attempted within last week)"
+        )
+        return
 
     Song.objects.filter(id__in=song_ids).update(last_download_attempt=timezone.now())
 
-    if songs_to_download:
-        logger.info(
-            f"Downloading {len(songs_to_download)} missing songs via fallback providers"
-        )
-        downloaded, failed = _download_deezer_songs_via_fallback(songs_to_download)
-        logger.info(f"Validation: {downloaded} downloaded, {failed} failed")
+    logger.info(
+        f"Downloading {len(songs_to_download)} missing songs via fallback providers"
+    )
+    downloaded, failed = _download_deezer_songs_via_fallback(songs_to_download)
+    logger.info(f"Validation: {downloaded} downloaded, {failed} failed")
 
-    logger.info(f"Completed validation attempt for {non_downloaded_songs_count} songs")
+    logger.info(f"Completed validation attempt for {len(songs_to_download)} songs")
 
 
 @celery_app.task(
@@ -385,8 +399,9 @@ def retry_failed_songs(self: Any) -> None:
 
     Uses smart exponential backoff based on failure reason:
     - TEMPORARY_ERROR: 1, 2, 4, 7 days (capped)
-    - SPOTIFY_NOT_FOUND/YTM_NO_MATCH: 2, 4, 8, 16, 30 days (capped)
-    - BOTH_UNAVAILABLE: 30 days flat
+    - SPOTIFY_NOT_FOUND/YTM_NO_MATCH: 2, 4, 8, 16, 30 days (capped at 30 days for
+      failed_count<=10, then 60 days, then 90 days)
+    - BOTH_UNAVAILABLE: 30 days for failed_count<=10, then 90 days
 
     Processes up to 100 songs per run, ordered by:
     1. failed_count ASC (fewer failures = higher priority)
@@ -410,18 +425,18 @@ def retry_failed_songs(self: Any) -> None:
         candidate_songs = Song.objects.filter(
             downloaded=False,
             failed_count__gt=0,
-        ).order_by("failed_count", "created_at")[
-            :200
-        ]  # Fetch extra to filter
+        ).order_by("failed_count", "created_at")
 
         if not candidate_songs.exists():
             logger.info("No failed songs to retry")
             return
 
-        # Filter to only songs that are ready for retry (past their backoff period)
+        # Filter to only songs that are ready for retry (past their backoff
+        # period). Scan the ordered queryset until the quota is filled so old
+        # blocked rows cannot starve newer ready ones.
         songs_to_retry = []
         skipped_count = 0
-        for song in candidate_songs.iterator():
+        for song in candidate_songs.iterator(chunk_size=200):
             if song.is_ready_for_retry():
                 songs_to_retry.append(song)
                 if len(songs_to_retry) >= 100:

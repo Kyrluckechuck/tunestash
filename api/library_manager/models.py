@@ -9,7 +9,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import GinIndex
 from django.db import models
-from django.db.models import IntegerChoices, QuerySet, Sum, TextChoices
+from django.db.models import F, IntegerChoices, QuerySet, Sum, TextChoices
 from django.utils import timezone
 
 # TypedModelMeta is only needed for type checking with mypy
@@ -424,9 +424,18 @@ class Song(models.Model):
             reason: The categorized reason for the failure. Used for smart retry
                     backoff - permanent failures get longer delays between retries.
         """
-        self.failed_count += 1
+        # The counter is bumped in SQL so concurrent failures are not lost, and
+        # only failure-tracking columns are written so a stale instance cannot
+        # clobber unrelated columns (isrc, file path, wanted, ...).
+        now = timezone.now()
+        Song.objects.filter(pk=self.pk).update(
+            failed_count=F("failed_count") + 1,
+            failure_reason=reason,
+            last_failed_at=now,
+        )
+        self.refresh_from_db(fields=["failed_count"])
         self.failure_reason = reason
-        self.last_failed_at = timezone.now()
+        self.last_failed_at = now
 
         # Upgrade to BOTH_UNAVAILABLE if it was a Spotify 404 and still failing
         if (
@@ -439,7 +448,9 @@ class Song(models.Model):
         # because they happened repeatedly. Only an explicit cross-provider
         # unavailable result may set this user-facing state.
         self.unavailable = self.failure_reason == FailureReason.BOTH_UNAVAILABLE
-        self.save()
+        Song.objects.filter(pk=self.pk).update(
+            failure_reason=self.failure_reason, unavailable=self.unavailable
+        )
 
     def get_retry_backoff_days(self) -> int:
         """Calculate how many days to wait before retrying this song.
@@ -461,7 +472,10 @@ class Song(models.Model):
             return 30 if self.failed_count <= 10 else 90
 
         if self.failure_reason == FailureReason.TEMPORARY_ERROR:
-            # Exponential backoff: 1, 2, 4, 7 (capped) days
+            # Exponential backoff: 1, 2, 4, 7 (capped) days. Zero failures
+            # means no backoff yet; never a fractional or negative value.
+            if self.failed_count <= 0:
+                return 0
             return int(min(2 ** (self.failed_count - 1), 7))
 
         # SPOTIFY_NOT_FOUND or YTM_NO_MATCH — slower backoff with a long-tail
@@ -510,7 +524,18 @@ class Song(models.Model):
         self.failure_reason = None
         self.last_failed_at = None
         self.unavailable = False
-        self.save()
+        update_fields = [
+            "downloaded",
+            "bitrate",
+            "file_path_ref",
+            "failed_count",
+            "failure_reason",
+            "last_failed_at",
+            "unavailable",
+        ]
+        if provider is not None:
+            update_fields.append("download_provider")
+        self.save(update_fields=update_fields)
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Override save to truncate name if too long for database field."""
@@ -606,7 +631,11 @@ class TaskHistory(models.Model):
         ("RUNNING", "Running"),
         ("COMPLETED", "Completed"),
         ("FAILED", "Failed"),
+        ("CANCELLED", "Cancelled"),
     ]
+
+    ACTIVE_STATUSES = ("PENDING", "RUNNING")
+    TERMINAL_STATUSES = ("COMPLETED", "FAILED", "CANCELLED")
 
     task_id: models.CharField = models.CharField(max_length=255, unique=True)
     type: models.CharField = models.CharField(max_length=20, choices=TASK_TYPES)
@@ -645,43 +674,89 @@ class TaskHistory(models.Model):
         return f"{self.type} - {self.entity_type} {self.entity_id} ({self.status})"
 
     def add_log_message(self, message: str, max_logs: int = 50) -> None:
-        """Add a log message to the task history with automatic truncation"""
-        if not self.log_messages:
-            self.log_messages = []
+        """Add a log message to the task history with automatic truncation.
 
-        # Add new log message
-        self.log_messages.append(
-            {"timestamp": timezone.now().isoformat(), "message": message}
-        )
+        The read-append-write runs under a row lock so entries written
+        through another instance are appended to rather than overwritten.
+        """
+        new_entry = {"timestamp": timezone.now().isoformat(), "message": message}
+        if self.pk is None:
+            entries = list(self.log_messages or [])
+            entries.append(new_entry)
+            if len(entries) > max_logs:
+                entries = entries[-max_logs:]
+            self.log_messages = entries
+            return
 
-        # Truncate if we exceed max_logs
-        if len(self.log_messages) > max_logs:
-            self.log_messages = self.log_messages[-max_logs:]
+        from django.db import transaction
 
-        self.save(update_fields=["log_messages"])
-
-    def mark_completed(self, duration_seconds: Optional[int] = None) -> None:
-        """Mark the task as completed"""
-        self.status = "COMPLETED"
-        self.completed_at = timezone.now()
-        if duration_seconds is None:
-            duration_seconds = int(
-                (self.completed_at - self.started_at).total_seconds()
+        with transaction.atomic():
+            stored = (
+                type(self)
+                .objects.select_for_update()
+                .filter(pk=self.pk)
+                .values_list("log_messages", flat=True)
+                .first()
             )
-        self.duration_seconds = duration_seconds
-        self.progress_percentage = 100.0
-        self.save()
+            entries = list(stored if stored is not None else self.log_messages or [])
+            entries.append(new_entry)
+            if len(entries) > max_logs:
+                entries = entries[-max_logs:]
+            type(self).objects.filter(pk=self.pk).update(log_messages=entries)
+        self.log_messages = entries
 
-    def mark_failed(self, error_message: Optional[str] = None) -> None:
-        """Mark the task as failed"""
-        self.status = "FAILED"
-        self.completed_at = timezone.now()
-        if error_message:
-            self.error_message = error_message
-        self.duration_seconds = int(
-            (self.completed_at - self.started_at).total_seconds()
+    def _finish(
+        self,
+        status: str,
+        allowed_from: tuple[str, ...] = ACTIVE_STATUSES,
+        heartbeat: Optional[datetime] = None,
+        **fields: Any,
+    ) -> bool:
+        """Move to a terminal status only from one of ``allowed_from``.
+
+        Conditional UPDATE so a CANCELLED/COMPLETED row written by another
+        process is never overwritten by a stale in-memory copy. When
+        ``heartbeat`` is passed, the UPDATE additionally requires the stored
+        ``last_heartbeat`` to equal it, so a refresh between the caller's
+        read and this UPDATE makes the write a no-op.
+        Returns True if this call performed the transition.
+        """
+        filters: dict[str, Any] = {"pk": self.pk, "status__in": allowed_from}
+        if heartbeat is not None:
+            filters["last_heartbeat"] = heartbeat
+        updated = type(self).objects.filter(**filters).update(status=status, **fields)
+        if updated:
+            self.refresh_from_db(fields=["status", *fields])
+        else:
+            self.refresh_from_db(fields=["status"])
+        return bool(updated)
+
+    def mark_completed(self, duration_seconds: Optional[int] = None) -> bool:
+        """Mark the task as completed. Returns True if the transition happened."""
+        completed_at = timezone.now()
+        if duration_seconds is None:
+            duration_seconds = int((completed_at - self.started_at).total_seconds())
+        return self._finish(
+            "COMPLETED",
+            completed_at=completed_at,
+            duration_seconds=duration_seconds,
+            progress_percentage=100.0,
         )
-        self.save()
+
+    def mark_failed(self, error_message: Optional[str] = None) -> bool:
+        """Mark the task as failed. Returns True if the transition happened."""
+        completed_at = timezone.now()
+        fields: dict[str, Any] = {
+            "completed_at": completed_at,
+            "duration_seconds": int((completed_at - self.started_at).total_seconds()),
+        }
+        if error_message:
+            fields["error_message"] = error_message
+        # FAILED -> FAILED is allowed so a later, more specific error replaces
+        # the one recorded by an early-exit path.
+        return self._finish(
+            "FAILED", allowed_from=(*self.ACTIVE_STATUSES, "FAILED"), **fields
+        )
 
     def update_progress(self, percentage: float) -> None:
         """Update the progress percentage"""
@@ -762,17 +837,25 @@ class TaskHistory(models.Model):
 
         return False
 
-    def mark_stuck(self, reason: str = "Task timeout") -> None:
-        """Mark the task as stuck/failed due to timeout"""
+    def mark_stuck(self, reason: str = "Task timeout") -> bool:
+        """Mark the task as stuck/failed due to timeout.
+
+        The UPDATE requires ``last_heartbeat`` to match the value this
+        instance read, so a refresh between the caller's read and the
+        UPDATE makes this a no-op instead of failing a live task.
+        Returns True if this call performed the transition.
+        """
         from django.utils import timezone
 
-        self.status = "FAILED"
-        self.completed_at = timezone.now()
-        self.error_message = f"{reason} - Last heartbeat: {self.last_heartbeat}"
-        self.duration_seconds = int(
-            (self.completed_at - self.started_at).total_seconds()
+        completed_at = timezone.now()
+        return self._finish(
+            "FAILED",
+            allowed_from=("RUNNING",),
+            heartbeat=self.last_heartbeat,
+            completed_at=completed_at,
+            error_message=f"{reason} - Last heartbeat: {self.last_heartbeat}",
+            duration_seconds=int((completed_at - self.started_at).total_seconds()),
         )
-        self.save()
 
     @classmethod
     def cleanup_stuck_tasks(cls) -> int:
@@ -781,8 +864,7 @@ class TaskHistory(models.Model):
         stuck_count = 0
 
         for task in stuck_tasks:
-            if task.is_stuck():
-                task.mark_stuck("Task timeout - automatic cleanup")
+            if task.is_stuck() and task.mark_stuck("Task timeout - automatic cleanup"):
                 stuck_count += 1
 
         return stuck_count
@@ -794,7 +876,7 @@ class TaskHistory(models.Model):
 
         cutoff_date = timezone.now() - timedelta(days=days_to_keep)
         deleted_count = cls.objects.filter(
-            status__in=["COMPLETED", "FAILED"], started_at__lt=cutoff_date
+            status__in=cls.TERMINAL_STATUSES, started_at__lt=cutoff_date
         ).delete()[0]
         return deleted_count
 
@@ -804,6 +886,7 @@ class TaskHistory(models.Model):
         total_tasks = cls.objects.count()
         completed_tasks = cls.objects.filter(status="COMPLETED").count()
         failed_tasks = cls.objects.filter(status="FAILED").count()
+        cancelled_tasks = cls.objects.filter(status="CANCELLED").count()
         running_tasks = cls.objects.filter(status="RUNNING").count()
         pending_tasks = cls.objects.filter(status="PENDING").count()
 
@@ -820,6 +903,7 @@ class TaskHistory(models.Model):
             "total_tasks": total_tasks,
             "completed_tasks": completed_tasks,
             "failed_tasks": failed_tasks,
+            "cancelled_tasks": cancelled_tasks,
             "running_tasks": running_tasks,
             "pending_tasks": pending_tasks,
             "average_logs_per_task": round(avg_logs, 2),
@@ -933,6 +1017,8 @@ class Album(models.Model):
             return int(min(2**self.failed_count, 30))
 
         # TEMPORARY_ERROR or PARTIAL_FAILURE
+        if self.failed_count <= 0:
+            return 0
         return int(min(2 ** (self.failed_count - 1), 7))
 
     def is_ready_for_retry(self) -> bool:
