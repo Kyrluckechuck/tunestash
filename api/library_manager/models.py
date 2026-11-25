@@ -466,25 +466,29 @@ class Song(models.Model):
         if self.failure_reason is None:
             return 0
 
+        days: int
         if self.failure_reason == FailureReason.BOTH_UNAVAILABLE:
             # Stay tried-eventually rather than abandoned: a song providers
             # rejected today might surface in 3 months as catalog rotates.
-            return 30 if self.failed_count <= 10 else 90
-
-        if self.failure_reason == FailureReason.TEMPORARY_ERROR:
+            days = 30 if self.failed_count <= 10 else 90
+        elif self.failure_reason == FailureReason.TEMPORARY_ERROR:
             # Exponential backoff: 1, 2, 4, 7 (capped) days. Zero failures
             # means no backoff yet; never a fractional or negative value.
-            if self.failed_count <= 0:
-                return 0
-            return int(min(2 ** (self.failed_count - 1), 7))
-
-        # SPOTIFY_NOT_FOUND or YTM_NO_MATCH — slower backoff with a long-tail
-        # cap so very-high-fc songs are deprioritized but not dropped.
-        if self.failed_count > 20:
-            return 90
-        if self.failed_count > 10:
-            return 60
-        return int(min(2**self.failed_count, 30))
+            days = (
+                0
+                if self.failed_count <= 0
+                else int(min(2 ** (self.failed_count - 1), 7))
+            )
+        elif self.failed_count > 20:
+            # SPOTIFY_NOT_FOUND or YTM_NO_MATCH — slower backoff with a
+            # long-tail cap so very-high-fc songs are deprioritized but not
+            # dropped.
+            days = 90
+        elif self.failed_count > 10:
+            days = 60
+        else:
+            days = int(min(2**self.failed_count, 30))
+        return days
 
     def is_ready_for_retry(self) -> bool:
         """Check if enough time has passed since last failure to retry.
@@ -1003,23 +1007,25 @@ class Album(models.Model):
         if self.failure_reason is None:
             return 0
 
+        days: int
         if self.failure_reason == AlbumFailureReason.DEEZER_NO_TRACKS:
-            return 30
-
-        if self.failure_reason == AlbumFailureReason.ALL_TRACKS_UNAVAILABLE:
+            days = 30
+        elif self.failure_reason == AlbumFailureReason.ALL_TRACKS_UNAVAILABLE:
             # Long-tail: high-fc albums tried-eventually rather than
             # abandoned, but spaced far enough apart that they don't burn
             # worker capacity.
             if self.failed_count > 20:
-                return 90
-            if self.failed_count > 10:
-                return 60
-            return int(min(2**self.failed_count, 30))
-
-        # TEMPORARY_ERROR or PARTIAL_FAILURE
-        if self.failed_count <= 0:
-            return 0
-        return int(min(2 ** (self.failed_count - 1), 7))
+                days = 90
+            elif self.failed_count > 10:
+                days = 60
+            else:
+                days = int(min(2**self.failed_count, 30))
+        elif self.failed_count <= 0:
+            # TEMPORARY_ERROR or PARTIAL_FAILURE with no failures yet.
+            days = 0
+        else:
+            days = int(min(2 ** (self.failed_count - 1), 7))
+        return days
 
     def is_ready_for_retry(self) -> bool:
         """Check if enough time has passed since last failure to retry."""

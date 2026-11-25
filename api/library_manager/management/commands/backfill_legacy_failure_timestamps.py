@@ -12,7 +12,7 @@ Scope is Song only (album legacy rows were documented as 0 in production).
 import json
 import os
 from datetime import UTC, datetime
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional, TextIO
 
 from django.core.management.base import BaseCommand, CommandError
 from django.core.serializers.json import DjangoJSONEncoder
@@ -33,6 +33,11 @@ class Command(BaseCommand):
         "Dry-run legacy song failure timestamp backfill; --apply requires a new "
         "audit file and --last-failed-at (recommend current UTC)."
     )
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._audit_handle: Optional[TextIO] = None
+        self._audit_first = True
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument("--apply", action="store_true")
@@ -100,7 +105,7 @@ class Command(BaseCommand):
         The file is created with mode 0600 and O_EXCL via os.open, then wrapped
         in a file object. Streaming the JSON array in chunks keeps memory bound.
         """
-        if not hasattr(self, "_audit_handle"):
+        if self._audit_handle is None:
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
             try:
                 fd = os.open(path, flags, AUDIT_MODE)
