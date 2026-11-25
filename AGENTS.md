@@ -50,6 +50,13 @@ Local linting is often faster when dependencies are installed:
 - From `api/`: `python3 -m flake8 <file>`, `python3 -m black <file>`, `python3 -m isort <file>`
 - From `frontend/`: `yarn lint`, `yarn format`, `yarn test:run`
 
+isort first-party detection depends on the directory layout. Running it inside
+the `web` container at `/app`, or with `--settings-path /pyproject.toml`,
+misclassifies local packages (such as `downloader`) and disagrees with CI. Check
+imports on a clean copy instead: `git archive HEAD api` (or a tar of the working
+tree) into a temp dir in the container, then `cd <dir>/api && python -m isort
+--check-only .`. The `api/` config is the one CI uses.
+
 Python standards:
 - Black, 88 character line length
 - isort imports
