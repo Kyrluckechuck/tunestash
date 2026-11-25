@@ -1,4 +1,4 @@
-"""Regression tests for the match-quality audit in .superpowers/audit/match-quality-sports.md."""
+"""Regression tests for track-match quality checks (title, artist, duration)."""
 
 import asyncio
 from pathlib import Path
@@ -80,17 +80,17 @@ class TestDurationCompatibility:
 
 
 class TestProviderSearchDurationRejection:
-    """The audit's 'Get Lower' case must not be matched."""
+    """A same-title recording by a different artist must not be matched."""
 
     def test_qobuz_rejects_get_lower(self):
         provider = QobuzProvider()
-        album = {"title": "Album", "artist": {"name": "Steve Aoki"}}
+        album = {"title": "Album", "artist": {"name": "Test Artist E"}}
         tracks = [
             {
                 "id": 1,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 191,
-                "performer": {"name": "Steve Aoki"},
+                "performer": {"name": "Test Artist E"},
                 "isrc": "USDM32458801",
             }
         ]
@@ -98,8 +98,8 @@ class TestProviderSearchDurationRejection:
             provider._find_best_track_match(
                 tracks,
                 album,
-                "Get Lower",
-                "Steve Aoki",
+                "Test Track Two",
+                "Test Artist E",
                 search_isrc="USDM32458801",
                 search_duration_ms=GET_LOWER_DURATION_MS,
             )
@@ -111,17 +111,17 @@ class TestProviderSearchDurationRejection:
         results = [
             {
                 "id": 1,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 191,
-                "artists": [{"name": "Steve Aoki"}],
+                "artists": [{"name": "Test Artist E"}],
                 "isrc": "USDM32458801",
             }
         ]
         assert (
             provider._find_best_match(
                 results,
-                "Get Lower",
-                "Steve Aoki",
+                "Test Track Two",
+                "Test Artist E",
                 isrc="USDM32458801",
                 duration_ms=GET_LOWER_DURATION_MS,
             )
@@ -133,17 +133,17 @@ class TestProviderSearchDurationRejection:
         results = [
             {
                 "id": 1,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 191,
-                "artists": [{"name": "Steve Aoki"}],
+                "artists": [{"name": "Test Artist E"}],
                 "isrc": "USDM32458801",
             }
         ]
         assert (
             provider._find_best_match(
                 results,
-                "Get Lower",
-                "Steve Aoki",
+                "Test Track Two",
+                "Test Artist E",
                 isrc="USDM32458801",
                 duration_ms=GET_LOWER_DURATION_MS,
             )
@@ -155,35 +155,35 @@ class TestProviderSearchDurationRejection:
             mock_ytmusic.return_value.search.return_value = [
                 {
                     "videoId": "abc",
-                    "title": "Get Lower",
-                    "artists": [{"name": "Steve Aoki"}],
+                    "title": "Test Track Two",
+                    "artists": [{"name": "Test Artist E"}],
                     "duration_seconds": 191,
                 }
             ]
             match = YouTubeMusicProvider()._search_track_sync(
-                "Get Lower",
-                "Steve Aoki",
+                "Test Track Two",
+                "Test Artist E",
                 duration_ms=GET_LOWER_DURATION_MS,
             )
         assert match is None
 
     def test_duration_unknown_source_still_matches(self):
         provider = QobuzProvider()
-        album = {"title": "Album", "artist": {"name": "Steve Aoki"}}
+        album = {"title": "Album", "artist": {"name": "Test Artist E"}}
         tracks = [
             {
                 "id": 1,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 191,
-                "performer": {"name": "Steve Aoki"},
+                "performer": {"name": "Test Artist E"},
                 "isrc": "USDM32458801",
             }
         ]
         result = provider._find_best_track_match(
             tracks,
             album,
-            "Get Lower",
-            "Steve Aoki",
+            "Test Track Two",
+            "Test Artist E",
             search_isrc="USDM32458801",
             search_duration_ms=0,
         )
@@ -237,10 +237,10 @@ class TestIsrcConflictPenalty:
 
     def test_isrc_conflict_plus_partial_artist_fails(self):
         score = score_track_match(
-            "Shut Up And Dance",
+            "Test Track One",
             "Test Artist A",
-            "Shut Up And Dance",
-            "Test Artist B",
+            "Test Track One",
+            "Unrelated Performer",
             search_isrc="TEST00000001",
             result_isrc="QMF123456789",
             search_duration_s=146.0,
@@ -272,18 +272,18 @@ class TestPostDownloadDurationFailure:
         match = TrackMatch(
             provider="youtube",
             provider_track_id="abc",
-            title="Get Lower",
-            artist="Steve Aoki",
+            title="Test Track Two",
+            artist="Test Artist E",
             album="",
             duration_ms=GET_LOWER_FILE_DURATION_MS,
             confidence=0.9,
         )
         metadata = TrackMetadata(
             spotify_id="abc",
-            title="Get Lower",
-            artist="Steve Aoki",
+            title="Test Track Two",
+            artist="Test Artist E",
             album="",
-            album_artist="Steve Aoki",
+            album_artist="Test Artist E",
             duration_ms=GET_LOWER_DURATION_MS,
         )
         provider = MagicMock()
@@ -336,18 +336,18 @@ class TestPostDownloadDurationFailure:
         match = TrackMatch(
             provider="youtube",
             provider_track_id="abc",
-            title="Get Lower",
-            artist="Steve Aoki",
+            title="Test Track Two",
+            artist="Test Artist E",
             album="",
             duration_ms=GET_LOWER_FILE_DURATION_MS,
             confidence=0.9,
         )
         metadata = TrackMetadata(
             spotify_id="abc",
-            title="Get Lower",
-            artist="Steve Aoki",
+            title="Test Track Two",
+            artist="Test Artist E",
             album="",
-            album_artist="Steve Aoki",
+            album_artist="Test Artist E",
             duration_ms=0,
         )
         provider = MagicMock()
@@ -393,17 +393,17 @@ class TestMatchDetailsPersistence:
         from library_manager.models import Artist, Song
         from library_manager.tasks.download import _record_successful_match
 
-        artist = Artist.objects.create(name="Steve Aoki", gid="gid-aoki")
+        artist = Artist.objects.create(name="Test Artist E", gid="gid-aoki")
         song = Song.objects.create(
-            name="Get Lower",
+            name="Test Track Two",
             primary_artist=artist,
             deezer_id=123,
         )
         match = TrackMatch(
             provider="youtube",
             provider_track_id="abc123",
-            title="Get Lower (Original Mix)",
-            artist="Steve Aoki",
+            title="Test Track Two (Original Mix)",
+            artist="Test Artist E",
             album="Album",
             duration_ms=206_000,
             isrc="USDM32458801",
@@ -417,8 +417,8 @@ class TestMatchDetailsPersistence:
         song.refresh_from_db()
         assert song.matched_provider == "youtube"
         assert song.matched_provider_track_id == "abc123"
-        assert song.matched_title == "Get Lower (Original Mix)"
-        assert song.matched_artist == "Steve Aoki"
+        assert song.matched_title == "Test Track Two (Original Mix)"
+        assert song.matched_artist == "Test Artist E"
         assert song.matched_duration_ms == 204_500
         assert song.matched_isrc == "USDM32458801"
         assert song.match_confidence == pytest.approx(0.92)

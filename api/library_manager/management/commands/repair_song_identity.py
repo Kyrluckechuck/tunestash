@@ -7,6 +7,8 @@ recording and its album; the Deezer album that *is that Spotify album* supplies
 the per-album Deezer track id. An ISRC lookup alone is not enough — the same
 recording appears on multiple albums, each with its own Deezer track id.
 Dry-run by default; --apply requires a new audit file written before any write.
+Merge mode (--merge-into KEEP:DROP) deletes DROP and refuses unless DROP is the
+same recording (matching ISRC) on the same release (matching UPC) as KEEP.
 """
 
 import json
@@ -33,9 +35,6 @@ from library_manager.models import (
     Song,
 )
 from library_manager.tasks import TaskPriority
-
-# Rows that already represent the other recording in these two known cases.
-PROTECTED_SONG_IDS = frozenset({900103, 900102})
 
 logger = logging.getLogger(__name__)
 
@@ -455,14 +454,7 @@ class Command(BaseCommand):
         if options["apply"] and not options["audit_file"]:
             raise CommandError("--apply requires --audit-file")
 
-        plans = [
-            self._build_plan(song_id)
-            for song_id in song_ids
-            if song_id not in PROTECTED_SONG_IDS
-        ]
-        for song_id in song_ids:
-            if song_id in PROTECTED_SONG_IDS:
-                self.stdout.write(f"song {song_id}: protected, skipping")
+        plans = [self._build_plan(song_id) for song_id in song_ids]
 
         if not options["apply"]:
             self.stdout.write("DRY RUN — no changes made")
@@ -803,8 +795,6 @@ class Command(BaseCommand):
             raise CommandError("--merge-into must be KEEP:DROP (numeric ids)") from exc
         if keep_id == drop_id:
             raise CommandError("--merge-into KEEP and DROP must differ")
-        if drop_id == 900103:
-            raise CommandError("song 900103 is protected and cannot be dropped")
         if not options["apply"] and options["audit_file"]:
             raise CommandError("--audit-file only applies with --apply")
         if options["apply"] and not options["audit_file"]:
@@ -854,6 +844,18 @@ class Command(BaseCommand):
         if truth.reason or not truth.deezer_track_id:
             raise CommandError(
                 f"cannot merge: per-album resolution failed: {truth.reason}"
+            )
+        # DROP is deleted, so it must be a duplicate of the same recording.
+        if (
+            truth.isrc
+            and drop.isrc
+            and drop.isrc != truth.isrc
+            and drop.isrc not in (keep.alternate_isrcs or [])
+            and truth.isrc not in (drop.alternate_isrcs or [])
+        ):
+            raise CommandError(
+                f"refusing merge: song {drop_id} (ISRC {drop.isrc}) is a "
+                f"different recording than song {keep_id} (ISRC {truth.isrc})"
             )
         # Compare the KEEP song's *true* release (from its gid) with the DROP
         # song's album — not KEEP's current album row, which may be wrong.
@@ -1100,9 +1102,7 @@ class Command(BaseCommand):
 
     def _scan(self) -> None:
         """Report rows whose deezer_id disagrees with their per-album truth."""
-        candidates = Song.objects.filter(deezer_id__isnull=False).exclude(
-            id__in=PROTECTED_SONG_IDS
-        )
+        candidates = Song.objects.filter(deezer_id__isnull=False)
         found = 0
         for song in candidates.iterator(chunk_size=500):
             try:

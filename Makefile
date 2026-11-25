@@ -205,6 +205,12 @@ queuetip-graphql-generate:
 	@cd queuetip-frontend && yarn generate
 	@echo "Done."
 
+# Reproduce the CI backend job on a clean copy of HEAD (see scripts/ci-check.sh).
+# Pass ARGS="--worktree --frontend" for uncommitted changes / frontend checks.
+.PHONY: ci-check
+ci-check:
+	bash scripts/ci-check.sh $(ARGS)
+
 # Linting and Code Quality
 lint: lint-api lint-frontend
 format-check: format-check-api format-check-frontend

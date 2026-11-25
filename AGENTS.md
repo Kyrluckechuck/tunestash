@@ -50,13 +50,15 @@ Local linting is often faster when dependencies are installed:
 - From `api/`: `python3 -m flake8 <file>`, `python3 -m black <file>`, `python3 -m isort <file>`
 - From `frontend/`: `yarn lint`, `yarn format`, `yarn test:run`
 
-isort first-party detection depends on the directory layout. Running it inside
-the `web` container at `/app`, or with `--settings-path /pyproject.toml`,
-misclassifies local packages (such as `downloader` and `celery_app`) and
-disagrees with CI. Check imports on a clean `git archive HEAD api` copy in a temp
-dir inside the container (`cd <dir>/api && python -m isort --check-only .`);
-this reproduces CI exactly. A tar of the working tree did not, so commit first
-and check the archive.
+**Required gate before pushing to main:** run `make ci-check` (or
+`scripts/ci-check.sh`) and only push if it passes. It exports the committed tree
+with `git archive` into a fresh temp dir inside the running `web` container and
+runs the same lint (`make lint-api` commands) and backend test command as the CI
+backend job, with the Celery broker unreachable as in CI. Options (pass via
+`make ci-check ARGS="..."`): `--worktree` checks uncommitted changes without
+committing, `--frontend` also runs frontend lint and tests in a `node:24`
+container. Do not run host or in-container `isort` directly: it classifies local
+packages (`downloader`, `celery_app`) differently from CI.
 
 Python standards:
 - Black, 88 character line length

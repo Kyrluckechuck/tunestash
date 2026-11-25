@@ -56,7 +56,9 @@ def _success_result(file_path):
     )
 
 
-def _match(provider, track_id, duration_ms, title="Get Lower", artist="Steve Aoki"):
+def _match(
+    provider, track_id, duration_ms, title="Test Track Two", artist="Test Artist E"
+):
     return TrackMatch(
         provider=provider,
         provider_track_id=track_id,
@@ -136,10 +138,10 @@ class TestAlternateIsrcs:
 
     def test_unknown_isrc_conflict_with_partial_artist_still_rejected(self):
         score = score_track_match(
-            "Shut Up And Dance",
+            "Test Track One",
             "Test Artist A",
-            "Shut Up And Dance",
-            "Test Artist B",
+            "Test Track One",
+            "Unrelated Performer",
             search_isrc="TEST00000001",
             result_isrc="QMF123456789",
             search_duration_s=146.0,
@@ -150,26 +152,26 @@ class TestAlternateIsrcs:
 
 class TestProviderExclusion:
     def test_qobuz_skips_rejected_track(self):
-        album = {"title": "Album", "artist": {"name": "Steve Aoki"}}
+        album = {"title": "Album", "artist": {"name": "Test Artist E"}}
         tracks = [
             {
                 "id": 1,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 206,
-                "performer": {"name": "Steve Aoki"},
+                "performer": {"name": "Test Artist E"},
             },
             {
                 "id": 2,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 206,
-                "performer": {"name": "Steve Aoki"},
+                "performer": {"name": "Test Artist E"},
             },
         ]
         result = QobuzProvider()._find_best_track_match(
             tracks,
             album,
-            "Get Lower",
-            "Steve Aoki",
+            "Test Track Two",
+            "Test Artist E",
             excluded_track_ids={"qobuz:1"},
         )
         assert result.provider_track_id == "2"
@@ -178,21 +180,21 @@ class TestProviderExclusion:
         results = [
             {
                 "id": 1,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 206,
-                "artists": [{"name": "Steve Aoki"}],
+                "artists": [{"name": "Test Artist E"}],
             },
             {
                 "id": 2,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 206,
-                "artists": [{"name": "Steve Aoki"}],
+                "artists": [{"name": "Test Artist E"}],
             },
         ]
         match = TidalProvider()._find_best_match(
             results,
-            "Get Lower",
-            "Steve Aoki",
+            "Test Track Two",
+            "Test Artist E",
             excluded_track_ids={"tidal:1"},
         )
         assert match.provider_track_id == "2"
@@ -201,21 +203,21 @@ class TestProviderExclusion:
         results = [
             {
                 "id": 1,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 206,
-                "artists": [{"name": "Steve Aoki"}],
+                "artists": [{"name": "Test Artist E"}],
             },
             {
                 "id": 2,
-                "title": "Get Lower",
+                "title": "Test Track Two",
                 "duration": 206,
-                "artists": [{"name": "Steve Aoki"}],
+                "artists": [{"name": "Test Artist E"}],
             },
         ]
         match = MonochromeProvider()._find_best_match(
             results,
-            "Get Lower",
-            "Steve Aoki",
+            "Test Track Two",
+            "Test Artist E",
             excluded_track_ids={"monochrome:1"},
         )
         assert match.provider_track_id == "2"
@@ -225,20 +227,20 @@ class TestProviderExclusion:
             mock_ytmusic.return_value.search.return_value = [
                 {
                     "videoId": "bad",
-                    "title": "Get Lower",
-                    "artists": [{"name": "Steve Aoki"}],
+                    "title": "Test Track Two",
+                    "artists": [{"name": "Test Artist E"}],
                     "duration_seconds": 206,
                 },
                 {
                     "videoId": "good",
-                    "title": "Get Lower",
-                    "artists": [{"name": "Steve Aoki"}],
+                    "title": "Test Track Two",
+                    "artists": [{"name": "Test Artist E"}],
                     "duration_seconds": 206,
                 },
             ]
             match = YouTubeMusicProvider()._search_track_sync(
-                "Get Lower",
-                "Steve Aoki",
+                "Test Track Two",
+                "Test Artist E",
                 excluded_track_ids={"youtube:bad"},
             )
         assert match.provider_track_id == "good"
@@ -310,10 +312,10 @@ def _chain_for(provider):
 def _metadata():
     return TrackMetadata(
         spotify_id="abc",
-        title="Get Lower",
-        artist="Steve Aoki",
+        title="Test Track Two",
+        artist="Test Artist E",
         album="",
-        album_artist="Steve Aoki",
+        album_artist="Test Artist E",
         duration_ms=206_000,
     )
 
@@ -490,7 +492,7 @@ class TestMaintenanceFinalization:
 
         artist = Artist.objects.create(name="Artist", gid="gid-maint-success")
         song = Song.objects.create(
-            name="Get Lower", primary_artist=artist, deezer_id=11
+            name="Test Track Two", primary_artist=artist, deezer_id=11
         )
         match = _match("youtube", "abc", 206_000)
         result = DownloadChainResult(

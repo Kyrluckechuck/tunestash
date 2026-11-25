@@ -90,9 +90,10 @@ if [ -d "api" ]; then
         echo "🛠️  Running Python autofixers on changed files..."
         (
             cd api || exit 1
-            # Auto-format with isort and black (best-effort)
-            # shellcheck disable=SC2086
-            python -m isort $PY_CHANGED >/dev/null 2>&1 || true
+            # Auto-format with black (best-effort). isort is deliberately NOT run
+            # here: host isort classifies first-party packages (celery_app,
+            # downloader) differently from CI and would rewrite imports into an
+            # order CI rejects. Import order is checked by `make ci-check`.
             # shellcheck disable=SC2086
             python -m black $PY_CHANGED >/dev/null 2>&1 || true
             # Re-stage only the auto-fixed Python files
@@ -110,3 +111,4 @@ fi
 
 echo "✅ All staged-file checks passed!"
 echo "💡 Note: CI runs comprehensive checks; pre-commit is incremental."
+echo "💡 Before pushing to main, run: make ci-check"

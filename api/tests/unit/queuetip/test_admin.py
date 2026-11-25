@@ -21,7 +21,7 @@ def test_is_queuetip_admin_gate():
     # Setting lists the email (case-insensitive) → admin.
     AppSetting.objects.create(
         key="queuetip_admin_emails",
-        value="Justin@Kyryli.uk, other@x.com",
+        value="User@Example.com, other@x.com",
         category="authentication",
     )
     assert is_queuetip_admin(account) is True

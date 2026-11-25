@@ -17,9 +17,9 @@ def identity_artist():
 
 def _track(isrc: str, deezer_id: int) -> TrackResult:
     return TrackResult(
-        name="Shut Up And Dance",
+        name="Test Track One",
         artist_name="Identity Test Artist",
-        album_name="Shut Up And Dance",
+        album_name="Test Track One",
         deezer_id=deezer_id,
         isrc=isrc,
         duration_ms=147000,
@@ -30,7 +30,7 @@ def _track(isrc: str, deezer_id: int) -> TrackResult:
 
 def _song(artist, *, isrc, alternate_isrcs=None, gid):
     return Song.objects.create(
-        name="Shut Up And Dance",
+        name="Test Track One",
         gid=gid,
         primary_artist=artist,
         isrc=isrc,
@@ -42,7 +42,7 @@ def _song(artist, *, isrc, alternate_isrcs=None, gid):
 def test_fuzzy_match_skips_song_with_conflicting_isrc(identity_artist):
     _song(identity_artist, isrc="TEST00000001", gid="gid-identity-a")
 
-    result = _find_matching_song(_track("TEST00000002", 9000000002), identity_artist)
+    result = _find_matching_song(_track("TEST00000002", 900102), identity_artist)
 
     assert result is None
 
@@ -56,7 +56,7 @@ def test_fuzzy_match_accepts_isrc_in_alternate_isrcs(identity_artist):
         gid="gid-identity-b",
     )
 
-    result = _find_matching_song(_track("TEST00000002", 9000000002), identity_artist)
+    result = _find_matching_song(_track("TEST00000002", 900102), identity_artist)
 
     assert result == song
 
@@ -67,12 +67,12 @@ def test_link_or_create_does_not_overwrite_conflicting_isrc_with_deezer_id(
 ):
     song = _song(identity_artist, isrc="TEST00000001", gid="gid-identity-c")
     album = Album.objects.create(
-        name="Shut Up And Dance", artist=identity_artist, deezer_id=8800101
+        name="Test Track One", artist=identity_artist, deezer_id=8800101
     )
 
     with patch("library_manager.tasks.migration.logger") as log:
         outcome = _link_or_create_song(
-            _track("TEST00000002", 9000000002), identity_artist, album
+            _track("TEST00000002", 900102), identity_artist, album
         )
 
     song.refresh_from_db()
@@ -86,16 +86,16 @@ def test_link_or_create_does_not_overwrite_conflicting_isrc_with_deezer_id(
 def test_link_or_create_links_when_isrcs_match(identity_artist):
     song = _song(identity_artist, isrc="TEST00000001", gid="gid-identity-d")
     album = Album.objects.create(
-        name="Shut Up And Dance", artist=identity_artist, deezer_id=8800101
+        name="Test Track One", artist=identity_artist, deezer_id=8800101
     )
 
     outcome = _link_or_create_song(
-        _track("TEST00000001", 9000000001), identity_artist, album
+        _track("TEST00000001", 900101), identity_artist, album
     )
 
     song.refresh_from_db()
     assert outcome == "linked"
-    assert song.deezer_id == 9000000001
+    assert song.deezer_id == 900101
 
 
 @pytest.mark.django_db
@@ -106,7 +106,7 @@ def test_playlist_sync_does_not_attach_conflicting_deezer_id(identity_artist):
         url="https://www.deezer.com/playlist/8800001",
         provider="deezer",
     )
-    track = _track("TEST00000002", 9000000002)
+    track = _track("TEST00000002", 900102)
 
     class FakeProvider:
         def get_playlist(self, playlist_id):
