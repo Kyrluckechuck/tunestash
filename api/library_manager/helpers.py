@@ -112,6 +112,8 @@ def enqueue_deduped(
     args: Optional[Sequence[Any]] = None,
     kwargs: Optional[Dict[str, Any]] = None,
     priority: Optional[int] = None,
+    queue: Optional[str] = None,
+    countdown: Optional[int] = None,
     task_type: str = "UNKNOWN",
     entity_type: str = "UNKNOWN",
     entity_id: str = "unknown",
@@ -125,6 +127,9 @@ def enqueue_deduped(
     (``task_id`` is unique), so two concurrent callers cannot both publish.
     The task body adopts that row via ``create_task_history`` when it starts.
     The claim is released if publishing fails.
+
+    ``queue`` and ``countdown`` are forwarded to ``apply_async`` so callers
+    that use a dedicated queue or a delayed start keep that routing.
 
     ``claim_nonce`` / ``nonce_key`` are optional and backwards compatible.
     When a nonce is supplied, the publish-failure cleanup also requires the
@@ -161,6 +166,10 @@ def enqueue_deduped(
         publish_kwargs["kwargs"] = kwargs
     if priority is not None:
         publish_kwargs["priority"] = priority
+    if queue is not None:
+        publish_kwargs["queue"] = queue
+    if countdown is not None:
+        publish_kwargs["countdown"] = countdown
     try:
         task.apply_async(**publish_kwargs)
     except Exception:
@@ -217,6 +226,149 @@ def enqueue_download_missing_albums_for_artist(
         task_type="DOWNLOAD",
         entity_type="ARTIST",
         entity_id=str(artist_id),
+    )
+
+
+def _dedup_task_id(task_name: str, entity_id: object) -> str:
+    """Build the shared task id used by a task and all of its deduped callers."""
+    return generate_task_id(task_name, entity_id)
+
+
+def enqueue_download_album_by_spotify_id(
+    spotify_album_id: str, priority: Optional[int] = None
+) -> bool:
+    from .tasks import download_album_by_spotify_id
+
+    return enqueue_deduped(
+        download_album_by_spotify_id,
+        task_id=_dedup_task_id(
+            "library_manager.tasks.download_album_by_spotify_id", spotify_album_id
+        ),
+        args=[spotify_album_id],
+        priority=priority,
+        task_type="DOWNLOAD",
+        entity_type="ALBUM",
+        entity_id=str(spotify_album_id),
+    )
+
+
+def enqueue_download_single_album(
+    album_id: int, priority: Optional[int] = None
+) -> bool:
+    from .tasks import download_single_album
+
+    return enqueue_deduped(
+        download_single_album,
+        task_id=_dedup_task_id("library_manager.tasks.download_single_album", album_id),
+        args=[album_id],
+        priority=priority,
+        task_type="DOWNLOAD",
+        entity_type="ALBUM",
+        entity_id=str(album_id),
+    )
+
+
+def enqueue_download_album_by_deezer_id(
+    deezer_album_id: int, priority: Optional[int] = None
+) -> bool:
+    from .tasks import download_album_by_deezer_id
+
+    return enqueue_deduped(
+        download_album_by_deezer_id,
+        task_id=_dedup_task_id(
+            "library_manager.tasks.download_album_by_deezer_id", deezer_album_id
+        ),
+        args=[deezer_album_id],
+        priority=priority,
+        task_type="DOWNLOAD",
+        entity_type="ALBUM",
+        entity_id=str(deezer_album_id),
+    )
+
+
+def enqueue_download_deezer_track(song_id: int, priority: Optional[int] = None) -> bool:
+    from .tasks import download_deezer_track
+
+    return enqueue_deduped(
+        download_deezer_track,
+        task_id=_dedup_task_id("library_manager.tasks.download_deezer_track", song_id),
+        args=[song_id],
+        priority=priority,
+        task_type="DOWNLOAD",
+        entity_type="TRACK",
+        entity_id=str(song_id),
+    )
+
+
+def enqueue_download_track_by_spotify_gid(
+    track_gid: str, priority: Optional[int] = None
+) -> bool:
+    from .tasks import download_track_by_spotify_gid
+
+    return enqueue_deduped(
+        download_track_by_spotify_gid,
+        task_id=_dedup_task_id(
+            "library_manager.tasks.download_track_by_spotify_gid", track_gid
+        ),
+        args=[track_gid],
+        priority=priority,
+        task_type="DOWNLOAD",
+        entity_type="TRACK",
+        entity_id=str(track_gid),
+    )
+
+
+def enqueue_apply_metadata_update(
+    update_id: int, priority: Optional[int] = None
+) -> bool:
+    from .tasks import apply_metadata_update
+
+    return enqueue_deduped(
+        apply_metadata_update,
+        task_id=_dedup_task_id(
+            "library_manager.tasks.apply_metadata_update", update_id
+        ),
+        args=[update_id],
+        priority=priority,
+        task_type="SYNC",
+        entity_type="METADATA_UPDATE",
+        entity_id=str(update_id),
+    )
+
+
+def enqueue_map_external_list_tracks(
+    list_id: int, priority: Optional[int] = None
+) -> bool:
+    from .tasks import map_external_list_tracks
+
+    return enqueue_deduped(
+        map_external_list_tracks,
+        task_id=_dedup_task_id(
+            "library_manager.tasks.map_external_list_tracks", list_id
+        ),
+        args=[list_id],
+        priority=priority,
+        task_type="SYNC",
+        entity_type="PLAYLIST",
+        entity_id=str(list_id),
+    )
+
+
+def enqueue_sync_deezer_playlist(
+    playlist_id: int, priority: Optional[int] = None
+) -> bool:
+    from .tasks import sync_deezer_playlist
+
+    return enqueue_deduped(
+        sync_deezer_playlist,
+        task_id=_dedup_task_id(
+            "library_manager.tasks.sync_deezer_playlist", playlist_id
+        ),
+        args=[playlist_id],
+        priority=priority,
+        task_type="SYNC",
+        entity_type="PLAYLIST",
+        entity_id=str(playlist_id),
     )
 
 

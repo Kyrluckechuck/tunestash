@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
@@ -25,6 +26,8 @@ from .base import (
     QualityPreference,
     TrackMatch,
     calculate_match_confidence,
+    is_duration_compatible,
+    is_rejected,
 )
 from .tidal_endpoints import TidalEndpoint, TidalEndpointManager
 
@@ -124,6 +127,8 @@ class TidalProvider(DownloadProvider):
         album: Optional[str] = None,
         isrc: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        search_alternate_isrcs: Optional[Iterable[str]] = None,
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         """
         Search for a track on Tidal.
@@ -158,7 +163,9 @@ class TidalProvider(DownloadProvider):
                     title=title,
                     artist=artist,
                     isrc=isrc,
+                    search_alternate_isrcs=search_alternate_isrcs,
                     duration_ms=duration_ms,
+                    excluded_track_ids=excluded_track_ids,
                 )
 
                 self._endpoint_manager.mark_endpoint_success(endpoint)
@@ -428,6 +435,8 @@ class TidalProvider(DownloadProvider):
         artist: str,
         isrc: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        search_alternate_isrcs: Optional[Iterable[str]] = None,
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         """Find the best matching track from search results."""
         best: Optional[TrackMatch] = None
@@ -436,6 +445,17 @@ class TidalProvider(DownloadProvider):
         for result in results:
             match = self._parse_track_result(result, confidence=0.0)
             if not match:
+                continue
+            if is_rejected(match.provider, match.provider_track_id, excluded_track_ids):
+                continue
+
+            if not is_duration_compatible(duration_ms, match.duration_ms):
+                logger.debug(
+                    "[tidal] Rejecting '%s': expected %sms, got %sms",
+                    match.title,
+                    duration_ms,
+                    match.duration_ms,
+                )
                 continue
 
             # Calculate confidence
@@ -446,6 +466,7 @@ class TidalProvider(DownloadProvider):
                 result_artist=match.artist,
                 search_isrc=isrc,
                 result_isrc=match.isrc,
+                search_alternate_isrcs=search_alternate_isrcs,
                 search_duration_ms=duration_ms,
                 result_duration_ms=match.duration_ms,
             )

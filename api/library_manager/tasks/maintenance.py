@@ -8,16 +8,23 @@ from downloader.providers.base import TrackMetadata
 
 from ..models import Album, Artist
 from ..models import DownloadProvider as DownloadProviderEnum
-from ..models import Song
+from ..models import Song, TaskHistory
 from .core import (
+    TaskCancelledException,
     complete_task,
     create_task_history,
     logger,
     normalize_name,
+    raise_if_cancelled,
     require_download_capability,
     update_task_progress,
 )
-from .download import FALLBACK_PROVIDER_MAP, _get_fallback_order
+from .download import (
+    FALLBACK_PROVIDER_MAP,
+    _finalize_provider_diagnostics,
+    _get_fallback_order,
+    _rejected_ids,
+)
 
 
 def _try_resolve_to_deezer(song: Song) -> None:
@@ -127,11 +134,14 @@ def _build_track_metadata(song: Song) -> TrackMetadata:
         album_artist=artist_name,
         duration_ms=duration_ms,
         isrc=isrc,
+        alternate_isrcs=tuple(song.alternate_isrcs or ()),
         genres=genres,
     )
 
 
-def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
+def _download_deezer_songs_via_fallback(
+    songs: list[Song], task_history: Optional[TaskHistory] = None
+) -> tuple[int, int]:
     """Download songs via YouTube/Tidal/Qobuz fallback providers.
 
     For each song, attempts to resolve to Deezer first for richer metadata,
@@ -152,13 +162,33 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
+        def _check_sync() -> None:
+            if task_history is not None:
+                raise_if_cancelled(task_history, force_refresh=True)
+
+        async def _check_cancelled() -> None:
+            await loop.run_in_executor(None, _check_sync)
+
         for song in songs:
+            _check_sync()
             _try_resolve_to_deezer(song)
             metadata = _build_track_metadata(song)
 
-            result = loop.run_until_complete(downloader.download_track(metadata))
+            rejected = _rejected_ids(song)
+            result = loop.run_until_complete(
+                downloader.download_track(
+                    metadata,
+                    rejected_track_ids=rejected,
+                    cancellation_check=_check_cancelled,
+                )
+            )
 
             if result.success and result.file_path:
+                try:
+                    _check_sync()  # late cancel: never publish the file
+                except TaskCancelledException:
+                    result.file_path.unlink(missing_ok=True)
+                    break
                 dl_provider = FALLBACK_PROVIDER_MAP.get(
                     result.provider_used or "", DownloadProviderEnum.UNKNOWN
                 )
@@ -167,11 +197,18 @@ def _download_deezer_songs_via_fallback(songs: list[Song]) -> tuple[int, int]:
                     file_path=str(result.file_path),
                     provider=dl_provider,
                 )
+                _finalize_provider_diagnostics(
+                    song,
+                    result,
+                    task_history=task_history,
+                    source_duration_ms=metadata.duration_ms,
+                )
                 downloaded += 1
             else:
                 failed += 1
                 song.increment_failed_count()
                 song.save()
+                _finalize_provider_diagnostics(song, result, task_history=task_history)
 
     finally:
         try:
@@ -549,7 +586,9 @@ def retry_failed_songs_for_artist(self: Any, artist_id: int) -> None:
                 f"Retrying {len(songs_to_download)} songs "
                 f"for artist {artist.name} via fallback providers"
             )
-            downloaded, failed = _download_deezer_songs_via_fallback(songs_to_download)
+            downloaded, failed = _download_deezer_songs_via_fallback(
+                songs_to_download, task_history=task_history
+            )
             logger.info(
                 f"Retry for {artist.name}: " f"{downloaded} downloaded, {failed} failed"
             )

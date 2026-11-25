@@ -20,6 +20,7 @@ from django.utils import timezone
 
 import psutil
 from celery.utils.log import get_task_logger
+
 from celery_app import app as celery_app  # noqa: F401 - re-exported
 
 from ..models import TaskHistory
@@ -225,6 +226,62 @@ def complete_task(
         task_history.mark_completed()
     else:
         task_history.mark_failed(error_message)
+
+
+# A CANCELLED status is sticky, so a positive result can be kept indefinitely.
+# A negative result must expire quickly: a short download batch can finish in
+# well under a second, and a stale "not cancelled" would let the worker publish
+# files after the user cancelled. Negative results are therefore cached for
+# only a few hundred milliseconds; tight loops still avoid a query per item.
+_NEGATIVE_CANCEL_TTL_SECONDS = 0.1
+_cancelled_cache: dict[str, tuple[float, bool]] = {}
+
+
+def clear_cancelled_cache(task_id: Optional[str] = None) -> None:
+    """Drop cached cancellation results (used by tests, restarts and phase boundaries)."""
+    if task_id is None:
+        _cancelled_cache.clear()
+    else:
+        _cancelled_cache.pop(task_id, None)
+
+
+def is_task_cancelled(task_id: str, *, force_refresh: bool = False) -> bool:
+    """Return True when ``task_id`` has been cancelled.
+
+    Positive results are sticky. Negative results live only for
+    ``_NEGATIVE_CANCEL_TTL_SECONDS`` so a cancel landing during a short batch
+    is noticed at the next check. Pass ``force_refresh=True`` at critical
+    boundaries (before a provider call or a file write) to bypass the cache.
+    """
+    now = time.monotonic()
+    if not force_refresh:
+        cached = _cancelled_cache.get(task_id)
+        if cached is not None:
+            cached_at, cancelled = cached
+            if cancelled or now - cached_at < _NEGATIVE_CANCEL_TTL_SECONDS:
+                return cancelled
+    status = (
+        TaskHistory.objects.filter(task_id=task_id)
+        .values_list("status", flat=True)
+        .first()
+    )
+    cancelled = status == "CANCELLED"
+    _cancelled_cache[task_id] = (now, cancelled)
+    return cancelled
+
+
+def raise_if_cancelled(
+    task_history: TaskHistory, *, force_refresh: bool = False
+) -> None:
+    """Stop cooperatively when the task has been cancelled.
+
+    Callers must handle ``TaskCancelledException`` and return without marking
+    the row FAILED or writing a partial result. Use ``force_refresh=True`` at
+    a boundary that can publish a file or start a long provider call.
+    """
+    if is_task_cancelled(task_history.task_id, force_refresh=force_refresh):
+        logger.info("Task %s cancelled; stopping cleanly", task_history.task_id)
+        raise TaskCancelledException()
 
 
 def check_task_cancellation(task_history: TaskHistory) -> bool:

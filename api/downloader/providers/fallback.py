@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -20,7 +22,14 @@ from downloader.filesystem_safety import (
 )
 
 from .audio_converter import AudioConversionError, convert_flac_to_m4a
-from .base import DownloadProvider, QualityPreference, TrackMatch, TrackMetadata
+from .base import (
+    DownloadProvider,
+    QualityPreference,
+    TrackMatch,
+    TrackMetadata,
+    is_duration_compatible,
+    rejected_key,
+)
 from .metadata import MetadataEmbedder
 from .monochrome import MonochromeProvider
 from .qobuz import QobuzProvider
@@ -35,6 +44,10 @@ logger = logging.getLogger(__name__)
 # or file logs. Credentials and signed URLs must never be persisted.
 MAX_OUTCOME_DETAIL_LENGTH = 300
 MAX_OUTCOMES = 8
+
+# Bound retries within a provider so a catalog of rejected candidates cannot
+# turn one download into an unbounded loop.
+MAX_CANDIDATES_PER_PROVIDER = 3
 
 # Fail-closed URL handling: keep only the host. Userinfo, opaque path segments,
 # query strings and fragments can all carry signed tokens, so they are dropped
@@ -157,6 +170,7 @@ class DownloadChainResult:
     track_match: Optional[TrackMatch]
     validation_result: Optional[ValidationResult]
     provider_outcomes: list[ProviderOutcome] = field(default_factory=list)
+    rejected_matches: list[dict[str, str]] = field(default_factory=list)
 
 
 # Backward-compatible alias
@@ -272,11 +286,16 @@ class DownloadProviderChain:
         self,
         track_metadata: TrackMetadata,
         output_filename: Optional[str] = None,
+        rejected_track_ids: Optional[Iterable[str]] = None,
+        cancellation_check: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> DownloadChainResult:
         """
         Attempt to download a track using providers in order.
 
         Tries each provider in the configured order until one succeeds.
+        Previously rejected candidates are excluded from every search.
+        ``cancellation_check`` is awaited before every provider attempt so a
+        cancel during an earlier fallback cannot start a later download.
         """
         if not self._provider_order:
             return DownloadChainResult(
@@ -298,8 +317,12 @@ class DownloadProviderChain:
 
         last_error = "All providers failed"
         outcomes: list[ProviderOutcome] = []
+        excluded = set(rejected_track_ids or ())
+        rejections: list[dict[str, str]] = []
 
         for provider_name in self._provider_order:
+            if cancellation_check is not None:
+                await cancellation_check()
             logger.info(
                 f"[{provider_name}] Trying to download: "
                 f"'{track_metadata.artist} - {track_metadata.title}'"
@@ -329,10 +352,12 @@ class DownloadProviderChain:
                 )
                 continue
 
-            result = await self._try_provider(
+            result = await self._try_provider_with_candidates(
                 provider=provider,
                 track_metadata=track_metadata,
                 output_filename=output_filename,
+                excluded=excluded,
+                rejections=rejections,
             )
             outcomes.extend(result.provider_outcomes)
             if len(outcomes) > MAX_OUTCOMES:
@@ -362,6 +387,7 @@ class DownloadProviderChain:
                     track_match=result.track_match,
                     validation_result=result.validation_result,
                     provider_outcomes=outcomes,
+                    rejected_matches=rejections,
                 )
 
             last_error = result.error_message or f"{provider_name} failed"
@@ -377,7 +403,25 @@ class DownloadProviderChain:
             track_match=None,
             validation_result=None,
             provider_outcomes=outcomes,
+            rejected_matches=rejections,
         )
+
+    def _remove_rejected_file(
+        self, file_path: Path, provider_name: str
+    ) -> Optional[ProviderOutcome]:
+        """Remove a rejected download, reporting the path if cleanup fails."""
+        try:
+            file_path.unlink(missing_ok=True)
+        except OSError:
+            # The exception may embed signed URLs; report only the local path so
+            # a later cleanup pass can find the orphaned file.
+            logger.warning(
+                "[%s] Failed to remove rejected file: %s", provider_name, file_path
+            )
+            return self._outcome(
+                provider_name, "validation", "warning", f"leftover file: {file_path}"
+            )
+        return None
 
     @staticmethod
     def _outcome(
@@ -393,23 +437,78 @@ class DownloadProviderChain:
             detail=sanitize_provider_detail(detail),
         )
 
-    async def _try_provider(
+    async def _try_provider_with_candidates(
         self,
         provider: DownloadProvider,
         track_metadata: TrackMetadata,
         output_filename: Optional[str],
+        excluded: set[str],
+        rejections: list[dict[str, str]],
+    ) -> DownloadChainResult:
+        """Retry a provider with rejected candidates excluded.
+
+        A provider's reported duration can pass while the delivered file does
+        not. Without retrying here the next scheduled attempt would pick the
+        same bad candidate again.
+        """
+        provider_outcomes: list[ProviderOutcome] = []
+        for _ in range(MAX_CANDIDATES_PER_PROVIDER):
+            result = await self._try_provider(
+                provider=provider,
+                track_metadata=track_metadata,
+                output_filename=output_filename,
+                excluded_track_ids=excluded,
+            )
+            provider_outcomes.extend(result.provider_outcomes)
+            new_rejections = [
+                rejected
+                for rejected in result.rejected_matches
+                if rejected["key"] not in excluded
+            ]
+            if not new_rejections:
+                break
+            for rejected in new_rejections:
+                excluded.add(rejected["key"])
+                rejections.append(rejected)
+            if result.success:
+                break
+        combined = DownloadChainResult(
+            success=result.success,
+            file_path=result.file_path,
+            provider_used=result.provider_used,
+            error_message=result.error_message,
+            track_match=result.track_match,
+            validation_result=result.validation_result,
+            provider_outcomes=provider_outcomes,
+            rejected_matches=list(rejections),
+        )
+        return combined
+
+    # Each stage exits early with its own diagnostics; merging them would lose
+    # the provider stage that actually failed.
+    async def _try_provider(  # pylint: disable=too-many-return-statements
+        self,
+        provider: DownloadProvider,
+        track_metadata: TrackMetadata,
+        output_filename: Optional[str],
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> DownloadChainResult:
         provider_name = provider.name
 
         # Step 1: Search for the track
+        search_kwargs: dict[str, object] = {
+            "title": track_metadata.title,
+            "artist": track_metadata.artist,
+            "album": track_metadata.album,
+            "isrc": track_metadata.isrc,
+            "duration_ms": track_metadata.duration_ms,
+        }
+        if track_metadata.alternate_isrcs:
+            search_kwargs["search_alternate_isrcs"] = track_metadata.alternate_isrcs
+        if excluded_track_ids:
+            search_kwargs["excluded_track_ids"] = excluded_track_ids
         try:
-            match = await provider.search_track(
-                title=track_metadata.title,
-                artist=track_metadata.artist,
-                album=track_metadata.album,
-                isrc=track_metadata.isrc,
-                duration_ms=track_metadata.duration_ms,
-            )
+            match = await provider.search_track(**search_kwargs)
             if match is None:
                 # Providers commonly return None for network failures as well
                 # as a genuine empty result, so this is not a catalog verdict.
@@ -596,6 +695,45 @@ class DownloadProviderChain:
                 logger.warning(f"[{provider_name}] {detail}")
                 warnings.append(
                     self._outcome(provider_name, "validation", "warning", detail)
+                )
+
+            measured_duration_ms = (
+                validation_result.audio_info.duration_ms
+                if validation_result.audio_info
+                else None
+            )
+            if not is_duration_compatible(
+                track_metadata.duration_ms or None, measured_duration_ms
+            ):
+                detail = (
+                    f"Measured duration {measured_duration_ms}ms differs from "
+                    f"source {track_metadata.duration_ms}ms beyond "
+                    "the allowed tolerance"
+                )
+                logger.error(f"[{provider_name}] {detail}")
+                cleanup_outcome = self._remove_rejected_file(file_path, provider_name)
+                if cleanup_outcome:
+                    warnings.append(cleanup_outcome)
+                return DownloadChainResult(
+                    success=False,
+                    file_path=None,
+                    provider_used=provider_name,
+                    error_message=detail,
+                    track_match=match,
+                    validation_result=validation_result,
+                    provider_outcomes=[
+                        *warnings,
+                        self._outcome(provider_name, "validation", "error", detail),
+                    ],
+                    rejected_matches=[
+                        {
+                            "key": rejected_key(provider_name, match.provider_track_id),
+                            "provider": provider_name,
+                            "provider_track_id": match.provider_track_id,
+                            "reason": "duration",
+                            "at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    ],
                 )
         except Exception as e:
             detail = f"Validation failed with exception: {sanitize_provider_detail(e)}"

@@ -12,7 +12,7 @@ import logging
 import random
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import requests
@@ -53,11 +53,11 @@ class TidalEndpoint:
         if self.last_failure is None:
             return True
         cooldown_end = self.last_failure + ENDPOINT_COOLDOWN
-        return datetime.now() >= cooldown_end
+        return datetime.now(timezone.utc) >= cooldown_end
 
     def mark_failure(self) -> None:
         """Mark this endpoint as having failed."""
-        self.last_failure = datetime.now()
+        self.last_failure = datetime.now(timezone.utc)
         self.consecutive_failures += 1
 
     def mark_success(self) -> None:
@@ -163,7 +163,7 @@ class TidalEndpointManager:
             return True
         if self._last_fetch is None:
             return True
-        return datetime.now() >= self._last_fetch + self._cache_ttl
+        return datetime.now(timezone.utc) >= self._last_fetch + self._cache_ttl
 
     def _fetch_config_sync(self) -> Optional[str]:
         """Synchronous config fetch (called via sync_to_async)."""
@@ -183,7 +183,7 @@ class TidalEndpointManager:
             new_endpoints = self._parse_config(config_text)
             if new_endpoints:
                 self._merge_endpoints(new_endpoints)
-                self._last_fetch = datetime.now()
+                self._last_fetch = datetime.now(timezone.utc)
                 logger.info(
                     f"Refreshed Tidal endpoints: {len(self._endpoints)} available"
                 )
@@ -253,7 +253,7 @@ class TidalEndpointManager:
             )
             for e in FALLBACK_ENDPOINTS
         ]
-        self._last_fetch = datetime.now()
+        self._last_fetch = datetime.now(timezone.utc)
         logger.info(f"Using {len(self._endpoints)} fallback Tidal endpoints")
 
     @staticmethod

@@ -7,7 +7,7 @@ This script provides better error reporting for Docker health checks in CI envir
 import json
 import sys
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 
 
@@ -15,7 +15,7 @@ def main() -> None:
     """Run health check with detailed error reporting."""
     try:
         print("🔍 Starting health check...")
-        print(f"⏰ Timestamp: {datetime.now().isoformat()}")
+        print(f"⏰ Timestamp: {datetime.now(timezone.utc).isoformat()}")
         print("🌐 Attempting to connect to http://localhost:5000/healthz")
 
         response = urllib.request.urlopen("http://localhost:5000/healthz")

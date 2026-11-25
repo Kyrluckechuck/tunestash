@@ -8,6 +8,7 @@ from Qobuz via the squid.wtf API endpoints.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
@@ -23,6 +24,8 @@ from .base import (
     QualityPreference,
     TrackMatch,
     calculate_match_confidence,
+    is_duration_compatible,
+    is_rejected,
 )
 
 logger = logging.getLogger(__name__)
@@ -145,6 +148,8 @@ class QobuzProvider(DownloadProvider):
         album: Optional[str] = None,
         isrc: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        search_alternate_isrcs: Optional[Iterable[str]] = None,
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         """
         Search for a track on Qobuz.
@@ -204,7 +209,9 @@ class QobuzProvider(DownloadProvider):
                     search_title=title,
                     search_artist=artist,
                     search_isrc=isrc,
+                    search_alternate_isrcs=search_alternate_isrcs,
                     search_duration_ms=duration_ms,
+                    excluded_track_ids=excluded_track_ids,
                 )
 
                 if match and match.confidence >= self._min_confidence:
@@ -370,7 +377,9 @@ class QobuzProvider(DownloadProvider):
         search_title: str,
         search_artist: str,
         search_isrc: Optional[str] = None,
+        search_alternate_isrcs: Optional[Iterable[str]] = None,
         search_duration_ms: Optional[int] = None,
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         """Find the best matching track from album tracks."""
         best: Optional[TrackMatch] = None
@@ -379,6 +388,17 @@ class QobuzProvider(DownloadProvider):
         for track in tracks:
             match = self._parse_track_result(track, album_data, confidence=0.0)
             if not match:
+                continue
+            if is_rejected(match.provider, match.provider_track_id, excluded_track_ids):
+                continue
+
+            if not is_duration_compatible(search_duration_ms, match.duration_ms):
+                logger.debug(
+                    "[qobuz] Rejecting '%s': expected %sms, got %sms",
+                    match.title,
+                    search_duration_ms,
+                    match.duration_ms,
+                )
                 continue
 
             # Calculate confidence
@@ -389,6 +409,7 @@ class QobuzProvider(DownloadProvider):
                 result_artist=match.artist,
                 search_isrc=search_isrc,
                 result_isrc=match.isrc,
+                search_alternate_isrcs=search_alternate_isrcs,
                 search_duration_ms=search_duration_ms,
                 result_duration_ms=match.duration_ms,
             )

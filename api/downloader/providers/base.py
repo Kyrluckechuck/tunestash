@@ -9,6 +9,7 @@ and provider capabilities.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -139,6 +140,7 @@ class TrackMetadata:
     album_artist: str
     duration_ms: int
     isrc: Optional[str] = None
+    alternate_isrcs: tuple[str, ...] = ()
     track_number: Optional[int] = None
     total_tracks: Optional[int] = None
     disc_number: Optional[int] = None
@@ -220,6 +222,8 @@ class DownloadProvider(ABC):
         album: Optional[str] = None,
         isrc: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        search_alternate_isrcs: Optional[Iterable[str]] = None,
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         """
         Search for a track in the provider's catalog.
@@ -340,6 +344,46 @@ class DownloadProvider(ABC):
         return available[0]
 
 
+def rejected_key(provider: str, provider_track_id: str) -> str:
+    """Stable identity for a rejected provider candidate."""
+    return f"{provider}:{provider_track_id}"
+
+
+def is_rejected(
+    provider: str,
+    provider_track_id: str,
+    excluded_track_ids: Optional[Iterable[str]],
+) -> bool:
+    """Return whether a provider candidate was rejected by an earlier attempt."""
+    return bool(excluded_track_ids) and rejected_key(provider, provider_track_id) in (
+        excluded_track_ids or ()
+    )
+
+
+# A candidate recording must match the source within 8s or 5% of the source
+# duration, whichever is larger. Smaller differences are left to the weighted
+# score so short edits and encoding padding are not rejected outright.
+DURATION_MISMATCH_REJECT_MS = 8_000
+DURATION_MISMATCH_REJECT_FRACTION = 0.05
+
+
+def is_duration_compatible(
+    expected_ms: Optional[int], actual_ms: Optional[int]
+) -> bool:
+    """Return False only when both durations are known and differ materially.
+
+    Sources without a duration (0 or None) cannot be checked; they must not be
+    rejected on that basis.
+    """
+    if not expected_ms or not actual_ms:
+        return True
+    allowance_ms = max(
+        DURATION_MISMATCH_REJECT_MS,
+        int(expected_ms * DURATION_MISMATCH_REJECT_FRACTION),
+    )
+    return abs(expected_ms - actual_ms) <= allowance_ms
+
+
 def calculate_match_confidence(
     search_title: str,
     search_artist: str,
@@ -349,6 +393,7 @@ def calculate_match_confidence(
     result_duration_ms: Optional[int] = None,
     search_isrc: Optional[str] = None,
     result_isrc: Optional[str] = None,
+    search_alternate_isrcs: Optional[Iterable[str]] = None,
     duration_tolerance_ms: int = 5000,
 ) -> float:
     """Calculate confidence score for a track match.
@@ -364,6 +409,7 @@ def calculate_match_confidence(
         result_artist=result_artist,
         search_isrc=search_isrc,
         result_isrc=result_isrc,
+        search_alternate_isrcs=search_alternate_isrcs,
         search_duration_s=search_duration_ms / 1000.0 if search_duration_ms else None,
         result_duration_s=result_duration_ms / 1000.0 if result_duration_ms else None,
         duration_tolerance_s=duration_tolerance_ms / 1000.0,

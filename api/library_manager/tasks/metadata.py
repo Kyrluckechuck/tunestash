@@ -4,10 +4,12 @@ These tasks handle applying metadata updates detected from Spotify,
 including migrating existing files and cleaning up old files.
 """
 
+import json
 import logging
 import os
 import shutil
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, cast
 
@@ -17,12 +19,12 @@ from django.db import transaction
 from downloader.filesystem_safety import (
     UnsafePathError,
     assert_within,
+    is_safe_regular_file,
     is_within,
     safe_join,
     sanitize_component,
 )
 from downloader.providers.metadata import MetadataEmbedder
-
 from library_manager.metadata_detection import dismiss_superseded_updates
 from library_manager.models import (
     Album,
@@ -83,18 +85,18 @@ def _metadata_destination(song: Song, current_path: Path) -> Path:
 def _migrate_downloaded_song(song: Song) -> bool:
     """Rewrite tags and move one downloaded file without replacing its audio.
 
-    Copy-and-retain-until-commit design:
+    Copy, tag the copy, CAS-update the DB, then unlink the original on commit:
 
     * A path change is published as an **independent inode** (secure stream
       copy + no-overwrite ``os.link``), so the original is never mutated.
     * Only the destination copy is tagged; the original keeps its old tags.
     * The DB update is a compare-and-swap inside a transaction.
-    * The original is **retained permanently**; no automatic unlink is
-      performed, avoiding cleanup races with concurrent writers.
+    * ``transaction.on_commit`` re-checks the destination identity, the locked
+      DB reference and all other references before unlinking the original. Any
+      failed check keeps the file and logs why; the callback never raises.
 
-    A rollback leaves the original valid at the DB path; inert destination
-    copies and retained originals need manual reconciliation. Ambiguous cases
-    reject without DB mutation.
+    A rollback leaves the original valid at the DB path and never runs the
+    unlink callback. Ambiguous cases reject without DB mutation.
     """
     if not song.file_path:
         return False
@@ -144,6 +146,13 @@ def _migrate_downloaded_song(song: Song) -> bool:
         cast(Album, song.album).name if song.album is not None else "Unknown Album"
     )
 
+    try:
+        source_identity = _identity(current_path)
+        source_size = current_path.stat().st_size
+    except OSError:
+        logger.warning("Cannot stat migration source for song %s", song.id)
+        return False
+
     published_identity: tuple[int, int] | None = None
     if path_changes:
         try:
@@ -180,9 +189,18 @@ def _migrate_downloaded_song(song: Song) -> bool:
         _remove_published_copy(destination, published_identity, path_changes)
         return False
 
+    # Capture the destination identity only after tagging succeeds: a tag
+    # writer may replace the inode, and a later replacement is what the
+    # on_commit check must detect.
+    tagged_identity = _safe_identity(tag_target)
+    old_ref = cast(FilePath | None, song.file_path_ref)
+    old_path = current_path
+    song_pk = song.pk
+
     try:
         with transaction.atomic():
             _record_migrated_path(song, destination)
+            new_ref = cast(FilePath | None, song.file_path_ref)
     except Exception:
         # Outer rollback may happen after we return; that case is handled by
         # the inert destination copy (the original is untouched). Here we only
@@ -191,11 +209,25 @@ def _migrate_downloaded_song(song: Song) -> bool:
         _remove_published_copy(destination, published_identity, path_changes)
         raise
 
-    # The original is intentionally retained. Automatic deletion in an
-    # on_commit callback has unavoidable check/unlink races: a concurrent
-    # writer can replace the destination, or another Song can acquire the old
-    # FilePath, between the checks and the unlink. Keeping the old copy is the
-    # reliable choice; inert copies are left for explicit manual reconciliation.
+    if path_changes:
+        try:
+            resolved_old_path = old_path.resolve()
+        except OSError:
+            resolved_old_path = old_path
+        transaction.on_commit(
+            lambda: _cleanup_migration_original(
+                song_pk=song_pk,
+                new_ref=new_ref,
+                destination=destination,
+                tagged_identity=tagged_identity,
+                old_ref=old_ref,
+                old_path=old_path,
+                resolved_old_path=resolved_old_path,
+                source_identity=source_identity,
+                source_size=source_size,
+                output_root=output_root,
+            )
+        )
     return True
 
 
@@ -203,6 +235,66 @@ def _identity(path: Path) -> tuple[int, int]:
     """Return the (device, inode) pair identifying a file's inode."""
     stat = path.stat()
     return stat.st_dev, stat.st_ino
+
+
+_DEFAULT_LINK_LOG = "/config/migration-links.jsonl"
+
+
+def migration_link_log_path() -> Path:
+    """Return the append-only migration link log path.
+
+    The log lives under the config directory (never the music library), so a
+    media server scanning the library cannot index it. Deployments can override
+    the location with ``MIGRATION_LINK_LOG`` in settings.
+    """
+    return Path(getattr(settings, "MIGRATION_LINK_LOG", _DEFAULT_LINK_LOG))
+
+
+def _append_link_record(record: dict[str, Any]) -> None:
+    """Append one JSON line to the link log, process-safe and fsynced.
+
+    A single ``os.write`` on an ``O_APPEND`` descriptor keeps concurrent workers
+    from interleaving partial lines. The log is private (0600) and durable.
+    """
+    log = migration_link_log_path()
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        payload = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
+        fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            os.write(fd, payload)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        logger.info("Could not append migration link log %s", log)
+
+
+def _record_migration_link(
+    *,
+    event: str,
+    song_id: int,
+    old_path: Path,
+    old_identity: tuple[int, int] | None,
+    old_size: int,
+    new_path: Path,
+    new_identity: tuple[int, int] | None,
+    reason: str | None = None,
+) -> None:
+    """Record a retained original or a successful deletion in the link log."""
+    _append_link_record(
+        {
+            "event": event,
+            "song_id": song_id,
+            "old_path": str(old_path),
+            "old_identity": list(old_identity) if old_identity else None,
+            "old_size": old_size,
+            "new_path": str(new_path),
+            "new_identity": list(new_identity) if new_identity else None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "reason": reason,
+        }
+    )
 
 
 def _publish_copy(source: Path, destination: Path) -> tuple[int, int] | None:
@@ -260,6 +352,120 @@ def _is_shared_file(song: Song) -> bool:
         .exclude(pk=song.pk)
         .exists()
     )
+
+
+def _safe_identity(path: Path) -> tuple[int, int] | None:
+    """Return ``path``'s inode identity or None if it cannot be stat'ed."""
+    try:
+        return _identity(path)
+    except OSError:
+        return None
+
+
+def _cleanup_migration_original(  # noqa: PLR0913, PLR0911  pylint: disable=too-many-arguments,too-many-return-statements,too-many-branches,too-many-locals
+    *,
+    song_pk: int,
+    new_ref: FilePath | None,
+    destination: Path,
+    tagged_identity: tuple[int, int] | None,
+    old_ref: FilePath | None,
+    old_path: Path,
+    resolved_old_path: Path,
+    source_identity: tuple[int, int],
+    source_size: int,
+    output_root: Path,
+) -> None:
+    """Unlink the retained original after commit, only if every check holds.
+
+    This callback runs outside the migration transaction and must never raise.
+    Every failed check keeps the original, records why in the link log, and logs
+    at info level. Successful deletions are recorded too, as audit history.
+    """
+    current_identity = _safe_identity(destination)
+
+    def keep(reason: str, detail: str = "") -> None:
+        logger.info("Keeping migration original %s: %s%s", old_path, reason, detail)
+        _record_migration_link(
+            event="retained",
+            song_id=song_pk,
+            old_path=old_path,
+            old_identity=source_identity,
+            old_size=source_size,
+            new_path=destination,
+            new_identity=current_identity,
+            reason=reason,
+        )
+
+    try:
+        with transaction.atomic():
+            locked = Song.objects.select_for_update().filter(pk=song_pk).first()
+            if locked is None:
+                keep("song no longer exists", f" (id={song_pk})")
+                return
+            if locked.file_path_ref != new_ref or locked.downloaded is not True:
+                keep(
+                    "song no longer references the migrated path with downloaded=True",
+                    f" (id={song_pk})",
+                )
+                return
+
+        if not is_safe_regular_file(destination, output_root):
+            keep(
+                "migrated destination is missing, a symlink, or outside the library",
+                f" ({destination})",
+            )
+            return
+        if tagged_identity is None or current_identity != tagged_identity:
+            keep("migrated destination inode changed")
+            return
+
+        # No Song, in any downloaded state, may still reference the old path.
+        if old_ref is not None and Song.objects.filter(file_path_ref=old_ref).exists():
+            keep("another Song still references the old FilePath")
+            return
+        same_path_refs = FilePath.objects.filter(path=str(old_path))
+        if str(resolved_old_path) != str(old_path):
+            same_path_refs = same_path_refs | FilePath.objects.filter(
+                path=str(resolved_old_path)
+            )
+        if (
+            same_path_refs.exists()
+            and Song.objects.filter(file_path_ref__in=same_path_refs).exists()
+        ):
+            keep("another Song references FilePath with the old path")
+            return
+
+        if not is_safe_regular_file(old_path, output_root):
+            keep("original is a symlink, missing, or outside the library")
+            return
+        if _safe_identity(old_path) != source_identity:
+            keep("original inode changed since the copy")
+            return
+        try:
+            if old_path.stat().st_size != source_size:
+                keep("original size changed since the copy")
+                return
+        except OSError:
+            keep("cannot stat original")
+            return
+
+        old_path.unlink()
+        _record_migration_link(
+            event="deleted",
+            song_id=song_pk,
+            old_path=old_path,
+            old_identity=source_identity,
+            old_size=source_size,
+            new_path=destination,
+            new_identity=current_identity,
+        )
+        logger.info(
+            "Deleted retained migration original %s after successful migration to %s",
+            old_path,
+            destination,
+        )
+    except Exception:
+        keep("unexpected cleanup error")
 
 
 def _record_migrated_path(song: Song, destination: Path) -> None:

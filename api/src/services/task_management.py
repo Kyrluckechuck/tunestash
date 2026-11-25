@@ -3,14 +3,18 @@ Task management service for handling Celery task operations.
 """
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, cast
 
 from django.utils import timezone
 
 from asgiref.sync import sync_to_async
-from celery_app import app as celery_app
 from django_celery_results.models import TaskResult
+
+from celery_app import app as celery_app
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -117,6 +121,11 @@ class MutationResult:
         self.message = message
 
 
+def _revoke_task(task_id: str) -> None:
+    """Ask workers to discard a queued task without terminating running work."""
+    celery_app.control.revoke(task_id, terminate=False)
+
+
 class TaskManagementService:
     """Service for managing Celery tasks."""
 
@@ -153,6 +162,16 @@ class TaskManagementService:
                                 total += count
                         except Exception:
                             pass
+                # Revoke queued tasks by id so workers discard them even if a
+                # broker message survived the purge. terminate is never used:
+                # running tasks stop themselves at their next cancellation check.
+                for pending_id in TaskHistory.objects.filter(
+                    status="PENDING"
+                ).values_list("task_id", flat=True):
+                    try:
+                        _revoke_task(pending_id)
+                    except Exception as exc:  # pragma: no cover - broker hiccup
+                        logger.warning("Failed to revoke %s: %s", pending_id, exc)
                 return total
 
             purged_count = await sync_to_async(purge_queues)()
@@ -185,6 +204,14 @@ class TaskManagementService:
                 success=False, message=f"Failed to cancel tasks: {str(e)}"
             )
 
+    @staticmethod
+    def _revoke_pending_by_name(task_name: str) -> None:
+        pending_ids = TaskResult.objects.filter(
+            status="PENDING", task_name=task_name
+        ).values_list("task_id", flat=True)
+        for pending_id in pending_ids:
+            _revoke_task(pending_id)
+
     async def cancel_tasks_by_name(self, task_name: str) -> MutationResult:
         """Cancel all pending tasks with a specific name by updating database records."""
         try:
@@ -193,6 +220,13 @@ class TaskManagementService:
                 status__in=["PENDING", "STARTED", "RETRY"],
                 task_name=task_name,
             ).aupdate(status="REVOKED")
+
+            # Best-effort revoke of queued tasks; a broker hiccup must not
+            # turn a successful DB cancel into a failure.
+            try:
+                await sync_to_async(self._revoke_pending_by_name)(task_name)
+            except Exception as exc:  # pragma: no cover - broker hiccup
+                logger.warning("Failed to revoke tasks for %s: %s", task_name, exc)
 
             return MutationResult(
                 success=True,
@@ -481,6 +515,16 @@ class TaskManagementService:
         """Cancel a single task by its ID."""
         try:
             from library_manager.models import TaskHistory
+
+            was_pending = await TaskResult.objects.filter(
+                task_id=task_id, status="PENDING"
+            ).aexists()
+            if not was_pending:
+                was_pending = await TaskHistory.objects.filter(
+                    task_id=task_id, status="PENDING"
+                ).aexists()
+            if was_pending:
+                await sync_to_async(_revoke_task)(task_id)
 
             # Update TaskResult to REVOKED
             updated = await TaskResult.objects.filter(

@@ -3,16 +3,27 @@
 from datetime import datetime, timedelta
 
 import pytest
+import pytest_asyncio
 from asgiref.sync import sync_to_async
-from tests.factories import CompletedTaskFactory, FailedTaskFactory, TaskHistoryFactory
 
 from src.graphql_types.models import EntityType, TaskStatus, TaskType
 from src.services.task_history import TaskHistoryService
+from tests.factories import CompletedTaskFactory, FailedTaskFactory, TaskHistoryFactory
 
 
 @pytest.fixture
 def task_history_service():
     return TaskHistoryService()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def close_thread_connections():
+    """sync_to_async writes commit on thread-local connections; close them so
+    pytest-django's transaction=True truncation can remove the rows."""
+    from django.db import connections
+
+    yield
+    await sync_to_async(connections.close_all)()
 
 
 class TestTaskHistoryService:
@@ -25,7 +36,7 @@ class TestTaskHistoryService:
         assert hasattr(task_history_service, "get_page")
         assert hasattr(task_history_service, "_to_graphql_type")
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_create_task_success(self, task_history_service):
         """Test creating a task successfully."""
@@ -46,7 +57,7 @@ class TestTaskHistoryService:
         assert task.entity_type == "ARTIST"
         assert task.status == "PENDING"
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_get_page_with_filters(self, task_history_service):
         """Test getting task page with filters."""
@@ -63,7 +74,7 @@ class TestTaskHistoryService:
         assert len(result.items) >= 1
         assert result.total_count >= 1
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_get_page_with_pagination(self, task_history_service):
         """Test getting task page with pagination."""
@@ -81,7 +92,7 @@ class TestTaskHistoryService:
         assert result.total_count >= 5
         assert result.total_pages >= 2
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_get_page_with_sorting(self, task_history_service):
         """Test getting task page with sorting."""
@@ -100,7 +111,7 @@ class TestTaskHistoryService:
         assert len(result.items) >= 2
         assert result.items[0].started_at >= result.items[1].started_at
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_create_task_with_different_types(self, task_history_service):
         """Test creating tasks with different types."""
@@ -135,7 +146,7 @@ class TestTaskHistoryService:
         )
         assert fetch_task.type == "FETCH"
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_get_page_empty_result(self, task_history_service):
         """Test getting page with no matching tasks."""
@@ -149,7 +160,7 @@ class TestTaskHistoryService:
         assert len(result.items) == 0
         assert result.total_count == 0
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_get_page_with_search(self, task_history_service):
         """Test getting page with search filter."""
@@ -167,7 +178,7 @@ class TestTaskHistoryService:
         assert len(result.items) >= 1
         assert result.total_count >= 1
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_get_page_second_page(self, task_history_service):
         """Test getting second page of results."""
@@ -187,7 +198,7 @@ class TestTaskHistoryService:
         assert len(result2.items) >= 0
         assert result2.page == 2
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_to_graphql_type_conversion(self, task_history_service):
         """Test conversion from Django model to GraphQL type."""
@@ -209,7 +220,7 @@ class TestTaskHistoryService:
         assert graphql_task.status == TaskStatus.PENDING
         assert graphql_task.id == str(django_task.id)
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_create_task_with_all_entity_types(self, task_history_service):
         """Test creating tasks with all entity types."""
@@ -227,7 +238,7 @@ class TestTaskHistoryService:
 
             assert task.entity_type == entity_type.value.upper()
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_get_page_with_type_filter(self, task_history_service):
         """Test getting page with type filter."""
@@ -252,7 +263,7 @@ class TestTaskHistoryService:
         assert len(result.items) >= 1
         assert all(item.type == TaskType.SYNC for item in result.items)
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_cancelled_status_mapping(self, task_history_service):
         """Test that CANCELLED status is properly mapped to GraphQL type."""
@@ -280,7 +291,7 @@ class TestTaskHistoryService:
         assert graphql_task.status == TaskStatus.CANCELLED
         assert refreshed_task.status == "CANCELLED"
 
-    @pytest.mark.django_db
+    @pytest.mark.django_db(transaction=True)
     @pytest.mark.asyncio
     async def test_get_page_filters_cancelled_tasks(self, task_history_service):
         """Test that cancelled tasks can be filtered in queries."""

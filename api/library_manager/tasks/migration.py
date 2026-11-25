@@ -8,7 +8,6 @@ new records for any Deezer content not yet in the DB.
 from typing import Any, Optional
 
 from celery_app import app as celery_app
-
 from src.providers.metadata_base import TrackResult
 
 from ..models import Album, Artist, Song
@@ -16,6 +15,7 @@ from ..task_priorities import TaskPriority
 from .core import (
     complete_task,
     create_task_history,
+    is_task_cancelled,
     logger,
     mark_task_running,
     normalize_name,
@@ -338,6 +338,10 @@ def resolve_all_artists_to_deezer(
     mark_task_running(task_history)
 
     try:
+        if is_task_cancelled(task_history.task_id):
+            logger.info("Artist resolution cancelled")
+            return
+
         queryset = Artist.objects.filter(
             deezer_id__isnull=True,
             id__gt=last_artist_id,
@@ -399,6 +403,9 @@ def resolve_all_artists_to_deezer(
         )
 
         for idx, artist in enumerate(artists):
+            if is_task_cancelled(task_history.task_id):
+                logger.info("Artist resolution cancelled")
+                return
             try:
                 linked_artist = _try_link_artist_to_deezer(artist, provider)
                 if linked_artist:

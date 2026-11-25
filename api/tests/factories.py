@@ -1,10 +1,11 @@
 """Factory Boy factories for test data creation."""
 
 import random
-from datetime import timezone
+from datetime import datetime, timezone
 
 from factory import Faker, LazyFunction, Sequence, SubFactory
 from factory.django import DjangoModelFactory
+from faker import Faker as FakerGenerator
 
 from library_manager.models import (
     Album,
@@ -104,7 +105,15 @@ class TaskHistoryFactory(DjangoModelFactory):
     error_message = Faker("sentence")
     duration_seconds = Faker("random_int", min=1, max=3600)
     progress_percentage = Faker("random_int", min=0, max=100)
-    log_messages = Faker("sentences", nb=3)
+    log_messages = LazyFunction(
+        lambda: [
+            {
+                "message": FakerGenerator().sentence(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            for _ in range(3)
+        ]
+    )
 
 
 # Specialized factories for common test scenarios

@@ -220,9 +220,9 @@ class MetadataUpdateService:
                 )
 
             # Queue the apply task
-            from library_manager.tasks import apply_metadata_update
+            from library_manager.helpers import enqueue_apply_metadata_update
 
-            apply_metadata_update.delay(update_id)
+            enqueue_apply_metadata_update(update_id)
 
             return True, f"Queued metadata update #{update_id} for application"
 
@@ -261,12 +261,14 @@ class MetadataUpdateService:
             if count == 0:
                 return True, "No pending metadata updates to apply", 0
 
-            from library_manager.tasks import apply_metadata_update
+            from library_manager.helpers import enqueue_apply_metadata_update
 
+            queued = 0
             for update in pending:
-                apply_metadata_update.delay(update.id)
+                if enqueue_apply_metadata_update(update.id):
+                    queued += 1
 
-            return True, f"Queued {count} metadata updates for application", count
+            return True, f"Queued {queued} metadata updates for application", queued
 
         return await sync_to_async(_apply_all)()
 

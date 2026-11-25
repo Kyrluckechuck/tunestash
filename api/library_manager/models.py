@@ -368,6 +368,37 @@ class Song(models.Model):
         default=DownloadProvider.UNKNOWN,
         help_text="Provider used to download this song",
     )
+    # Evidence of what the provider matcher actually selected. Tags written to
+    # the audio file mirror the source metadata, so these fields are the only
+    # durable record of the provider's own title/artist/ISRC/duration.
+    matched_provider: models.CharField = models.CharField(
+        max_length=64, null=True, blank=True
+    )
+    matched_provider_track_id: models.CharField = models.CharField(
+        max_length=255, null=True, blank=True
+    )
+    matched_title: models.CharField = models.CharField(
+        max_length=500, null=True, blank=True
+    )
+    matched_artist: models.CharField = models.CharField(
+        max_length=500, null=True, blank=True
+    )
+    matched_duration_ms: models.IntegerField = models.IntegerField(
+        null=True, blank=True
+    )
+    matched_isrc: models.CharField = models.CharField(
+        max_length=20, null=True, blank=True
+    )
+    match_confidence: models.FloatField = models.FloatField(null=True, blank=True)
+    matched_at: models.DateTimeField = models.DateTimeField(null=True, blank=True)
+    rejected_matches: models.JSONField = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Provider candidates rejected for this song, newest last; used to "
+            "skip them on the next download attempt."
+        ),
+    )
 
     def clean(self) -> None:
         """Validate model fields before saving."""

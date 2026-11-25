@@ -82,8 +82,10 @@ def materialize(
         key=lambda t: t[0],
     )
 
+    # ``>= 1.0`` (not ``==``) because FP rounding can push the curve anchor
+    # just short of 1.0 on ``net >= t_high``; such songs are still guaranteed.
     guaranteed: list[tuple[int, float]] = [
-        (sid, p) for sid, p, _ in annotated if p == 1.0
+        (sid, p) for sid, p, _ in annotated if p >= 1.0
     ]
     non_guaranteed: list[tuple[int, float]] = [
         (sid, p) for sid, p, _ in annotated if p < 1.0

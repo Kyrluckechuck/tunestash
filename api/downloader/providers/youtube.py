@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional
 
@@ -21,6 +22,8 @@ from .base import (
     QualityOption,
     QualityPreference,
     TrackMatch,
+    is_duration_compatible,
+    is_rejected,
 )
 
 logger = logging.getLogger(__name__)
@@ -191,6 +194,8 @@ class YouTubeMusicProvider(DownloadProvider):
         album: Optional[str] = None,
         isrc: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        search_alternate_isrcs: Optional[Iterable[str]] = None,
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         """Search YouTube Music for a track."""
         loop = asyncio.get_running_loop()
@@ -203,6 +208,8 @@ class YouTubeMusicProvider(DownloadProvider):
                 album=album,
                 isrc=isrc,
                 duration_ms=duration_ms,
+                search_alternate_isrcs=search_alternate_isrcs,
+                excluded_track_ids=excluded_track_ids,
             ),
         )
 
@@ -213,10 +220,13 @@ class YouTubeMusicProvider(DownloadProvider):
         album: Optional[str] = None,
         isrc: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        search_alternate_isrcs: Optional[Iterable[str]] = None,
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         """Search YouTube Music's song catalog, excluding ordinary videos."""
-        from downloader.track_matcher import score_track_match
         from ytmusicapi import YTMusic
+
+        from downloader.track_matcher import score_track_match
 
         try:
             entries = YTMusic().search(f"{artist} {title}", filter="songs", limit=10)
@@ -231,6 +241,8 @@ class YouTubeMusicProvider(DownloadProvider):
                 video_id = entry.get("videoId")
                 if not video_id:
                     continue
+                if is_rejected("youtube", str(video_id), excluded_track_ids):
+                    continue
 
                 result_title = entry.get("title", "")
                 result_artist = " • ".join(
@@ -241,15 +253,18 @@ class YouTubeMusicProvider(DownloadProvider):
                 result_duration_ms = int(entry.get("duration_seconds") or 0) * 1000
                 result_duration_s = result_duration_ms / 1000.0
 
-                if duration_ms and result_duration_ms:
-                    duration_diff = abs(duration_ms - result_duration_ms)
-                    if duration_diff > DURATION_TOLERANCE_MS:
-                        logger.debug(
-                            f"[youtube] Duration mismatch for '{title}': "
-                            f"expected {duration_ms}ms, got {result_duration_ms}ms "
-                            f"(diff: {duration_diff}ms)"
-                        )
-                        continue
+                if not is_duration_compatible(duration_ms, result_duration_ms):
+                    duration_diff = (
+                        abs(duration_ms - result_duration_ms)
+                        if duration_ms and result_duration_ms
+                        else 0
+                    )
+                    logger.debug(
+                        f"[youtube] Duration mismatch for '{title}': "
+                        f"expected {duration_ms}ms, got {result_duration_ms}ms "
+                        f"(diff: {duration_diff}ms)"
+                    )
+                    continue
 
                 confidence = score_track_match(
                     search_title=title,

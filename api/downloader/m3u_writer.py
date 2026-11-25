@@ -18,6 +18,7 @@ from downloader.filesystem_safety import (
     assert_within,
     is_within,
     safe_join,
+    sanitize_component,
     secure_write,
 )
 
@@ -25,12 +26,21 @@ logger = logging.getLogger(__name__)
 
 
 def _sanitize_playlist_name(name: str) -> str:
-    """Sanitize a playlist name for use as a filename."""
-    # Remove filesystem-unsafe characters
+    """Sanitize a playlist name for use as a filename.
+
+    Original behavior is preserved (unsafe characters are removed, not
+    replaced, so existing M3U files are not renamed); the shared
+    sanitizer is applied afterwards only to reject dot-only/traversal
+    results, with the "Untitled Playlist" fallback kept.
+    """
+    # Remove filesystem-unsafe characters (original behavior).
     sanitized = re.sub(r'[/\\:*?"<>|]', "", name)
     sanitized = sanitized.strip(". ")
     if not sanitized:
         sanitized = "Untitled Playlist"
+    # Safety net: shared sanitizer rejects dot-only/traversal names.
+    if not sanitize_component(sanitized):
+        return "Untitled Playlist"
     return sanitized[:200]
 
 

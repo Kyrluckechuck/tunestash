@@ -1,6 +1,7 @@
 """Tests for M3U playlist file generation."""
 
 import pytest
+
 from downloader.m3u_writer import _sanitize_playlist_name
 
 
@@ -22,6 +23,9 @@ class TestSanitizePlaylistName:
     def test_empty_string_returns_default(self):
         assert _sanitize_playlist_name("") == "Untitled Playlist"
 
+    def test_dot_only_name_returns_default(self):
+        assert _sanitize_playlist_name("..") == "Untitled Playlist"
+
     def test_truncates_long_names(self):
         long_name = "A" * 300
         result = _sanitize_playlist_name(long_name)
@@ -34,7 +38,6 @@ class TestWritePlaylistM3u:
 
     def test_generates_valid_m3u(self, tmp_path):
         from downloader.m3u_writer import write_playlist_m3u
-
         from library_manager.models import (
             Artist,
             FilePath,
@@ -80,7 +83,6 @@ class TestWritePlaylistM3u:
 
     def test_returns_none_for_empty_playlist(self, tmp_path):
         from downloader.m3u_writer import write_playlist_m3u
-
         from library_manager.models import TrackedPlaylist
 
         playlist = TrackedPlaylist.objects.create(

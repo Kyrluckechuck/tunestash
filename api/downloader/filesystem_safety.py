@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 # Keep the historical replacement map so ordinary artist/album names do not
@@ -110,6 +111,56 @@ def assert_within(root: Path, *components: str) -> Path:
             f"Refusing path outside library root: {candidate} (root {resolved_root})"
         )
     return candidate
+
+
+DEFAULT_AUDIO_SUFFIXES = frozenset({".m4a", ".mp3", ".flac", ".ogg", ".opus", ".wav"})
+
+
+def is_safe_regular_file(path: Path, root: Path) -> bool:
+    """Return whether ``path`` is a non-symlink regular file inside ``root``.
+
+    Symlinked files and files whose resolved location escapes ``root`` are
+    rejected so cleanup code never follows a symlink or deletes outside the
+    library. ``path`` itself must also be free of symlinked parent directories.
+    """
+    if path.is_symlink():
+        return False
+    if not is_within(path, root):
+        return False
+    try:
+        return path.is_file() and not path.is_symlink()
+    except OSError:
+        return False
+
+
+def iter_audio_files(
+    root: Path, suffixes: frozenset[str] | set[str] = DEFAULT_AUDIO_SUFFIXES
+) -> Iterator[Path]:
+    """Yield audio file paths under ``root`` without following symlinks.
+
+    Uses ``os.scandir`` iteratively so memory stays bounded even for very large
+    libraries. Symlinked directories are skipped rather than traversed.
+    """
+    stack = [root]
+    while stack:
+        directory = stack.pop()
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_symlink():
+                            continue
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(Path(entry.path))
+                        elif (
+                            entry.is_file(follow_symlinks=False)
+                            and Path(entry.name).suffix.lower() in suffixes
+                        ):
+                            yield Path(entry.path)
+                    except OSError:
+                        continue
+        except OSError:
+            continue
 
 
 def secure_write(path: Path, content: str, encoding: str = "utf-8") -> None:

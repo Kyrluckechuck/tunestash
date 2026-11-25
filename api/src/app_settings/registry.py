@@ -180,16 +180,6 @@ SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
         "label": "Overwrite Existing Files",
         "description": "Re-download and overwrite files that already exist on disk.",
     },
-    "disable_missing_tracked_artist_download": {
-        "default": False,
-        "type": TYPE_BOOL,
-        "category": CAT_DOWNLOADS,
-        "label": "Disable Auto-Download for Tracked Artists",
-        "description": (
-            "When enabled, new albums from tracked artists are fetched but not "
-            "automatically queued for download."
-        ),
-    },
     "pause_downloads_on_auth_failure": {
         "default": True,
         "type": TYPE_BOOL,
@@ -365,13 +355,6 @@ SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
         "category": CAT_INFRA,
         "label": "Worker Diagnostics",
         "description": "Enable verbose diagnostic logging for worker crashes and performance issues.",
-    },
-    "deezer_rate_limit_per_second": {
-        "default": 10,
-        "type": TYPE_INT,
-        "category": CAT_INFRA,
-        "label": "Deezer Rate Limit (req/s)",
-        "description": "Maximum Deezer API requests per second.",
     },
     "monochrome_api_urls": {
         "default": ["https://api.monochrome.tf"],

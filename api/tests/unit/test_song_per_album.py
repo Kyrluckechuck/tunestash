@@ -1,6 +1,7 @@
 """Tests for per-album Song records (ghost album fix)."""
 
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.db import IntegrityError, transaction
@@ -16,7 +17,29 @@ for _mod_name in ("deezer", "deezer.exceptions", "httpx"):
         _mock_modules[_mod_name] = MagicMock()
         sys.modules[_mod_name] = _mock_modules[_mod_name]
 
+from downloader.providers.base import TrackMatch  # noqa: E402
+from downloader.providers.fallback import DownloadChainResult  # noqa: E402
 from library_manager.tasks.download import _download_deezer_album  # noqa: E402
+
+
+def _success_result(file_path: str) -> DownloadChainResult:
+    """A real chain result: match fields must never be written from a mock."""
+    return DownloadChainResult(
+        success=True,
+        file_path=Path(file_path),
+        provider_used="youtube",
+        error_message=None,
+        track_match=TrackMatch(
+            provider="youtube",
+            provider_track_id="video-id",
+            title="Track",
+            artist="Test Artist",
+            album="",
+            duration_ms=200000,
+            confidence=0.9,
+        ),
+        validation_result=None,
+    )
 
 
 @pytest.mark.unit
@@ -175,12 +198,9 @@ class TestDownloadCreatesPerAlbumSongs:
 
         # Mock downloader to succeed
         downloader_instance = mock_downloader_cls.return_value
-        result_mock = MagicMock()
-        result_mock.success = True
-        result_mock.file_path = "/mnt/music/DJ Snake/Enzo Single/Enzo.m4a"
-        result_mock.provider_used = "youtube"
+        result_mock = _success_result("/mnt/music/DJ Snake/Enzo Single/Enzo.m4a")
 
-        async def fake_download(metadata):
+        async def fake_download(metadata, **kwargs):
             return result_mock
 
         downloader_instance.download_track = fake_download
@@ -223,12 +243,9 @@ class TestDownloadCreatesPerAlbumSongs:
         provider.get_album.return_value = _make_album_data()
 
         downloader_instance = mock_downloader_cls.return_value
-        result_mock = MagicMock()
-        result_mock.success = True
-        result_mock.file_path = "/mnt/music/Tiesto/Drive/Lay Low.m4a"
-        result_mock.provider_used = "youtube"
+        result_mock = _success_result("/mnt/music/Tiesto/Drive/Lay Low.m4a")
 
-        async def fake_download(metadata):
+        async def fake_download(metadata, **kwargs):
             return result_mock
 
         downloader_instance.download_track = fake_download
@@ -270,12 +287,9 @@ class TestDownloadCreatesPerAlbumSongs:
         )
 
         captured_metadata = []
-        result_mock = MagicMock()
-        result_mock.success = True
-        result_mock.file_path = "/mnt/music/Sinnon Nightcore/Rise/Rise.m4a"
-        result_mock.provider_used = "youtube"
+        result_mock = _success_result("/mnt/music/Sinnon Nightcore/Rise/Rise.m4a")
 
-        async def fake_download(metadata):
+        async def fake_download(metadata, **kwargs):
             captured_metadata.append(metadata)
             return result_mock
 
@@ -316,10 +330,7 @@ class TestDownloadCreatesPerAlbumSongs:
         provider.get_album.return_value = _make_album_data()
 
         downloader_instance = mock_downloader_cls.return_value
-        result_mock = MagicMock()
-        result_mock.success = True
-        result_mock.file_path = "/mnt/music/Test/Album/Track.m4a"
-        result_mock.provider_used = "youtube"
+        result_mock = _success_result("/mnt/music/Test/Album/Track.m4a")
         downloader_instance.download_track = AsyncMock(return_value=result_mock)
         downloader_instance.close = AsyncMock()
 

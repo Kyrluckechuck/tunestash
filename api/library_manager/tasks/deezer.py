@@ -3,10 +3,7 @@
 from typing import Optional
 
 from ..models import Album, Artist, TaskHistory
-from .core import (
-    normalize_name,
-    update_task_progress,
-)
+from .core import normalize_name, raise_if_cancelled, update_task_progress
 
 
 def _fetch_albums_via_deezer(
@@ -18,6 +15,9 @@ def _fetch_albums_via_deezer(
         (created_count, linked_count) tuple.
     """
     from src.providers.deezer import DeezerMetadataProvider
+
+    if task_history:
+        raise_if_cancelled(task_history)
 
     provider = DeezerMetadataProvider()
     deezer_albums = provider.get_artist_albums(artist.deezer_id)
@@ -38,6 +38,8 @@ def _fetch_albums_via_deezer(
         existing_albums_by_norm.setdefault(normalize_name(db_album.name), db_album)
 
     for album_data in deezer_albums:
+        if task_history:
+            raise_if_cancelled(task_history)
         if not album_data.deezer_id:
             continue
 

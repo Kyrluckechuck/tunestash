@@ -8,6 +8,7 @@ from celery_app import app as celery_app
 
 from ..models import Artist
 from .core import (
+    TaskCancelledException,
     complete_task,
     create_task_history,
     logger,
@@ -62,6 +63,9 @@ def fetch_all_albums_for_artist(self: Any, artist_id: int) -> None:
         logger.info(msg)
         complete_task(task_history, success=True)
 
+    except TaskCancelledException:
+        # The row is already CANCELLED; leave completed items as they are.
+        pass
     except Exception as e:
         if task_history:
             complete_task(task_history, success=False, error_message=str(e))

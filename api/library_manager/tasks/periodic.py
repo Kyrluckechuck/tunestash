@@ -140,14 +140,16 @@ def sync_tracked_playlists(self: Any, task_id: Optional[str] = None) -> None:
     if deezer_playlists:
         deezer_to_sync = _filter_changed_deezer_playlists(deezer_playlists)
         if deezer_to_sync:
-            from .playlist import sync_deezer_playlist
+            from .core import TaskPriority
 
             logger.info(
                 f"Queueing {len(deezer_to_sync)} Deezer playlists for sync "
                 f"(skipped {len(deezer_playlists) - len(deezer_to_sync)} unchanged)"
             )
             for playlist in deezer_to_sync:
-                sync_deezer_playlist.delay(playlist.pk)
+                helpers.enqueue_sync_deezer_playlist(
+                    playlist.pk, priority=TaskPriority.PLAYLIST_DOWNLOAD
+                )
         else:
             logger.info("All Deezer playlists unchanged, nothing to sync")
 
@@ -732,8 +734,6 @@ def sync_tracked_artists_metadata(
 
     from src.providers.deezer import DeezerMetadataProvider
 
-    from .artist import fetch_all_albums_for_artist
-
     try:
         # Backpressure: check pending artist syncs
         pending_syncs = TaskHistory.objects.filter(
@@ -869,10 +869,14 @@ def sync_tracked_artists_metadata(
                     f"queueing Deezer sync"
                 )
                 try:
-                    fetch_all_albums_for_artist.apply_async(
-                        args=[artist.id], task_id=task_id
-                    )
-                    queued_count += 1
+                    from .core import TaskPriority
+
+                    if helpers.enqueue_fetch_all_albums_for_artist(
+                        artist.id, priority=TaskPriority.ARTIST_SYNC
+                    ):
+                        queued_count += 1
+                    else:
+                        skipped_pending += 1
                 except Exception as e:
                     logger.warning(
                         f"Failed to queue Deezer sync for artist {artist.name}: {e}"
@@ -968,10 +972,8 @@ def scan_new_releases_for_tracked_artists(self: Any) -> None:
             skipped += 1
             continue
 
-        from .download import download_album_by_deezer_id
-
-        download_album_by_deezer_id.delay(album_deezer_id)
-        queued += 1
+        if helpers.enqueue_download_album_by_deezer_id(album_deezer_id):
+            queued += 1
 
     logger.info(
         "[NEW RELEASES] Scanned %d genre(s): %d matched, %d queued, %d already known",

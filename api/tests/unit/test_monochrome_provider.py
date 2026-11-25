@@ -2,7 +2,11 @@
 
 import base64
 import json
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+import requests
 
 from downloader.providers.monochrome import MonochromeEndpoint, MonochromeProvider
 
@@ -76,6 +80,58 @@ class TestMonochromeSearchParsing:
 
         assert result is not None
         assert result.album == ""
+
+
+class TestMonochromeRateLimitRetry:
+    """429 retries must sleep via asyncio so the event loop stays responsive."""
+
+    def _rate_limit_error(self):
+        error = requests.HTTPError("429 Too Many Requests")
+        error.response = MagicMock(status_code=429, headers={"Retry-After": "0"})
+        return error
+
+    @pytest.mark.asyncio
+    async def test_search_track_uses_async_sleep_on_429(self):
+        provider = MonochromeProvider(api_urls=["https://api.example.com"])
+        with (
+            patch.object(
+                MonochromeProvider, "_search_api", side_effect=self._rate_limit_error()
+            ),
+            patch("downloader.providers.monochrome.asyncio") as mock_asyncio,
+        ):
+            mock_asyncio.sleep = AsyncMock()
+            result = await provider.search_track("track", "artist")
+
+        assert result is None
+        mock_asyncio.sleep.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_download_track_uses_async_sleep_on_429(self):
+        from downloader.providers.base import TrackMatch
+
+        provider = MonochromeProvider(api_urls=["https://api.example.com"])
+        match = TrackMatch(
+            provider="monochrome",
+            provider_track_id="12345",
+            title="Track",
+            artist="Artist",
+            album="",
+            duration_ms=100000,
+            confidence=0.9,
+        )
+        with (
+            patch.object(
+                MonochromeProvider,
+                "_get_stream_info",
+                side_effect=self._rate_limit_error(),
+            ),
+            patch("downloader.providers.monochrome.asyncio") as mock_asyncio,
+        ):
+            mock_asyncio.sleep = AsyncMock()
+            result = await provider.download_track(match, Path("/tmp/out.flac"))
+
+        assert result.success is False
+        mock_asyncio.sleep.assert_awaited()
 
 
 class TestMonochromeManifestDecoding:

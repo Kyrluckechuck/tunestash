@@ -6,9 +6,13 @@ from typing import Any, Optional
 
 from django.db import transaction
 from django.db.models.functions import Now
+from django.utils import timezone
 
+from asgiref.sync import sync_to_async
 from celery.exceptions import Retry as CeleryRetry
+
 from celery_app import app as celery_app
+from downloader.providers.base import TrackMatch, rejected_key
 from downloader.providers.fallback import DownloadChainResult, sanitize_provider_detail
 from downloader.spotipy_tasks import SpotifyRateLimitError
 from downloader.utils import sanitize_and_strip_url
@@ -27,13 +31,16 @@ from ..models import (
     get_album_types_to_download,
 )
 from .core import (
+    TaskCancelledException,
     check_and_update_progress,
     check_spotify_rate_limit,
     check_task_cancellation,
     complete_task,
     create_task_history,
+    is_task_cancelled,
     logger,
     normalize_name,
+    raise_if_cancelled,
     require_download_capability,
     update_task_progress,
 )
@@ -48,6 +55,132 @@ FALLBACK_PROVIDER_MAP = {
 
 # Provider diagnostics share one bounded, explicit summary line per track.
 _MAX_HISTORY_MESSAGES = 45  # leave room for the 95% progress entry (cap is 50)
+
+_MATCH_DETAIL_FIELDS = (
+    "matched_provider",
+    "matched_provider_track_id",
+    "matched_title",
+    "matched_artist",
+    "matched_duration_ms",
+    "matched_isrc",
+    "match_confidence",
+    "matched_at",
+)
+_MAX_REJECTED_MATCHES = 20
+
+
+def _record_successful_match(
+    song: Song,
+    result: DownloadChainResult,
+    source_duration_ms: int = 0,
+) -> None:
+    """Persist the provider's match evidence for a successful download.
+
+    File tags mirror the source metadata, so without this record a later audit
+    cannot tell which recording the provider actually picked.
+    """
+    match = result.track_match
+    if not isinstance(match, TrackMatch):
+        # Test doubles and malformed provider results must never reach the
+        # database: model fields cannot store arbitrary objects.
+        logger.info(
+            "song_id=%s match_success without a TrackMatch; skipping match fields",
+            song.id,
+        )
+        return
+
+    measured_duration_ms = (
+        result.validation_result.audio_info.duration_ms
+        if result.validation_result and result.validation_result.audio_info
+        else None
+    )
+    matched_duration_ms = measured_duration_ms or match.duration_ms or None
+    values = {
+        "matched_provider": result.provider_used or match.provider,
+        "matched_provider_track_id": match.provider_track_id or None,
+        "matched_title": match.title or None,
+        "matched_artist": match.artist or None,
+        "matched_duration_ms": matched_duration_ms,
+        "matched_isrc": match.isrc or None,
+        "match_confidence": match.confidence,
+        "matched_at": timezone.now(),
+    }
+    for field, value in values.items():
+        setattr(song, field, value)
+    song.save(update_fields=list(_MATCH_DETAIL_FIELDS))
+
+    logger.info(
+        "song_id=%s match_success provider=%s provider_track_id=%s "
+        "title=%s artist=%s duration_ms=%s isrc=%s confidence=%.2f "
+        "measured_duration_ms=%s source_duration_ms=%s",
+        song.id,
+        sanitize_provider_detail(values["matched_provider"]),
+        sanitize_provider_detail(values["matched_provider_track_id"]),
+        sanitize_provider_detail(values["matched_title"]),
+        sanitize_provider_detail(values["matched_artist"]),
+        matched_duration_ms,
+        sanitize_provider_detail(values["matched_isrc"]),
+        match.confidence,
+        measured_duration_ms,
+        source_duration_ms,
+    )
+
+
+def _record_rejected_matches(song: Song, result: DownloadChainResult) -> None:
+    """Remember rejected candidates so retries do not download them again."""
+    if not result.rejected_matches:
+        return
+    now = timezone.now().isoformat()
+    entries = [
+        {
+            "provider": str(rejected.get("provider") or ""),
+            "provider_track_id": str(rejected.get("provider_track_id") or ""),
+            "reason": str(rejected.get("reason") or "rejected"),
+            "at": str(rejected.get("at") or now),
+        }
+        for rejected in result.rejected_matches
+        if rejected.get("provider_track_id")
+    ]
+    if not entries:
+        return
+    existing = list(song.rejected_matches or [])
+    song.rejected_matches = [*existing, *entries][-_MAX_REJECTED_MATCHES:]
+    song.save(update_fields=["rejected_matches"])
+
+
+def _rejected_ids(song: Song) -> set[str]:
+    """Return exclusion keys derived from a song's persisted rejections."""
+    return {
+        rejected_key(
+            str(entry.get("provider") or ""), str(entry.get("provider_track_id") or "")
+        )
+        for entry in (song.rejected_matches or [])
+        if entry.get("provider") and entry.get("provider_track_id")
+    }
+
+
+def _finalize_provider_diagnostics(
+    song: Song,
+    result: DownloadChainResult,
+    *,
+    task_history: Optional[TaskHistory] = None,
+    source_duration_ms: int = 0,
+) -> None:
+    """Shared success/failure finalizer for every fallback download path.
+
+    Success persists match evidence; failure records rejected candidates and
+    emits provider outcomes, with task-history persistence when available.
+    """
+    if result.success:
+        _record_successful_match(song, result, source_duration_ms)
+        _record_rejected_matches(song, result)
+        return
+
+    _record_rejected_matches(song, result)
+    for message in _provider_outcome_log_messages(song.id or 0, result):
+        logger.warning(message)
+    if task_history is not None:
+        _persist_provider_history(task_history, [(song.id or 0, result)])
 
 
 def _is_metadata_unavailable_error(message: str) -> bool:
@@ -98,6 +231,20 @@ def _provider_outcome_log_messages(
             f"{sanitize_provider_detail(result.error_message or 'download failed')}"
         )
     return messages
+
+
+def _remove_pending_downloads(paired_results: list[tuple], start_index: int) -> None:
+    """Delete files from a cancelled batch that were never published to the DB."""
+    for _, pending_result in paired_results[start_index:]:
+        if (
+            isinstance(pending_result, DownloadChainResult)
+            and pending_result.success
+            and pending_result.file_path
+        ):
+            try:
+                pending_result.file_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _build_provider_failure_summary(
@@ -367,6 +514,8 @@ def download_missing_albums_for_artist(
                         _download_deezer_album(dl_album, task_history)
                     except _AlbumMerged:
                         pass
+                    except TaskCancelledException:
+                        raise
                     except Exception as e:
                         logger.error(f"Failed to download album '{dl_album.name}': {e}")
         else:
@@ -385,7 +534,7 @@ def download_missing_albums_for_artist(
         if task_history:
             complete_task(task_history, success=True)
 
-    except (SpotifyRateLimitError, CeleryRetry):
+    except (SpotifyRateLimitError, CeleryRetry, TaskCancelledException):
         raise
     except Exception as e:
         logger.error(
@@ -469,6 +618,8 @@ def download_single_album(self: Any, album_id: int) -> None:
             )
     except CeleryRetry:
         raise
+    except TaskCancelledException:
+        pass
     except ValueError as e:
         error_msg = f"{_content_unavailable_prefix(str(e))}{str(e)}"
         logger.warning(error_msg)
@@ -493,7 +644,6 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
     """
     from downloader.providers.base import TrackMetadata
     from downloader.providers.fallback import FallbackDownloader
-
     from src.providers.deezer import DeezerMetadataProvider
 
     if not album.deezer_id:
@@ -502,6 +652,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
     update_task_progress(
         task_history, 10.0, f"Fetching track listing from Deezer for {album.name}"
     )
+    raise_if_cancelled(task_history)
 
     provider = DeezerMetadataProvider()
     try:
@@ -568,6 +719,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
     songs_to_download: list[tuple[Song, TrackMetadata]] = []
 
     for track in deezer_tracks:
+        raise_if_cancelled(task_history)
         if not track.deezer_id:
             continue
 
@@ -638,6 +790,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
             album_artist=album_artist_name,
             duration_ms=track.duration_ms,
             isrc=track.isrc,
+            alternate_isrcs=tuple(song.alternate_isrcs or ()),
             track_number=track.track_number,
             total_tracks=len(deezer_tracks),
             disc_number=track.disc_number,
@@ -657,6 +810,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         30.0,
         f"Downloading {len(songs_to_download)} tracks via fallback providers",
     )
+    raise_if_cancelled(task_history)
 
     downloader = FallbackDownloader(
         provider_order=_get_fallback_order(),
@@ -670,15 +824,26 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
+        async def _check_cancelled() -> None:
+            # The cancellation read hits Django ORM, so run it off the event
+            # loop at every provider boundary.
+            await sync_to_async(raise_if_cancelled)(task_history, force_refresh=True)
+
         async def _download_all() -> list[DownloadChainResult | BaseException]:
             sem = asyncio.Semaphore(PER_ALBUM_TRACK_CONCURRENCY)
 
-            async def _one(metadata: TrackMetadata) -> DownloadChainResult:
+            async def _one(song: Song, metadata: TrackMetadata) -> DownloadChainResult:
                 async with sem:
-                    return await downloader.download_track(metadata)
+                    await _check_cancelled()
+                    rejected = _rejected_ids(song)
+                    return await downloader.download_track(
+                        metadata,
+                        rejected_track_ids=rejected,
+                        cancellation_check=_check_cancelled,
+                    )
 
             return await asyncio.gather(
-                *(_one(metadata) for _, metadata in songs_to_download),
+                *(_one(song, metadata) for song, metadata in songs_to_download),
                 return_exceptions=True,
             )
 
@@ -686,7 +851,17 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
 
         # Django ORM is sync-only; process results in this sync context after
         # the async batch finishes.
-        for (song, _metadata), result in zip(songs_to_download, results):
+        paired_results = list(zip(songs_to_download, results))
+        for index, ((song, _metadata), result) in enumerate(paired_results):
+            if is_task_cancelled(task_history.task_id):
+                # The batch already downloaded every track; anything from here
+                # on has not been published to the DB.
+                _remove_pending_downloads(paired_results, index)
+                raise TaskCancelledException()
+
+            if isinstance(result, TaskCancelledException):
+                raise result
+
             if isinstance(result, BaseException):
                 failed_count += 1
                 failed_results.append((song.id or 0, result))
@@ -699,6 +874,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
                 continue
 
             if result.success and result.file_path:
+                raise_if_cancelled(task_history, force_refresh=True)
                 dl_provider = FALLBACK_PROVIDER_MAP.get(
                     result.provider_used or "", DownloadProviderEnum.UNKNOWN
                 )
@@ -706,6 +882,9 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
                     bitrate=256,
                     file_path=str(result.file_path),
                     provider=dl_provider,
+                )
+                _finalize_provider_diagnostics(
+                    song, result, source_duration_ms=_metadata.duration_ms
                 )
                 downloaded_count += 1
                 logger.info(f"Downloaded '{song.name}' via {result.provider_used}")
@@ -720,8 +899,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
                 failed_results.append((song.id or 0, result))
                 song.increment_failed_count()  # TEMPORARY_ERROR: no catalog verdict
                 song.save()
-                for message in _provider_outcome_log_messages(song.id or 0, result):
-                    logger.warning(message)
+                _finalize_provider_diagnostics(song, result)
                 logger.warning(
                     f"Failed to download '{song.name}' (song_id={song.id}): "
                     f"{sanitize_provider_detail(result.error_message)}"
@@ -954,6 +1132,10 @@ def download_playlist(
         if not sp_playlist_id:
             raise ValueError(f"Could not extract playlist ID from: {playlist_url}")
 
+        if is_task_cancelled(task_history.task_id):
+            logger.info(f"Playlist download cancelled: {playlist_url}")
+            return
+
         playlist_data = client.get_playlist(sp_playlist_id)
         raw_tracks = playlist_data.get("tracks", {}).get("items", [])
 
@@ -968,7 +1150,7 @@ def download_playlist(
         songs_to_download: list[Song] = []
         ordered_songs = []
         for item in raw_tracks:
-            if check_task_cancellation(task_history):
+            if is_task_cancelled(task_history.task_id):
                 logger.info(f"Playlist download cancelled: {playlist_url}")
                 return
 
@@ -983,12 +1165,17 @@ def download_playlist(
                     songs_to_download.append(song)
 
         if songs_to_download:
+            if is_task_cancelled(task_history.task_id):
+                logger.info(f"Playlist download cancelled: {playlist_url}")
+                return
             update_task_progress(
                 task_history,
                 60.0,
                 f"Downloading {len(songs_to_download)} tracks via fallback providers",
             )
-            downloaded, failed = _download_deezer_songs_via_fallback(songs_to_download)
+            downloaded, failed = _download_deezer_songs_via_fallback(
+                songs_to_download, task_history=task_history
+            )
             logger.info(f"Playlist download: {downloaded} downloaded, {failed} failed")
 
         # Store snapshot_id for change detection
@@ -1090,6 +1277,8 @@ def download_extra_album_types_for_artist(
                     _download_deezer_album(dl_album, task_history)
                 except _AlbumMerged:
                     pass
+                except TaskCancelledException:
+                    raise
                 except Exception as e:
                     logger.error(
                         f"Failed to download extra album '{dl_album.name}': {e}"
@@ -1098,6 +1287,8 @@ def download_extra_album_types_for_artist(
         artist.last_downloaded_at = Now()
         artist.save()
         complete_task(task_history, success=True)
+    except TaskCancelledException:
+        pass
     except Exception as e:
         logger.error(f"Error downloading extra album types for artist {artist_id}: {e}")
         if task_history:
@@ -1161,6 +1352,8 @@ def download_album_by_spotify_id(self: Any, spotify_album_id: str) -> None:
             )
     except CeleryRetry:
         raise
+    except TaskCancelledException:
+        pass
     except ValueError as e:
         error_msg = f"{_content_unavailable_prefix(str(e))}{str(e)}"
         logger.warning(error_msg)
@@ -1262,6 +1455,8 @@ def download_album_by_deezer_id(self: Any, deezer_album_id: int) -> None:
                 success=True,
                 error_message=f"Merged duplicate into album id={e.target.id}",
             )
+    except TaskCancelledException:
+        pass
     except Exception as e:
         error_msg = f"Error downloading Deezer album {deezer_album_id}: {str(e)}"
         logger.error(error_msg)
@@ -1295,12 +1490,17 @@ def download_track_by_spotify_gid(self: Any, track_gid: str) -> None:
             logger.info(f"Task cancelled for track {track_gid}")
             return
 
+        from .. import helpers
+        from .core import TaskPriority
+
         song = Song.objects.filter(gid=track_gid).first()
         if not song:
             raise ValueError(f"No song in database with Spotify GID {track_gid}")
 
         if song.deezer_id:
-            download_deezer_track.delay(song.id)
+            helpers.enqueue_download_deezer_track(
+                song.id, priority=TaskPriority.TRACK_DOWNLOAD
+            )
             complete_task(task_history, success=True)
             return
 
@@ -1310,7 +1510,9 @@ def download_track_by_spotify_gid(self: Any, track_gid: str) -> None:
         _try_resolve_to_deezer(song)
 
         if song.deezer_id:
-            download_deezer_track.delay(song.id)
+            helpers.enqueue_download_deezer_track(
+                song.id, priority=TaskPriority.TRACK_DOWNLOAD
+            )
             complete_task(task_history, success=True)
             return
 
@@ -1318,7 +1520,9 @@ def download_track_by_spotify_gid(self: Any, track_gid: str) -> None:
         from .maintenance import _download_deezer_songs_via_fallback
 
         update_task_progress(task_history, 25.0, f"Downloading track: {song.name}")
-        downloaded, failed = _download_deezer_songs_via_fallback([song])
+        downloaded, failed = _download_deezer_songs_via_fallback(
+            [song], task_history=task_history
+        )
         if downloaded > 0:
             complete_task(task_history, success=True)
         else:
@@ -1326,6 +1530,8 @@ def download_track_by_spotify_gid(self: Any, track_gid: str) -> None:
 
     except CeleryRetry:
         raise
+    except TaskCancelledException:
+        pass
     except ValueError as e:
         error_msg = f"{_content_unavailable_prefix(str(e))}{str(e)}"
         logger.warning(error_msg)
@@ -1390,7 +1596,22 @@ def download_deezer_track(self: Any, song_id: int) -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            result = loop.run_until_complete(downloader.download_track(metadata))
+            raise_if_cancelled(task_history, force_refresh=True)
+
+            def _check_sync() -> None:
+                raise_if_cancelled(task_history, force_refresh=True)
+
+            async def _check_cancelled() -> None:
+                await loop.run_in_executor(None, _check_sync)
+
+            rejected = _rejected_ids(song)
+            result = loop.run_until_complete(
+                downloader.download_track(
+                    metadata,
+                    rejected_track_ids=rejected,
+                    cancellation_check=_check_cancelled,
+                )
+            )
         finally:
             try:
                 loop.run_until_complete(downloader.close())
@@ -1398,6 +1619,12 @@ def download_deezer_track(self: Any, song_id: int) -> None:
                 loop.close()
 
         if result.success and result.file_path:
+            if is_task_cancelled(task_history.task_id, force_refresh=True):
+                try:
+                    result.file_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise TaskCancelledException()
             dl_provider = FALLBACK_PROVIDER_MAP.get(
                 result.provider_used or "", DownloadProviderEnum.UNKNOWN
             )
@@ -1405,6 +1632,12 @@ def download_deezer_track(self: Any, song_id: int) -> None:
                 bitrate=256,
                 file_path=str(result.file_path),
                 provider=dl_provider,
+            )
+            _finalize_provider_diagnostics(
+                song,
+                result,
+                task_history=task_history,
+                source_duration_ms=metadata.duration_ms,
             )
             complete_task(task_history, success=True)
             logger.info(f"Downloaded '{song.name}' via {result.provider_used}")
@@ -1418,9 +1651,7 @@ def download_deezer_track(self: Any, song_id: int) -> None:
         else:
             song.increment_failed_count()
             song.save()
-            for message in _provider_outcome_log_messages(song.id, result):
-                logger.warning(message)
-            _persist_provider_history(task_history, [(song.id, result)])
+            _finalize_provider_diagnostics(song, result, task_history=task_history)
             error_msg = (
                 f"Failed to download '{song.name}' (song_id={song.id}): "
                 f"{sanitize_provider_detail(result.error_message)}"

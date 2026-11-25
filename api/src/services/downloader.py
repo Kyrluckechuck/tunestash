@@ -113,7 +113,6 @@ class DownloaderService:
             from asgiref.sync import sync_to_async
 
             from library_manager.models import Artist, Song
-            from library_manager.tasks import download_deezer_track
             from src.providers.deezer import DeezerMetadataProvider
 
             provider = DeezerMetadataProvider()
@@ -125,6 +124,9 @@ class DownloaderService:
                 )
 
             def _create_song_and_queue() -> int:
+                from library_manager.helpers import enqueue_download_deezer_track
+                from library_manager.task_priorities import TaskPriority
+
                 artist = None
                 if track_info.artist_deezer_id:
                     artist = Artist.objects.filter(
@@ -143,7 +145,9 @@ class DownloaderService:
                         "primary_artist": artist,
                     },
                 )
-                download_deezer_track.delay(song.pk)
+                enqueue_download_deezer_track(
+                    song.pk, priority=TaskPriority.TRACK_DOWNLOAD
+                )
                 return int(song.pk)
 
             song_id = await sync_to_async(_create_song_and_queue)()

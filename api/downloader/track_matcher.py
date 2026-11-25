@@ -8,6 +8,7 @@ M3U resolution, and individual track downloads.
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from difflib import SequenceMatcher
 from typing import Optional
 
@@ -120,6 +121,15 @@ _STANDALONE_VARIANT_MARKERS = (
 # A version/language conflict is disqualifying at every caller threshold
 # (currently 0.6-0.7) without raising those thresholds for normal matches.
 _VERSION_CONFLICT_CAP = 0.5
+
+# A disagreeing ISRC alone still passes (regional/master duplicates are common).
+# Only an independent identity conflict triggers the extra penalty; a duration
+# difference accepted by the hard gate (max 8s, 5%) must not create a second,
+# stricter gate here. Beyond that gate the provider rejects the candidate anyway.
+_ISRC_CONFLICT_EXTRA_PENALTY = 0.35
+_ISRC_CONFLICT_CAP = 0.5
+_DURATION_GATE_MIN_S = 8.0
+_DURATION_GATE_FRACTION = 0.05
 
 
 def extract_title_tags(title: str) -> tuple[str, list[str]]:
@@ -458,6 +468,7 @@ def score_track_match(
     *,
     search_isrc: Optional[str] = None,
     result_isrc: Optional[str] = None,
+    search_alternate_isrcs: Optional[Iterable[str]] = None,
     search_duration_s: Optional[float] = None,
     result_duration_s: Optional[float] = None,
     duration_tolerance_s: float = 10.0,
@@ -477,7 +488,11 @@ def score_track_match(
     # A blank/whitespace-only ISRC is not identity evidence: it must neither
     # bypass the artist gate nor count as a matched ISRC in the weighted score.
     isrc_present = bool(normalized_search_isrc and normalized_result_isrc)
-    isrc_equal = isrc_present and normalized_search_isrc == normalized_result_isrc
+    known_isrcs = {normalized_search_isrc} if normalized_search_isrc else set()
+    known_isrcs.update(
+        _normalize_isrc(isrc) for isrc in (search_alternate_isrcs or ()) if isrc
+    )
+    isrc_equal = isrc_present and normalized_result_isrc in known_isrcs
 
     # Artist compatibility is a gate, not a weighted hint. Without it, close
     # titles can carry unrelated artists over the acceptance threshold. An
@@ -522,8 +537,10 @@ def score_track_match(
         weights_used += 0.20
 
     # Duration: weight 0.10 (only if both provided)
+    duration_diff: Optional[float] = None
     if search_duration_s is not None and result_duration_s is not None:
         diff = abs(search_duration_s - result_duration_s)
+        duration_diff = diff
         if diff <= duration_tolerance_s:
             duration_sim = 1.0 - (diff / duration_tolerance_s)
         else:
@@ -540,6 +557,20 @@ def score_track_match(
     # Apply tag penalty
     tag_penalty = compute_tag_penalty(source_tags, result_tags)
     score -= tag_penalty
+
+    # Two recordings can carry different ISRCs in different territories, so an
+    # ISRC disagreement is not a rejection on its own. Only an independent
+    # title/artist/version conflict compounds it; an in-gate duration difference
+    # does not, or correct regional duplicates would be lost.
+    if isrc_present and not isrc_equal:
+        if version_conflict or artist_sim < 1.0:
+            score -= _ISRC_CONFLICT_EXTRA_PENALTY
+        if duration_diff is not None and search_duration_s:
+            allowance_s = max(
+                _DURATION_GATE_MIN_S, search_duration_s * _DURATION_GATE_FRACTION
+            )
+            if duration_diff > allowance_s:
+                score = min(score, _ISRC_CONFLICT_CAP)
 
     # A version/language mismatch stays rejected regardless of how much the
     # title, artist, ISRC, and duration agree.

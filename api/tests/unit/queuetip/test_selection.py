@@ -296,3 +296,16 @@ def test_no_warning_in_normal_case():
     songs = [SongInput(song_id=i, net=0) for i in range(5)]
     r = materialize(songs, knobs=KNOBS, min_size=0, max_size=None, seed=0)
     assert r.warning_message == ""
+
+
+def test_guaranteed_when_probability_hits_cap_via_floor():
+    # With p_floor=1.0, songs below the low anchor compute p == 1.0 (the cap);
+    # they must be treated as guaranteed, not rolled.
+    knobs = CurveKnobs(base=0.85, p_floor=1.0, t_low=3)
+    songs = [
+        SongInput(song_id=1, net=-10),
+        SongInput(song_id=2, net=0),
+    ]
+    r = materialize(songs, knobs=knobs, min_size=0, max_size=None, seed=0)
+    by_id = {t.song_id: t for t in r.tracks}
+    assert by_id[1].inclusion_reason == Reason.GUARANTEED

@@ -8,10 +8,12 @@ endpoints), Monochrome accesses the Hi-Fi tier with guaranteed lossless quality.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -30,6 +32,8 @@ from .base import (
     QualityPreference,
     TrackMatch,
     calculate_match_confidence,
+    is_duration_compatible,
+    is_rejected,
 )
 
 logger = logging.getLogger(__name__)
@@ -176,6 +180,8 @@ class MonochromeProvider(DownloadProvider):
         album: Optional[str] = None,
         isrc: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        search_alternate_isrcs: Optional[Iterable[str]] = None,
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         endpoints = self._endpoint_manager.get_healthy_endpoints()
         if not endpoints:
@@ -195,6 +201,8 @@ class MonochromeProvider(DownloadProvider):
                     artist=artist,
                     isrc=isrc,
                     duration_ms=duration_ms,
+                    search_alternate_isrcs=search_alternate_isrcs,
+                    excluded_track_ids=excluded_track_ids,
                 )
 
                 endpoint.mark_success()
@@ -207,7 +215,7 @@ class MonochromeProvider(DownloadProvider):
                         f"Monochrome {endpoint.url} rate limited, "
                         f"sleeping {retry_after}s"
                     )
-                    time.sleep(retry_after)
+                    await asyncio.sleep(retry_after)
                     continue
                 logger.warning(f"Monochrome search on {endpoint.url} failed: {e}")
                 endpoint.mark_failure()
@@ -280,7 +288,7 @@ class MonochromeProvider(DownloadProvider):
                         f"Monochrome {endpoint.url} rate limited, "
                         f"sleeping {retry_after}s"
                     )
-                    time.sleep(retry_after)
+                    await asyncio.sleep(retry_after)
                     continue
                 logger.warning(f"Monochrome endpoint {endpoint.url} failed: {e}")
                 endpoint.mark_failure()
@@ -449,6 +457,8 @@ class MonochromeProvider(DownloadProvider):
         artist: str,
         isrc: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        search_alternate_isrcs: Optional[Iterable[str]] = None,
+        excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         best: Optional[TrackMatch] = None
         best_confidence = 0.0
@@ -456,6 +466,17 @@ class MonochromeProvider(DownloadProvider):
         for result in results:
             match = self._parse_track_result(result, confidence=0.0)
             if not match:
+                continue
+            if is_rejected(match.provider, match.provider_track_id, excluded_track_ids):
+                continue
+
+            if not is_duration_compatible(duration_ms, match.duration_ms):
+                logger.debug(
+                    "[monochrome] Rejecting '%s': expected %sms, got %sms",
+                    match.title,
+                    duration_ms,
+                    match.duration_ms,
+                )
                 continue
 
             confidence = calculate_match_confidence(
@@ -465,6 +486,7 @@ class MonochromeProvider(DownloadProvider):
                 result_artist=match.artist,
                 search_isrc=isrc,
                 result_isrc=match.isrc,
+                search_alternate_isrcs=search_alternate_isrcs,
                 search_duration_ms=duration_ms,
                 result_duration_ms=match.duration_ms,
             )

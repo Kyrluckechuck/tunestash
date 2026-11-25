@@ -7,7 +7,13 @@ from django.utils import timezone
 
 from celery_app import app as celery_app
 
-from ..helpers import generate_task_id, is_task_pending_or_running
+from ..helpers import (
+    enqueue_download_deezer_track,
+    enqueue_download_track_by_spotify_gid,
+    enqueue_map_external_list_tracks,
+    generate_task_id,
+    is_task_pending_or_running,
+)
 from ..models import (
     ExternalList,
     ExternalListStatus,
@@ -20,6 +26,7 @@ from .core import (
     TaskPriority,
     complete_task,
     create_task_history,
+    is_task_cancelled,
     logger,
     mark_task_running,
 )
@@ -43,6 +50,10 @@ def _sync_external_list_internal(
     mark_task_running(task_history)
 
     try:
+        if is_task_cancelled(task_history.task_id):
+            logger.info("[EXTERNAL_LIST] Sync cancelled for '%s'", external_list.name)
+            return
+
         provider = get_provider(external_list.source)
 
         # Fetch all tracks
@@ -72,6 +83,11 @@ def _sync_external_list_internal(
         created_count = 0
         updated_count = 0
         for track in result.tracks:
+            if is_task_cancelled(task_history.task_id):
+                logger.info(
+                    "[EXTERNAL_LIST] Sync cancelled for '%s'", external_list.name
+                )
+                return
             normalized_artist = track.artist_name.lower().strip()
             normalized_track = track.track_name.lower().strip()
 
@@ -113,7 +129,9 @@ def _sync_external_list_internal(
         ).count()
 
         if pending_count > 0:
-            map_external_list_tracks.delay(external_list.id)
+            enqueue_map_external_list_tracks(
+                external_list.id, priority=TaskPriority.PLAYLIST_DOWNLOAD
+            )
 
         complete_task(task_history, success=True)
 
@@ -181,6 +199,10 @@ def _map_external_list_tracks_internal(
         (t.artist_name, t.track_name, t.musicbrainz_id) for t in pending_tracks
     ]
 
+    if task_id and is_task_cancelled(task_id):
+        logger.info("[TRACK_MAPPING] Mapping cancelled for '%s'", external_list.name)
+        return
+
     results = mapping_service.map_tracks_batch(batch_input)
 
     mapped_count = 0
@@ -189,6 +211,11 @@ def _map_external_list_tracks_internal(
     for track_obj, (result_id, method, confidence, error) in zip(
         pending_tracks, results
     ):
+        if task_id and is_task_cancelled(task_id):
+            logger.info(
+                "[TRACK_MAPPING] Mapping cancelled for '%s'", external_list.name
+            )
+            return
         if result_id:
             track_obj.mapping_status = TrackMappingStatus.MAPPED
             track_obj.spotify_track_id = result_id
@@ -216,15 +243,15 @@ def _map_external_list_tracks_internal(
                 if method == "deezer_search":
                     try:
                         deezer_id = int(result_id)
-                        from library_manager.tasks import download_deezer_track
-
-                        download_deezer_track.delay(deezer_id)
+                        enqueue_download_deezer_track(
+                            deezer_id, priority=TaskPriority.TRACK_DOWNLOAD
+                        )
                     except (ValueError, TypeError):
                         pass
                 else:
-                    from library_manager.tasks import download_track_by_spotify_gid
-
-                    download_track_by_spotify_gid.delay(result_id)
+                    enqueue_download_track_by_spotify_gid(
+                        result_id, priority=TaskPriority.TRACK_DOWNLOAD
+                    )
 
             track_obj.save()
             mapped_count += 1
@@ -266,7 +293,15 @@ def _map_external_list_tracks_internal(
             remaining,
             external_list.name,
         )
-        map_external_list_tracks.delay(external_list.id)
+        # Reuse the deterministic id so external triggers dedupe against this
+        # chain. A plain apply_async bypasses the claim check: the current batch
+        # still holds the claim, and the next batch adopts it when it starts.
+        chain_task_id = task_id or generate_task_id(
+            "library_manager.tasks.map_external_list_tracks", external_list.id
+        )
+        map_external_list_tracks.apply_async(
+            args=[external_list.id], task_id=chain_task_id
+        )
 
 
 @celery_app.task(bind=True, name="library_manager.tasks.map_external_list_tracks")
@@ -359,4 +394,6 @@ def retry_failed_external_mappings(self: Any) -> None:
         .distinct()
     )
     for list_id in list_ids:
-        map_external_list_tracks.delay(list_id)
+        enqueue_map_external_list_tracks(
+            list_id, priority=TaskPriority.PLAYLIST_DOWNLOAD
+        )

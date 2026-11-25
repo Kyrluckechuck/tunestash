@@ -5,7 +5,6 @@ from typing import Any, List, Optional
 from django.db.models import F, Q
 
 from asgiref.sync import sync_to_async
-from celery.result import AsyncResult
 
 from library_manager.models import Album as DjangoAlbum
 from library_manager.models import Artist as DjangoArtist
@@ -249,9 +248,14 @@ class AlbumService(BaseService[Album]):
                 # Album doesn't exist in DB - queue task that fetches metadata in worker
                 # This avoids needing SpotifyClient in the web container
                 def queue_spotify_album_task() -> None:
-                    from library_manager.tasks import download_album_by_spotify_id
+                    from library_manager.helpers import (
+                        enqueue_download_album_by_spotify_id,
+                    )
+                    from library_manager.task_priorities import TaskPriority
 
-                    download_album_by_spotify_id.delay(album_id)
+                    enqueue_download_album_by_spotify_id(
+                        album_id, priority=TaskPriority.ALBUM_DOWNLOAD
+                    )
 
                 await sync_to_async(queue_spotify_album_task)()
 
@@ -279,10 +283,13 @@ class AlbumService(BaseService[Album]):
             # Queue download for this specific album
             album_db_id = django_album.id
 
-            def queue_task() -> AsyncResult:
-                from library_manager.tasks import download_single_album
+            def queue_task() -> bool:
+                from library_manager.helpers import enqueue_download_single_album
+                from library_manager.task_priorities import TaskPriority
 
-                return download_single_album.delay(album_db_id)
+                return enqueue_download_single_album(
+                    album_db_id, priority=TaskPriority.ALBUM_DOWNLOAD
+                )
 
             await sync_to_async(queue_task)()
 

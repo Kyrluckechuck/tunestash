@@ -103,7 +103,8 @@ class SettingsService:
         import requests
 
         try:
-            resp = requests.get(
+            # Offload the blocking HTTP call so the event loop keeps running.
+            resp = await sync_to_async(requests.get)(
                 "https://api.deezer.com/editorial",
                 timeout=10,
                 headers={"User-Agent": "TuneStash/1.0"},

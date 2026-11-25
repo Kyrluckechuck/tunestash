@@ -1,10 +1,11 @@
 """Tests for the TidalEndpointManager."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+
 from downloader.providers.tidal_endpoints import (
     CONFIG_CACHE_TTL,
     DEFAULT_CONFIG_URL,
@@ -44,7 +45,7 @@ class TestTidalEndpoint:
         endpoint = TidalEndpoint(name="test", base_url="https://test.com", weight=10)
         # Set failure in the past, beyond cooldown
         endpoint.last_failure = (
-            datetime.now() - ENDPOINT_COOLDOWN - timedelta(seconds=1)
+            datetime.now(timezone.utc) - ENDPOINT_COOLDOWN - timedelta(seconds=1)
         )
         assert endpoint.is_healthy is True
 
@@ -52,8 +53,16 @@ class TestTidalEndpoint:
     def test_is_unhealthy_within_cooldown(self):
         """Test endpoint is unhealthy within cooldown period."""
         endpoint = TidalEndpoint(name="test", base_url="https://test.com", weight=10)
-        endpoint.last_failure = datetime.now()
+        endpoint.last_failure = datetime.now(timezone.utc)
         assert endpoint.is_healthy is False
+
+    @pytest.mark.unit
+    def test_mark_failure_sets_timezone_aware_timestamp(self):
+        """last_failure must be tz-aware so it can be compared with aware values."""
+        endpoint = TidalEndpoint(name="test", base_url="https://test.com", weight=10)
+        endpoint.mark_failure()
+        assert endpoint.last_failure is not None
+        assert endpoint.last_failure.tzinfo is not None
 
     @pytest.mark.unit
     def test_mark_failure(self):
@@ -237,7 +246,9 @@ export const V2_API_TARGETS = [
         manager._endpoints = [
             TidalEndpoint(name="t", base_url="https://t.com", weight=1)
         ]
-        manager._last_fetch = datetime.now() - CONFIG_CACHE_TTL - timedelta(seconds=1)
+        manager._last_fetch = (
+            datetime.now(timezone.utc) - CONFIG_CACHE_TTL - timedelta(seconds=1)
+        )
         assert manager._should_refresh() is True
 
     @pytest.mark.unit
@@ -247,7 +258,7 @@ export const V2_API_TARGETS = [
         manager._endpoints = [
             TidalEndpoint(name="t", base_url="https://t.com", weight=1)
         ]
-        manager._last_fetch = datetime.now()
+        manager._last_fetch = datetime.now(timezone.utc)
         assert manager._should_refresh() is False
 
     @pytest.mark.unit
@@ -291,7 +302,7 @@ export const V2_API_TARGETS = [
         manager._endpoints = [
             TidalEndpoint(name="cached", base_url="https://cached.com", weight=10)
         ]
-        manager._last_fetch = datetime.now()
+        manager._last_fetch = datetime.now(timezone.utc)
 
         with patch("downloader.providers.tidal_endpoints.requests.get") as mock_get:
             endpoint = await manager.get_endpoint()
@@ -314,7 +325,7 @@ export const V2_API_TARGETS = [
         unhealthy.mark_failure()  # Mark as unhealthy
 
         manager._endpoints = [healthy, unhealthy]
-        manager._last_fetch = datetime.now()
+        manager._last_fetch = datetime.now(timezone.utc)
 
         # Should always return the healthy one
         for _ in range(10):
@@ -332,7 +343,7 @@ export const V2_API_TARGETS = [
         unhealthy.mark_failure()
 
         manager._endpoints = [unhealthy]
-        manager._last_fetch = datetime.now()
+        manager._last_fetch = datetime.now(timezone.utc)
 
         endpoint = await manager.get_endpoint()
         assert endpoint is None
@@ -347,7 +358,7 @@ export const V2_API_TARGETS = [
             TidalEndpoint(name="heavy", base_url="https://heavy.com", weight=30),
             TidalEndpoint(name="medium", base_url="https://medium.com", weight=15),
         ]
-        manager._last_fetch = datetime.now()
+        manager._last_fetch = datetime.now(timezone.utc)
 
         healthy = await manager.get_all_healthy_endpoints()
 
@@ -394,7 +405,7 @@ export const V2_API_TARGETS = [
         manager._endpoints = [
             TidalEndpoint(name="old", base_url="https://old.com", weight=1)
         ]
-        manager._last_fetch = datetime.now()
+        manager._last_fetch = datetime.now(timezone.utc)
 
         mock_response = MagicMock()
         mock_response.text = sample_config_text

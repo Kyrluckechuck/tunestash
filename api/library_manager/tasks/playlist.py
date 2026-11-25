@@ -9,9 +9,11 @@ from celery_app import app as celery_app
 from .. import helpers
 from ..models import Artist, PlaylistSong, Song, TrackedPlaylist, TrackingTier
 from .core import (
+    TaskPriority,
     complete_task,
     create_task_history,
     extract_deezer_playlist_id,
+    is_task_cancelled,
     logger,
     update_task_progress,
 )
@@ -68,7 +70,6 @@ def _generate_m3u_if_enabled(playlist: TrackedPlaylist) -> None:
     from django.conf import settings as django_settings
 
     from downloader.m3u_writer import write_playlist_m3u
-
     from src.app_settings.registry import get_setting
 
     output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
@@ -133,8 +134,6 @@ def sync_deezer_playlist(
     self: Any, playlist_id: int, task_id: Optional[str] = None
 ) -> None:
     """Sync a Deezer playlist: fetch tracks, match/create songs, queue downloads."""
-    from .download import download_deezer_track
-
     task_history = None
     try:
         try:
@@ -174,6 +173,10 @@ def sync_deezer_playlist(
 
         provider = DeezerMetadataProvider()
 
+        if is_task_cancelled(task_history.task_id):
+            logger.info("Playlist sync cancelled: %s", playlist.name)
+            return
+
         playlist_info = provider.get_playlist(deezer_playlist_id)
         if playlist_info:
             if playlist_info.name and playlist_info.name != playlist.name:
@@ -182,6 +185,10 @@ def sync_deezer_playlist(
             playlist.save(update_fields=["name", "snapshot_id"])
 
         update_task_progress(task_history, 10.0, "Fetching playlist tracks from Deezer")
+
+        if is_task_cancelled(task_history.task_id):
+            logger.info("Playlist sync cancelled: %s", playlist.name)
+            return
 
         tracks = provider.get_playlist_tracks(deezer_playlist_id)
         update_task_progress(task_history, 20.0, f"Processing {len(tracks)} tracks")
@@ -193,6 +200,9 @@ def sync_deezer_playlist(
         ordered_songs: list[Song] = []
 
         for idx, track in enumerate(tracks):
+            if is_task_cancelled(task_history.task_id):
+                logger.info("Playlist sync cancelled: %s", playlist.name)
+                return
             if not track.deezer_id:
                 continue
 
@@ -266,8 +276,10 @@ def sync_deezer_playlist(
                 and matched_song.bitrate == 0
                 and not matched_song.unavailable
             ):
-                download_deezer_track.delay(matched_song.id)
-                downloads_queued += 1
+                if helpers.enqueue_download_deezer_track(
+                    matched_song.id, priority=TaskPriority.TRACK_DOWNLOAD
+                ):
+                    downloads_queued += 1
 
             if total > 0 and (idx + 1) % 50 == 0:
                 progress = 20.0 + (70.0 * (idx + 1) / total)

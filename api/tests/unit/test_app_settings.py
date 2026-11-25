@@ -95,6 +95,42 @@ class TestGetSetting:
         assert result is None
 
 
+# ── SettingsService async tests ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_deezer_genres_returns_genres_off_event_loop_thread():
+    """The Deezer HTTP fetch in async context must run off the event-loop
+    thread via sync_to_async, not inline."""
+    import threading
+
+    import src.services.settings as settings_module
+
+    seen: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"id": 1, "name": "Rock"}, {"id": 2, "name": "Pop"}]}
+
+    def fake_get(*args, **kwargs):
+        seen["thread"] = threading.current_thread()
+        return FakeResponse()
+
+    # Reset the module-level cache so the fetch actually runs
+    settings_module._genre_cache = []
+    settings_module._genre_cache_time = 0
+
+    service = SettingsService()
+    with patch("requests.get", side_effect=fake_get):
+        genres = await service.get_deezer_genres()
+
+    assert [g.name for g in genres] == ["Rock", "Pop"]
+    assert seen["thread"] is not threading.main_thread()
+
+
 # ── is_sensitive() tests ─────────────────────────────────────────────────────
 
 
