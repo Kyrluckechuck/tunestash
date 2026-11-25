@@ -130,6 +130,12 @@ services:
       - QUEUETIP_PUBLIC_URL=${QUEUETIP_PUBLIC_URL:-http://127.0.0.1:3001}
       - QUEUETIP_FRONTEND_URL=${QUEUETIP_FRONTEND_URL:-http://127.0.0.1:3001}
       - QUEUETIP_FERNET_KEY=${QUEUETIP_FERNET_KEY}
+      # Comma-separated IPs/CIDRs of reverse proxies allowed to set
+      # X-Forwarded-For. Empty (default) = ignore the header. Behind the bundled
+      # queuetip-frontend nginx, set this in .env to that container's Docker
+      # network CIDR (see docs/queuetip/README.md); otherwise every request
+      # appears to come from nginx and the per-IP rate limits become global.
+      - QUEUETIP_TRUSTED_PROXIES=${QUEUETIP_TRUSTED_PROXIES:-}
     command: uvicorn src.queuetip.app:app --host 0.0.0.0 --port 5000
     depends_on:
       postgres:

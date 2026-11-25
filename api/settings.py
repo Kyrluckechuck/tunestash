@@ -316,10 +316,16 @@ QUEUETIP_FERNET_KEY = os.getenv("QUEUETIP_FERNET_KEY", "")
 # direct connection comes from one of these addresses, the XFF header is
 # trusted and the real client IP is extracted from it. Accepts individual IPs
 # and CIDR blocks (e.g. "10.0.0.0/8"). Empty by default — safe for deployments
-# that expose the process directly. Example production values:
-#   ["127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+# that expose the process directly. Set via the comma-separated
+# QUEUETIP_TRUSTED_PROXIES env var. Behind the bundled queuetip-frontend nginx
+# it must be that proxy's address or the Docker network CIDR, otherwise every
+# request appears to come from the proxy and per-IP rate limits become global.
 # For Cloudflare Tunnel, add Cloudflare's published IPv4/IPv6 ranges instead.
-QUEUETIP_TRUSTED_PROXIES: list[str] = []
+QUEUETIP_TRUSTED_PROXIES: list[str] = [
+    _entry.strip()
+    for _entry in os.getenv("QUEUETIP_TRUSTED_PROXIES", "").split(",")
+    if _entry.strip()
+]
 
 # Email backend default. Queuetip builds its own SMTP connection at send time
 # from the DB-backed app_settings (see src/queuetip/email.py), so the global

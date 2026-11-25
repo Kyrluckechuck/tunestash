@@ -175,4 +175,19 @@ describe("SignInPage", () => {
     expect(nav.dataset.to).toBe("/playlists/42");
     nextSearch = {}; // reset for other tests
   });
+
+  it.each(["https://evil.example", "//evil.example", "javascript:alert(1)"])(
+    "ignores an unsafe ?next=%s",
+    async (unsafe) => {
+      nextSearch = { next: unsafe };
+      render(
+        <MockedProvider mocks={[authedMeMock, publicSettingsMock(false)]}>
+          <SignInPage />
+        </MockedProvider>,
+      );
+      const nav = await screen.findByTestId("navigate");
+      expect(nav.dataset.to).toBe("/playlists");
+      nextSearch = {};
+    },
+  );
 });

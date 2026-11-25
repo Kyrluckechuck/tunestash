@@ -5,6 +5,7 @@ Phase 1 returns a plain success page; Phase 2 will redirect to the frontend.
 """
 
 import datetime as dt
+import html
 import urllib.parse
 
 from django.conf import settings
@@ -13,7 +14,7 @@ from django.utils import timezone
 
 from asgiref.sync import sync_to_async
 from fastapi import APIRouter, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from starlette.requests import Request
 
 from queuetip.models import Account
@@ -213,8 +214,12 @@ async def set_password(request: Request) -> Response:
     try:
         await sync_to_async(set_account_password)(account, new_password)
     except ValidationError as exc:
-        return HTMLResponse(str(exc), status_code=400)
-    return Response(status_code=204)
+        return PlainTextResponse(str(exc), status_code=400)
+    # The password change bumped session_epoch; re-issue this session's cookie
+    # so the user who made the change stays signed in.
+    response = Response(status_code=204)
+    _set_auth_cookie(response, account)
+    return response
 
 
 @router.post("/auth/password/request-reset")
@@ -241,7 +246,7 @@ async def password_reset(request: Request) -> Response:
             token, new_password, ip
         )
     except ValidationError as exc:
-        return HTMLResponse(str(exc), status_code=400)
+        return PlainTextResponse(str(exc), status_code=400)
     if account is None:
         return Response(status_code=400)
     response = Response(status_code=204)
@@ -313,7 +318,8 @@ async def spotify_start(request: Request) -> Response:
         )
     except SpotifyOAuthError as exc:
         return HTMLResponse(
-            f"<h1>Spotify is not configured</h1><p>{exc}</p>", status_code=503
+            f"<h1>Spotify is not configured</h1><p>{html.escape(str(exc))}</p>",
+            status_code=503,
         )
     return RedirectResponse(url, status_code=302)
 
@@ -333,7 +339,8 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
 
     if error:
         return HTMLResponse(
-            f"<h1>Spotify authorization failed</h1><p>{error}</p>", status_code=400
+            f"<h1>Spotify authorization failed</h1><p>{html.escape(error)}</p>",
+            status_code=400,
         )
     if not code or not state:
         return Response(status_code=400)
@@ -360,7 +367,9 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
             tokens["access_token"]
         )
     except SpotifyOAuthError as exc:
-        return HTMLResponse(f"<h1>OAuth failed</h1><p>{exc}</p>", status_code=502)
+        return HTMLResponse(
+            f"<h1>OAuth failed</h1><p>{html.escape(str(exc))}</p>", status_code=502
+        )
 
     expires_at = timezone.now() + dt.timedelta(seconds=int(tokens["expires_in"]))
 
@@ -383,7 +392,7 @@ async def spotify_callback(  # pylint: disable=too-many-return-statements
     try:
         await sync_to_async(upsert)()
     except SpotifyOAuthError as exc:
-        return HTMLResponse(f"<h1>{exc}</h1>", status_code=400)
+        return HTMLResponse(f"<h1>{html.escape(str(exc))}</h1>", status_code=400)
 
     # Prefer the origin the user was on when they started the flow (carried
     # in the signed state token). Re-validate it here as a defense-in-depth

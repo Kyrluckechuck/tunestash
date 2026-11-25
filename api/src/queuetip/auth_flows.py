@@ -13,6 +13,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import F
 from django.utils import timezone
 
 from queuetip.models import (
@@ -143,6 +144,10 @@ def set_account_password(account: Account, raw_password: str) -> None:
     account.password_hash = make_password(raw_password)
     account.password_set_at = timezone.now()
     account.save(update_fields=["password_hash", "password_set_at"])
+    # Invalidate every existing session (a stolen cookie must not survive a
+    # password change). Callers re-issue the cookie for the acting session.
+    Account.objects.filter(id=account.id).update(session_epoch=F("session_epoch") + 1)
+    account.refresh_from_db(fields=["session_epoch"])
 
 
 def verify_password_sign_in(email: str, raw_password: str, ip: str) -> Account | None:

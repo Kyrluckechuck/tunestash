@@ -165,6 +165,22 @@ The required scopes (`playlist-modify-private`, `playlist-modify-public`) are re
 | `postgres` | No | Database — internal only |
 | `valkey` | No | Broker — internal only |
 
+### Trusted proxies (client IP for rate limits)
+
+QueueTip rate-limits sign-in attempts per client IP. Behind the bundled `queuetip-frontend` nginx, the direct peer of `queuetip` is always the nginx container, so unless you tell it to trust that proxy every request looks like it came from one IP and the limits become site-wide (one user can lock everyone out).
+
+Set `QUEUETIP_TRUSTED_PROXIES` in `.env` to a comma-separated list of IPs/CIDRs of the proxies in front of `queuetip`. For the bundled nginx, use the Docker network the two containers share (find it with `docker network inspect <project>_slm_net`, e.g. `172.18.0.0/16`):
+
+```
+QUEUETIP_TRUSTED_PROXIES=172.18.0.0/16
+```
+
+It is empty by default, which ignores `X-Forwarded-For` entirely. Only list addresses you control — a trusted address can assert any client IP. If an extra proxy or tunnel (Cloudflare, Traefik) sits in front of nginx, add its ranges too. Port `5050` is published directly; bind or firewall it if the proxy path must not be bypassable.
+
+### Outbound URL restrictions
+
+User-supplied Subsonic server URLs and Apple Music links are fetched server-side. QueueTip allows LAN servers (10/8, 172.16/12, 192.168/16) but refuses loopback, link-local/metadata (169.254.0.0/16), multicast/reserved addresses, this stack's Docker service names, and any address on the container's own Docker network(s), checked at save time and again before every request. A Navidrome running on the Docker host must therefore be reached via its LAN IP, not `host.docker.internal` or the bridge gateway. `QUEUETIP_OUTBOUND_BLOCKED_NETWORKS` (comma-separated CIDRs) replaces the auto-detected container networks if you need to override them.
+
 The fail-safe property: even if `queuetip` were compromised, it cannot access TuneStash's admin schema because the import is never present in its process. Access control is by construction, not configuration.
 
 ## GraphQL Schema

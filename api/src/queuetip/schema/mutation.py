@@ -42,6 +42,7 @@ from ..graphql_types import (
     PlaylistType,
     SubsonicConnectionType,
 )
+from ..outbound_guard import UnsafeURLError, validate_outbound_url
 from ..services.bulk_import import BulkImportService
 from ..services.contribution import ContributionService
 from ..services.membership import MembershipService
@@ -899,6 +900,17 @@ class Mutation:  # pylint: disable=too-many-public-methods
 # ── Helpers for Subsonic mutations (sync) ──────────────────────────────────
 
 
+def _checked_server_url(server_url: str) -> str:
+    """Trim and SSRF-validate a user-supplied Subsonic URL (also re-checked on
+    every request by the client, to cover DNS rebinding)."""
+    server_url = server_url.strip()
+    try:
+        validate_outbound_url(server_url)
+    except UnsafeURLError as exc:
+        raise ValidationError(str(exc)) from exc
+    return server_url
+
+
 def _create_subsonic_connection(
     account: Account,
     label: str,
@@ -931,10 +943,11 @@ def _create_subsonic_connection(
             "A Subsonic connection already exists for this account. "
             "Update it instead of adding a new one."
         )
+    server_url = _checked_server_url(server_url)
     return SubsonicConnection.objects.create(
         account=account,
         label=label.strip() or "Subsonic",
-        server_url=server_url.strip(),
+        server_url=server_url,
         username=username.strip(),
         password_encrypted=encrypt_secret(password),
         auth_mode=auth_mode,
@@ -955,8 +968,8 @@ def _update_subsonic_connection(
         raise NotFoundError(f"Subsonic connection {conn_id} not found")
     if label is not None:
         conn.label = label.strip() or conn.label
-    if server_url is not None:
-        conn.server_url = server_url.strip() or conn.server_url
+    if server_url is not None and server_url.strip():
+        conn.server_url = _checked_server_url(server_url)
     if username is not None:
         conn.username = username.strip() or conn.username
     if password:

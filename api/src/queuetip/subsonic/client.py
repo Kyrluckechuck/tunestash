@@ -43,6 +43,8 @@ from typing import Any, cast
 
 import httpx
 
+from ..outbound_guard import UnsafeURLError, validate_outbound_url
+
 logger = logging.getLogger(__name__)
 
 API_VERSION = "1.16.1"
@@ -296,6 +298,16 @@ class SubsonicClient:
             query.extend(params)
 
         url = f"{self.server_url}/rest/{endpoint}.view"
+        # Re-validated on every request (not just at save time) so a hostname
+        # whose DNS answer changes later (rebinding) is still caught.
+        try:
+            validate_outbound_url(url)
+        except UnsafeURLError as exc:
+            raise SubsonicError(str(exc)) from exc
+        # Redirects stay off: a public server must not bounce us to an internal
+        # address we just refused to dial directly. Error text never includes
+        # exception details or response bodies, which would let a user probe
+        # internal hosts through the verification error.
         try:
             if method == "POST":
                 # Params (incl. auth) go in the form body, keeping the URL short.
@@ -304,34 +316,38 @@ class SubsonicClient:
                 form: dict[str, list[str]] = {}
                 for key, value in query:
                     form.setdefault(key, []).append(value)
-                response = httpx.post(url, data=form, timeout=self._timeout)
+                response = httpx.post(
+                    url, data=form, timeout=self._timeout, follow_redirects=False
+                )
             else:
                 response = httpx.get(
                     url,
                     params=cast("httpx.QueryParams", query),
                     timeout=self._timeout,
+                    follow_redirects=False,
                 )
         except httpx.HTTPError as exc:
-            raise SubsonicError(f"HTTP error calling {endpoint}: {exc}") from exc
+            logger.info("Subsonic %s request failed: %s", endpoint, type(exc).__name__)
+            raise SubsonicError(
+                f"Could not connect to the server ({endpoint})"
+            ) from exc
 
         if response.status_code != 200:
-            raise SubsonicError(
-                f"{endpoint} HTTP {response.status_code}: {response.text[:200]}"
-            )
+            raise SubsonicError(f"{endpoint} HTTP {response.status_code}")
 
         try:
             payload = response.json()
         except ValueError as exc:
-            raise SubsonicError(
-                f"{endpoint} returned non-JSON: {response.text[:200]}"
-            ) from exc
+            raise SubsonicError(f"{endpoint} returned a non-JSON response") from exc
+        if not isinstance(payload, dict):
+            raise SubsonicError(f"{endpoint} returned a non-JSON response")
 
         envelope = payload.get("subsonic-response") or {}
         status = envelope.get("status")
         if status != "ok":
             error = envelope.get("error") or {}
             code = int(error.get("code", 0))
-            message = error.get("message") or "Unknown Subsonic error"
+            message = str(error.get("message") or "Unknown Subsonic error")[:200]
             if code in (40, 41):
                 # 40 = wrong credentials, 41 = token authentication not supported
                 # for old plaintext-password users (rare; surfaced same way).

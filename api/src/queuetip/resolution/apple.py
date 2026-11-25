@@ -16,6 +16,7 @@ from typing import Optional, TypedDict
 
 import httpx  # pylint: disable=import-error
 
+from src.queuetip.outbound_guard import UnsafeURLError, validate_outbound_url
 from src.queuetip.resolution.candidate import TrackCandidate
 from src.queuetip.resolution.errors import (
     AppleResolverError,
@@ -26,6 +27,7 @@ from src.queuetip.resolution.errors import (
 
 _AMP_BASE = "https://amp-api.music.apple.com"
 _MUSIC_ORIGIN = "https://music.apple.com"
+_APPLE_HOSTS = frozenset({"music.apple.com"})
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 _BUNDLE_URL_RE = re.compile(r"/assets/index~[A-Za-z0-9]+\.js")
@@ -41,11 +43,28 @@ class _TokenCache(TypedDict):
 _TOKEN_CACHE: _TokenCache = {"token": None, "fetched_at": 0.0}
 
 
+def _require_apple_url(url: str) -> None:
+    """Allow only https://music.apple.com — the page URL is user-supplied."""
+    try:
+        validate_outbound_url(url, allowed_hosts=_APPLE_HOSTS, require_https=True)
+    except UnsafeURLError as exc:
+        raise AppleResolverError("Not a valid Apple Music URL") from exc
+
+
+def _check_request_host(request: httpx.Request) -> None:
+    """Request hook: runs on the initial request and on every redirect hop."""
+    _require_apple_url(str(request.url))
+
+
 def _fetch_token(page_url: str) -> str:
     """Scrape a fresh Amp-API bearer token from an Apple Music web page."""
+    _require_apple_url(page_url)
     try:
         with httpx.Client(
-            timeout=20.0, headers={"User-Agent": _UA}, follow_redirects=True
+            timeout=20.0,
+            headers={"User-Agent": _UA},
+            follow_redirects=True,
+            event_hooks={"request": [_check_request_host]},
         ) as client:
             page = client.get(page_url)
             page.raise_for_status()

@@ -5,6 +5,7 @@ import { useMutation } from "@apollo/client";
 import { RequestMagicLinkDocument } from "@/types/generated/graphql";
 import { useMe } from "@/lib/auth";
 import { usePublicSettings } from "@/lib/public-settings";
+import { safeNext } from "@/lib/safe-next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +21,10 @@ import {
 import { MagicLinkSuccess } from "@/features/auth/MagicLinkSuccess";
 
 export function SignInPage() {
-  const { next, resetToken } = Route.useSearch();
+  const { next: rawNext, resetToken } = Route.useSearch();
+  // Re-validated here (not only in validateSearch) because this value reaches
+  // window.location.assign and <Navigate>; an unsafe one must never get there.
+  const next = rawNext === undefined ? undefined : safeNext(rawNext);
   const { account, loading: meLoading } = useMe();
   const [email, setEmail] = React.useState("");
   const [codeEmail, setCodeEmail] = React.useState("");
@@ -387,7 +391,7 @@ export function SignInPage() {
 export const Route = createFileRoute("/sign-in")({
   component: SignInPage,
   validateSearch: (search: Record<string, unknown>): { next?: string; resetToken?: string } => ({
-    next: typeof search.next === "string" ? search.next : undefined,
+    next: typeof search.next === "string" ? safeNext(search.next) : undefined,
     resetToken: typeof search.resetToken === "string" ? search.resetToken : undefined,
   }),
 });
