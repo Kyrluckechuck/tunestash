@@ -25,6 +25,7 @@ from downloader.filesystem_safety import (
     sanitize_component,
 )
 from downloader.providers.metadata import MetadataEmbedder
+
 from library_manager.metadata_detection import dismiss_superseded_updates
 from library_manager.models import (
     Album,

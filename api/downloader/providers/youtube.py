@@ -224,9 +224,8 @@ class YouTubeMusicProvider(DownloadProvider):
         excluded_track_ids: Optional[Iterable[str]] = None,
     ) -> Optional[TrackMatch]:
         """Search YouTube Music's song catalog, excluding ordinary videos."""
-        from ytmusicapi import YTMusic
-
         from downloader.track_matcher import score_track_match
+        from ytmusicapi import YTMusic
 
         try:
             entries = YTMusic().search(f"{artist} {title}", filter="songs", limit=10)

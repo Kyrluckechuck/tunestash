@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-
 from downloader.providers.tidal_endpoints import (
     CONFIG_CACHE_TTL,
     DEFAULT_CONFIG_URL,

@@ -16,6 +16,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from downloader.filesystem_safety import is_safe_regular_file, iter_audio_files
+
 from library_manager.models import FilePath, Song
 from library_manager.tasks.metadata import migration_link_log_path
 

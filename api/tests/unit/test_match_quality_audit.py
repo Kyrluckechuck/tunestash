@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from downloader.providers.base import (
     TrackMatch,
     TrackMetadata,

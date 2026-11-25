@@ -8,6 +8,7 @@ new records for any Deezer content not yet in the DB.
 from typing import Any, Optional
 
 from celery_app import app as celery_app
+
 from src.providers.metadata_base import TrackResult
 
 from ..models import Album, Artist, Song

@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import requests
-
 from downloader.providers.monochrome import MonochromeEndpoint, MonochromeProvider
 
 

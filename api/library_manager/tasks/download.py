@@ -10,7 +10,6 @@ from django.utils import timezone
 
 from asgiref.sync import sync_to_async
 from celery.exceptions import Retry as CeleryRetry
-
 from celery_app import app as celery_app
 from downloader.providers.base import TrackMatch, rejected_key
 from downloader.providers.fallback import DownloadChainResult, sanitize_provider_detail
@@ -644,6 +643,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
     """
     from downloader.providers.base import TrackMetadata
     from downloader.providers.fallback import FallbackDownloader
+
     from src.providers.deezer import DeezerMetadataProvider
 
     if not album.deezer_id:

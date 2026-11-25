@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from downloader.providers.base import (
     DownloadProvider,
     DownloadResult,
@@ -528,11 +527,12 @@ class TestMaintenanceFinalization:
         assert song.matched_duration_ms == 206_000
 
     def test_failure_emits_provider_outcomes(self):
+        from tests.factories import TaskHistoryFactory
+
         from library_manager.models import Artist, Song
         from library_manager.tasks.maintenance import (
             _download_deezer_songs_via_fallback,
         )
-        from tests.factories import TaskHistoryFactory
 
         artist = Artist.objects.create(name="Artist", gid="gid-maint-failure")
         song = Song.objects.create(name="Song", primary_artist=artist, deezer_id=12)
@@ -573,10 +573,11 @@ class TestMaintenanceFinalization:
 @pytest.mark.django_db
 class TestForcedCancellationCheck:
     def test_cancel_just_before_provider_call_stops_download(self):
+        from tests.factories import TaskHistoryFactory
+
         from library_manager.models import Artist, Song
         from library_manager.tasks import core as core_tasks
         from library_manager.tasks.download import download_deezer_track
-        from tests.factories import TaskHistoryFactory
 
         artist = Artist.objects.create(name="Artist", gid="gid-cancel")
         song = Song.objects.create(name="Song", primary_artist=artist, deezer_id=20)
@@ -714,10 +715,11 @@ class TestCancellationBetweenProviders:
 @pytest.mark.django_db
 class TestMaintenanceCancellation:
     def test_cancel_before_provider_call_skips_it(self):
+        from tests.factories import TaskHistoryFactory
+
         from library_manager.models import Artist, Song
         from library_manager.tasks import core as core_tasks
         from library_manager.tasks import maintenance
-        from tests.factories import TaskHistoryFactory
 
         artist = Artist.objects.create(name="Artist", gid="gid-maint-cancel")
         song = Song.objects.create(name="Song", primary_artist=artist, deezer_id=30)
@@ -753,10 +755,11 @@ class TestMaintenanceCancellation:
         provider_download.assert_not_called()
 
     def test_late_cancel_removes_file_without_publishing(self, tmp_path):
+        from tests.factories import TaskHistoryFactory
+
         from library_manager.models import Artist, Song
         from library_manager.tasks import core as core_tasks
         from library_manager.tasks import maintenance
-        from tests.factories import TaskHistoryFactory
 
         artist = Artist.objects.create(name="Artist", gid="gid-maint-late")
         song = Song.objects.create(name="Song", primary_artist=artist, deezer_id=31)

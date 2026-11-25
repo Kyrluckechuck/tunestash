@@ -70,6 +70,7 @@ def _generate_m3u_if_enabled(playlist: TrackedPlaylist) -> None:
     from django.conf import settings as django_settings
 
     from downloader.m3u_writer import write_playlist_m3u
+
     from src.app_settings.registry import get_setting
 
     output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))

@@ -10,9 +10,8 @@ from typing import Any, Dict, List, Optional, cast
 from django.utils import timezone
 
 from asgiref.sync import sync_to_async
-from django_celery_results.models import TaskResult
-
 from celery_app import app as celery_app
+from django_celery_results.models import TaskResult
 
 logger = logging.getLogger(__name__)
 

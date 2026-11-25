@@ -20,7 +20,6 @@ from django.utils import timezone
 
 import psutil
 from celery.utils.log import get_task_logger
-
 from celery_app import app as celery_app  # noqa: F401 - re-exported
 
 from ..models import TaskHistory

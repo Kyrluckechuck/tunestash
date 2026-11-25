@@ -19,6 +19,7 @@ for _mod_name in ("deezer", "deezer.exceptions", "httpx"):
 
 from downloader.providers.base import TrackMatch  # noqa: E402
 from downloader.providers.fallback import DownloadChainResult  # noqa: E402
+
 from library_manager.tasks.download import _download_deezer_album  # noqa: E402
 
 

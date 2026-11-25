@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 import pytest
 import pytest_asyncio
 from asgiref.sync import sync_to_async
+from tests.factories import CompletedTaskFactory, FailedTaskFactory, TaskHistoryFactory
 
 from src.graphql_types.models import EntityType, TaskStatus, TaskType
 from src.services.task_history import TaskHistoryService
-from tests.factories import CompletedTaskFactory, FailedTaskFactory, TaskHistoryFactory
 
 
 @pytest.fixture
