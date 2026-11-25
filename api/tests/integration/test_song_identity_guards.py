@@ -121,6 +121,7 @@ def test_playlist_sync_does_not_attach_conflicting_deezer_id(identity_artist):
             return_value=FakeProvider(),
         ),
         patch("library_manager.tasks.playlist.helpers.enqueue_download_deezer_track"),
+        patch("library_manager.tasks.playlist.helpers.enqueue_playlists"),
     ):
         _sync_tracked_playlist_internal(playlist, None)
 
