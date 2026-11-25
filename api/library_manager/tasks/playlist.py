@@ -18,6 +18,7 @@ from .core import (
     update_task_progress,
 )
 from .migration import _find_matching_song
+from .song_identity import apply_identifier_updates, identifier_updates
 
 
 def _update_playlist_songs(
@@ -217,16 +218,10 @@ def sync_deezer_playlist(
                 matched_song = Song.objects.filter(deezer_id=track.deezer_id).first()
 
             if matched_song:
-                # Update deezer_id/isrc if missing
-                update_fields: list[str] = []
-                if not matched_song.deezer_id:
-                    matched_song.deezer_id = track.deezer_id
-                    update_fields.append("deezer_id")
-                if not matched_song.isrc and track.isrc:
-                    matched_song.isrc = track.isrc
-                    update_fields.append("isrc")
-                if update_fields:
-                    matched_song.save(update_fields=update_fields)
+                # Fill only identifiers that are missing and non-conflicting.
+                updates = identifier_updates(matched_song, track.deezer_id, track.isrc)
+                if updates:
+                    apply_identifier_updates(matched_song, updates)
                     linked_songs += 1
             else:
                 artist = None
@@ -250,15 +245,11 @@ def sync_deezer_playlist(
                 # Use _find_matching_song for fuzzy name match
                 matched_song = _find_matching_song(track, artist)
                 if matched_song:
-                    update_fields = []
-                    if not matched_song.deezer_id:
-                        matched_song.deezer_id = track.deezer_id
-                        update_fields.append("deezer_id")
-                    if not matched_song.isrc and track.isrc:
-                        matched_song.isrc = track.isrc
-                        update_fields.append("isrc")
-                    if update_fields:
-                        matched_song.save(update_fields=update_fields)
+                    updates = identifier_updates(
+                        matched_song, track.deezer_id, track.isrc
+                    )
+                    if updates:
+                        apply_identifier_updates(matched_song, updates)
                         linked_songs += 1
                 else:
                     matched_song = Song.objects.create(

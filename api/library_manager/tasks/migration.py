@@ -23,6 +23,7 @@ from .core import (
     update_task_progress,
 )
 from .periodic import _try_link_artist_to_deezer
+from .song_identity import isrc_is_compatible
 
 
 def _find_matching_song(track: TrackResult, artist: Artist) -> Optional[Song]:
@@ -57,6 +58,16 @@ def _find_matching_song(track: TrackResult, artist: Artist) -> Optional[Song]:
             result_artist=artist_name,
         )
         if score > best_score:
+            if not isrc_is_compatible(candidate, track.isrc):
+                logger.info(
+                    "song_id=%s isrc conflict with deezer track %s "
+                    "(song isrc=%s candidate isrc=%s); skipping candidate",
+                    candidate.id,
+                    track.deezer_id,
+                    candidate.isrc,
+                    track.isrc,
+                )
+                continue
             best_score = score
             best_song = candidate
 
@@ -82,7 +93,20 @@ def _link_or_create_song(
     matched_song = _find_matching_song(track, artist)
 
     if matched_song:
-        if not matched_song.deezer_id:
+        if not matched_song.deezer_id and not isrc_is_compatible(
+            matched_song, track.isrc
+        ):
+            logger.info(
+                "song_id=%s isrc conflict with deezer track %s "
+                "(song isrc=%s candidate isrc=%s); creating separate song",
+                matched_song.id,
+                track.deezer_id,
+                matched_song.isrc,
+                track.isrc,
+            )
+            matched_song = None
+
+        if matched_song and not matched_song.deezer_id:
             # Song has no deezer_id yet — link it to this track/album
             update_fields: list[str] = ["deezer_id"]
             matched_song.deezer_id = track.deezer_id

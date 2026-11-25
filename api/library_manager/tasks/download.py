@@ -43,6 +43,7 @@ from .core import (
     require_download_capability,
     update_task_progress,
 )
+from .song_identity import apply_identifier_updates, identifier_updates
 
 # Mapping from FallbackDownloader provider name strings to model enum values
 FALLBACK_PROVIDER_MAP = {
@@ -745,10 +746,8 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
             if song:
                 update_fields: list[str] = ["album_id"]
                 song.album = album
-                if not song.deezer_id:
-                    song.deezer_id = track.deezer_id
-                    update_fields.append("deezer_id")
-                song.save(update_fields=update_fields)
+                updates = identifier_updates(song, track.deezer_id, track.isrc)
+                apply_identifier_updates(song, updates, tuple(update_fields))
                 logger.debug(
                     f"Linked deezer_id to existing song '{song.name}' via ISRC"
                 )
@@ -759,9 +758,8 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         if not song and track.isrc:
             song = Song.objects.filter(isrc=track.isrc, album=album).first()
             if song:
-                if not song.deezer_id:
-                    song.deezer_id = track.deezer_id
-                    song.save(update_fields=["deezer_id"])
+                updates = identifier_updates(song, track.deezer_id, track.isrc)
+                apply_identifier_updates(song, updates)
                 logger.debug(
                     f"Reused same-album song '{song.name}' via ISRC "
                     "(linked deezer_id)"
