@@ -11,6 +11,7 @@ from downloader.providers.base import TrackMetadata
 from ..models import Album, Artist
 from ..models import DownloadProvider as DownloadProviderEnum
 from ..models import Song, TaskHistory
+from ..release_ids import fits_release, resolve_release_deezer_id
 from .core import (
     TaskCancelledException,
     complete_task,
@@ -38,23 +39,30 @@ def _try_resolve_to_deezer(song: Song) -> None:
 
     provider = DeezerMetadataProvider()
 
-    # Try ISRC first (most reliable)
+    # Songs are per album and each release has its own Deezer track id, while
+    # an ISRC lookup returns whichever release Deezer indexed first. Only a
+    # track on this song's own release may be linked.
     if song.isrc:
         try:
             result = provider.get_track_by_isrc(song.isrc)
-            if result and result.deezer_id:
-                if Song.objects.filter(deezer_id=result.deezer_id).exists():
+            candidate = (
+                result.deezer_id
+                if result and result.deezer_id and fits_release(song, result)
+                else None
+            )
+            if candidate is None:
+                candidate = resolve_release_deezer_id(song, provider)
+            if candidate:
+                if Song.objects.filter(deezer_id=candidate).exists():
                     logger.info(
                         "Song %d: deezer_id=%d (via ISRC) already claimed, skipping",
                         song.id,
-                        result.deezer_id,
+                        candidate,
                     )
                     return
-                song.deezer_id = result.deezer_id
+                song.deezer_id = candidate
                 song.save(update_fields=["deezer_id"])
-                logger.debug(
-                    "Linked song %s to Deezer %d via ISRC", song.id, result.deezer_id
-                )
+                logger.debug("Linked song %s to Deezer %d via ISRC", song.id, candidate)
                 return
         except Exception as e:
             logger.debug("ISRC lookup failed for song %s: %s", song.id, e)
@@ -75,6 +83,7 @@ def _try_resolve_to_deezer(song: Song) -> None:
                     normalize_name(track.name) == norm_song
                     and normalize_name(track.artist_name or "") == norm_artist
                     and track.deezer_id
+                    and fits_release(song, track)
                 ):
                     if Song.objects.filter(deezer_id=track.deezer_id).exists():
                         logger.info(

@@ -31,6 +31,17 @@ def isrc_is_compatible(song: Song, candidate_isrc: str | None) -> bool:
     return candidate in known
 
 
+def release_track_id(song: Song, track: Any) -> int | None:
+    """``track.deezer_id`` when the track is on the song's own release, else None.
+
+    Songs are per album: the same recording on another release has another
+    Deezer track id, which must never be stored on this row.
+    """
+    from library_manager.release_ids import fits_release
+
+    return track.deezer_id if fits_release(song, track) else None
+
+
 def apply_identifier_updates(
     song: Song, updates: dict[str, Any], extra_fields: tuple[str, ...] = ()
 ) -> None:

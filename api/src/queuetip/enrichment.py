@@ -186,7 +186,14 @@ def enrich_song_cross_platform(song: Song) -> Song:
 
     # Step 3: If we have an isrc but no deezer_id, resolve via ISRC→Deezer.
     if isrc and not deezer_id:
-        fetched_deezer_id = get_deezer_id_by_isrc(isrc)
+        # A song on an album gets the id of its own release; an ISRC lookup
+        # returns whichever release Deezer indexed first.
+        if getattr(song, "album_id", None) is not None:
+            from library_manager.release_ids import resolve_release_deezer_id
+
+            fetched_deezer_id = resolve_release_deezer_id(song)
+        else:
+            fetched_deezer_id = get_deezer_id_by_isrc(isrc)
         # Skip the backfill if a sibling row already owns (deezer_id, album) —
         # writing it would violate the unique_song_per_album constraint. This
         # happens when the same recording exists twice (e.g. a Spotify-sourced

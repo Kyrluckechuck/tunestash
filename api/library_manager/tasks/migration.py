@@ -113,6 +113,14 @@ def _link_or_create_song(
             )
             matched_song = None
 
+        # An ISRC/name match on another album is the same recording on a
+        # different release; this track's id belongs to this album only.
+        if matched_song and matched_song.album_id not in (  # type: ignore[attr-defined]
+            None,
+            album.id,
+        ):
+            matched_song = None
+
         if matched_song and not matched_song.deezer_id:
             # Song has no deezer_id yet — link it to this track/album
             update_fields: list[str] = ["deezer_id"]

@@ -24,7 +24,11 @@ from .core import (
     update_task_progress,
 )
 from .migration import _find_matching_song
-from .song_identity import apply_identifier_updates, identifier_updates
+from .song_identity import (
+    apply_identifier_updates,
+    identifier_updates,
+    release_track_id,
+)
 
 
 def _update_playlist_songs(
@@ -225,8 +229,12 @@ def sync_deezer_playlist(
                 matched_song = Song.objects.filter(deezer_id=track.deezer_id).first()
 
             if matched_song:
-                # Fill only identifiers that are missing and non-conflicting.
-                updates = identifier_updates(matched_song, track.deezer_id, track.isrc)
+                # Fill only identifiers that are missing and non-conflicting. The
+                # ISRC match may be the same recording on another release, whose
+                # track id must not be stored on this album's row.
+                updates = identifier_updates(
+                    matched_song, release_track_id(matched_song, track), track.isrc
+                )
                 if updates:
                     apply_identifier_updates(matched_song, updates)
                     linked_songs += 1
@@ -248,7 +256,7 @@ def sync_deezer_playlist(
                 matched_song = _find_matching_song(track, artist)
                 if matched_song:
                     updates = identifier_updates(
-                        matched_song, track.deezer_id, track.isrc
+                        matched_song, release_track_id(matched_song, track), track.isrc
                     )
                     if updates:
                         apply_identifier_updates(matched_song, updates)
