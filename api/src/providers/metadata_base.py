@@ -35,9 +35,24 @@ class AlbumResult:
     genres: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ArtistCredit:
+    """One artist credited on a track. ``role`` is "main" or "featured"."""
+
+    name: str
+    deezer_id: int | None = None
+    role: str = "main"
+    gid: str | None = None
+
+
 @dataclass
 class TrackResult:
-    """Track metadata from an external provider."""
+    """Track metadata from an external provider.
+
+    ``artist_name``/``artist_deezer_id`` identify the track's lead artist.
+    ``credits`` lists every credited artist when the provider response carries
+    them (a single-track lookup does; album and playlist listings do not).
+    """
 
     name: str
     artist_name: str
@@ -50,6 +65,7 @@ class TrackResult:
     disc_number: int | None = None
     artist_deezer_id: int | None = None
     album_deezer_id: int | None = None
+    credits: list[ArtistCredit] = field(default_factory=list)
 
 
 @dataclass

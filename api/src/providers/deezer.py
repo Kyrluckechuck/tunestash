@@ -14,6 +14,7 @@ import httpx  # pylint: disable=import-error
 
 from .metadata_base import (
     AlbumResult,
+    ArtistCredit,
     ArtistResult,
     MetadataProvider,
     PlaylistResult,
@@ -105,6 +106,22 @@ def _to_track_result(track: deezer.Track) -> TrackResult:
         album_name = track.album.title
         album_deezer_id = track.album.id
 
+    credits: list[ArtistCredit] = []
+    if "contributors" in fields and track.contributors:
+        for contributor in track.contributors:
+            role = (
+                getattr(contributor, "role", None)
+                if "role" in contributor._fields
+                else None
+            )
+            credits.append(
+                ArtistCredit(
+                    name=contributor.name,
+                    deezer_id=contributor.id,
+                    role="featured" if str(role).lower() == "featured" else "main",
+                )
+            )
+
     return TrackResult(
         name=track.title,
         artist_name=artist_name,
@@ -116,6 +133,7 @@ def _to_track_result(track: deezer.Track) -> TrackResult:
         disc_number=track.disk_number if "disk_number" in fields else None,
         artist_deezer_id=artist_deezer_id,
         album_deezer_id=album_deezer_id,
+        credits=credits,
     )
 
 

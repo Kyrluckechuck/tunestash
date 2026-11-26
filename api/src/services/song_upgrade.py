@@ -308,12 +308,18 @@ class SongUpgradeService:
         output_dir = Path(getattr(django_settings, "OUTPUT_PATH", "/mnt/music_spotify"))
 
         # Create metadata for the song - use sync_to_async to access related objects
-        def get_song_metadata(db_song: Song) -> tuple[str, Optional[str]]:
+        def get_song_metadata(db_song: Song) -> tuple[str, str, Optional[str]]:
+            from library_manager.artist_credits import source_credit_for
+
             artist = str(db_song.primary_artist.name)  # type: ignore[attr-defined]
             album = str(db_song.album.name) if db_song.album else None  # type: ignore[attr-defined]
-            return artist, album
+            # The matcher sees the track's own full credit (lead first), the
+            # same as the album download path.
+            return artist, source_credit_for(db_song), album
 
-        artist_name, album_name = await sync_to_async(get_song_metadata)(song)
+        artist_name, source_credit, album_name = await sync_to_async(get_song_metadata)(
+            song
+        )
 
         # Get file path (needs sync_to_async due to related object access)
         current_file_path = await sync_to_async(lambda: song.file_path)()
@@ -333,7 +339,7 @@ class SongUpgradeService:
         track_metadata = TrackMetadata(
             spotify_id=song.gid,
             title=song.name,
-            artist=artist_name,
+            artist=source_credit,
             album=album_name or "",
             album_artist=artist_name,
             isrc=song.isrc,

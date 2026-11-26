@@ -50,7 +50,8 @@ class TestBuildTrackMetadata:
 
         assert metadata.album == "Real Album Name"
         assert metadata.duration_ms == 240000
-        assert metadata.artist == "Deezer Artist"
+        # A provider result never defines the source track's own credits.
+        assert metadata.artist == "Test Artist"
 
     @patch("src.providers.deezer.DeezerMetadataProvider")
     def test_keeps_existing_album_name(self, mock_provider_cls):

@@ -112,7 +112,12 @@ class DownloaderService:
         elif content_type == "track":
             from asgiref.sync import sync_to_async
 
-            from library_manager.models import Artist, Song
+            from library_manager.artist_credits import (
+                create_song_with_credits,
+                credits_for_track,
+                ensure_song_credits,
+            )
+            from library_manager.models import Song
             from src.providers.deezer import DeezerMetadataProvider
 
             provider = DeezerMetadataProvider()
@@ -127,30 +132,26 @@ class DownloaderService:
                 from library_manager.helpers import enqueue_download_deezer_track
                 from library_manager.task_priorities import TaskPriority
 
-                artist = None
-                if track_info.artist_deezer_id:
-                    artist = Artist.objects.filter(
-                        deezer_id=track_info.artist_deezer_id
-                    ).first()
-                if not artist:
-                    artist, _ = Artist.objects.get_or_create(
-                        deezer_id=track_info.artist_deezer_id,
-                        defaults={"name": track_info.artist_name or "Unknown"},
+                song = Song.objects.filter(deezer_id=int(deezer_id)).first()
+                if song is None:
+                    song = create_song_with_credits(track_info)
+                else:
+                    ensure_song_credits(
+                        song, credits_for_track(track_info, listing_fallback=False)
                     )
-                song, _ = Song.objects.get_or_create(
-                    deezer_id=int(deezer_id),
-                    defaults={
-                        "name": track_info.name,
-                        "isrc": track_info.isrc,
-                        "primary_artist": artist,
-                    },
-                )
+                if song is None:
+                    return 0
                 enqueue_download_deezer_track(
                     song.pk, priority=TaskPriority.TRACK_DOWNLOAD
                 )
                 return int(song.pk)
 
             song_id = await sync_to_async(_create_song_and_queue)()
+            if not song_id:
+                return MutationResult(
+                    success=False,
+                    message=f"Deezer track {deezer_id} has no resolvable artist",
+                )
             return MutationResult(
                 success=True,
                 message=f"Started downloading Deezer track: {track_info.name} (song {song_id})",

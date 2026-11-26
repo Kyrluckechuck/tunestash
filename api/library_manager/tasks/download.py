@@ -16,6 +16,16 @@ from downloader.providers.fallback import DownloadChainResult, sanitize_provider
 from downloader.spotipy_tasks import SpotifyRateLimitError
 from downloader.utils import sanitize_and_strip_url
 
+from src.providers.metadata_base import ArtistCredit
+
+from ..artist_credits import (
+    create_song_with_credits,
+    credits_for_track,
+    ensure_song_credits,
+    record_contributors,
+    resolve_artist,
+    source_credit_for,
+)
 from ..models import (
     Album,
     AlbumFailureReason,
@@ -767,13 +777,17 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
 
         # 4. Create new Song for this album (even if deezer_id exists elsewhere)
         if not song:
-            song = Song.objects.create(
-                name=track.name,
-                deezer_id=track.deezer_id,
-                primary_artist=album.artist,
-                album=album,
-                isrc=track.isrc,
-            )
+            # The album's artist is only the discography we fetched; the
+            # track's own lead (and every credit) comes from the provider.
+            song = create_song_with_credits(track, album=album)
+            if song is None:
+                # No source-confirmed lead: never fall back to album.artist.
+                continue
+        elif song.pk is not None:
+            # Reused rows refresh credits only from a complete source payload;
+            # a failed lookup leaves the existing identity untouched.
+            ensure_song_credits(song, credits_for_track(track, listing_fallback=False))
+            song.refresh_from_db(fields=["primary_artist"])
 
         if song.downloaded:
             logger.debug(f"Song '{track.name}' already downloaded, skipping")
@@ -783,7 +797,8 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         metadata = TrackMetadata(
             spotify_id="",
             title=track.name,
-            artist=track.artist_name or album_artist_name,
+            # Only this track's own credits (lead first), never album artists.
+            artist=source_credit_for(song),
             album=album.name,
             album_artist=album_artist_name,
             duration_ms=track.duration_ms,
@@ -982,6 +997,39 @@ def _handle_deezer_playlist_download(
     sync_deezer_playlist.delay(playlist.id, task_id=task_id)  # type: ignore[attr-defined]
 
 
+def _spotify_credits(track_data: dict) -> list[ArtistCredit]:
+    """Spotify's artists[] is source-confirmed, lead first; no roles given."""
+    from library_manager.validators import extract_spotify_id_from_uri
+
+    result = []
+    for entry in track_data.get("artists", []):
+        artist_id = entry.get("id")
+        name = (entry.get("name") or "Unknown Artist").strip()
+        if not artist_id:
+            return []
+        gid = extract_spotify_id_from_uri(artist_id) or artist_id
+        result.append(ArtistCredit(name=name, gid=gid, role="main"))
+    return result
+
+
+def _reconcile_spotify_song(song: Song, credits: list[ArtistCredit]) -> None:
+    """Refresh a reused song from Spotify credits only when provably the same lead.
+
+    Spotify artist ids cannot be mapped to Deezer artist rows, so identity is
+    replaced only when the song's current primary already carries the same
+    Spotify id as the source lead. Anything else is left untouched.
+    """
+    primary_gid = getattr(song.primary_artist, "gid", None)
+    if credits and primary_gid and primary_gid == getattr(credits[0], "gid", None):
+        ensure_song_credits(song, credits)
+    elif credits:
+        logger.info(
+            "Song %s: Spotify lead not verifiable against its primary; "
+            "credits left unchanged",
+            song.pk,
+        )
+
+
 def _match_or_create_song_from_spotify_track(
     track_data: dict, tracking_tier: Optional[int] = None
 ) -> Optional[Song]:
@@ -997,9 +1045,12 @@ def _match_or_create_song_from_spotify_track(
 
     gid = extract_spotify_id_from_uri(track_id) or track_id
 
+    credits = _spotify_credits(track_data)
+
     # Match by Spotify GID
     song = Song.objects.filter(gid=gid).first()
     if song:
+        _reconcile_spotify_song(song, credits)
         return song
 
     # Match by ISRC
@@ -1010,6 +1061,7 @@ def _match_or_create_song_from_spotify_track(
             if not song.gid:
                 song.gid = gid
                 song.save(update_fields=["gid"])
+            _reconcile_spotify_song(song, credits)
             return song
 
     # Create new Song
@@ -1044,6 +1096,22 @@ def _match_or_create_song_from_spotify_track(
         isrc=isrc,
         primary_artist=artist,
     )
+    # Spotify lists every credited artist with an id; the first is the lead.
+    credited: list[Optional[Artist]] = [artist]
+    for credit in artists[1:]:
+        credit_gid = extract_spotify_id_from_uri(credit.get("id") or "") or credit.get(
+            "id"
+        )
+        if credit_gid:
+            credited.append(
+                resolve_artist(
+                    (credit.get("name") or "Unknown Artist").strip(),
+                    gid=credit_gid,
+                    evidence_isrcs=[isrc],
+                    # Guests are not auto-tracked by the playlist's tier.
+                )
+            )
+    record_contributors(song, credited)
     return song
 
 

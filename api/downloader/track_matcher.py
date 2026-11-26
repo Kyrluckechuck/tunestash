@@ -94,7 +94,15 @@ _FEAT_RE = re.compile(r"^(feat\.?|ft\.?|featuring)\s+", re.IGNORECASE)
 # of them so a collaboration is compared by its members rather than as one
 # long string that fuzzily resembles an unrelated solo artist.
 _ARTIST_SPLIT_RE = re.compile(
-    r"\s*(?:,|&|;|/|\||•|\+|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\band\b)\s*",
+    r"\s*(?:,|&|;|/|\||•|\+|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\band\b|\bx\b|\bvs\.?\b)\s*",
+    re.IGNORECASE,
+)
+# Only these separators unambiguously introduce another credited artist.
+# "&", "+", "/", "x" and "vs" stay intact so duo/band names such as
+# "Hall & Oates", "Sultan + Shepard", "NIIKO X SWAE" and "AC/DC" are not
+# mistaken for explicit multi-artist source credits.
+_STRONG_ARTIST_SPLIT_RE = re.compile(
+    r"\s*(?:,|;|\||•|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b)\s*",
     re.IGNORECASE,
 )
 _LEADING_THE_RE = re.compile(r"^the\s+")
@@ -130,6 +138,13 @@ _ISRC_CONFLICT_EXTRA_PENALTY = 0.35
 _ISRC_CONFLICT_CAP = 0.5
 _DURATION_GATE_MIN_S = 8.0
 _DURATION_GATE_FRACTION = 0.05
+
+# YouTube often lists only the lead artist of a collaboration. Missing a few
+# featured credits only nudges the score down. Losing every featured credit
+# costs more, but exact signals still pass a 0.7-threshold provider; another
+# conflicting signal is needed to push the score below the acceptance line.
+_MISSING_FEATURED_PENALTY = 0.05
+_MISSING_ALL_FEATURED_PENALTY = 0.25
 
 
 def extract_title_tags(title: str) -> tuple[str, list[str]]:
@@ -274,6 +289,112 @@ def artists_are_compatible(search_artist: str, result_artist: str) -> bool:
     if not search_norm or not result_norm:
         return True
     return _artists_are_alias_equivalent(search_artist, result_artist)
+
+
+def _artist_credit_parts(credit: str, splitter: re.Pattern[str]) -> list[str]:
+    """Split a credit into normalized names using the given separator set."""
+    parts: list[str] = []
+    for part in splitter.split(credit):
+        normalized = _LEADING_THE_RE.sub("", _normalize_artist_alias(part)).strip()
+        if normalized:
+            parts.append(normalized)
+    return parts
+
+
+def _primary_and_featured(credit: str) -> tuple[str, list[str]]:
+    """Return (primary artist, featured artists) from a credit string."""
+    parts = _artist_credit_parts(credit, _STRONG_ARTIST_SPLIT_RE)
+    if not parts:
+        return "", []
+    return parts[0], parts[1:]
+
+
+def _all_credit_artists(credit: str) -> list[str]:
+    """Return every credited artist name, including ampersand collaborations."""
+    return _artist_credit_parts(credit, _ARTIST_SPLIT_RE)
+
+
+def _artist_is_one_of(name: str, candidates: Iterable[str]) -> bool:
+    return any(
+        _artists_are_alias_equivalent(name, candidate) for candidate in candidates
+    )
+
+
+def _remixer_named_in_title(artist: str, title: str) -> bool:
+    """Return whether a candidate lead is the remixer named in the source title."""
+    _, tags = extract_title_tags(title)
+    for tag in tags:
+        if not any(
+            category == "variant" and key.startswith("remix")
+            for category, key in _tag_identity_keys(tag)
+        ):
+            continue
+        normalized = normalize_for_matching(tag)
+        remainder = re.sub(r"\b(?:remix(?:ed)?|by|version|edit|mix)\b", " ", normalized)
+        remainder = _MULTI_SPACE_RE.sub(" ", remainder).strip()
+        if not remainder:
+            continue
+        if _artists_are_alias_equivalent(artist, remainder):
+            return True
+        if any(
+            _artists_are_alias_equivalent(artist, part) for part in remainder.split()
+        ):
+            return True
+    return False
+
+
+def _credit_structure_compatible(
+    search_artist: str, result_artist: str, title: str
+) -> bool:
+    """Return whether the candidate credits the expected primary correctly.
+
+    Only a source that explicitly lists multiple artists gives enough evidence
+    to call an extra candidate artist a different version: normal source
+    metadata carries just the primary, so unknown collaborators there are
+    expected rather than suspicious. For such complete credits, a result led
+    by another artist is rejected unless every other candidate artist is also
+    expected, or the lead is the remixer named in the source title.
+    """
+    expected_artists = _artist_credit_parts(search_artist, _STRONG_ARTIST_SPLIT_RE)
+    if len(expected_artists) < 2:
+        return True
+
+    expected_primary = expected_artists[0]
+    candidate_primary, _ = _primary_and_featured(result_artist)
+    if not candidate_primary:
+        return True
+    if _artists_are_alias_equivalent(expected_primary, candidate_primary):
+        return True
+    if _remixer_named_in_title(candidate_primary, title):
+        return True
+
+    candidate_artists = _all_credit_artists(result_artist)
+    if not _artist_is_one_of(expected_primary, candidate_artists):
+        return False
+    return all(
+        _artist_is_one_of(candidate, expected_artists)
+        for candidate in candidate_artists
+        if not _artists_are_alias_equivalent(candidate, expected_primary)
+    )
+
+
+def _missing_featured_penalty(search_artist: str, result_artist: str) -> float:
+    """Penalize a result that omits expected featured artists."""
+    _, expected_featured = _primary_and_featured(search_artist)
+    if not expected_featured:
+        return 0.0
+    candidate_artists = _all_credit_artists(result_artist)
+    if not candidate_artists:
+        return 0.0
+    matched = sum(
+        _artist_is_one_of(featured, candidate_artists) for featured in expected_featured
+    )
+    missing = len(expected_featured) - matched
+    if missing == 0:
+        return 0.0
+    if matched == 0:
+        return _MISSING_ALL_FEATURED_PENALTY
+    return _MISSING_FEATURED_PENALTY * missing
 
 
 def _variant_marker_match(normalized_tag: str, marker: str) -> Optional[re.Match]:
@@ -497,7 +618,12 @@ def score_track_match(
     # Artist compatibility is a gate, not a weighted hint. Without it, close
     # titles can carry unrelated artists over the acceptance threshold. An
     # identical provider ISRC is strong identity evidence for transliterated
-    # names, but it cannot override an explicit version conflict.
+    # names, but it cannot override an explicit version conflict or a credit
+    # that names a different lead artist.
+    if not _credit_structure_compatible(
+        search_artist, result_artist, search_title
+    ) and not (isrc_equal and not version_conflict):
+        return 0.0
     if not artists_are_compatible(search_artist, result_artist):
         if not (isrc_equal and not version_conflict):
             return 0.0
@@ -557,6 +683,11 @@ def score_track_match(
     # Apply tag penalty
     tag_penalty = compute_tag_penalty(source_tags, result_tags)
     score -= tag_penalty
+
+    # Missing featured credits are common (especially on YouTube), but a
+    # result with none of them needs the extra penalty to stay below a
+    # provider's acceptance threshold when another signal disagrees.
+    score -= _missing_featured_penalty(search_artist, result_artist)
 
     # Two recordings can carry different ISRCs in different territories, so an
     # ISRC disagreement is not a rejection on its own. Only an independent

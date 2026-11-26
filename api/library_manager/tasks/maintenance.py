@@ -3,6 +3,8 @@
 import asyncio
 from typing import Any, Optional
 
+from django.db.models import Q
+
 from celery_app import app as celery_app
 from downloader.providers.base import TrackMetadata
 
@@ -126,10 +128,13 @@ def _build_track_metadata(song: Song) -> TrackMetadata:
         except Exception:
             pass
 
+    from library_manager.artist_credits import source_credit_for
+
     return TrackMetadata(
         spotify_id="",
         title=song.name,
-        artist=artist_name,
+        # The source track's credits, not the album artist or a provider match.
+        artist=source_credit_for(song),
         album=album_name,
         album_artist=artist_name,
         duration_ms=duration_ms,
@@ -233,7 +238,12 @@ def retry_all_missing_known_songs(self: Any, task_id: Optional[str] = None) -> N
         Song.objects.filter(bitrate=0, downloaded=False)
         .order_by("created_at")
         .select_related("primary_artist")
-        .filter(primary_artist__tracking_tier__gte=1)
+        # A guest track led by an untracked artist still belongs to the
+        # tracked artist whose album lists it.
+        .filter(
+            Q(primary_artist__tracking_tier__gte=1)
+            | Q(album__artist__tracking_tier__gte=1)
+        )
     )
     failed_known_songs_list = Song.objects.filter(
         failed_count__gt=0, bitrate=0, downloaded=False

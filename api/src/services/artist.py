@@ -11,6 +11,7 @@ from django.db.models import (
     IntegerField,
     OuterRef,
     Q,
+    QuerySet,
     Value,
     When,
 )
@@ -22,6 +23,7 @@ from library_manager.models import (
 )
 from library_manager.models import Artist as DjangoArtist
 from library_manager.models import (
+    ContributingArtist,
     Song,
     TrackingTier,
     get_album_groups_to_ignore,
@@ -187,9 +189,12 @@ class ArtistService(BaseService[Artist]):
 
         items: List[DjangoArtist] = await sync_to_async(fetch_items)()
 
+        counts = await sync_to_async(self._page_counts)([a.pk for a in items])
         graphql_items: List[Artist] = []
         for item in items:
-            graphql_item = await self._to_graphql_type_async(item)
+            graphql_item = await self._to_graphql_type_async(
+                item, page_counts=counts.get(item.pk, (0, 0))
+            )
             graphql_items.append(graphql_item)
 
         return PageResult(
@@ -267,9 +272,12 @@ class ArtistService(BaseService[Artist]):
 
         items: List[DjangoArtist] = await sync_to_async(fetch_items)()
 
+        counts = await sync_to_async(self._page_counts)([a.pk for a in items])
         graphql_items: List[Artist] = []
         for item in items:
-            gql_artist = await self._to_graphql_type_async(item)
+            gql_artist = await self._to_graphql_type_async(
+                item, page_counts=counts.get(item.pk, (0, 0))
+            )
             gql_artist.downloaded_song_count = getattr(
                 item, "_downloaded_song_count", 0
             )
@@ -564,27 +572,77 @@ class ArtistService(BaseService[Artist]):
             artist=django_artist, downloaded=True
         ).acount()
 
+    @staticmethod
+    def _artist_songs(django_artist: DjangoArtist) -> "QuerySet[Song]":
+        """Songs the artist leads plus guest appearances linked as contributor."""
+        return Song.objects.filter(
+            Q(primary_artist=django_artist)
+            | Exists(
+                ContributingArtist.objects.filter(
+                    song_id=OuterRef("pk"), artist=django_artist
+                )
+            )
+        )
+
     async def _get_song_count(self, django_artist: DjangoArtist) -> int:
         """Get total song count for an artist."""
-        return await Song.objects.filter(primary_artist=django_artist).acount()
+        return await self._artist_songs(django_artist).acount()
 
     async def _get_downloaded_song_count(self, django_artist: DjangoArtist) -> int:
         """Get count of downloaded songs for an artist."""
-        return await Song.objects.filter(
-            primary_artist=django_artist, downloaded=True
-        ).acount()
+        return await self._artist_songs(django_artist).filter(downloaded=True).acount()
 
     async def _get_failed_song_count(self, django_artist: DjangoArtist) -> int:
         """Get count of songs that have failed downloads but aren't permanently unavailable."""
-        return await Song.objects.filter(
-            primary_artist=django_artist,
-            failed_count__gt=0,
-            unavailable=False,
-            downloaded=False,
-        ).acount()
+        return (
+            await self._artist_songs(django_artist)
+            .filter(failed_count__gt=0, unavailable=False, downloaded=False)
+            .acount()
+        )
+
+    @staticmethod
+    def _page_counts(artist_ids: List[int]) -> dict[int, tuple[int, int]]:
+        """(undownloaded albums, failed songs) for a whole page in 3 queries."""
+        if not artist_ids:
+            return {}
+        undownloaded: dict[int, int] = dict(
+            Album.objects.filter(
+                artist_id__in=artist_ids,
+                downloaded=False,
+                wanted=True,
+                album_type__in=get_album_types_to_download(),
+            )
+            .exclude(album_group__in=get_album_groups_to_ignore())
+            .values_list("artist_id")
+            .annotate(c=Count("id"))
+        )
+        failed_filter = Q(failed_count__gt=0, unavailable=False, downloaded=False)
+        failed: dict[int, int] = dict(
+            Song.objects.filter(failed_filter, primary_artist_id__in=artist_ids)
+            .values_list("primary_artist_id")
+            .annotate(c=Count("id"))
+        )
+        # Contributor rows often repeat the primary; count only guest links.
+        guest = (
+            ContributingArtist.objects.filter(artist_id__in=artist_ids)
+            .filter(
+                Q(song__failed_count__gt=0)
+                & Q(song__unavailable=False)
+                & Q(song__downloaded=False)
+            )
+            .exclude(song__primary_artist_id=F("artist_id"))
+            .values_list("artist_id")
+            .annotate(c=Count("song_id", distinct=True))
+        )
+        for artist_id, count in guest:
+            failed[artist_id] = failed.get(artist_id, 0) + count
+        return {pk: (undownloaded.get(pk, 0), failed.get(pk, 0)) for pk in artist_ids}
 
     async def _to_graphql_type_async(
-        self, django_artist: DjangoArtist, include_full_counts: bool = False
+        self,
+        django_artist: DjangoArtist,
+        include_full_counts: bool = False,
+        page_counts: Optional[tuple[int, int]] = None,
     ) -> Artist:
         """Convert Django artist to GraphQL type with async database operations.
 
@@ -598,8 +656,11 @@ class ArtistService(BaseService[Artist]):
 
         spotify_uri = django_artist.spotify_uri or None
 
-        undownloaded_count = await self._get_undownloaded_count(django_artist)
-        failed_song_count = await self._get_failed_song_count(django_artist)
+        if page_counts is not None:
+            undownloaded_count, failed_song_count = page_counts
+        else:
+            undownloaded_count = await self._get_undownloaded_count(django_artist)
+            failed_song_count = await self._get_failed_song_count(django_artist)
 
         album_count = 0
         downloaded_album_count = 0

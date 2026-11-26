@@ -7,6 +7,12 @@ from django.utils import timezone
 from celery_app import app as celery_app
 
 from .. import helpers
+from ..artist_credits import (
+    create_song_with_credits,
+    credits_for_track,
+    ensure_song_credits,
+    resolve_artist,
+)
 from ..models import Artist, PlaylistSong, Song, TrackedPlaylist, TrackingTier
 from .core import (
     TaskPriority,
@@ -211,6 +217,7 @@ def sync_deezer_playlist(
             # Try matching existing song
             # 1. By ISRC
             matched_song = None
+            freshly_created = False
             if track.isrc:
                 matched_song = Song.objects.filter(isrc=track.isrc).first()
             # 2. By deezer_id
@@ -224,23 +231,18 @@ def sync_deezer_playlist(
                     apply_identifier_updates(matched_song, updates)
                     linked_songs += 1
             else:
-                artist = None
-                if track.artist_deezer_id:
-                    artist = Artist.objects.filter(
-                        deezer_id=track.artist_deezer_id
-                    ).first()
-                if not artist and track.artist_name:
-                    artist = Artist.objects.filter(
-                        name__iexact=track.artist_name, deezer_id__isnull=True
-                    ).first()
-                    if artist and track.artist_deezer_id:
-                        artist.deezer_id = track.artist_deezer_id
-                        artist.save(update_fields=["deezer_id"])
-                if not artist:
-                    artist, _ = Artist.objects.get_or_create(
-                        deezer_id=track.artist_deezer_id,
-                        defaults={"name": track.artist_name},
+                artist = resolve_artist(
+                    track.artist_name,
+                    deezer_id=track.artist_deezer_id,
+                    evidence_isrcs=[track.isrc],
+                )
+                if artist is None:
+                    logger.warning(
+                        "Skipping Deezer track %s: artist has no id or is an "
+                        "unverified same-name match",
+                        track.deezer_id,
                     )
+                    continue
 
                 # Use _find_matching_song for fuzzy name match
                 matched_song = _find_matching_song(track, artist)
@@ -252,14 +254,17 @@ def sync_deezer_playlist(
                         apply_identifier_updates(matched_song, updates)
                         linked_songs += 1
                 else:
-                    matched_song = Song.objects.create(
-                        name=track.name,
-                        deezer_id=track.deezer_id,
-                        isrc=track.isrc,
-                        primary_artist=artist,
-                    )
+                    matched_song = create_song_with_credits(track)
+                    if matched_song is None:
+                        continue
                     new_songs += 1
+                    freshly_created = True
 
+            if matched_song and not freshly_created:
+                ensure_song_credits(
+                    matched_song, credits_for_track(track, listing_fallback=False)
+                )
+                matched_song.refresh_from_db(fields=["primary_artist"])
             if matched_song:
                 ordered_songs.append(matched_song)
 

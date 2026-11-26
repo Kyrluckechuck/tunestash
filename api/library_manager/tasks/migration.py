@@ -11,6 +11,11 @@ from celery_app import app as celery_app
 
 from src.providers.metadata_base import TrackResult
 
+from ..artist_credits import (
+    create_song_with_credits,
+    credits_for_track,
+    ensure_song_credits,
+)
 from ..models import Album, Artist, Song
 from ..task_priorities import TaskPriority
 from .core import (
@@ -93,6 +98,8 @@ def _link_or_create_song(
     matched_song = _find_matching_song(track, artist)
 
     if matched_song:
+        # ISRC compatibility is decided before any identity is reconciled, so a
+        # rejected fuzzy match is never modified.
         if not matched_song.deezer_id and not isrc_is_compatible(
             matched_song, track.isrc
         ):
@@ -117,28 +124,19 @@ def _link_or_create_song(
                 matched_song.album = album
                 update_fields.append("album_id")
             matched_song.save(update_fields=update_fields)
+            ensure_song_credits(
+                matched_song, credits_for_track(track, listing_fallback=False)
+            )
             return "linked"
 
         # Match has a different deezer_id — this is a variant release
         # (e.g., deluxe edition, compilation). Create a separate Song
         # so each album has its own track with correct metadata.
-        Song.objects.create(
-            name=track.name,
-            deezer_id=track.deezer_id,
-            isrc=track.isrc,
-            primary_artist=artist,
-            album=album,
-        )
-        return "created"
+        created = create_song_with_credits(track, album=album)
+        return "created" if created else None
 
-    Song.objects.create(
-        name=track.name,
-        deezer_id=track.deezer_id,
-        isrc=track.isrc,
-        primary_artist=artist,
-        album=album,
-    )
-    return "created"
+    created = create_song_with_credits(track, album=album)
+    return "created" if created else None
 
 
 @celery_app.task(

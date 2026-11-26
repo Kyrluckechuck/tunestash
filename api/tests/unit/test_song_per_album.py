@@ -148,6 +148,9 @@ def _make_deezer_track(
     track.track_number = track_number
     track.duration_ms = duration_ms
     track.disc_number = disc_number
+    # A listing track names its lead but carries no artist id or credit list.
+    track.artist_deezer_id = 70000 + deezer_id
+    track.credits = []
     return track
 
 
@@ -266,7 +269,9 @@ class TestDownloadCreatesPerAlbumSongs:
         self, mock_provider_cls, mock_downloader_cls
     ) -> None:
         """Deezer album genres should be embedded into downloaded tracks."""
-        artist = Artist.objects.create(name="Sinnon Nightcore", gid="artist-genre")
+        artist = Artist.objects.create(
+            name="Sinnon Nightcore", gid="artist-genre", deezer_id=70000 + 2894716571
+        )
         album = Album.objects.create(
             name="Rise (Epic Nightcore Version)",
             artist=artist,

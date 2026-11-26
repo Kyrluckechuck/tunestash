@@ -7,10 +7,11 @@ when instantiated. We disable that check for this module to avoid noisy errors.
 # mypy: disable-error-code=attr-defined
 from typing import Any, List, Optional
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 
 from asgiref.sync import sync_to_async
 
+from library_manager.models import ContributingArtist
 from library_manager.models import DownloadProvider as DjangoDownloadProvider
 from library_manager.models import Song as DjangoSong
 
@@ -62,7 +63,9 @@ class SongService(BaseService[Song]):
         )
         page, page_size = self.validate_page_params(page, page_size)
 
-        queryset = self.model.objects.all()
+        queryset = self.model.objects.select_related(
+            "primary_artist", "file_path_ref", "album"
+        )
 
         album_id = (
             filters.get("album_id")
@@ -71,7 +74,16 @@ class SongService(BaseService[Song]):
         )
 
         if artist_id is not None:
-            queryset = queryset.filter(primary_artist_id=artist_id)
+            # Guest appearances are linked through contributors and belong to
+            # the artist's song list even though another artist leads them.
+            queryset = queryset.filter(
+                Q(primary_artist_id=artist_id)
+                | Exists(
+                    ContributingArtist.objects.filter(
+                        song_id=OuterRef("pk"), artist_id=artist_id
+                    )
+                )
+            )
 
         if album_id is not None:
             queryset = queryset.filter(album_id=album_id)
@@ -115,10 +127,11 @@ class SongService(BaseService[Song]):
 
         items: List[DjangoSong] = await sync_to_async(fetch_items)()
 
-        graphql_items: List[Song] = []
-        for item in items:
-            graphql_item = await self._to_graphql_type(item)
-            graphql_items.append(graphql_item)
+        # Relations are selected in the page query; convert without per-item
+        # async ORM round-trips.
+        graphql_items = await sync_to_async(
+            lambda: [self._to_graphql_type_sync(s) for s in items]
+        )()
 
         return PageResult(
             items=graphql_items,
@@ -149,6 +162,41 @@ class SongService(BaseService[Song]):
             return await self._to_graphql_type(django_song)
         except self.model.DoesNotExist:
             return None
+
+    @staticmethod
+    def _to_graphql_type_sync(django_song: DjangoSong) -> Song:
+        """Convert an already-prefetched song without extra ORM queries."""
+        primary = django_song.primary_artist
+        file_path = (
+            django_song.file_path_ref.path if django_song.file_path_ref else None
+        )
+        provider_map = {
+            DjangoDownloadProvider.UNKNOWN: DownloadProvider.UNKNOWN,
+            DjangoDownloadProvider.SPOTDL: DownloadProvider.SPOTDL,
+            DjangoDownloadProvider.TIDAL: DownloadProvider.TIDAL,
+            DjangoDownloadProvider.QOBUZ: DownloadProvider.QOBUZ,
+            DjangoDownloadProvider.YOUTUBE: DownloadProvider.YOUTUBE,
+            DjangoDownloadProvider.MONOCHROME: DownloadProvider.MONOCHROME,
+        }
+        return Song(
+            id=int(django_song.id),
+            name=django_song.name,
+            gid=django_song.gid,
+            primary_artist=primary.name,
+            primary_artist_id=primary.pk,
+            primary_artist_gid=primary.gid or None,
+            created_at=django_song.created_at,
+            failed_count=django_song.failed_count,
+            bitrate=django_song.bitrate,
+            unavailable=django_song.unavailable,
+            file_path=file_path,
+            downloaded=django_song.downloaded,
+            spotify_uri=django_song.spotify_uri or None,
+            download_provider=provider_map.get(
+                django_song.download_provider, DownloadProvider.UNKNOWN
+            ),
+            deezer_id=str(django_song.deezer_id) if django_song.deezer_id else None,
+        )
 
     async def _to_graphql_type(self, django_song: DjangoSong) -> Song:
         """Convert Django model to GraphQL type."""

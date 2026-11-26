@@ -510,12 +510,18 @@ class TidalProvider(DownloadProvider):
     ) -> Optional[TrackMatch]:
         """Parse a track result from the API into a TrackMatch."""
         try:
-            # Extract artist name(s)
+            # Keep every credited artist so the shared matcher can tell a
+            # collaboration from a different version with an extra act.
             artists = result.get("artists", [])
-            if artists and isinstance(artists[0], dict):
-                artist_name = artists[0].get("name", "Unknown")
-            else:
-                artist_name = str(artists[0]) if artists else "Unknown"
+            names = [
+                (
+                    str(artist.get("name", "")).strip()
+                    if isinstance(artist, dict)
+                    else str(artist).strip()
+                )
+                for artist in artists
+            ]
+            artist_name = " • ".join(name for name in names if name) or "Unknown"
 
             # Extract album info
             album = result.get("album", {})

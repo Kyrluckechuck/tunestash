@@ -90,7 +90,8 @@ class LibraryStatsService:
 
         # "Desired" songs: songs from tracked artists
         desired_stats = Song.objects.filter(
-            primary_artist__tracking_tier__gte=1
+            Q(primary_artist__tracking_tier__gte=1)
+            | Q(album__artist__tracking_tier__gte=1)
         ).aggregate(
             total_count=Count("id"),
             downloaded_count=Count("id", filter=Q(downloaded=True)),
