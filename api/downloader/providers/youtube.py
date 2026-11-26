@@ -683,8 +683,10 @@ class YouTubeMusicProvider(DownloadProvider):
                 mode="probe",
                 timeout=YTDLP_TOTAL_TIMEOUT,
             )
-            if info and info.get("formats"):
-                return True, f"Resolved {len(info['formats'])} formats for probe video"
+            # The probe child reports a format count, not the format list.
+            format_count = int(info.get("formats") or 0) if info else 0
+            if format_count:
+                return True, f"Resolved {format_count} formats for probe video"
             return False, "Probe returned no playable formats"
         except DownloadTimeoutError as exc:
             return False, f"Probe timed out: {exc}"
