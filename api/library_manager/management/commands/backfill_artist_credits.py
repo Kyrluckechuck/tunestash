@@ -29,9 +29,12 @@ from django.core.management.base import BaseCommand, CommandError
 from django.core.serializers.json import DjangoJSONEncoder
 
 from library_manager.artist_credits import (
+    RELEASE_DIFFERENT,
+    RELEASE_MATCH,
     credits_for_track,
     normalize_artist_name,
     related_song_ids,
+    release_match,
     replace_identity_if_unchanged,
     resolve_credits,
     same_name_different_id,
@@ -75,6 +78,7 @@ class SongPlan:
     ambiguous_credits: list[str] = field(default_factory=list)
     would_adopt: int = 0
     would_create: int = 0
+    release_verdict: str = ""
 
     @property
     def changes_primary(self) -> bool:
@@ -146,7 +150,8 @@ class Command(BaseCommand):
 
     def _lookup(self, deezer_id: int) -> Optional[TrackResult]:
         key = str(deezer_id)
-        if key in self._cache:
+        # Entries cached before release checking lack the album id: refetch.
+        if key in self._cache and "album_deezer_id" in self._cache[key]:
             raw = self._cache[key]
             return TrackResult(
                 name=raw["name"],
@@ -155,6 +160,8 @@ class Command(BaseCommand):
                 isrc=raw.get("isrc"),
                 artist_deezer_id=raw.get("artist_deezer_id"),
                 credits=[ArtistCredit(**c) for c in raw["credits"]],
+                album_deezer_id=raw.get("album_deezer_id"),
+                album_name=raw.get("album_name"),
             )
         if self._lookups and self._sleep:
             time.sleep(self._sleep)
@@ -167,6 +174,8 @@ class Command(BaseCommand):
             "artist_name": track.artist_name,
             "isrc": track.isrc,
             "artist_deezer_id": track.artist_deezer_id,
+            "album_deezer_id": track.album_deezer_id,
+            "album_name": track.album_name,
             "credits": [asdict(c) for c in track.credits],
         }
         return track
@@ -182,7 +191,7 @@ class Command(BaseCommand):
         # Default: recheck every Deezer-id song. A contributor row alone does
         # not prove the full source credits were ever fetched and verified.
         return qs.filter(id__gt=after_id).select_related(
-            "primary_artist", "file_path_ref"
+            "primary_artist", "album__artist", "file_path_ref"
         )
 
     def _path_change(self, song: Song, lead_name: str) -> tuple[Optional[str], bool]:
@@ -223,15 +232,9 @@ class Command(BaseCommand):
             ),
         )
         track = self._lookup(int(song.deezer_id))
-        if track is None:
-            plan.status = "skip_lookup_failed"
-            return plan
-        if not all(c.deezer_id is not None for c in track.credits):
-            # Incomplete payload: never replace verified source data.
-            plan.status = "skip_incomplete_payload"
-            return plan
-        if not track.isrc or not self._isrc_ok(song, track.isrc):
-            plan.status = "skip_isrc_conflict"
+        rejection = self._reject_source(song, track, plan)
+        if rejection is not None or track is None:
+            plan.status = rejection or "skip_lookup_failed"
             return plan
 
         # The same lead rule as ingestion: the provider's track artist, else
@@ -288,6 +291,24 @@ class Command(BaseCommand):
         if plan.changes_primary:
             plan.new_path, plan.path_would_change = self._path_change(song, lead.name)
         return plan
+
+    def _reject_source(
+        self, song: Song, track: Optional[TrackResult], plan: SongPlan
+    ) -> Optional[str]:
+        """Why this Deezer track cannot be used for ``song`` (None = usable)."""
+        if track is None:
+            return "skip_lookup_failed"
+        release = release_match(song, track)
+        if release != RELEASE_MATCH:
+            # The stored deezer_id points at another release (or cannot be tied
+            # to this one): its credits and ISRC are not evidence for this song.
+            plan.release_verdict = release
+            return "skip_release_mismatch"
+        if not all(c.deezer_id is not None for c in track.credits):
+            return "skip_incomplete_payload"  # never replace verified data
+        if not track.isrc or not self._isrc_ok(song, track.isrc):
+            return "skip_isrc_conflict"
+        return None
 
     @staticmethod
     def _isrc_ok(song: Song, candidate: str) -> bool:
@@ -413,6 +434,7 @@ class Command(BaseCommand):
                             "fix",
                             "skip_ambiguous_artist",
                             "skip_same_name_different_id",
+                            "skip_release_mismatch",
                         )
                         and shown < options["show"]
                     )
@@ -472,6 +494,9 @@ class Command(BaseCommand):
                 if result != "applied":
                     outcome = result
         counts[outcome] = counts.get(outcome, 0) + 1
+        if plan.status == "skip_release_mismatch":
+            key = f"release_{plan.release_verdict}"
+            counts[key] = counts.get(key, 0) + 1
         if plan.changes_primary and plan.path_would_change:
             counts["path_would_change"] = counts.get("path_would_change", 0) + 1
         for key, amount in (
@@ -485,6 +510,12 @@ class Command(BaseCommand):
         return outcome
 
     def _print_plan(self, plan: SongPlan) -> None:
+        if plan.status == "skip_release_mismatch":
+            self.stdout.write(
+                f"  song {plan.song_id} [release_mismatch ({plan.release_verdict}), "
+                f"unchanged] deezer track is not this song's release"
+            )
+            return
         if plan.status == "skip_same_name_different_id":
             self.stdout.write(
                 f"  song {plan.song_id} [same_name_different_id, unchanged] "
@@ -514,4 +545,9 @@ class Command(BaseCommand):
         )
         for key in sorted(counts):
             self.stdout.write(f"  {key}: {counts[key]}")
+        different = counts.get(f"release_{RELEASE_DIFFERENT}", 0)
+        self.stdout.write(
+            f"songs whose deezer_id belongs to a different release: {different} "
+            "(data problem; repair via repair_song_identity, not here)"
+        )
         self.stdout.write(f"resume with --after-id {cursor}")

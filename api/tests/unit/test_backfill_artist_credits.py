@@ -71,7 +71,16 @@ class _Lookups:
 
     def __call__(self, deezer_id: int) -> TrackResult | None:
         self.calls.append(deezer_id)
-        return self.tracks.get(deezer_id)
+        track = self.tracks.get(deezer_id)
+        if track is not None and track.album_deezer_id is None:
+            # By default the Deezer track belongs to the song's own release.
+            song = (
+                Song.objects.filter(deezer_id=deezer_id).select_related("album").first()
+            )
+            if song is not None and song.album is not None:
+                track.album_deezer_id = song.album.deezer_id
+                track.album_name = song.album.name
+        return track
 
 
 def _run(lookups: _Lookups, *args: str) -> str:
@@ -606,3 +615,92 @@ class TestAmbiguousAndAdopted:
         assert "skip_changed_concurrently: 1" in output
         assert set(Artist.objects.values_list("pk", flat=True)) == before
         assert not Artist.objects.filter(deezer_id__in=[101, 103]).exists()
+
+
+@pytest.mark.unit
+class TestReleaseMismatch:
+    def test_track_from_another_release_is_skipped_and_counted(
+        self, song: Song, tmp_path: Path
+    ) -> None:
+        # Same recording, but Deezer's track belongs to a reissue (album 9999)
+        # credited to other artists.
+        reissue = _track(9001, [LEAD, GUEST])
+        reissue.album_deezer_id = 9999
+        reissue.album_name = "Reissue"
+        before = Artist.objects.count()
+
+        output = _run(
+            _Lookups({9001: reissue}),
+            "--apply",
+            "--audit-file",
+            str(tmp_path / "a.jsonl"),
+        )
+
+        song.refresh_from_db()
+        assert "skip_release_mismatch: 1" in output
+        assert "release_different_release: 1" in output
+        assert "belongs to a different release: 1" in output
+        assert song.primary_artist.deezer_id == 102  # unchanged
+        assert not ContributingArtist.objects.filter(song=song).exists()
+        assert Artist.objects.count() == before  # and it was no ISRC evidence
+
+    def test_album_without_deezer_id_matches_by_title_and_artist(
+        self, tracked: Artist, tmp_path: Path
+    ) -> None:
+        album = Album.objects.create(
+            name="Their Album",
+            artist=tracked,
+            spotify_gid="synthalbum1",
+            spotify_uri="spotify:album:synthalbum1",
+        )
+        song = Song.objects.create(
+            name="Synthetic Song",
+            deezer_id=9001,
+            isrc="ZZTEST000001",
+            primary_artist=tracked,
+            album=album,
+            downloaded=True,
+        )
+        same = _track(9001, [LEAD, GUEST])
+        same.album_deezer_id, same.album_name = 8888, "Their Album"
+
+        output = _run(
+            _Lookups({9001: same}), "--apply", "--audit-file", str(tmp_path / "a.jsonl")
+        )
+
+        song.refresh_from_db()
+        assert "skip_release_mismatch" not in output
+        assert song.primary_artist.deezer_id == 101
+
+    def test_album_without_deezer_id_and_other_title_is_a_different_release(
+        self, tracked: Artist
+    ) -> None:
+        from library_manager.artist_credits import release_match
+
+        album = Album.objects.create(
+            name="Their Album",
+            artist=tracked,
+            spotify_gid="synthalbum1",
+            spotify_uri="spotify:album:synthalbum1",
+        )
+        song = Song.objects.create(
+            name="Synthetic Song", deezer_id=9001, primary_artist=tracked, album=album
+        )
+        other = _track(9001, [LEAD, GUEST])
+        other.album_deezer_id, other.album_name = 8888, "Greatest Hits"
+
+        assert release_match(song, other) == "different_release"
+
+    def test_reconcile_path_ignores_credits_from_another_release(
+        self, song: Song
+    ) -> None:
+        from library_manager.artist_credits import credits_for_song_release
+
+        reissue = _track(9001, [LEAD, GUEST])
+        reissue.album_deezer_id, reissue.album_name = 9999, "Reissue"
+
+        assert credits_for_song_release(song, reissue) == []
+
+        own = _track(9001, [LEAD, GUEST])
+        own.album_deezer_id = song.album.deezer_id
+        assert [c.deezer_id for c in credits_for_song_release(song, own)] == [101, 102]

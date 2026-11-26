@@ -472,6 +472,74 @@ def credits_for_track(
     return lead_first(credits, track.artist_deezer_id)
 
 
+RELEASE_MATCH = "match"
+RELEASE_DIFFERENT = "different_release"
+RELEASE_UNVERIFIABLE = "unverifiable"
+
+
+def release_match(song: Song, track: TrackResult) -> str:
+    """Does this Deezer track belong to the song's own release (album)?
+
+    Songs are per album, and a Deezer track id can point at the same recording
+    on a *different* release (a reissue credited to other artists). Credits may
+    be used only from the song's own release: the Deezer album id equals
+    ``song.album.deezer_id`` or, when the album has no Deezer id, its title
+    equals the track's album title and the album's artist is credited on the
+    track. Returns ``match``, ``different_release`` or ``unverifiable``.
+    """
+    album = cast(Optional[Album], song.album)
+    if album is None or track.album_deezer_id is None:
+        return RELEASE_UNVERIFIABLE
+    if album.deezer_id is not None:
+        if album.deezer_id == track.album_deezer_id:
+            return RELEASE_MATCH
+        return RELEASE_DIFFERENT
+    if not track.album_name:
+        return RELEASE_UNVERIFIABLE
+    if normalize_artist_name(album.name) != normalize_artist_name(track.album_name):
+        return RELEASE_DIFFERENT
+    owner = cast(Artist, album.artist)
+    credited = any(
+        (owner.deezer_id is not None and c.deezer_id == owner.deezer_id)
+        or normalize_artist_name(c.name) == normalize_artist_name(owner.name)
+        for c in track.credits
+    )
+    return RELEASE_MATCH if credited else RELEASE_DIFFERENT
+
+
+def credits_for_song_release(
+    song: Song,
+    track: TrackResult,
+    *,
+    provider: "DeezerMetadataProvider | Any | None" = None,
+) -> list[ArtistCredit]:
+    """Reconciliation credits, only from the song's own release; else ``[]``."""
+    full = track
+    if not track.credits and track.deezer_id:
+        try:
+            fetched = fetch_full_track(track.deezer_id, provider)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning(
+                "Deezer lookup failed for track %s: %s", track.deezer_id, exc
+            )
+            fetched = None
+        if not isinstance(fetched, TrackResult):
+            return []
+        full = fetched
+    if not full.credits:
+        return []
+    verdict = release_match(song, full)
+    if verdict != RELEASE_MATCH:
+        logger.warning(
+            "release_mismatch: song %s deezer track %s is %s; credits not used",
+            song.pk,
+            full.deezer_id,
+            verdict,
+        )
+        return []
+    return lead_first(list(full.credits), full.artist_deezer_id)
+
+
 def source_credit_for(song: Song) -> str:
     """Build the matcher's source credit from this track's own artists.
 

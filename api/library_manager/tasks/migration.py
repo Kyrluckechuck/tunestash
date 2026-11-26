@@ -13,7 +13,7 @@ from src.providers.metadata_base import TrackResult
 
 from ..artist_credits import (
     create_song_with_credits,
-    credits_for_track,
+    credits_for_song_release,
     ensure_song_credits,
 )
 from ..models import Album, Artist, Song
@@ -125,7 +125,7 @@ def _link_or_create_song(
                 update_fields.append("album_id")
             matched_song.save(update_fields=update_fields)
             ensure_song_credits(
-                matched_song, credits_for_track(track, listing_fallback=False)
+                matched_song, credits_for_song_release(matched_song, track)
             )
             return "linked"
 

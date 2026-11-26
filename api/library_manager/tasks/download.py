@@ -20,7 +20,7 @@ from src.providers.metadata_base import ArtistCredit
 
 from ..artist_credits import (
     create_song_with_credits,
-    credits_for_track,
+    credits_for_song_release,
     ensure_song_credits,
     record_contributors,
     resolve_artist,
@@ -786,7 +786,7 @@ def _download_deezer_album(album: Album, task_history: TaskHistory) -> tuple[int
         elif song.pk is not None:
             # Reused rows refresh credits only from a complete source payload;
             # a failed lookup leaves the existing identity untouched.
-            ensure_song_credits(song, credits_for_track(track, listing_fallback=False))
+            ensure_song_credits(song, credits_for_song_release(song, track))
             song.refresh_from_db(fields=["primary_artist"])
 
         if song.downloaded:

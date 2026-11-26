@@ -9,7 +9,7 @@ from celery_app import app as celery_app
 from .. import helpers
 from ..artist_credits import (
     create_song_with_credits,
-    credits_for_track,
+    credits_for_song_release,
     ensure_song_credits,
     resolve_artist,
 )
@@ -262,7 +262,7 @@ def sync_deezer_playlist(
 
             if matched_song and not freshly_created:
                 ensure_song_credits(
-                    matched_song, credits_for_track(track, listing_fallback=False)
+                    matched_song, credits_for_song_release(matched_song, track)
                 )
                 matched_song.refresh_from_db(fields=["primary_artist"])
             if matched_song:

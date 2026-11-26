@@ -114,7 +114,7 @@ class DownloaderService:
 
             from library_manager.artist_credits import (
                 create_song_with_credits,
-                credits_for_track,
+                credits_for_song_release,
                 ensure_song_credits,
             )
             from library_manager.models import Song
@@ -137,7 +137,7 @@ class DownloaderService:
                     song = create_song_with_credits(track_info)
                 else:
                     ensure_song_credits(
-                        song, credits_for_track(track_info, listing_fallback=False)
+                        song, credits_for_song_release(song, track_info)
                     )
                 if song is None:
                     return 0
