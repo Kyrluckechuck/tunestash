@@ -1,7 +1,7 @@
 """Deezer catalog migration tasks.
 
 Links existing Album and Song records to their Deezer counterparts
-using ISRC matching (songs) and name matching (albums), then creates
+using ISRC matching (songs) and UPC-verified matching (albums), then creates
 new records for any Deezer content not yet in the DB.
 """
 
@@ -17,6 +17,14 @@ from ..artist_credits import (
     ensure_song_credits,
 )
 from ..models import Album, Artist, Song
+from ..release_ids import (
+    ALBUM_CREATE,
+    ALBUM_EXISTS,
+    ALBUM_LINK,
+    ALBUM_SKIP,
+    classify_deezer_album,
+    link_album_deezer_id,
+)
 from ..task_priorities import TaskPriority
 from .core import (
     complete_task,
@@ -209,24 +217,19 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
             if not album_data.deezer_id:
                 continue
 
-            # Try matching by deezer_id first
-            existing = Album.objects.filter(deezer_id=album_data.deezer_id).first()
-            if existing:
+            # Same-titled rows are linked only when a UPC proves the release
+            # (editions share titles); unproven ones are left alone.
+            action, name_match = classify_deezer_album(
+                artist, album_data.deezer_id, album_data.name, normalize_name
+            )
+            if action in (ALBUM_EXISTS, ALBUM_SKIP):
                 continue
 
-            # Try matching by normalized name for this artist
-            normalized_deezer_name = normalize_name(album_data.name)
-            name_match = None
-            for db_album in Album.objects.filter(artist=artist):
-                if normalize_name(db_album.name) == normalized_deezer_name:
-                    name_match = db_album
-                    break
-
-            if name_match:
+            if action == ALBUM_LINK and name_match is not None:
+                if not link_album_deezer_id(name_match, album_data.deezer_id):
+                    continue  # changed concurrently since it was verified
+                albums_linked += 1
                 update_fields: list[str] = []
-                if not name_match.deezer_id:
-                    name_match.deezer_id = album_data.deezer_id
-                    update_fields.append("deezer_id")
                 if not name_match.album_group and album_data.album_group:
                     name_match.album_group = album_data.album_group
                     update_fields.append("album_group")
@@ -245,8 +248,7 @@ def migrate_artist_to_deezer(self: Any, artist_id: int) -> None:
                     update_fields.append("total_tracks")
                 if update_fields:
                     name_match.save(update_fields=update_fields)
-                    albums_linked += 1
-            else:
+            elif action == ALBUM_CREATE:
                 Album.objects.create(
                     name=album_data.name,
                     deezer_id=album_data.deezer_id,

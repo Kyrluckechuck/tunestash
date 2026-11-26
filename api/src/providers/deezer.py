@@ -33,6 +33,17 @@ class RateLimitedDeezerClient(deezer.Client):
         return super().request(*args, **kwargs)
 
 
+def _is_no_data(exc: BaseException) -> bool:
+    """True when Deezer answered "no such object" (a definitive negative)."""
+    if isinstance(exc, deezer.exceptions.DeezerNotFoundError):
+        return True
+    payload = exc.args[0] if exc.args else None
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        return isinstance(error, dict) and error.get("code") == 800
+    return False
+
+
 def _normalize_album_type(record_type: str | None) -> str | None:
     """Map Deezer record_type to our album_type values."""
     if not record_type:
@@ -189,10 +200,16 @@ class DeezerMetadataProvider(MetadataProvider):
             return []
         return [_to_album_result(a) for a in results[:limit]]
 
-    def search_tracks(self, query: str, limit: int = 10) -> list[TrackResult]:
+    def search_tracks(
+        self, query: str, limit: int = 10, raise_errors: bool = False
+    ) -> list[TrackResult]:
+        """Search tracks; with ``raise_errors`` an outage raises instead of
+        looking like an empty result."""
         try:
             results = self._client.search(query)
         except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
+            if raise_errors:
+                raise
             logger.warning("Deezer search_tracks failed for query=%s", query)
             return []
         return [_to_track_result(t) for t in results[:limit]]
@@ -233,12 +250,21 @@ class DeezerMetadataProvider(MetadataProvider):
             return None
         return _to_track_result(track)
 
-    def get_track_by_isrc(self, isrc: str) -> TrackResult | None:
+    def get_track_by_isrc(
+        self, isrc: str, raise_errors: bool = False
+    ) -> TrackResult | None:
+        """Look a track up by ISRC.
+
+        With ``raise_errors`` only a definitive "no such track" returns None;
+        any other API/HTTP failure raises so callers can retry later.
+        """
         try:
             track = self._client.request(
                 "GET", f"track/isrc:{isrc}", resource_type=deezer.Track
             )
-        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError):
+        except (deezer.exceptions.DeezerAPIException, httpx.HTTPError) as exc:
+            if raise_errors and not _is_no_data(exc):
+                raise
             return None
         if not track or not getattr(track, "id", None):
             return None

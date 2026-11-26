@@ -125,7 +125,7 @@ class ListenBrainzProvider(ExternalListProvider):
                 )
             )
 
-        total = data.get("total_count", len(tracks))
+        total = data.get("total_count", 0)
         return ExternalListResult(
             tracks=tracks,
             total_count=total,
@@ -170,7 +170,7 @@ class ListenBrainzProvider(ExternalListProvider):
                 )
             )
 
-        total = payload.get("total_recording_count", len(tracks))
+        total = payload.get("total_recording_count", 0)
         return ExternalListResult(
             tracks=tracks,
             total_count=total,
@@ -207,7 +207,7 @@ class ListenBrainzProvider(ExternalListProvider):
 
         return ExternalListResult(
             tracks=page_tracks,
-            total_count=len(tracks),
+            total_count=0,
             content_hash=ExternalListResult.compute_content_hash(tracks),
         )
 
@@ -237,7 +237,7 @@ class ListenBrainzProvider(ExternalListProvider):
                 )
             )
 
-        total = payload.get("total_recording_count", len(tracks))
+        total = payload.get("total_recording_count", 0)
         return ExternalListResult(
             tracks=tracks,
             total_count=total,

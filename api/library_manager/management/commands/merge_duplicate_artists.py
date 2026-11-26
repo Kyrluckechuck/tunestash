@@ -144,6 +144,8 @@ def _dedup_songs_for_artist(artist: Artist) -> int:
         # Keep the best song with deezer_id as the target, merge no_deezer into it
         keeper = has_deezer[0] if has_deezer else songs[0]
         for dupe in no_deezer:
+            if dupe.pk == keeper.pk:
+                continue  # without any deezer_id the keeper is one of the dupes
             _merge_song(dupe, keeper)
             deduped += 1
 

@@ -134,7 +134,7 @@ class LastFMProvider(ExternalListProvider):
             tracks_data = [tracks_data]
 
         tracks = _parse_lastfm_tracks(tracks_data)
-        total = int(loved.get("@attr", {}).get("total", len(tracks)))
+        total = int(loved.get("@attr", {}).get("total", 0))
 
         return ExternalListResult(
             tracks=tracks,
@@ -177,7 +177,7 @@ class LastFMProvider(ExternalListProvider):
             tracks_data = [tracks_data]
 
         tracks = _parse_lastfm_tracks(tracks_data)
-        total = int(top.get("@attr", {}).get("total", len(tracks)))
+        total = int(top.get("@attr", {}).get("total", 0))
 
         return ExternalListResult(
             tracks=tracks,
@@ -211,7 +211,7 @@ class LastFMProvider(ExternalListProvider):
             tracks_data = [tracks_data]
 
         tracks = _parse_lastfm_tracks(tracks_data)
-        total = int(chart.get("@attr", {}).get("total", len(tracks)))
+        total = int(chart.get("@attr", {}).get("total", 0))
 
         return ExternalListResult(
             tracks=tracks,
@@ -237,7 +237,7 @@ class LastFMProvider(ExternalListProvider):
             tracks_data = [tracks_data]
 
         tracks = _parse_lastfm_tracks(tracks_data)
-        total = int(chart.get("@attr", {}).get("total", len(tracks)))
+        total = int(chart.get("@attr", {}).get("total", 0))
 
         return ExternalListResult(
             tracks=tracks,
@@ -261,7 +261,7 @@ class LastFMProvider(ExternalListProvider):
             tracks_data = [tracks_data]
 
         tracks = _parse_lastfm_tracks(tracks_data)
-        total = int(chart.get("@attr", {}).get("total", len(tracks)))
+        total = int(chart.get("@attr", {}).get("total", 0))
 
         return ExternalListResult(
             tracks=tracks,

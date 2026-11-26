@@ -130,34 +130,43 @@ class TestIsolatedIntegration:
 
     @pytest.mark.asyncio
     async def test_artists_query_with_data_isolated(self, transactional_db):
-        """Test artists query with isolated data."""
+        """Test artists query without depending on global database state.
+
+        ``transactional_db`` truncates on teardown, not on setup, so a row
+        committed by an earlier test in the same worker can still be present
+        when this test runs. Asserting the global ``totalCount`` therefore
+        makes the test order-dependent (it once observed 9 instead of 3).
+        Scope the query with a unique token and assert against that subset.
+        """
         from library_manager.models import Artist
 
-        # Create artists in isolated transaction
+        token = "isolatedartistsquery4f7c2"
         artists = []
         for i in range(3):
             artist = await sync_to_async(Artist.objects.create)(
-                name=f"Artist {i}",
-                gid=f"artist{i}",
+                name=f"{token} Artist {i}",
+                gid=f"{token}-{i}",
                 tracking_tier=1 if i % 2 == 0 else 0,
             )
             artists.append(artist)
 
         query = """
-        {
-            artists(pageSize: 10) {
+        query Artists($search: String) {
+            artists(pageSize: 10, search: $search) {
                 pageInfo { totalCount }
                 items { id name trackingTier }
             }
         }
         """
 
-        result = await schema.execute(query)
+        result = await schema.execute(query, variable_values={"search": token})
 
         assert result.errors is None
         assert result.data is not None
         assert result.data["artists"]["pageInfo"]["totalCount"] == 3
-        assert len(result.data["artists"]["items"]) == 3
+        items = result.data["artists"]["items"]
+        assert {item["id"] for item in items} == {a.pk for a in artists}
+        assert {item["name"] for item in items} == {a.name for a in artists}
 
     @pytest.mark.asyncio
     async def test_albums_query_with_data_isolated(self, transactional_db):

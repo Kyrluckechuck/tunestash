@@ -494,29 +494,55 @@ def queue_missing_albums_for_tracked_artists(self: Any) -> None:
         )
 
 
-def _find_best_artist_for_deezer_id(
-    normalized_name: str, artist_name: str
-) -> Artist | None:
-    """Among all artists with the same normalized name, return the best candidate.
+_EVIDENCE_SONG_LIMIT = 25
 
-    "Best" = most songs, with tracked artists preferred over untracked.
-    Only considers artists that don't already have a deezer_id.
-    artist_name is used for a case-insensitive pre-filter before accent normalization.
+
+def _artist_evidence(artist: Artist) -> tuple[frozenset[str], frozenset[int]]:
+    """ISRCs of ``artist``'s songs, plus every song that is not independent of them.
+
+    Songs sharing a file or provider track id with one of these are the same
+    recording under another row and must never vouch for an identity.
     """
-    from django.db.models import Count
+    from ..artist_credits import related_song_ids
+    from ..release_ids import known_isrcs
 
-    candidates = (
-        Artist.objects.filter(deezer_id__isnull=True, name__iexact=artist_name)
-        .annotate(song_count=Count("song"))
-        .order_by("-tracking_tier", "-song_count", "id")
-    )
-    # Verify with normalized comparison (whitespace-tolerant)
-    compact_name = normalized_name.replace(" ", "")
-    for candidate in candidates:
-        norm_c = normalize_name(candidate.name)
-        if norm_c == normalized_name or norm_c.replace(" ", "") == compact_name:
-            return candidate
-    return None
+    isrcs: set[str] = set()
+    excluded: set[int] = set()
+    for song in Song.objects.filter(primary_artist=artist).order_by("id")[
+        :_EVIDENCE_SONG_LIMIT
+    ]:
+        isrcs |= known_isrcs(song)
+        excluded |= related_song_ids(song.pk)
+    return frozenset(isrcs), frozenset(excluded)
+
+
+def _independent_isrc_link(artist: Artist, other: Artist) -> bool:
+    """True if a different, independent song of ``other`` shares an ISRC with ``artist``."""
+    from ..artist_credits import _linked_by_isrc
+
+    isrcs, excluded = _artist_evidence(artist)
+    return _linked_by_isrc(other, isrcs, excluded)
+
+
+def _deezer_artist_confirmed_by_isrc(
+    artist: Artist, deezer_id: int, provider: DeezerMetadataProvider
+) -> bool:
+    """Does Deezer attribute one of ``artist``'s own recordings to ``deezer_id``?
+
+    A name search only proposes a candidate; this is the evidence. The Deezer
+    track's lead artist must carry the proposed id and the same normalized name.
+    """
+    isrcs, _ = _artist_evidence(artist)
+    normalized = normalize_name(artist.name)
+    compact = normalized.replace(" ", "")
+    for isrc in sorted(isrcs)[:4]:
+        found = provider.get_track_by_isrc(isrc)
+        if not found or found.artist_deezer_id != deezer_id:
+            continue
+        norm = normalize_name(found.artist_name or "")
+        if norm == normalized or norm.replace(" ", "") == compact:
+            return True
+    return False
 
 
 def _resolve_artist_via_isrc(
@@ -602,74 +628,80 @@ def _resolve_artist_via_isrc(
     return winner
 
 
-def _assign_deezer_id_to_best_artist(
+def _assign_deezer_id_to_artist(
     artist: Artist, deezer_id: int, method: str
 ) -> Artist | None:
-    """Assign a deezer_id to the best artist record with this name.
+    """Give ``artist`` the Deezer id it was resolved for; never move it by name.
 
-    Checks for existing ownership, picks the best candidate among
-    same-name artists, and saves. Returns the linked Artist or None.
-    If the deezer_id is already claimed by a case-variant of the same
-    artist, merges them automatically.
+    If another row already owns the id, the two rows are merged only when their
+    names match *and* an independent song of the owner shares an ISRC with the
+    artist's recordings. Name equality alone is not identity: distinct artists
+    share names. Without that evidence the id stays where it is and the
+    artist is left unlinked. Returns the linked Artist or None.
     """
+    from ..artist_credits import _attach_id
+
     existing = Artist.objects.filter(deezer_id=deezer_id).first()
-    if existing:
+    if existing is not None and existing.pk == artist.pk:
+        return artist
+    if existing is not None:
         norm_a = normalize_name(artist.name)
         norm_b = normalize_name(existing.name)
         names_match = norm_a == norm_b or norm_a.replace(" ", "") == norm_b.replace(
             " ", ""
         )
-        if names_match:
-            # Same artist, different capitalization — merge
-            from library_manager.management.commands.merge_duplicate_artists import (
-                _merge_artist,
+        if not names_match or not _independent_isrc_link(artist, existing):
+            logger.warning(
+                "Not merging '%s' (id=%d) into '%s' (id=%d) for deezer_id %s via "
+                "%s: no independent ISRC evidence (names match: %s)",
+                artist.name,
+                artist.id,
+                existing.name,
+                existing.id,
+                deezer_id,
+                method,
+                names_match,
             )
+            return None
 
-            try:
-                stats = _merge_artist(source=artist, target=existing, stdout=None)
-                logger.info(
-                    "Merged '%s' (id=%d) into '%s' (id=%d) via %s: "
-                    "%d songs, %d albums moved",
-                    artist.name,
-                    artist.id,
-                    existing.name,
-                    existing.id,
-                    method,
-                    stats["songs_moved"],
-                    stats["albums_moved"] + stats["albums_merged"],
-                )
-                return existing
-            except Exception:
-                logger.exception(
-                    "Failed to merge '%s' (id=%d) into '%s' (id=%d)",
-                    artist.name,
-                    artist.id,
-                    existing.name,
-                    existing.id,
-                )
-                return None
+        from library_manager.management.commands.merge_duplicate_artists import (
+            _merge_artist,
+        )
 
+        try:
+            stats = _merge_artist(source=artist, target=existing, stdout=None)
+            logger.info(
+                "Merged '%s' (id=%d) into '%s' (id=%d) via %s: "
+                "%d songs, %d albums moved",
+                artist.name,
+                artist.id,
+                existing.name,
+                existing.id,
+                method,
+                stats["songs_moved"],
+                stats["albums_moved"] + stats["albums_merged"],
+            )
+            return existing
+        except Exception:
+            logger.exception(
+                "Failed to merge '%s' (id=%d) into '%s' (id=%d)",
+                artist.name,
+                artist.id,
+                existing.name,
+                existing.id,
+            )
+            return None
+
+    if not _attach_id(artist, "deezer_id", deezer_id):
         logger.info(
-            f"Skipping '{artist.name}' (id={artist.id}): "
-            f"deezer_id {deezer_id} already belongs to "
-            f"'{existing.name}' (id={existing.id})"
+            "Deezer ID %s or artist id=%d changed concurrently; not linked",
+            deezer_id,
+            artist.id,
         )
         return None
-
-    normalized = normalize_name(artist.name)
-    best = _find_best_artist_for_deezer_id(normalized, artist.name)
-    target = best if best else artist
-
-    target.deezer_id = deezer_id
-    target.save(update_fields=["deezer_id"])
-    if target.id != artist.id:
-        logger.info(
-            f"Linked '{target.name}' (id={target.id}) to Deezer ID "
-            f"{deezer_id} via {method} (preferred over id={artist.id})"
-        )
-    else:
-        logger.info(f"Linked '{target.name}' to Deezer ID {deezer_id} via {method}")
-    return target
+    artist.refresh_from_db(fields=["deezer_id"])
+    logger.info(f"Linked '{artist.name}' to Deezer ID {deezer_id} via {method}")
+    return artist
 
 
 def _try_link_artist_to_deezer(
@@ -679,19 +711,18 @@ def _try_link_artist_to_deezer(
 
     Resolution order:
     1. ISRC reverse-lookup (quorum of 2+ songs agreeing on same artist)
-    2. Name search fallback
+    2. Name search, which only proposes a candidate: it is accepted only when
+       Deezer attributes one of the artist's own ISRCs to that id.
 
-    If multiple Artist records share the same name, assigns the deezer_id
-    to the one with the most content (songs, tracked status).
+    The id is only ever written to ``artist`` itself; a same-name row is never
+    chosen in its place.
 
     Returns the Artist that was linked, or None if no match found.
     """
-    # Try ISRC reverse-lookup first (most reliable)
     isrc_result = _resolve_artist_via_isrc(artist, provider)
     if isrc_result:
-        return _assign_deezer_id_to_best_artist(artist, isrc_result, "ISRC")
+        return _assign_deezer_id_to_artist(artist, isrc_result, "ISRC")
 
-    # Fall back to name search
     results = provider.search_artists(artist.name, limit=3)
     normalized = normalize_name(artist.name)
     compact = normalized.replace(" ", "")
@@ -710,7 +741,17 @@ def _try_link_artist_to_deezer(
     if not match or not match.deezer_id:
         return None
 
-    return _assign_deezer_id_to_best_artist(artist, match.deezer_id, "name search")
+    if not _deezer_artist_confirmed_by_isrc(artist, match.deezer_id, provider):
+        logger.info(
+            "Name search proposed Deezer ID %s for '%s' (id=%d) but no ISRC "
+            "evidence confirms it; not linked",
+            match.deezer_id,
+            artist.name,
+            artist.id,
+        )
+        return None
+
+    return _assign_deezer_id_to_artist(artist, match.deezer_id, "name search + ISRC")
 
 
 @celery_app.task(

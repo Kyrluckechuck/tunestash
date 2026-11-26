@@ -257,6 +257,7 @@ class YouTubeMusicProvider(ExternalListProvider):
             tracks=page_tracks,
             total_count=len(tracks),
             content_hash=ExternalListResult.compute_content_hash(tracks),
+            complete=self._is_whole_list(items, tracks, page, limit),
         )
 
     def _fetch_liked_tracks(self, page: int, limit: int) -> ExternalListResult:
@@ -274,6 +275,23 @@ class YouTubeMusicProvider(ExternalListProvider):
             tracks=page_tracks,
             total_count=len(tracks),
             content_hash=ExternalListResult.compute_content_hash(tracks),
+            complete=self._is_whole_list(items, tracks, page, limit),
+        )
+
+    @staticmethod
+    def _is_whole_list(
+        items: list[dict], tracks: list[ExternalTrack], page: int, limit: int
+    ) -> bool:
+        """Positive proof that one response held the entire list.
+
+        ytmusicapi returns up to ``limit`` items in one call, so a response
+        shorter than ``limit`` is everything, provided every item parsed.
+        """
+        return (
+            page == 1
+            and bool(items)
+            and len(items) < limit
+            and len(tracks) == len(items)
         )
 
     @staticmethod

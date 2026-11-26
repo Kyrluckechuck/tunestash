@@ -13,7 +13,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
-from library_manager.models import Song
+from django.db import IntegrityError, transaction
+
+from library_manager.models import Album, Song
 from src.providers.metadata_base import TrackResult
 
 logger = logging.getLogger(__name__)
@@ -90,6 +92,182 @@ def fits_release(song: Song, track: TrackResult) -> bool:
     if track.album_deezer_id is None:
         return False
     return int(album.deezer_id) == int(track.album_deezer_id)
+
+
+def normalize_upc(value: Optional[str]) -> str:
+    """Canonical UPC/EAN for comparison; empty when not a plausible UPC."""
+    text = (value or "").strip()
+    if not text.isdigit() or len(text) not in (8, 12, 13, 14):
+        return ""
+    return text.lstrip("0") or "0"
+
+
+def _local_spotify_album_gid(album: Any) -> str:
+    for raw in (album.spotify_gid, album.spotify_uri):
+        if raw:
+            return str(raw).rsplit(":", 1)[-1]
+    return ""
+
+
+def fetch_deezer_album_upc(deezer_album_id: int) -> Optional[str]:
+    from src.providers.deezer import DeezerMetadataProvider
+
+    album = DeezerMetadataProvider().client.get_album(int(deezer_album_id))
+    return getattr(album, "upc", None)
+
+
+def fetch_spotify_album_upc(spotify_gid: str) -> Optional[str]:
+    from downloader.spotipy_tasks import PublicSpotifyClient
+
+    client = PublicSpotifyClient().sp
+    if client is None:
+        return None
+    album = dict(client.album(spotify_gid) or {})
+    return (album.get("external_ids") or {}).get("upc")
+
+
+def album_matches_by_upc(
+    album: Any,
+    deezer_album_id: int,
+    deezer_upc: Optional[str] = None,
+    spotify_upc_fetcher: Any = None,
+) -> bool:
+    """Is the local ``album`` the same release as Deezer album ``deezer_album_id``?
+
+    Only a shared UPC proves it. A title match is not identity: original,
+    deluxe, live and remastered editions share titles. Any lookup failure or a
+    missing/invalid UPC on either side is "unverified", never a match.
+    """
+    gid = _local_spotify_album_gid(album)
+    wanted = normalize_upc(deezer_upc)
+    if not gid or not wanted:
+        return False
+    fetch = spotify_upc_fetcher or fetch_spotify_album_upc
+    try:
+        local = normalize_upc(fetch(gid))
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.debug("Spotify UPC lookup for album %s failed: %s", gid, exc)
+        return False
+    return bool(local) and local == wanted
+
+
+def verified_unlinked_album(
+    candidates: Iterable[Any],
+    deezer_album_id: int,
+    deezer_upc_fetcher: Any = None,
+    spotify_upc_fetcher: Any = None,
+) -> Optional[Any]:
+    """The one same-titled, unlinked local album proven to be this release.
+
+    ``candidates`` (title/artist matches without a Deezer id) only rank
+    possibilities; the UPC decides. Zero or several proven matches return
+    ``None`` so the caller leaves the rows apart.
+    """
+    pool = [c for c in candidates if c.deezer_id is None]
+    if not pool:
+        return None
+    fetch = deezer_upc_fetcher or fetch_deezer_album_upc
+    try:
+        deezer_upc = fetch(int(deezer_album_id))
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.debug("Deezer UPC lookup for album %s failed: %s", deezer_album_id, exc)
+        return None
+    proven = [
+        c
+        for c in pool[:5]
+        if album_matches_by_upc(c, deezer_album_id, deezer_upc, spotify_upc_fetcher)
+    ]
+    return proven[0] if len(proven) == 1 else None
+
+
+ALBUM_EXISTS = "exists"
+ALBUM_LINK = "link"
+ALBUM_CREATE = "create"
+ALBUM_SKIP = "skip"
+
+
+def classify_deezer_album(
+    artist: Any,
+    deezer_album_id: int,
+    album_name: str,
+    normalize: Any,
+    deezer_upc_fetcher: Any = None,
+    spotify_upc_fetcher: Any = None,
+) -> tuple[str, Optional[Album]]:
+    """Decide what a Deezer album listing entry means for the local library.
+
+    ``exists``: a row already carries this Deezer id. ``link``: an unlinked
+    same-titled row is proven to be this release by UPC. ``skip``: unlinked
+    same-titled rows exist but none is proven, so neither link nor duplicate
+    (an operator or the UPC repair resolves it). ``create``: no unlinked
+    same-titled row could be this release; same-titled rows that already carry
+    a different Deezer id are other editions and never share this id.
+    """
+    existing = Album.objects.filter(deezer_id=deezer_album_id).first()
+    if existing is not None:
+        return ALBUM_EXISTS, existing
+    wanted = normalize(album_name)
+    unlinked = [
+        a
+        for a in Album.objects.filter(artist=artist, deezer_id__isnull=True)
+        if normalize(a.name) == wanted
+    ]
+    if not unlinked:
+        return ALBUM_CREATE, None
+    proven = verified_unlinked_album(
+        unlinked, deezer_album_id, deezer_upc_fetcher, spotify_upc_fetcher
+    )
+    if proven is not None:
+        return ALBUM_LINK, proven
+    logger.warning(
+        "Deezer album %s %r matches unlinked local album(s) %s by title only; "
+        "not linked (no UPC proof)",
+        deezer_album_id,
+        album_name,
+        [a.pk for a in unlinked],
+    )
+    return ALBUM_SKIP, None
+
+
+# Everything the classifier and UPC proof read: the artist and name that
+# ranked the candidate, and the Spotify identity (gid, else uri) that was
+# looked up. If any changes, the proof no longer describes this row.
+_PROOF_FIELDS = ("artist_id", "name", "spotify_gid", "spotify_uri")
+
+
+def link_album_deezer_id(album: Album, deezer_album_id: int) -> bool:
+    """Attach ``deezer_album_id`` to ``album`` iff it is still what was proven.
+
+    The UPC proof was made against a snapshot. Under a row lock the album must
+    still be unlinked with the same Spotify gid and name, and the write is a
+    conditional UPDATE, so a concurrent repair/import is never overwritten.
+    False means a concurrent change (or the id being claimed elsewhere): the
+    caller skips. On success ``album`` reflects the stored id.
+    """
+    try:
+        with transaction.atomic():
+            row = Album.objects.select_for_update().filter(pk=album.pk).first()
+            if (
+                row is None
+                or row.deezer_id is not None
+                or any(getattr(row, f) != getattr(album, f) for f in _PROOF_FIELDS)
+            ):
+                logger.info(
+                    "Album %s changed since it was verified; not linking Deezer %s",
+                    album.pk,
+                    deezer_album_id,
+                )
+                return False
+            pre_image = {f: getattr(album, f) for f in _PROOF_FIELDS}
+            updated = Album.objects.filter(
+                pk=album.pk, deezer_id__isnull=True, **pre_image
+            ).update(deezer_id=deezer_album_id)
+    except IntegrityError:
+        logger.info("Deezer album %s was claimed by another row", deezer_album_id)
+        return False
+    if updated:
+        album.deezer_id = deezer_album_id
+    return bool(updated)
 
 
 def resolve_release_deezer_id(song: Song, provider: Any = None) -> Optional[int]:

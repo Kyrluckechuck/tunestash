@@ -23,6 +23,8 @@ class AlbumService(BaseService[Album]):
     async def import_from_deezer(self, deezer_id: int) -> MutationResult:
         """Import an album from Deezer into the library."""
         try:
+            from library_manager.release_ids import ALBUM_CREATE, ALBUM_SKIP
+
             from ..providers.deezer import DeezerMetadataProvider
 
             provider = DeezerMetadataProvider()
@@ -33,12 +35,11 @@ class AlbumService(BaseService[Album]):
                 )
 
             artist_deezer_id = album_data.artist_deezer_id
+            # A Deezer artist id identifies the artist; a namesake carrying no
+            # or another id is a different row, never adopted by name.
             artist = await sync_to_async(
                 lambda: (
-                    DjangoArtist.objects.filter(
-                        Q(deezer_id=artist_deezer_id)
-                        | Q(name__iexact=album_data.artist_name)
-                    ).first()
+                    DjangoArtist.objects.filter(deezer_id=artist_deezer_id).first()
                     if artist_deezer_id
                     else DjangoArtist.objects.filter(
                         name__iexact=album_data.artist_name
@@ -51,22 +52,41 @@ class AlbumService(BaseService[Album]):
                     name=album_data.artist_name,
                     deezer_id=artist_deezer_id,
                 )
-            elif artist_deezer_id and not artist.deezer_id:
-                artist.deezer_id = artist_deezer_id
-                await artist.asave()
 
-            existing = await sync_to_async(
-                lambda: DjangoAlbum.objects.filter(
-                    Q(deezer_id=deezer_id)
-                    | Q(name__iexact=album_data.name, artist=artist)
-                ).first()
-            )()
+            def find_existing() -> tuple[str, Optional[DjangoAlbum]]:
+                from library_manager.release_ids import (
+                    ALBUM_LINK,
+                    classify_deezer_album,
+                    link_album_deezer_id,
+                )
+                from library_manager.tasks.core import normalize_name
+
+                action, found = classify_deezer_album(
+                    artist, deezer_id, album_data.name, normalize_name
+                )
+                if action == ALBUM_LINK and found is not None:
+                    if not link_album_deezer_id(found, deezer_id):
+                        return ALBUM_SKIP, None
+                return action, found
+
+            action, existing = await sync_to_async(find_existing)()
+
+            if action == ALBUM_SKIP:
+                logger.warning(
+                    "Deezer album %s not imported: a same-titled local album "
+                    "cannot be proven to be a different release",
+                    deezer_id,
+                )
+                return MutationResult(
+                    success=False,
+                    message=(
+                        f'Not imported: "{album_data.name}" matches an existing '
+                        "album that could not be verified as a different release"
+                    ),
+                )
 
             if existing:
                 updated = []
-                if not existing.deezer_id:
-                    existing.deezer_id = deezer_id
-                    updated.append("deezer_id")
                 if not existing.wanted:
                     existing.wanted = True
                     updated.append("wanted")
@@ -76,6 +96,11 @@ class AlbumService(BaseService[Album]):
                     success=True,
                     message=f'Album "{existing.name}" marked as wanted',
                     album=await sync_to_async(self._to_graphql_type)(existing),
+                )
+
+            if action != ALBUM_CREATE:
+                return MutationResult(
+                    success=False, message="Album could not be imported safely"
                 )
 
             django_album = await sync_to_async(DjangoAlbum.objects.create)(

@@ -20,8 +20,14 @@ class ExternalListResult:
     """Result of fetching tracks from an external list."""
 
     tracks: list[ExternalTrack] = field(default_factory=list)
+    # The upstream's own total for the list; 0 means the source did not say.
     total_count: int = 0
     content_hash: str = ""
+    # Positive proof that ``tracks`` is the whole list: set True only by code
+    # that fetched every page without error and checked it against the upstream
+    # total. Anything else (default, per-page results, unknown) is incomplete,
+    # and absence from an incomplete list never authorizes a removal.
+    complete: bool = False
 
     @staticmethod
     def compute_content_hash(tracks: list[ExternalTrack]) -> str:
@@ -85,6 +91,9 @@ class ExternalListProvider(ABC):
         page = 1
         limit = 200
 
+        upstream_total = 0
+        ended = False  # a page said "no more" (rather than hitting max_tracks)
+
         while len(all_tracks) < max_tracks:
             result = self.fetch_tracks(
                 username=username,
@@ -94,16 +103,29 @@ class ExternalListProvider(ABC):
                 page=page,
                 limit=limit,
             )
+            upstream_total = max(upstream_total, result.total_count or 0)
             if not result.tracks:
+                ended = True
                 break
             all_tracks.extend(result.tracks)
             if len(result.tracks) < limit:
+                ended = True
                 break
             page += 1
 
         content_hash = ExternalListResult.compute_content_hash(all_tracks)
+        # Complete only when the source reported a total and the pages we
+        # collected add up to exactly that; an early empty/short page or a
+        # source that gives no total is unproven, hence incomplete.
+        complete = (
+            ended
+            and len(all_tracks) < max_tracks
+            and upstream_total > 0
+            and len(all_tracks) == upstream_total
+        )
         return ExternalListResult(
             tracks=all_tracks,
-            total_count=len(all_tracks),
+            total_count=upstream_total,
             content_hash=content_hash,
+            complete=complete,
         )

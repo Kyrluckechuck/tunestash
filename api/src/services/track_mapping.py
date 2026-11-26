@@ -1,6 +1,13 @@
-"""Track mapping service — resolves external tracks to Spotify IDs."""
+"""Track mapping service — resolves external tracks to local/provider tracks.
+
+Spotify track ids and Deezer track ids live in different namespaces. Every
+result carries an explicit ``provider`` next to its ``provider_id`` so that no
+consumer has to guess which one a string is, and a Deezer id can never be
+queued as a Spotify gid (or the reverse).
+"""
 
 import logging
+from dataclasses import dataclass
 from typing import Optional
 
 import requests
@@ -18,6 +25,40 @@ MUSICBRAINZ_API_BASE = "https://musicbrainz.org/ws/2"
 MUSICBRAINZ_USER_AGENT = "TuneStash/1.0 (https://github.com/tunestash)"
 
 MIN_CONFIDENCE_THRESHOLD = 0.6
+
+PROVIDER_SPOTIFY = "spotify"
+PROVIDER_DEEZER = "deezer"
+
+# Method recorded on a row whose mapping failed for a temporary reason; such
+# rows are retried and never cached as "no match".
+METHOD_ERROR = "error"
+
+
+class TransientMappingError(Exception):
+    """A provider was unavailable, so "not found" cannot be concluded."""
+
+
+@dataclass(frozen=True)
+class MappingResult:
+    """Outcome of mapping one external track.
+
+    ``provider_id`` is a Spotify track id when ``provider`` is ``"spotify"``
+    and a Deezer track id (decimal string) when it is ``"deezer"``. ``song_id``
+    is set when the track already exists locally, whichever namespace it was
+    found through. ``retryable`` marks a temporary failure.
+    """
+
+    provider: Optional[str] = None
+    provider_id: Optional[str] = None
+    method: str = "pending"
+    confidence: float = 0.0
+    error: Optional[str] = None
+    song_id: Optional[int] = None
+    retryable: bool = False
+
+    @property
+    def mapped(self) -> bool:
+        return self.song_id is not None or self.provider_id is not None
 
 
 def _make_cache_key(artist: str, track: str) -> str:
@@ -46,7 +87,7 @@ def check_local_song_db(artist_name: str, track_name: str) -> Optional[Song]:
             "[TRACK_MAPPING] Local DB match for '%s - %s' -> Song %s",
             artist_name,
             track_name,
-            song.gid,
+            song.pk,
         )
     return song
 
@@ -73,7 +114,9 @@ def resolve_via_listenbrainz_labs(
         mbids: List of MusicBrainz IDs (up to 25 per request).
 
     Returns:
-        Dict mapping MBID -> Spotify track ID (or None if not found).
+        Dict mapping MBID -> Spotify track ID, or None when Labs answered that
+        it has none. An MBID whose batch failed is *absent* from the result: an
+        outage is not a negative answer.
     """
     if not mbids:
         return {}
@@ -92,14 +135,18 @@ def resolve_via_listenbrainz_labs(
                 timeout=30,
             )
             resp.raise_for_status()
+            answered: dict[str, Optional[str]] = {}
             for item in resp.json():
                 mbid = item.get("recording_mbid", "")
                 spotify_ids = item.get("spotify_track_ids") or []
-                results[mbid] = spotify_ids[0] if spotify_ids else None
+                answered[mbid] = spotify_ids[0] if spotify_ids else None
+            results.update(answered)
+            for mbid in batch:
+                # Labs omits recordings it has nothing for; a successful
+                # response that lacks an MBID is a definitive "none".
+                results.setdefault(mbid, None)
         except Exception as e:
             logger.warning("[TRACK_MAPPING] ListenBrainz Labs batch error: %s", e)
-            for mbid in batch:
-                results.setdefault(mbid, None)
 
         if i + 25 < len(mbids):
             check_api_rate_limit("listenbrainz_labs")
@@ -107,10 +154,12 @@ def resolve_via_listenbrainz_labs(
     return results
 
 
-def resolve_via_musicbrainz(mbid: str) -> Optional[str]:
-    """Step 3: Resolve MBID -> ISRC via MusicBrainz, then search Spotify by ISRC.
+def resolve_via_musicbrainz(mbid: str) -> Optional[int]:
+    """Step 3: Resolve MBID -> ISRC via MusicBrainz, then look the ISRC up on Deezer.
 
-    Returns Spotify track ID if found, None otherwise.
+    Returns the Deezer track id, or None when the recording has no ISRC or
+    Deezer has no such track. Raises ``TransientMappingError`` when either
+    service could not answer.
     """
     check_api_rate_limit("musicbrainz")
 
@@ -121,22 +170,18 @@ def resolve_via_musicbrainz(mbid: str) -> Optional[str]:
             headers={"User-Agent": MUSICBRAINZ_USER_AGENT},
             timeout=30,
         )
+        if resp.status_code == 404:
+            return None
         resp.raise_for_status()
         data = resp.json()
-
-        isrcs = data.get("isrcs", [])
-        if not isrcs:
-            return None
-
-        isrc = isrcs[0]
-        deezer_id = _deezer_search_by_isrc(isrc)
-        if deezer_id:
-            # Return the deezer_id as a string for pipeline compatibility
-            return str(deezer_id)
-        return None
     except Exception as e:
         logger.warning("[TRACK_MAPPING] MusicBrainz lookup error for %s: %s", mbid, e)
+        raise TransientMappingError(f"MusicBrainz unavailable: {e}") from e
+
+    isrcs = data.get("isrcs", [])
+    if not isrcs:
         return None
+    return _deezer_search_by_isrc(isrcs[0])
 
 
 def _deezer_search_by_isrc(isrc: str) -> Optional[int]:
@@ -144,11 +189,11 @@ def _deezer_search_by_isrc(isrc: str) -> Optional[int]:
     try:
         from src.providers.deezer import DeezerMetadataProvider
 
-        result = DeezerMetadataProvider().get_track_by_isrc(isrc)
-        return result.deezer_id if result else None
+        result = DeezerMetadataProvider().get_track_by_isrc(isrc, raise_errors=True)
     except Exception as e:
         logger.warning("[TRACK_MAPPING] Deezer ISRC search error for %s: %s", isrc, e)
-        return None
+        raise TransientMappingError(f"Deezer unavailable: {e}") from e
+    return result.deezer_id if result else None
 
 
 def resolve_via_deezer_search(
@@ -157,7 +202,8 @@ def resolve_via_deezer_search(
     """Step 4: Search Deezer by artist+track name with confidence scoring.
 
     Returns:
-        (deezer_track_id, confidence) — None and 0.0 if no match.
+        (deezer_track_id, confidence) — None and 0.0 if no match. Raises
+        ``TransientMappingError`` when Deezer could not answer.
     """
     try:
         from downloader.track_matcher import score_track_match
@@ -165,27 +211,9 @@ def resolve_via_deezer_search(
         from src.providers.deezer import DeezerMetadataProvider
 
         provider = DeezerMetadataProvider()
-        results = provider.search_tracks(f"{artist_name} {track_name}", limit=5)
-
-        if not results:
-            return None, 0.0
-
-        best_id: Optional[int] = None
-        best_confidence = 0.0
-
-        for item in results:
-            confidence = score_track_match(
-                search_title=track_name,
-                search_artist=artist_name,
-                result_title=item.name,
-                result_artist=item.artist_name or "",
-            )
-
-            if confidence > best_confidence:
-                best_confidence = confidence
-                best_id = item.deezer_id
-
-        return best_id, best_confidence
+        results = provider.search_tracks(
+            f"{artist_name} {track_name}", limit=5, raise_errors=True
+        )
     except Exception as e:
         logger.warning(
             "[TRACK_MAPPING] Deezer search error for '%s - %s': %s",
@@ -193,7 +221,90 @@ def resolve_via_deezer_search(
             track_name,
             e,
         )
+        raise TransientMappingError(f"Deezer unavailable: {e}") from e
+
+    if not results:
         return None, 0.0
+
+    best_id: Optional[int] = None
+    best_confidence = 0.0
+
+    for item in results:
+        confidence = score_track_match(
+            search_title=track_name,
+            search_artist=artist_name,
+            result_title=item.name,
+            result_artist=item.artist_name or "",
+        )
+
+        if confidence > best_confidence:
+            best_confidence = confidence
+            best_id = item.deezer_id
+
+    return best_id, best_confidence
+
+
+# =============================================================================
+# Result construction
+# =============================================================================
+
+
+def _spotify_result(spotify_id: str, method: str, confidence: float) -> MappingResult:
+    song = Song.objects.filter(gid=spotify_id).first()
+    return MappingResult(
+        provider=PROVIDER_SPOTIFY,
+        provider_id=spotify_id,
+        method=method,
+        confidence=confidence,
+        song_id=song.pk if song else None,
+    )
+
+
+def _deezer_result(deezer_id: int, method: str, confidence: float) -> MappingResult:
+    song = Song.objects.filter(deezer_id=deezer_id).first()
+    return MappingResult(
+        provider=PROVIDER_DEEZER,
+        provider_id=str(deezer_id),
+        method=method,
+        confidence=confidence,
+        song_id=song.pk if song else None,
+    )
+
+
+def _local_result(song: Song) -> MappingResult:
+    """A song that already exists locally, in whichever namespace it has."""
+    if song.gid:
+        provider, provider_id = PROVIDER_SPOTIFY, str(song.gid)
+    elif song.deezer_id:
+        provider, provider_id = PROVIDER_DEEZER, str(song.deezer_id)
+    else:
+        provider, provider_id = None, None
+    return MappingResult(
+        provider=provider,
+        provider_id=provider_id,
+        method="local_db",
+        confidence=1.0,
+        song_id=song.pk,
+    )
+
+
+def _cached_result(cached: TrackMappingCache) -> Optional[MappingResult]:
+    """Interpret a positive cache row, keeping the two id namespaces apart.
+
+    Older rows stored a Deezer id in ``spotify_track_id`` (as a decimal
+    string); a Spotify id is never purely numeric.
+    """
+    method = f"cache_{cached.mapping_method}"
+    spotify_id = cached.spotify_track_id
+    if spotify_id and not spotify_id.isdigit():
+        result = _spotify_result(spotify_id, method, cached.confidence)
+        return result
+    deezer_id = cached.deezer_track_id
+    if deezer_id is None and spotify_id and spotify_id.isdigit():
+        deezer_id = int(spotify_id)
+    if deezer_id is not None:
+        return _deezer_result(int(deezer_id), method, cached.confidence)
+    return None
 
 
 # =============================================================================
@@ -204,104 +315,30 @@ def resolve_via_deezer_search(
 class TrackMappingService:
     """Orchestrates the track mapping pipeline."""
 
-    def map_track(  # pylint: disable=too-many-return-statements
+    def map_track(
         self,
         artist_name: str,
         track_name: str,
         musicbrainz_id: Optional[str] = None,
-    ) -> tuple[Optional[str], str, float, Optional[str]]:
-        """Map a single track to a Spotify ID.
-
-        Returns:
-            (spotify_track_id, mapping_method, confidence, error_message)
-        """
-        # Step 0: Check local Song DB
-        song = check_local_song_db(artist_name, track_name)
-        if song:
-            return song.gid, "local_db", 1.0, None
-
-        # Step 1: Check cache
-        cached = check_cache(artist_name, track_name, musicbrainz_id)
-        if cached:
-            if cached.no_match:
-                return None, "cache_negative", 0.0, "Previously failed to map"
-            if cached.spotify_track_id:
-                return (
-                    cached.spotify_track_id,
-                    f"cache_{cached.mapping_method}",
-                    cached.confidence,
-                    None,
-                )
-
-        # Step 2: MBID -> ListenBrainz Labs
-        if musicbrainz_id:
-            lb_results = resolve_via_listenbrainz_labs([musicbrainz_id])
-            spotify_id = lb_results.get(musicbrainz_id)
-            if spotify_id:
-                self._cache_result(
-                    artist_name,
-                    track_name,
-                    musicbrainz_id,
-                    spotify_id,
-                    "listenbrainz_labs",
-                    1.0,
-                )
-                return spotify_id, "listenbrainz_labs", 1.0, None
-
-            # Step 3: MBID -> MusicBrainz -> ISRC -> Spotify
-            spotify_id = resolve_via_musicbrainz(musicbrainz_id)
-            if spotify_id:
-                self._cache_result(
-                    artist_name,
-                    track_name,
-                    musicbrainz_id,
-                    spotify_id,
-                    "musicbrainz_isrc",
-                    1.0,
-                )
-                return spotify_id, "musicbrainz_isrc", 1.0, None
-
-        # Step 4: Name-based Deezer search
-        deezer_id, confidence = resolve_via_deezer_search(artist_name, track_name)
-        if deezer_id and confidence >= MIN_CONFIDENCE_THRESHOLD:
-            # Match Song by deezer_id to get gid for backwards compatibility
-            song = Song.objects.filter(deezer_id=deezer_id).first()
-            result_id = song.gid if song and song.gid else str(deezer_id)
-            self._cache_result(
-                artist_name,
-                track_name,
-                musicbrainz_id,
-                result_id,
-                "deezer_search",
-                confidence,
-                deezer_track_id=deezer_id,
-            )
-            return result_id, "deezer_search", confidence, None
-
-        # No match found — cache negative result
-        self._cache_negative(artist_name, track_name, musicbrainz_id)
-        error = (
-            f"No match (best confidence: {confidence:.2f})"
-            if deezer_id
-            else "No results from any resolution method"
-        )
-        return None, "none", 0.0, error
+    ) -> MappingResult:
+        """Map a single track."""
+        return self.map_tracks_batch([(artist_name, track_name, musicbrainz_id)])[0]
 
     def map_tracks_batch(
         self,
         tracks: list[tuple[str, str, Optional[str]]],
-    ) -> list[tuple[Optional[str], str, float, Optional[str]]]:
+    ) -> list[MappingResult]:
         """Map a batch of tracks, using batch APIs where possible.
 
         Args:
             tracks: List of (artist_name, track_name, musicbrainz_id) tuples.
 
         Returns:
-            List of (spotify_track_id, method, confidence, error) tuples.
+            One MappingResult per input track, in order.
         """
-        results: list[tuple[Optional[str], str, float, Optional[str]]] = [
-            (None, "pending", 0.0, None)
-        ] * len(tracks)
+        results: list[Optional[MappingResult]] = [None] * len(tracks)
+        # Tracks where a provider could not answer: never cached as no-match.
+        transient: dict[int, str] = {}
 
         # Separate tracks that have MBIDs for batch resolution
         mbid_indices: dict[str, list[int]] = {}
@@ -311,27 +348,21 @@ class TrackMappingService:
             # Step 0: Local DB check
             song = check_local_song_db(artist, track)
             if song:
-                results[i] = (song.gid, "local_db", 1.0, None)
+                results[i] = _local_result(song)
                 continue
 
             # Step 1: Cache check
             cached = check_cache(artist, track, mbid)
             if cached:
                 if cached.no_match:
-                    results[i] = (
-                        None,
-                        "cache_negative",
-                        0.0,
-                        "Previously failed to map",
+                    results[i] = MappingResult(
+                        method="cache_negative", error="Previously failed to map"
                     )
-                elif cached.spotify_track_id:
-                    results[i] = (
-                        cached.spotify_track_id,
-                        f"cache_{cached.mapping_method}",
-                        cached.confidence,
-                        None,
-                    )
-                continue
+                    continue
+                cached_result = _cached_result(cached)
+                if cached_result is not None:
+                    results[i] = cached_result
+                    continue
 
             if mbid:
                 mbid_indices.setdefault(mbid, []).append(i)
@@ -352,12 +383,17 @@ class TrackMappingService:
                             artist,
                             track,
                             mbid,
-                            spotify_id,
                             "listenbrainz_labs",
                             1.0,
+                            spotify_track_id=spotify_id,
                         )
-                        results[idx] = (spotify_id, "listenbrainz_labs", 1.0, None)
+                        results[idx] = _spotify_result(
+                            spotify_id, "listenbrainz_labs", 1.0
+                        )
                 else:
+                    if mbid not in lb_results:
+                        for idx in indices:
+                            transient[idx] = "ListenBrainz Labs unavailable"
                     # Fall through to individual resolution
                     remaining_indices.extend(indices)
 
@@ -365,72 +401,81 @@ class TrackMappingService:
         for idx in remaining_indices:
             artist, track, mbid = tracks[idx]
 
-            # Already resolved?
-            if results[idx][1] != "pending":
-                continue
-
-            # Step 3: MBID -> MusicBrainz
+            # Step 3: MBID -> MusicBrainz -> ISRC -> Deezer
             if mbid:
-                spotify_id = resolve_via_musicbrainz(mbid)
-                if spotify_id:
+                try:
+                    deezer_id = resolve_via_musicbrainz(mbid)
+                except TransientMappingError as e:
+                    transient[idx] = str(e)
+                    deezer_id = None
+                if deezer_id:
                     self._cache_result(
                         artist,
                         track,
                         mbid,
-                        spotify_id,
                         "musicbrainz_isrc",
                         1.0,
+                        deezer_track_id=deezer_id,
                     )
-                    results[idx] = (spotify_id, "musicbrainz_isrc", 1.0, None)
+                    results[idx] = _deezer_result(deezer_id, "musicbrainz_isrc", 1.0)
                     continue
 
             # Step 4: Deezer name search
-            deezer_id, confidence = resolve_via_deezer_search(artist, track)
+            try:
+                deezer_id, confidence = resolve_via_deezer_search(artist, track)
+            except TransientMappingError as e:
+                transient[idx] = str(e)
+                deezer_id, confidence = None, 0.0
             if deezer_id and confidence >= MIN_CONFIDENCE_THRESHOLD:
                 song = Song.objects.filter(deezer_id=deezer_id).first()
-                result_id = song.gid if song and song.gid else str(deezer_id)
                 self._cache_result(
                     artist,
                     track,
                     mbid,
-                    result_id,
                     "deezer_search",
                     confidence,
+                    spotify_track_id=song.gid if song and song.gid else None,
                     deezer_track_id=deezer_id,
                 )
-                results[idx] = (result_id, "deezer_search", confidence, None)
+                results[idx] = _deezer_result(deezer_id, "deezer_search", confidence)
+            elif idx in transient:
+                results[idx] = MappingResult(
+                    method=METHOD_ERROR,
+                    error=f"Temporary error, will retry: {transient[idx]}"[:255],
+                    retryable=True,
+                )
             else:
+                # Every provider answered and none had a match: definitive.
                 self._cache_negative(artist, track, mbid)
                 error = (
                     f"No match (best confidence: {confidence:.2f})"
                     if deezer_id
                     else "No results from any resolution method"
                 )
-                results[idx] = (None, "none", 0.0, error)
+                results[idx] = MappingResult(method="none", error=error)
 
-        return results
+        return [r if r is not None else MappingResult() for r in results]
 
     def _cache_result(
         self,
         artist_name: str,
         track_name: str,
         musicbrainz_id: Optional[str],
-        spotify_track_id: str,
         method: str,
         confidence: float,
+        spotify_track_id: Optional[str] = None,
         deezer_track_id: Optional[int] = None,
     ) -> None:
-        """Cache a positive mapping result."""
+        """Cache a positive mapping result, one id per namespace."""
         cache_key = _make_cache_key(artist_name, track_name)
         defaults = {
             "name_lookup_key": cache_key,
             "spotify_track_id": spotify_track_id,
+            "deezer_track_id": deezer_track_id,
             "confidence": confidence,
             "mapping_method": method,
             "no_match": False,
         }
-        if deezer_track_id is not None:
-            defaults["deezer_track_id"] = deezer_track_id
         try:
             if musicbrainz_id:
                 TrackMappingCache.objects.update_or_create(
@@ -451,7 +496,7 @@ class TrackMappingService:
         track_name: str,
         musicbrainz_id: Optional[str],
     ) -> None:
-        """Cache a negative (no match) result."""
+        """Cache a definitive (no match) result."""
         cache_key = _make_cache_key(artist_name, track_name)
         try:
             if musicbrainz_id:

@@ -3,6 +3,13 @@
 from typing import Optional
 
 from ..models import Album, Artist, TaskHistory
+from ..release_ids import (
+    ALBUM_CREATE,
+    ALBUM_EXISTS,
+    ALBUM_LINK,
+    classify_deezer_album,
+    link_album_deezer_id,
+)
 from .core import normalize_name, raise_if_cancelled, update_task_progress
 
 
@@ -32,32 +39,28 @@ def _fetch_albums_via_deezer(
     created_count = 0
     linked_count = 0
 
-    # Build normalized name → album lookup for accent/case-insensitive matching
-    existing_albums_by_norm: dict[str, Album] = {}
-    for db_album in Album.objects.filter(artist=artist):
-        existing_albums_by_norm.setdefault(normalize_name(db_album.name), db_album)
-
     for album_data in deezer_albums:
         if task_history:
             raise_if_cancelled(task_history)
         if not album_data.deezer_id:
             continue
 
-        # Check by deezer_id first, then by normalized name
-        existing = Album.objects.filter(deezer_id=album_data.deezer_id).first()
-        if not existing:
-            existing = existing_albums_by_norm.get(normalize_name(album_data.name))
-
-        if existing:
-            if not existing.deezer_id:
-                # Guard against another album already having this deezer_id
-                if not Album.objects.filter(deezer_id=album_data.deezer_id).exists():
-                    existing.deezer_id = album_data.deezer_id
-                    existing.save(update_fields=["deezer_id"])
-                    linked_count += 1
+        # A same-titled row is the same release only when a UPC proves it:
+        # editions share titles, and a shared id would pull the wrong
+        # release's track ids into the album.
+        action, existing = classify_deezer_album(
+            artist, album_data.deezer_id, album_data.name, normalize_name
+        )
+        if action == ALBUM_EXISTS:
             continue
+        if action == ALBUM_LINK and existing is not None:
+            if link_album_deezer_id(existing, album_data.deezer_id):
+                linked_count += 1
+            continue
+        if action != ALBUM_CREATE:
+            continue  # ALBUM_SKIP: unproven same-titled row, neither link nor duplicate
 
-        album = Album.objects.create(
+        Album.objects.create(
             name=album_data.name,
             deezer_id=album_data.deezer_id,
             artist=artist,
@@ -67,7 +70,6 @@ def _fetch_albums_via_deezer(
             album_group=album_data.album_group or album_data.album_type,
             wanted=True,
         )
-        existing_albums_by_norm.setdefault(normalize_name(album.name), album)
         created_count += 1
 
     return created_count, linked_count

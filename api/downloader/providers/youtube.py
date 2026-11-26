@@ -9,8 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import logging
-from collections.abc import Iterable
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+from collections.abc import Callable, Iterable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Optional
 
@@ -37,6 +48,210 @@ DURATION_TOLERANCE_MS = 10000
 
 # Request timeout for yt-dlp operations
 YTDLP_TIMEOUT = 60
+
+# Whole-operation deadline for a single yt-dlp download. ``socket_timeout``
+# only bounds per-socket inactivity; a slow-but-progressing extraction can
+# otherwise occupy a worker until Celery's hard limit.
+YTDLP_TOTAL_TIMEOUT = 300
+
+# Download to a temp path and publish with an atomic rename so a timeout,
+# network error, or hard kill never leaves a partial file at the final path.
+_PART_SUFFIX = ".part"
+
+
+class DownloadCancelled(Exception):
+    """Raised by a cancellation check to stop an in-flight download."""
+
+
+class DownloadTimeoutError(Exception):
+    """Raised when a yt-dlp operation exceeds YTDLP_TOTAL_TIMEOUT."""
+
+
+# A task context (e.g. ``raise_if_cancelled(task_history, force_refresh=True)``)
+# can install a synchronous check for the duration of a download. The provider
+# instance can also carry one via ``set_cancellation_check``; both are invoked
+# from yt-dlp's progress hooks so cancellation is honoured between stages.
+_active_cancellation_check: ContextVar[Optional[Callable[[], None]]] = ContextVar(
+    "youtube_download_cancellation_check", default=None
+)
+
+
+@contextmanager
+def cancellation_scope(check: Callable[[], None]):
+    """Bind a synchronous cancellation check for the current async context."""
+    token = _active_cancellation_check.set(check)
+    try:
+        yield
+    finally:
+        _active_cancellation_check.reset(token)
+
+
+# The child is a fresh Python process: it cannot inherit mocks, DB connections
+# or a cancelled parent context. Options (including the PO token) travel in a
+# 0600 JSON config file, never on the command line. A flag file gives yt-dlp's
+# progress hook a cooperative abort signal before the parent kills the process
+# group on deadline/cancel, which also terminates any ffmpeg child.
+_CHILD_CODE = (
+    "import sys;"
+    "from downloader.providers.youtube import _child_main;"
+    "_child_main(sys.argv[1])"
+)
+_POLL_INTERVAL = 0.1
+_CHILD_EXIT_GRACE = 5
+
+
+class DownloadChildError(Exception):
+    """Raised when the yt-dlp child process reports a failure."""
+
+
+def _child_main(config_path: str) -> None:
+    """Entry point invoked in the child process; writes a JSON result file."""
+    import yt_dlp
+
+    config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    opts = config["opts"]
+    cancel_flag = Path(config["cancel_flag"])
+    result: dict[str, object]
+
+    def progress_hook(info: dict) -> None:
+        if cancel_flag.exists():
+            raise DownloadCancelled("download cancelled in child")
+
+    opts["progress_hooks"] = [progress_hook]
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            if config["mode"] == "probe":
+                info = ydl.extract_info(config["url"], download=False)
+                formats = len(info.get("formats", [])) if info else 0
+                result = {"ok": True, "value": {"formats": formats}}
+            else:
+                ydl.download([config["url"]])
+                result = {"ok": True, "value": None}
+    except BaseException as exc:  # pylint: disable=broad-except
+        result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    Path(config["result_file"]).write_text(json.dumps(result), encoding="utf-8")
+
+
+# The child only needs enough environment to start Python, import yt-dlp,
+# choose a locale/timezone, find proxies and CA certificates, and write temp
+# files. Everything else in the worker environment (Django/database/Spotify/
+# QueueTip credentials) stays out of the child.
+_CHILD_ENV_NAMES = (
+    "PATH",
+    "HOME",
+    "LANG",
+    "TMPDIR",
+    "TZ",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "PYTHONIOENCODING",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+)
+
+
+def _child_environment() -> dict[str, str]:
+    """Build an explicit allowlisted environment for the yt-dlp child."""
+    env = {
+        name: value
+        for name in _CHILD_ENV_NAMES
+        if (value := os.environ.get(name)) is not None
+    }
+    env.update(
+        {name: value for name, value in os.environ.items() if name.startswith("LC_")}
+    )
+    return env
+
+
+def _kill_child(process: subprocess.Popen) -> None:
+    """Kill the child's whole process group, then reap it."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        process.kill()
+    try:
+        process.wait(timeout=_CHILD_EXIT_GRACE)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _run_yt_dlp_child(
+    *,
+    opts: dict,
+    url: str,
+    mode: str,
+    timeout: float,
+    cancellation_check: Optional[Callable[[], None]] = None,
+) -> object:
+    """Run yt-dlp in a child process bounded by ``timeout``.
+
+    On deadline or cancellation the process group is killed before any cleanup,
+    so no yt-dlp/ffmpeg work or temp file can outlive the attempt. Returns the
+    child's result value; raises DownloadTimeoutError, DownloadCancelled, the
+    cancellation check's exception, or DownloadChildError on failure.
+    """
+    work_dir = Path(tempfile.mkdtemp(prefix="tunestash-ytdlp-"))
+    config_path = work_dir / "opts.json"
+    cancel_flag = work_dir / "cancel"
+    result_file = work_dir / "result.json"
+    child_opts = {key: value for key, value in opts.items() if key != "progress_hooks"}
+    config = {
+        "opts": child_opts,
+        "url": url,
+        "mode": mode,
+        "cancel_flag": str(cancel_flag),
+        "result_file": str(result_file),
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    os.chmod(config_path, 0o600)
+
+    process: Optional[subprocess.Popen] = None
+    deadline = time.monotonic() + timeout
+    try:
+        process = subprocess.Popen(  # pylint: disable=consider-using-with
+            [sys.executable, "-c", _CHILD_CODE, str(config_path)],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=_child_environment(),
+        )
+        while process.poll() is None:
+            if cancellation_check is not None:
+                # Runs in the parent: the task context is not picklable. The
+                # flag file lets the child abort cooperatively too.
+                cancellation_check()
+            if time.monotonic() >= deadline:
+                cancel_flag.touch()
+                _kill_child(process)
+                raise DownloadTimeoutError(
+                    f"yt-dlp operation timed out after {timeout}s"
+                )
+            time.sleep(_POLL_INTERVAL)
+
+        if not result_file.exists():
+            raise DownloadChildError("yt-dlp child produced no result")
+        payload = json.loads(result_file.read_text(encoding="utf-8"))
+        if not payload.get("ok"):
+            raise DownloadChildError(str(payload.get("error", "unknown error")))
+        return payload.get("value")
+    finally:
+        if process is not None and process.poll() is None:
+            cancel_flag.touch()
+            _kill_child(process)
+        shutil.rmtree(work_dir, ignore_errors=True)
+
 
 # Fixed, ultra-stable video used by probe_auth() to validate that cookies + PO
 # token still authenticate the watch-page download path. "Never Gonna Give You
@@ -143,6 +358,18 @@ class YouTubeMusicProvider(DownloadProvider):
 
     def __init__(self) -> None:
         self._cookies_path = _get_cookies_path()
+        self._cancellation_check: Optional[Callable[[], None]] = None
+
+    def set_cancellation_check(self, check: Optional[Callable[[], None]]) -> None:
+        """Install a synchronous callback invoked between yt-dlp stages.
+
+        A caller with a task context should pass a check built from the
+        existing helper, e.g.
+        ``lambda: raise_if_cancelled(task_history, force_refresh=True)``.
+        The callback may raise to abort the download; its exception is
+        re-raised after temp files are removed.
+        """
+        self._cancellation_check = check
 
     @property
     def _po_token(self) -> Optional[str]:
@@ -333,21 +560,22 @@ class YouTubeMusicProvider(DownloadProvider):
         output_path: Path,
         quality: QualityPreference = QualityPreference.HIGH,
     ) -> DownloadResult:
-        """Synchronous download implementation."""
-        import yt_dlp
-
+        """Synchronous download implementation with deadline and atomic publish."""
         url = f"https://music.youtube.com/watch?v={track_match.provider_track_id}"
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Output template without extension — yt-dlp adds it via post-processor
-        output_template = str(output_path.with_suffix(""))
+        # A unique temp base means a failed attempt can never mistake a stale
+        # file for its own output, and cleanup cannot race another download.
+        temp_base = output_path.with_name(
+            f"{output_path.stem}.{uuid.uuid4().hex}{_PART_SUFFIX}"
+        )
 
         opts = _build_ydl_opts(self._cookies_path, self._po_token)
         opts.update(
             {
                 "format": "bestaudio/best",
-                "outtmpl": output_template + ".%(ext)s",
+                "outtmpl": str(temp_base) + ".%(ext)s",
                 "postprocessors": [
                     {
                         "key": "FFmpegExtractAudio",
@@ -358,41 +586,77 @@ class YouTubeMusicProvider(DownloadProvider):
             }
         )
 
+        def cancellation_check() -> None:
+            check = self._cancellation_check or _active_cancellation_check.get()
+            if check is not None:
+                check()
+
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
+            _run_yt_dlp_child(
+                opts=opts,
+                url=url,
+                mode="download",
+                timeout=YTDLP_TOTAL_TIMEOUT,
+                cancellation_check=cancellation_check,
+            )
 
-            # Find the output file — yt-dlp may add .m4a extension
-            final_path = output_path.with_suffix(".m4a")
-            if not final_path.exists():
-                # Check if file exists with original path
-                if output_path.exists():
-                    final_path = output_path
-                else:
-                    return DownloadResult(
-                        success=False,
-                        provider="youtube",
-                        error="Downloaded file not found",
-                    )
+            produced = sorted(temp_base.parent.glob(f"{temp_base.name}.*"))
+            if not produced:
+                return DownloadResult(
+                    success=False,
+                    provider="youtube",
+                    error="Downloaded file not found",
+                )
+            # Prefer the post-processed m4a; fall back to yt-dlp's raw output.
+            temp_file = next(
+                (p for p in produced if p.suffix.lower() == ".m4a"), produced[0]
+            )
+            if temp_file.stat().st_size == 0:
+                return DownloadResult(
+                    success=False,
+                    provider="youtube",
+                    error="Downloaded file is empty",
+                )
 
+            os.replace(temp_file, output_path)
             return DownloadResult(
                 success=True,
                 provider="youtube",
-                file_path=final_path,
+                file_path=output_path,
                 bitrate_kbps=256,
                 format="m4a",
                 duration_ms=track_match.duration_ms,
             )
 
-        except Exception as e:
+        except DownloadTimeoutError as exc:
+            logger.warning(
+                "[youtube] Download timed out for %s: %s",
+                track_match.provider_track_id,
+                exc,
+            )
+            return DownloadResult(
+                success=False,
+                provider="youtube",
+                error=str(exc),
+                error_retryable=False,
+            )
+        except DownloadChildError as e:
             logger.error(
-                f"[youtube] Download failed for {track_match.provider_track_id}: {e}"
+                "[youtube] Download failed for %s: %s",
+                track_match.provider_track_id,
+                e,
             )
             return DownloadResult(
                 success=False,
                 provider="youtube",
                 error=str(e),
             )
+        finally:
+            for leftover in temp_base.parent.glob(f"{temp_base.name}.*"):
+                try:
+                    leftover.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("[youtube] Could not remove temp file %s", leftover)
 
     def probe_auth(self) -> tuple[bool, Optional[str]]:
         """Probe YouTube auth by resolving stream info for a known-stable video.
@@ -406,18 +670,23 @@ class YouTubeMusicProvider(DownloadProvider):
         Returns:
             (ok, detail) — detail is a short success note or the error string.
         """
-        import yt_dlp
-
         if not self._po_token:
             return False, "PO token not configured"
 
         opts = _build_ydl_opts(self._cookies_path, self._po_token)
         url = f"https://www.youtube.com/watch?v={PROBE_VIDEO_ID}"
+
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+            info = _run_yt_dlp_child(
+                opts=opts,
+                url=url,
+                mode="probe",
+                timeout=YTDLP_TOTAL_TIMEOUT,
+            )
             if info and info.get("formats"):
                 return True, f"Resolved {len(info['formats'])} formats for probe video"
             return False, "Probe returned no playable formats"
+        except DownloadTimeoutError as exc:
+            return False, f"Probe timed out: {exc}"
         except Exception as e:  # pylint: disable=broad-except
             return False, str(e)
