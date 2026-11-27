@@ -419,6 +419,49 @@ def lead_first(
     return [credits[index], *credits[:index], *credits[index + 1 :]]
 
 
+def credited_role(
+    current: Artist,
+    credits: list[ArtistCredit],
+    resolved: Iterable[Optional[Artist]] = (),
+) -> Optional[str]:
+    """The role ``current`` holds on the track: "main", "featured" or None.
+
+    Matched by Deezer id, or by the Artist row a credit resolved to (an adopted
+    Spotify-only row has no Deezer id until adoption). "main" wins over any
+    other role when the artist appears more than once.
+    """
+    resolved_list = list(resolved) or [None] * len(credits)
+    roles = [
+        c.role
+        for c, a in zip(credits, resolved_list)
+        if (a is not None and a.pk == current.pk)
+        or (current.deezer_id is not None and c.deezer_id == current.deezer_id)
+    ]
+    if not roles:
+        return None
+    return "main" if "main" in roles else "featured"
+
+
+def keep_current_primary(
+    current: Artist,
+    credits: list[ArtistCredit],
+    resolved: Iterable[Optional[Artist]] = (),
+    album_artist_id: Optional[int] = None,
+) -> bool:
+    """The one rule for whether an existing song's primary may be replaced.
+
+    Keep it when the current primary is credited as a main artist (a co-lead
+    is not a wrong primary), or is credited in any role while being the
+    album's own artist (a remix on the remixer's release). Replace it only
+    when it is absent from the credits or appears solely as featured on
+    someone else's release.
+    """
+    role = credited_role(current, credits, resolved)
+    if role == "main":
+        return True
+    return role is not None and album_artist_id == current.pk
+
+
 def fetch_full_track(
     deezer_id: int, provider: "DeezerMetadataProvider | Any | None" = None
 ) -> Optional[TrackResult]:
@@ -660,7 +703,15 @@ def replace_identity_if_unchanged(
             transaction.set_rollback(True)
             return "ambiguous"
         artists = [cast(Artist, r.artist) for r in resolutions]
-        Song.objects.filter(pk=song_id).update(primary_artist=artists[0])
+        new_primary = artists[0]
+        album_artist_id = (
+            Song.objects.filter(pk=song_id).values_list("album__artist_id", flat=True)
+        ).first()
+        if primary is not None and keep_current_primary(
+            primary, credits, artists, album_artist_id
+        ):
+            new_primary = primary  # co-lead / own remix: only reconcile contributors
+        Song.objects.filter(pk=song_id).update(primary_artist=new_primary)
         replace_contributors(locked, artists)
     return "applied"
 

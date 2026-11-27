@@ -27,7 +27,8 @@ from library_manager.models import (
 from src.providers.metadata_base import ArtistCredit, TrackResult
 
 LEAD = ArtistCredit(name="Lead Person", deezer_id=101, role="main")
-GUEST = ArtistCredit(name="Guest Person", deezer_id=102, role="main")
+GUEST = ArtistCredit(name="Guest Person", deezer_id=102, role="featured")
+CO_LEAD = ArtistCredit(name="Guest Person", deezer_id=102, role="main")
 REMIXER = ArtistCredit(name="Remixer Person", deezer_id=103, role="featured")
 
 
@@ -51,7 +52,9 @@ def tracked() -> Artist:
 
 @pytest.fixture
 def song(tracked: Artist) -> Song:
-    album = Album.objects.create(name="Their Album", artist=tracked, deezer_id=42)
+    # Someone else's release, so a featured-only primary is a genuine swap.
+    owner = Artist.objects.create(name="Album Owner", deezer_id=777)
+    album = Album.objects.create(name="Their Album", artist=owner, deezer_id=42)
     return Song.objects.create(
         name="Synthetic Song",
         deezer_id=9001,
@@ -110,7 +113,7 @@ class TestDryRun:
         song.refresh_from_db()
         assert song.primary_artist.deezer_id == 102
         assert ContributingArtist.objects.count() == 0
-        assert Artist.objects.count() == 1
+        assert Artist.objects.count() == 2  # tracked primary + album owner
 
     def test_apply_requires_audit_file(self) -> None:
         with pytest.raises(CommandError, match="--audit-file"):
@@ -246,7 +249,8 @@ class TestApply:
 @pytest.mark.unit
 class TestBatchingAndResume:
     def _songs(self, tracked: Artist, count: int) -> list[Song]:
-        album = Album.objects.create(name="Their Album", artist=tracked, deezer_id=77)
+        owner = Artist.objects.create(name="Album Owner", deezer_id=777)
+        album = Album.objects.create(name="Their Album", artist=owner, deezer_id=77)
         return [
             Song.objects.create(
                 name=f"Synthetic {i}",
@@ -445,7 +449,7 @@ class TestLeadRule:
     def test_first_main_credit_leads_when_listing_names_nobody(self) -> None:
         from library_manager.artist_credits import lead_first
 
-        ordered = lead_first([REMIXER, GUEST, LEAD])
+        ordered = lead_first([REMIXER, CO_LEAD, LEAD])
 
         assert [c.deezer_id for c in ordered] == [102, 103, 101]
 
@@ -490,7 +494,8 @@ class TestResumeCursor:
     def test_cursor_does_not_pass_a_retryable_failure(
         self, tracked: Artist, tmp_path: Path
     ) -> None:
-        album = Album.objects.create(name="Their Album", artist=tracked, deezer_id=88)
+        owner = Artist.objects.create(name="Album Owner", deezer_id=788)
+        album = Album.objects.create(name="Their Album", artist=owner, deezer_id=88)
         Song.objects.create(
             name="One",
             deezer_id=8101,
@@ -647,9 +652,10 @@ class TestReleaseMismatch:
     def test_album_without_deezer_id_matches_by_title_and_artist(
         self, tracked: Artist, tmp_path: Path
     ) -> None:
+        album_owner = Artist.objects.create(name="Lead Person", deezer_id=101)
         album = Album.objects.create(
             name="Their Album",
-            artist=tracked,
+            artist=album_owner,
             spotify_gid="synthalbum1",
             spotify_uri="spotify:album:synthalbum1",
         )
@@ -704,3 +710,79 @@ class TestReleaseMismatch:
         own = _track(9001, [LEAD, GUEST])
         own.album_deezer_id = song.album.deezer_id
         assert [c.deezer_id for c in credits_for_song_release(song, own)] == [101, 102]
+
+
+@pytest.mark.unit
+class TestPrimaryKeepRule:
+    """A current primary credited as main (co-lead) must never be replaced."""
+
+    def _run_apply(self, credits: list[ArtistCredit], tmp_path: Path) -> str:
+        return _run(
+            _Lookups({9001: _track(9001, credits)}),
+            "--apply",
+            "--audit-file",
+            str(tmp_path / "a.jsonl"),
+        )
+
+    def test_co_lead_primary_is_kept_and_contributors_reconciled(
+        self, song: Song, tmp_path: Path
+    ) -> None:
+        output = self._run_apply(
+            [LEAD, CO_LEAD], tmp_path
+        )  # [A main, B main], primary B
+
+        song.refresh_from_db()
+        assert "primary_kept_credited: 1" in output
+        assert "featured_as_primary" not in output
+        assert song.primary_artist.deezer_id == 102
+        assert set(
+            ContributingArtist.objects.filter(song=song).values_list(
+                "artist__deezer_id", flat=True
+            )
+        ) == {101, 102}
+
+    def test_primary_credited_only_as_featured_is_swapped(
+        self, song: Song, tmp_path: Path
+    ) -> None:
+        output = self._run_apply([LEAD, GUEST], tmp_path)
+
+        song.refresh_from_db()
+        assert "featured_as_primary: 1" in output
+        assert song.primary_artist.deezer_id == 101
+
+    def test_primary_absent_from_credits_is_swapped(
+        self, song: Song, tmp_path: Path
+    ) -> None:
+        output = self._run_apply([LEAD, REMIXER], tmp_path)
+
+        song.refresh_from_db()
+        assert "primary_not_credited: 1" in output
+        assert song.primary_artist.deezer_id == 101
+
+    def test_remix_on_the_primarys_own_album_is_kept(
+        self, song: Song, tmp_path: Path
+    ) -> None:
+        # The tracked primary is only listed as featured, but the album is its own.
+        Album.objects.filter(pk=song.album_id).update(artist=song.primary_artist)
+        output = self._run_apply([LEAD, GUEST], tmp_path)  # featured + own album
+
+        song.refresh_from_db()
+        # (own-album rule): credited in any role + album artist == primary -> keep
+        assert "primary_kept_credited: 1" in output
+        assert song.primary_artist.deezer_id == 102
+
+    def test_primary_featured_on_another_artists_album_is_swapped(
+        self, song: Song, tmp_path: Path
+    ) -> None:
+        output = self._run_apply([LEAD, GUEST], tmp_path)
+
+        song.refresh_from_db()
+        assert "featured_as_primary: 1" in output
+        assert song.primary_artist.deezer_id == 101
+
+    def test_reconcile_path_keeps_a_co_lead_primary(self, song: Song) -> None:
+        from library_manager.artist_credits import ensure_song_credits
+
+        assert ensure_song_credits(song, [LEAD, CO_LEAD]) is True
+        song.refresh_from_db()
+        assert song.primary_artist.deezer_id == 102

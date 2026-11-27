@@ -31,7 +31,9 @@ from django.core.serializers.json import DjangoJSONEncoder
 from library_manager.artist_credits import (
     RELEASE_DIFFERENT,
     RELEASE_MATCH,
+    credited_role,
     credits_for_track,
+    keep_current_primary,
     normalize_artist_name,
     related_song_ids,
     release_match,
@@ -46,6 +48,7 @@ CATEGORY_ALREADY_LEAD = "primary_is_lead"
 CATEGORY_FEATURED = "featured_as_primary"
 CATEGORY_SAME_NAME = "primary_name_matches_other_credit"
 CATEGORY_UNRELATED = "primary_not_credited"
+CATEGORY_KEPT = "primary_kept_credited"  # co-lead or own remix: primary stays
 # Outcomes that may succeed on a later run; permanent skips (ISRC conflict)
 # are final and do not hold the resume cursor back.
 RETRYABLE_OUTCOMES = frozenset(
@@ -82,7 +85,10 @@ class SongPlan:
 
     @property
     def changes_primary(self) -> bool:
-        return self.status == "fix" and self.category != CATEGORY_ALREADY_LEAD
+        return self.status == "fix" and self.category not in (
+            CATEGORY_ALREADY_LEAD,
+            CATEGORY_KEPT,
+        )
 
 
 class Command(BaseCommand):
@@ -274,11 +280,18 @@ class Command(BaseCommand):
         plan.status = "fix"
 
         lead_artist = resolutions[0].artist
+        album_artist_id = song.album.artist_id if song.album else None
         if old.deezer_id == lead.deezer_id or (
             lead_artist is not None and lead_artist.pk == old.pk
         ):
             plan.category = CATEGORY_ALREADY_LEAD
-        elif old.deezer_id in {c.deezer_id for c in credits}:
+        elif keep_current_primary(
+            old, credits, [r.artist for r in resolutions], album_artist_id
+        ):
+            # Credited as a main artist (co-lead) or a remix on its own album:
+            # the primary is right; only contributors are reconciled.
+            plan.category = CATEGORY_KEPT
+        elif credited_role(old, credits, [r.artist for r in resolutions]):
             plan.category = CATEGORY_FEATURED
         elif old.deezer_id is not None and normalize_artist_name(old.name) in {
             normalize_artist_name(c.name) for c in credits
